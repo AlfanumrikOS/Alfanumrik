@@ -31,6 +31,7 @@
 
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { deriveNextAction } from '@alfanumrik/lib/learner-model';
 import { parseFoxyChapterNumber } from '@alfanumrik/lib/foxy/chapter-parser';
 import type { OpenExpectation } from '@alfanumrik/lib/learn/foxy-expectations';
 import {
@@ -110,110 +111,19 @@ export function classifyExpectationLifecycle(
   return 'unresolved';
 }
 
-// ─── CME next-action priority ladder (local, pure) ──────────────────────────
+// ─── CME next-action priority ladder (canonical home: learner-model) ────────
 //
-// Replaces the retired network call to the cme-engine Edge Function
-// `get_next_action` (which authenticated with a service-role key against a
-// user-JWT `auth.getUser()` check → 401 on every call, silently swallowed, so
-// nextAction was ALWAYS null; it also read `cme_concept_state`, a table with
-// no remaining writer). Derives the same recommendation locally from data
-// loadCognitiveContext already loads, mirroring cme-engine's documented
-// 5-priority order (supabase/functions/cme-engine/index.ts selectNextAction):
-//   (1) prerequisite / knowledge gap      → 'remediate'
-//   (2) forgetting risk (overdue review)  → 'revise'
-//   (3) repeated conceptual errors (>=3)  → 're_teach'
-//   (4) next unmastered concept           → 'practice' / 'challenge'
-//   (5) nothing actionable                → null (the prompt's cold-start /
-//       consolidation rails handle the no-signal case — exam-prep default)
-//
-// Pure over already-loaded data — no I/O. Output shape is exactly
-// CognitiveContext['nextAction'] so route.ts (cme_action_log insert,
-// foxy_sessions.last_cme_action, audit details) and prompt-sections.ts
-// (selectLeadConcept step 3, RECOMMENDED ACTION block) need no changes.
-
-export interface NextActionInputs {
-  /** Unresolved knowledge gaps (loadCognitiveContext shape). */
-  knowledgeGaps: Array<{ target: string; prerequisite: string; gapType: string }>;
-  /** Overdue reviews (next_review_at <= now); mastery is the 0-100 integer. */
-  revisionDue: Array<{ title: string; lastReviewed: string; mastery: number }>;
-  /** 30d cme_error_log counts by error_type. */
-  recentErrors: Array<{ errorType: string; count: number }>;
-  /** Subject-filtered concept_mastery rows: title + raw mastery_probability (0-1). */
-  masteryTopics: Array<{ title: string; masteryProbability: number }>;
-}
-
-// Mirrors cme-engine selectNextAction cutoffs: >=3 conceptual errors triggers
-// re-teach; mastery_mean < 0.6 → practice; < 0.85 → challenge; >= 0.85 mastered.
-const RETEACH_CONCEPTUAL_ERROR_MIN = 3;
-const NEXT_CONCEPT_PRACTICE_THRESHOLD = 0.6;
-const NEXT_CONCEPT_MASTERED_THRESHOLD = 0.85;
-
-export function deriveNextAction(
-  input: NextActionInputs,
-): { actionType: string; conceptName: string; reason: string } | null {
-  // (1) Prerequisite / knowledge gap — remediate the prerequisite when named,
-  // else the gap's target concept.
-  const gap = input.knowledgeGaps.find(
-    (g) => ((g.prerequisite || g.target) ?? '').trim().length > 0,
-  );
-  if (gap) {
-    return {
-      actionType: 'remediate',
-      conceptName: (gap.prerequisite || gap.target).trim(),
-      reason: 'Prerequisite gap needs remediation before advancing',
-    };
-  }
-
-  // (2) Forgetting risk — overdue review, weakest mastery first; tie-break on
-  // oldest next_review_at (ISO strings compare lexicographically).
-  const overdue = [...input.revisionDue]
-    .filter((r) => r.title.trim().length > 0)
-    .sort((a, b) => a.mastery - b.mastery || a.lastReviewed.localeCompare(b.lastReviewed))[0];
-  if (overdue) {
-    return {
-      actionType: 'revise',
-      conceptName: overdue.title,
-      reason: 'Previously learned concept fading — revision needed',
-    };
-  }
-
-  // Unmastered concepts, lowest mastery first (defensive sort — callers pass
-  // rows already ordered ascending by mastery_probability).
-  const unmastered = input.masteryTopics
-    .filter(
-      (t) => t.title.trim().length > 0 && t.masteryProbability < NEXT_CONCEPT_MASTERED_THRESHOLD,
-    )
-    .sort((a, b) => a.masteryProbability - b.masteryProbability);
-
-  // (3) Repeated conceptual errors → re-teach the weakest known concept.
-  const conceptual = input.recentErrors.find((e) => e.errorType === 'conceptual');
-  if (conceptual && conceptual.count >= RETEACH_CONCEPTUAL_ERROR_MIN && unmastered.length > 0) {
-    return {
-      actionType: 're_teach',
-      conceptName: unmastered[0].title,
-      reason: 'Repeated conceptual errors — needs a different explanation approach',
-    };
-  }
-
-  // (4) Next unmastered concept — lowest mastery_probability below threshold.
-  if (unmastered.length > 0) {
-    const next = unmastered[0];
-    return next.masteryProbability < NEXT_CONCEPT_PRACTICE_THRESHOLD
-      ? {
-          actionType: 'practice',
-          conceptName: next.title,
-          reason: 'Partially learned — needs more practice',
-        }
-      : {
-          actionType: 'challenge',
-          conceptName: next.title,
-          reason: 'Approaching mastery — increasing difficulty',
-        };
-  }
-
-  // (5) No actionable signal → null (exam-prep / cold-start rails apply).
-  return null;
-}
+// Phase 2 (Foxy North-Star): the pure `deriveNextAction` ladder + its
+// thresholds moved to the canonical shared module
+// `packages/lib/src/learner-model/` (imported above via
+// `@alfanumrik/lib/learner-model`). This file re-exports it so route.ts,
+// prompt-sections.ts, and the existing tests keep importing from here with
+// zero changes. The ladder semantics (5-priority order, 0.6 / 0.85 / >=3
+// conceptual cutoffs) are unchanged — see the learner-model module for the
+// implementation and the P10 goal-aware extension (optional
+// `academicGoal?: { code: string } | null` on NextActionInputs).
+export { deriveNextAction };
+export type { NextActionInputs } from '@alfanumrik/lib/learner-model';
 
 // ─── Helper: load cognitive context from CME tables ─────────────────────────
 
@@ -222,6 +132,11 @@ export async function loadCognitiveContext(
   subject: string,
   grade: string,
   chapter: string | null = null,
+  // P10 goal wiring: the route resolves the student's academic goal and passes
+  // it here ONLY when ff_goal_aware_foxy is ON (flag evaluation stays at the
+  // route; this loader and the learner-model facade are flag-free). null /
+  // omitted → byte-identical pre-P10 ladder behavior.
+  academicGoal: { code: string } | null = null,
 ): Promise<CognitiveContext> {
   void grade; // reserved for future grade-scoped mastery lookups
   try {
@@ -524,6 +439,8 @@ export async function loadCognitiveContext(
           title: m.curriculum_topics?.title ?? '',
           masteryProbability: m.mastery_probability ?? 0,
         })),
+        // P10: null unless the route resolved a goal under ff_goal_aware_foxy.
+        academicGoal,
       });
     } catch {
       // non-fatal — Foxy still works without next-action

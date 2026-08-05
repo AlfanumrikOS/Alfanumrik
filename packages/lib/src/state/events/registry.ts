@@ -170,7 +170,7 @@ export const LearnerConceptCheckAnsweredSchema = EventBaseSchema.extend({
 //
 //   ⚠️ BINDING learner-state contract (assessment-issued):
 //   No subscriber may consume this event to write ANY mastery surface
-//   (concept_mastery, cme_concept_state, student_skill_state, knowledge_gaps,
+//   (concept_mastery, student_skill_state, knowledge_gaps,
 //   learner_mastery, cme_error_log, quiz_sessions, student_learning_profiles,
 //   bloom_progression). A self-report cannot move mastery_mean / p_know.
 //   Only a REAL "Quiz me" answer feeds mastery, and it does so through the
@@ -202,7 +202,7 @@ export const LearnerLearningActionSchema = EventBaseSchema.extend({
 //
 //   ⚠️ BINDING learner-state contract (assessment-issued, mirrors
 //   learner.learning_action): No subscriber may consume this event to write ANY
-//   mastery surface (concept_mastery, cme_concept_state, student_skill_state,
+//   mastery surface (concept_mastery, student_skill_state,
 //   knowledge_gaps, learner_mastery, cme_error_log, quiz_sessions,
 //   student_learning_profiles, bloom_progression). A struggle OBSERVATION cannot
 //   move mastery_mean / p_know / error_count_*. Only a REAL graded answer feeds
@@ -245,7 +245,7 @@ export const LearnerStruggleObservedSchema = EventBaseSchema.extend({
 //   ⚠️ BINDING learner-state contract (assessment-issued, mirrors
 //   learner.learning_action / learner.struggle_observed): No subscriber may
 //   consume this event to write ANY mastery / p_know / error surface
-//   (concept_mastery, cme_concept_state, student_skill_state, knowledge_gaps,
+//   (concept_mastery, student_skill_state, knowledge_gaps,
 //   learner_mastery, cme_error_log, quiz_sessions, student_learning_profiles,
 //   bloom_progression). A PERCEPTION of a turn cannot move mastery_mean /
 //   p_know / error_count_*. Only a REAL graded answer feeds mastery, through

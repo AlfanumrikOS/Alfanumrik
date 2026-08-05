@@ -6,8 +6,42 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 350 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-348..REG-350 (2026-08-05, Foxy North-Star Phase 1 Safety & Trust
+**Total catalog: 353 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-351..REG-353 (2026-08-05, Foxy North-Star Phase 2 Canonical
+Learner Model batch — three pins in `03-quiz-integrity.md` covering the
+~70-file uncommitted Phase 2 change set on branch
+`Alfanumrik/foxy-system-spec-22f565`.
+REG-351 canonical-facade lockstep [E]: the `@alfanumrik/lib/learner-model`
+facade's thresholds/BKT mirror are pinned to BOTH RPC migrations
+(`20260623000100` canonical + `20260807000400` evidence re-creation — SQL
+WINS on divergence); `bkt-mirror.ts` is display-only (no supabase import,
+posterior parity fixtures); the 5-rung next-action ladder order survived the
+move verbatim (`getNextAction` IS `deriveNextAction`); sub-entry REG-351d
+pins the confidence_score SCALE SHIFT (Beta-posterior variance replaces the
+pseudo-decay: 1-attempt blend ≈ ×0.944 vs old ×0.773, hard floor ×0.9167)
+plus the consumer-survival result — the progress-page/KnowledgeGapActions
+severity split consumes gap-RPC confidence derived as `1 −
+mastery_probability` (20260623000700/000800 never read
+`cm.confidence_score`), so its >0.7/>0.4 semantics survive; REG-351e pins
+every `student_skill_state` reader fail-soft on empty/error (new file
+`skill-state-reader-fallbacks.test.ts`).
+REG-352 event-capture contract [P — structural pins only, zero live-Postgres
+this session]: D2 server-held `question_version`/`content_hash` from
+`quiz_session_shuffles` with NO client-suppliable parameter; D3 answer_method
+whitelist ELSE 'mcq' + D6 confidence `'^[1-5]$'` else NULL
+(normalize-never-abort, P4); D7 misconception match on the ORIGINAL-space
+index with per-iteration reset, error-isolated open/resolve lifecycle
+(`uq_student_misconceptions_open`, one open row per student+pattern+concept),
+free-text columns never written (P13).
+REG-353 consolidation ratchet [E]: single-BKT analyzer gate (allowlist ==
+exactly `packages/lib/src/cognitive-engine.ts`; deleted copies gone from
+source), retired-table baselines frozen (`cme_concept_state: 6`,
+`topic_mastery: 20` — analyzer FAILs on growth), cme-engine tombstone
+(structured 410 `cme_engine_retired`, 401 posture preserved, facade
+replacement pointer, `cme_concept_state` COMMENT-tombstoned in
+`20260808000100`); deployed-state caution: verify with
+`supabase functions list` post-merge.)
+Prior: REG-348..REG-350 (2026-08-05, Foxy North-Star Phase 1 Safety & Trust
 batch — three pins in `02-foxy-ai.md` covering the ~40-file uncommitted
 Phase 1 change set on branch `Alfanumrik/foxy-system-spec-22f565`.
 REG-348 safeguarding two-tier fail-closed contract [E]: after a Tier-1 regex

@@ -35,6 +35,7 @@ import {
   type DivePickerOption,
 } from '@alfanumrik/lib/learn/weekly-dive-orchestrator';
 import { computeWeeklyStreakFromHistory } from '@alfanumrik/lib/learn/weekly-streak';
+import { getDueReviews } from '@alfanumrik/lib/learner-model';
 import { logger } from '@alfanumrik/lib/logger';
 import { cacheFetchAsync, CACHE_TTL } from '@alfanumrik/lib/cache';
 
@@ -233,28 +234,19 @@ async function buildDiveState(
     }
   }
 
-  // ── Weak topics (lowest-mastery due-for-review topics). get_due_reviews is
-  //    SECURITY DEFINER, returns (topic_id, title, title_hi, mastery_probability,
-  //    ...) ordered by mastery_probability ASC. Empty array on error/none.
+  // ── Weak topics (lowest-mastery due-for-review topics) via the
+  //    learner-model facade. Same underlying get_due_reviews RPC (SECURITY
+  //    DEFINER, scoped by p_student_id, ordered by mastery_probability ASC);
+  //    the facade degrades to [] on RPC error (it logs the warn itself), so
+  //    the picker option simply hides — same behavior as before.
   const weakTopics: PickerWeakTopic[] = [];
   if (studentDbId) {
-    const { data: dueRows, error: dueErr } = await supabase.rpc('get_due_reviews', {
-      p_student_id: studentDbId,
-      p_subject_code: null,
-      p_limit: WEAK_TOPIC_LIMIT,
-    });
-    if (dueErr) {
-      logger.warn('dive/state: get_due_reviews RPC failed (degrading)', {
-        userId, error: dueErr.message,
-      });
-    }
-    for (const r of (dueRows ?? []) as Record<string, unknown>[]) {
-      const topicId = String(r.topic_id ?? '');
-      if (!topicId) continue;
-      const title = typeof r.title === 'string' && r.title.length > 0 ? r.title : 'Topic';
-      const titleHi = typeof r.title_hi === 'string' && r.title_hi.length > 0 ? r.title_hi : null;
+    const dueRows = await getDueReviews(supabase, studentDbId, null, WEAK_TOPIC_LIMIT);
+    for (const r of dueRows) {
+      const title = r.title && r.title.length > 0 ? r.title : 'Topic';
+      const titleHi = r.title_hi && r.title_hi.length > 0 ? r.title_hi : null;
       const mastery = typeof r.mastery_probability === 'number' ? r.mastery_probability : 0;
-      weakTopics.push({ topicId, title, titleHi, masteryProbability: mastery });
+      weakTopics.push({ topicId: r.topic_id, title, titleHi, masteryProbability: mastery });
     }
   }
 

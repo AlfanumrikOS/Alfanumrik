@@ -35,6 +35,82 @@ function saveNotifPrefs(prefs: NotifPrefs): void {
   localStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(prefs));
 }
 
+/* ── Foxy explanation preferences (D9, Foxy North-Star Phase 2) ──
+ * Values are the FIXED server contract for PATCH /api/learner/preferences
+ * (enum-whitelisted server-side). The DB columns
+ * (student_learning_profiles.learning_style / preferred_explanation_depth)
+ * are unconstrained text with defaults 'balanced' / 'medium' — verified
+ * against 00000000000000_baseline_from_prod.sql. Advisory hints only: they
+ * shape HOW Foxy explains, never what it asserts about mastery. */
+const LEARNING_STYLES = ['visual', 'verbal', 'example-first', 'balanced'] as const;
+const EXPLANATION_DEPTHS = ['quick', 'medium', 'deep'] as const;
+
+type LearningStyle = (typeof LEARNING_STYLES)[number];
+type ExplanationDepth = (typeof EXPLANATION_DEPTHS)[number];
+
+interface FoxyPrefs {
+  learningStyle: LearningStyle;
+  preferredExplanationDepth: ExplanationDepth;
+}
+
+const DEFAULT_FOXY_PREFS: FoxyPrefs = { learningStyle: 'balanced', preferredExplanationDepth: 'medium' };
+
+const STYLE_LABELS: Record<LearningStyle, { en: string; hi: string }> = {
+  visual: { en: 'Diagrams first', hi: 'चित्रों से' },
+  verbal: { en: 'Words first', hi: 'शब्दों से' },
+  'example-first': { en: 'Examples first', hi: 'उदाहरण से' },
+  balanced: { en: 'Balanced', hi: 'संतुलित' },
+};
+
+const DEPTH_LABELS: Record<ExplanationDepth, { en: string; hi: string }> = {
+  quick: { en: 'Quick', hi: 'छोटा' },
+  medium: { en: 'Medium', hi: 'मध्यम' },
+  deep: { en: 'Deep', hi: 'विस्तृत' },
+};
+
+/* ── Pill selector row (44px touch targets) ── */
+function PillGroup<T extends string>({
+  options,
+  value,
+  labels,
+  isHi,
+  onSelect,
+  testPrefix,
+}: {
+  options: readonly T[];
+  value: T;
+  labels: Record<T, { en: string; hi: string }>;
+  isHi: boolean;
+  onSelect: (v: T) => void;
+  testPrefix: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((opt) => {
+        const active = opt === value;
+        return (
+          <button
+            key={opt}
+            type="button"
+            data-testid={`${testPrefix}-${opt}`}
+            aria-pressed={active}
+            onClick={() => onSelect(opt)}
+            className="rounded-full px-4 text-xs font-semibold transition-colors"
+            style={{
+              minHeight: 44,
+              background: active ? 'var(--orange, #E8581C)' : 'var(--surface-2, #f3f4f6)',
+              color: active ? '#fff' : 'var(--text-2, #4b5563)',
+              border: `1px solid ${active ? 'var(--orange, #E8581C)' : 'var(--border, #e5e7eb)'}`,
+            }}
+          >
+            {isHi ? labels[opt].hi : labels[opt].en}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── Toggle Switch component ── */
 function ToggleSwitch({
   checked,
@@ -161,10 +237,46 @@ export default function SettingsPage() {
   const [pwError, setPwError] = useState('');
   const [showPwFields, setShowPwFields] = useState(false);
 
+  /* D9 — Foxy explanation preferences (optimistic UI + rollback) */
+  const [foxyPrefs, setFoxyPrefs] = useState<FoxyPrefs>(DEFAULT_FOXY_PREFS);
+
   /* Load notification prefs from localStorage on mount */
   useEffect(() => {
     setNotifPrefs(loadNotifPrefs());
   }, []);
+
+  /* D9 — load current preferences from student_learning_profiles (RLS: own
+     rows only). Mirrors loadStudentPreferences' deterministic newest-row pick.
+     Best-effort: any error keeps the safe defaults (balanced / medium). */
+  useEffect(() => {
+    if (!student?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('student_learning_profiles')
+          .select('learning_style, preferred_explanation_depth')
+          .eq('student_id', student.id)
+          .order('updated_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cancelled || !data) return;
+        const row = data as { learning_style: string | null; preferred_explanation_depth: string | null };
+        setFoxyPrefs({
+          learningStyle: (LEARNING_STYLES as readonly string[]).includes(row.learning_style ?? '')
+            ? (row.learning_style as LearningStyle)
+            : DEFAULT_FOXY_PREFS.learningStyle,
+          preferredExplanationDepth: (EXPLANATION_DEPTHS as readonly string[]).includes(row.preferred_explanation_depth ?? '')
+            ? (row.preferred_explanation_depth as ExplanationDepth)
+            : DEFAULT_FOXY_PREFS.preferredExplanationDepth,
+        });
+      } catch {
+        /* keep defaults — advisory only */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [student?.id]);
 
   /* Auth guard */
   useEffect(() => {
@@ -185,6 +297,34 @@ export default function SettingsPage() {
     const next = { ...notifPrefs, [key]: !notifPrefs[key] };
     setNotifPrefs(next);
     saveNotifPrefs(next);
+  };
+
+  /* ── D9: Foxy preference change — optimistic + rollback on error ──
+     PATCH /api/learner/preferences with the camelCase contract body.
+     The route lands in wave 2b; until then (or on any network/4xx/5xx
+     failure, including 404) we roll back and show an error toast. */
+  const updateFoxyPref = async (patch: Partial<FoxyPrefs>) => {
+    const previous = foxyPrefs;
+    const next = { ...foxyPrefs, ...patch };
+    if (next.learningStyle === previous.learningStyle
+      && next.preferredExplanationDepth === previous.preferredExplanationDepth) return;
+    setFoxyPrefs(next); // optimistic
+    try {
+      const res = await fetch('/api/learner/preferences', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      showToast(isHi ? 'सेव हो गया' : 'Saved', true);
+    } catch {
+      setFoxyPrefs(previous); // rollback
+      showToast(
+        isHi ? 'सेव नहीं हो सका। फिर से कोशिश करें।' : 'Could not save. Please try again.',
+        false,
+      );
+    }
   };
 
   /* ── Language toggle ── */
@@ -386,6 +526,44 @@ export default function SettingsPage() {
             }
             onClick={() => handleLanguage('hi')}
           />
+        </SettingsSection>
+
+        {/* ════════════════════════════════════════
+            SECTION 2.5 — How Foxy explains (D9)
+            ════════════════════════════════════════ */}
+        <SettingsSection title={isHi ? 'फॉक्सी कैसे समझाए' : 'How Foxy explains'}>
+          <div className="px-4 py-3.5 space-y-2">
+            <span className="text-sm font-medium block" style={{ color: 'var(--text-1, #111827)' }}>
+              {isHi ? 'समझाने का तरीका' : 'Explanation style'}
+            </span>
+            <span className="text-xs block" style={{ color: 'var(--text-3, #9ca3af)' }}>
+              {isHi ? 'फॉक्सी नई चीज़ें कैसे समझाए' : 'How Foxy should teach new things'}
+            </span>
+            <PillGroup
+              options={LEARNING_STYLES}
+              value={foxyPrefs.learningStyle}
+              labels={STYLE_LABELS}
+              isHi={isHi}
+              onSelect={(v) => updateFoxyPref({ learningStyle: v })}
+              testPrefix="pref-style"
+            />
+          </div>
+          <div className="px-4 py-3.5 space-y-2">
+            <span className="text-sm font-medium block" style={{ color: 'var(--text-1, #111827)' }}>
+              {isHi ? 'जवाब की गहराई' : 'Answer depth'}
+            </span>
+            <span className="text-xs block" style={{ color: 'var(--text-3, #9ca3af)' }}>
+              {isHi ? 'छोटे जवाब या विस्तार से' : 'Short answers or detailed ones'}
+            </span>
+            <PillGroup
+              options={EXPLANATION_DEPTHS}
+              value={foxyPrefs.preferredExplanationDepth}
+              labels={DEPTH_LABELS}
+              isHi={isHi}
+              onSelect={(v) => updateFoxyPref({ preferredExplanationDepth: v })}
+              testPrefix="pref-depth"
+            />
+          </div>
         </SettingsSection>
 
         {/* ════════════════════════════════════════

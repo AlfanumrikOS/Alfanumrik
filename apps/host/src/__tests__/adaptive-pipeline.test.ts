@@ -4,9 +4,11 @@
  * These are STRUCTURAL tests that verify the adaptive learning pipeline is
  * correctly wired. They do not need a real database -- they check that:
  *
- * 1. submitQuizResults() and processAdaptiveLearning() exist and are exported
- * 2. The quiz page calls both functions
- * 3. processAdaptiveLearning() calls the CME Edge Function record_response
+ * 1. submitQuizResults() exists and is exported; processAdaptiveLearning()
+ *    stays DELETED (tracker E1, 2026-08-05 — the client-side CME fan-out was
+ *    dead code; cme-engine is tombstoned and adaptive state is server-side)
+ * 2. The quiz page calls submitQuizResults
+ * 3. No client-side cme-engine wiring remains in supabase.ts
  * 4. The submit_quiz_results RPC calls update_learner_state_post_quiz
  *
  * If any of these structural guarantees break, the adaptive learning pipeline
@@ -29,9 +31,13 @@ describe('Adaptive Pipeline Integrity', () => {
     expect(typeof supabaseLib.submitQuizResults).toBe('function');
   });
 
-  it('processAdaptiveLearning must be exported from supabase.ts', async () => {
-    const supabaseLib = await import('@alfanumrik/lib/supabase');
-    expect(typeof supabaseLib.processAdaptiveLearning).toBe('function');
+  it('processAdaptiveLearning stays DELETED from supabase.ts (tracker E1)', async () => {
+    // Flipped 2026-08-05: the client-side "Layer 2" CME fan-out had zero live
+    // callers and wrote the RETIRED cme_concept_state store. Re-adding it
+    // would resurrect a client-side mastery write path — must stay gone.
+    const supabaseLib = (await import('@alfanumrik/lib/supabase')) as Record<string, unknown>;
+    expect(supabaseLib.processAdaptiveLearning).toBeUndefined();
+    expect(supabaseLib.getCmeNextAction).toBeUndefined();
   });
 
   // ---------------------------------------------------------------
@@ -58,17 +64,14 @@ describe('Adaptive Pipeline Integrity', () => {
   });
 
   // ---------------------------------------------------------------
-  // 3. Client-side CME wiring (processAdaptiveLearning -> cme-engine)
+  // 3. No client-side CME wiring remains (tracker E1, 2026-08-05)
   // ---------------------------------------------------------------
-  it('processAdaptiveLearning must call cme-engine record_response', () => {
+  it('supabase.ts carries no cme-engine fetch-out or client mastery fan-out', () => {
     const supabasePath = path.resolve('../../packages/lib/src/supabase.ts');
     const source = fs.readFileSync(supabasePath, 'utf-8');
-    // Extract the processAdaptiveLearning function body
-    const funcStart = source.indexOf('export async function processAdaptiveLearning');
-    expect(funcStart).toBeGreaterThan(-1);
-    const funcBody = source.slice(funcStart, funcStart + 3000);
-    expect(funcBody).toContain('record_response');
-    expect(funcBody).toContain('cme-engine');
+    expect(source).not.toContain('export async function processAdaptiveLearning');
+    expect(source).not.toContain('functions/v1/cme-engine');
+    expect(source).not.toContain("action: 'record_response'");
   });
 
   // ---------------------------------------------------------------
@@ -138,18 +141,11 @@ describe('Adaptive Pipeline Integrity', () => {
   });
 
   // ---------------------------------------------------------------
-  // 6. Adaptive failure monitoring
+  // 6. Adaptive failure monitoring — retired with processAdaptiveLearning
+  //    (tracker E1, 2026-08-05). Server-side RPC failures surface through
+  //    submitQuizResults' own logged fallback chain (test 5 above); there is
+  //    no client-side CME fan-out left to monitor.
   // ---------------------------------------------------------------
-  it('processAdaptiveLearning must report failures to ops events', () => {
-    const supabasePath = path.resolve('../../packages/lib/src/supabase.ts');
-    const source = fs.readFileSync(supabasePath, 'utf-8');
-    const funcStart = source.indexOf('export async function processAdaptiveLearning');
-    expect(funcStart).toBeGreaterThan(-1);
-    const funcBody = source.slice(funcStart, funcStart + 5000);
-    // Must report to /api/client-error for observability
-    expect(funcBody).toContain('/api/client-error');
-    expect(funcBody).toContain('adaptive-pipeline');
-  });
 
   // ---------------------------------------------------------------
   // 7. Architectural contract comment

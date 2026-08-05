@@ -608,24 +608,29 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
     }
   }
 
-  // Velocity: compare this week's mastery average vs last week's
-  // Use topic_mastery for weekly comparison (simpler than concept_mastery aggregation)
+  // Velocity: compare this week's mastery average vs last week's.
+  // Re-pointed 2026-08-05 (tracker E1): the old read numeric-compared
+  // topic_mastery.mastery_level (TEXT, on a WRITERLESS retired table — the
+  // whole signal was vacuous). Now reads topic_mastery_rollup (migration
+  // 20260808000100: canonical concept_mastery in the legacy shape) using
+  // mastery_probability (numeric 0..1 — same delta range the 50 + delta*50
+  // formula below always assumed).
   const { data: recentMastery, error: rmErr } = await supabase
-    .from('topic_mastery')
-    .select('student_id,subject,mastery_level,updated_at')
-  if (rmErr) console.warn(`daily-cron: performance_scores topic_mastery warning: ${rmErr.message}`)
+    .from('topic_mastery_rollup')
+    .select('student_id,subject,mastery_probability,updated_at')
+  if (rmErr) console.warn(`daily-cron: performance_scores topic_mastery_rollup warning: ${rmErr.message}`)
 
   const velocityMap = new Map<string, number>()
   if (recentMastery) {
     // Group by key, separate into this-week vs last-week by updated_at
     const weekBuckets = new Map<string, { thisWeek: number[]; lastWeek: number[] }>()
     const sevenDaysMs = 7 * 86400000
-    for (const tm of recentMastery as { student_id: string; subject: string; mastery_level: number; updated_at: string }[]) {
+    for (const tm of recentMastery as { student_id: string; subject: string; mastery_probability: number; updated_at: string }[]) {
       const key = `${tm.student_id}::${tm.subject}`
       const bucket = weekBuckets.get(key) ?? { thisWeek: [], lastWeek: [] }
       const age = now - new Date(tm.updated_at).getTime()
-      if (age <= sevenDaysMs) bucket.thisWeek.push(tm.mastery_level ?? 0)
-      else if (age <= 2 * sevenDaysMs) bucket.lastWeek.push(tm.mastery_level ?? 0)
+      if (age <= sevenDaysMs) bucket.thisWeek.push(tm.mastery_probability ?? 0)
+      else if (age <= 2 * sevenDaysMs) bucket.lastWeek.push(tm.mastery_probability ?? 0)
       weekBuckets.set(key, bucket)
     }
     for (const [key, b] of weekBuckets) {
@@ -2086,6 +2091,173 @@ async function checkVerificationDelivery(supabase: ReturnType<typeof createClien
   return 1
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// D9 implicit preference writer (Foxy North-Star Phase 2 wave 2b, tracker E).
+//
+// Weekly (self-gates to Mondays IST) + flag-gated (ff_preference_writer_v1,
+// seeded OFF in migration 20260808000200 — zero behavior until ops ramps it).
+//
+// Telemetry source (resolved during wave 2b): the D8 `formatUsed` stamp lands
+// in audit_logs rows with action='foxy.chat' (details.formatUsed — closed
+// enum paragraph/steps/example/diagram/practice, stamped by both the
+// streaming and blocking Foxy sinks). This step reads the last 28 days of
+// those stamps (paged, hard-capped) — no new table is built.
+//
+// ⚠ ALGORITHM MIRROR: Deno cannot import packages/lib, so the aggregation
+// below is a documented line-for-line mirror of the canonical pure module
+// `packages/lib/src/learner-model/preference-aggregation.ts`
+// (aggregateFormatPreference: 28d window, >=10 turns, strict-majority FORMAT
+// — tie → no write, closed enum only, mapping paragraph/steps→verbal,
+// example→example-first, diagram→visual, practice→balanced). Change BOTH
+// together; the TS module's unit tests pin the contract.
+//
+// Explicit-wins guard: rows with preferences_set_by_user = true are NEVER
+// touched (enforced in the UPDATE's WHERE, so it also can't race a
+// concurrent explicit PATCH). Writes only when the derived style differs.
+// P13: counts-only logging — no student identifiers.
+// Idempotent: re-running the same Monday re-derives the same style and the
+// `.neq('learning_style', …)` guard makes the second pass a 0-row no-op.
+// Fail-isolated by Promise.allSettled like every other step.
+// ──────────────────────────────────────────────────────────────────────────
+const PREF_FORMAT_TO_STYLE: Record<string, string> = {
+  paragraph: 'verbal',
+  steps: 'verbal',
+  example: 'example-first',
+  diagram: 'visual',
+  practice: 'balanced',
+}
+const PREF_WINDOW_DAYS = 28
+const PREF_MIN_TURNS = 10
+/** Hard cap on audit rows scanned per run (20 pages × 1000). */
+const PREF_MAX_PAGES = 20
+const PREF_PAGE_SIZE = 1000
+
+async function writeImplicitPreferences(supabase: ReturnType<typeof createClient>): Promise<number> {
+  // Self-gate: Mondays in IST (UTC+5:30). daily-cron fires once per day, so
+  // this makes the writer weekly without a new schedule.
+  const istDay = new Date(Date.now() + 5.5 * 3_600_000).getUTCDay()
+  if (istDay !== 1) return 0
+
+  // Flag gate (read from feature_flags; absent/OFF → strict no-op).
+  const { data: flagRow, error: flagErr } = await supabase
+    .from('feature_flags')
+    .select('is_enabled')
+    .eq('flag_name', 'ff_preference_writer_v1')
+    .maybeSingle()
+  if (flagErr) {
+    console.warn(`daily-cron: preference_writer — flag read failed (${flagErr.message}), skipping`)
+    return 0
+  }
+  if (!flagRow || !flagRow.is_enabled) return 0
+
+  // 1. Read the last 28d of formatUsed stamps from the foxy.chat audit sink.
+  const cutoffIso = new Date(Date.now() - PREF_WINDOW_DAYS * 86_400_000).toISOString()
+  type StampRow = { auth_user_id: string | null; formatUsed: string | null }
+  const countsByUser = new Map<string, Map<string, number>>()
+  let scanned = 0
+  let truncated = false
+  for (let page = 0; page < PREF_MAX_PAGES; page++) {
+    const { data, error } = await supabase
+      .from('audit_logs')
+      .select('auth_user_id, formatUsed:details->>formatUsed')
+      .eq('action', 'foxy.chat')
+      .gte('created_at', cutoffIso)
+      .not('details->>formatUsed', 'is', null)
+      .order('created_at', { ascending: false })
+      .range(page * PREF_PAGE_SIZE, page * PREF_PAGE_SIZE + PREF_PAGE_SIZE - 1)
+    if (error) {
+      console.warn(`daily-cron: preference_writer — audit read failed (${error.message}), aborting run`)
+      return 0
+    }
+    const rows = (data ?? []) as StampRow[]
+    for (const row of rows) {
+      if (!row.auth_user_id || !row.formatUsed) continue
+      if (!(row.formatUsed in PREF_FORMAT_TO_STYLE)) continue // closed enum only
+      const perUser = countsByUser.get(row.auth_user_id) ?? new Map<string, number>()
+      perUser.set(row.formatUsed, (perUser.get(row.formatUsed) ?? 0) + 1)
+      countsByUser.set(row.auth_user_id, perUser)
+      scanned++
+    }
+    if (rows.length < PREF_PAGE_SIZE) break
+    if (page === PREF_MAX_PAGES - 1) truncated = true
+  }
+  if (truncated) {
+    // Capped scan: older turns in the window were skipped this week. Signal
+    // ops (counts only) — the newest-first order means the freshest evidence
+    // was still counted.
+    console.warn(`daily-cron: preference_writer — scan cap hit (${PREF_MAX_PAGES * PREF_PAGE_SIZE} rows); oldest in-window turns skipped`)
+  }
+
+  // 2. Derive per-user style: >=10 turns + strict-majority format (mirror of
+  //    aggregateFormatPreference — tie → skip).
+  const styleByAuthUser = new Map<string, string>()
+  for (const [authUserId, perUser] of countsByUser) {
+    let total = 0
+    let top: string | null = null
+    let topCount = 0
+    let tied = false
+    for (const [format, count] of perUser) {
+      total += count
+      if (count > topCount) { top = format; topCount = count; tied = false }
+      else if (count === topCount) tied = true
+    }
+    if (total < PREF_MIN_TURNS || top === null || tied) continue
+    styleByAuthUser.set(authUserId, PREF_FORMAT_TO_STYLE[top])
+  }
+  if (styleByAuthUser.size === 0) {
+    console.log(`daily-cron: preference_writer — stamps_scanned=${scanned} eligible_users=0 written=0`)
+    return 0
+  }
+
+  // 3. Map auth_user_id → active students (batched .in()).
+  const authIds = [...styleByAuthUser.keys()]
+  const styleByStudent = new Map<string, string>()
+  for (let i = 0; i < authIds.length; i += 200) {
+    const chunk = authIds.slice(i, i + 200)
+    const { data: students, error: stuErr } = await supabase
+      .from('students')
+      .select('id, auth_user_id')
+      .in('auth_user_id', chunk)
+      .eq('is_active', true)
+      .is('deleted_at', null)
+    if (stuErr) {
+      console.warn(`daily-cron: preference_writer — student lookup failed (${stuErr.message}), continuing with resolved chunk(s)`)
+      continue
+    }
+    for (const s of (students ?? []) as { id: string; auth_user_id: string }[]) {
+      const style = styleByAuthUser.get(s.auth_user_id)
+      if (style) styleByStudent.set(s.id, style)
+    }
+  }
+
+  // 4. Write learning_style where different — explicit choice always wins
+  //    (preferences_set_by_user = false in the WHERE, never in app logic only).
+  let rowsWritten = 0
+  let updateErrors = 0
+  for (const [studentId, style] of styleByStudent) {
+    const { count, error: updErr } = await supabase
+      .from('student_learning_profiles')
+      .update({ learning_style: style }, { count: 'exact' })
+      .eq('student_id', studentId)
+      .eq('preferences_set_by_user', false)
+      .neq('learning_style', style)
+    if (updErr) {
+      updateErrors++
+      // Missing guard column = pre-migration deploy order — stop, don't spam.
+      if (updErr.message.includes('preferences_set_by_user')) {
+        console.warn('daily-cron: preference_writer — preferences_set_by_user column absent (pre-migration), aborting writes')
+        break
+      }
+      continue
+    }
+    rowsWritten += count ?? 0
+  }
+
+  // Counts-only (P13): no student identifiers.
+  console.log(`daily-cron: preference_writer — stamps_scanned=${scanned} eligible_users=${styleByAuthUser.size} students_matched=${styleByStudent.size} rows_written=${rowsWritten} update_errors=${updateErrors}`)
+  return rowsWritten
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -2125,6 +2297,7 @@ Deno.serve(async (req) => {
       purge_principal_ai: () => purgePrincipalAiTranscripts(sb),
       first_quiz_nudges_sent: () => nudgeFirstQuizStudents(sb),
       safeguarding_escalations_purged: () => purgeSafeguardingEscalations(sb),
+      preference_writer: () => writeImplicitPreferences(sb),
       verification_delivery_checked: () => checkVerificationDelivery(sb),
     })
     const actionStartedAt = new Map(actions.map((action) => [action.name, Date.now()]))

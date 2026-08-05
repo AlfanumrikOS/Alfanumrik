@@ -1523,6 +1523,58 @@ Known gaps (explicit — do not read this entry as broader than it is):
 - No live-DB execution of the `select_questions_by_irt_info` RPC this session.
 
 Pre-REG-347: 346 entries. Adds REG-347.
-**Total catalog: 347 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-351 — Foxy North-Star Phase 2: canonical-facade lockstep (learner-model facade mirrors the SQL RPC, display-only, ladder order preserved) (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 2 Canonical Learner Model batch).
+
+The `@alfanumrik/lib/learner-model` facade (9 modules) is the ONE sanctioned
+TS read/preview surface over `concept_mastery`. The SQL RPC
+`update_learner_state_post_quiz` remains the ONLY mastery writer (E1/E6).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-351a | `thresholds_sql_lockstep_both_migrations` | Band CASE literals (0.95 mastered / 0.70 proficient / 0.40 developing), BKT defaults (pLearn 0.2 / pSlip 0.1 / pGuess 0.25), new-row prior 0.1, and the posterior+learn-transit+clamp formula shape are pinned against BOTH RPC migrations — `20260623000100` (canonical) AND `20260807000400` (latest re-creation, evidence extension). SQL WINS on divergence. `masteryBandFor` boundary parity + next-action cutoffs 0.6/0.85/≥3 pinned. | `packages/lib/src/__tests__/learner-model/thresholds-lockstep.test.ts` | E | P1-adjacent, learner-state |
+| REG-351b | `bkt_mirror_posterior_parity_display_only` | `bktPosterior` reproduces the SQL BKT math (hand-computed fixtures); `bkt-mirror.ts` is DISPLAY/PREVIEW ONLY — contains no supabase import at all (physically cannot write concept_mastery; also pinned by REG-353's ratchet test). No module in `packages/lib/src/learner-model/` writes any mastery surface. | `packages/lib/src/__tests__/learner-model/bkt-mirror.test.ts`; `apps/host/src/__tests__/regressions/reg-353-consolidation-ratchet.test.ts` | E | E6 single-writer |
+| REG-351c | `next_action_ladder_order_preserved` | The 5-rung ladder order survived the move into the facade verbatim: (1) knowledge gap → remediate prerequisite, (2) overdue review weakest-first with oldest-timestamp tiebreak, (3) ≥3 conceptual errors → re_teach weakest unmastered, (4) practice <0.6 / challenge [0.6,0.85) / null ≥0.85, (5) null for strong learners. `getNextAction` IS `deriveNextAction` (alias, not a wrapper); `academicGoal` is annotation-only (identical outputs with/without). | `packages/lib/src/__tests__/learner-model/next-action.test.ts` (+ REG-231..234 differential pins still green) | E | learner-state |
+| REG-351d | `confidence_score_scale_shift_pin` | Phase 2 (c): `mastery_variance` is the Beta-posterior (α/β pseudo-counts, hinted discount 0.45) with exactly ONE `v_variance :=` assignment (no residual pseudo-decay); blend `LEAST(1.0, mastery * (1 - variance))` in BOTH INSERT and RETURN. Documents the scale shift: 1-attempt blend factor ≈ ×0.944 (independent) / ×0.930 (hinted) vs old ×0.773; hard floor ×0.9167 (variance ≤ 1/12). CONSUMER SURVIVAL: the progress-page severity split (>0.7/>0.4) and `KnowledgeGapActions.computeSeverity` consume gap-RPC confidence DERIVED as `1 - mastery_probability` (pinned in 20260623000700/000800, which never read `cm.confidence_score`) — threshold semantics survive the re-scale. | `packages/lib/src/__tests__/learner-model/confidence-floor-pin.test.ts` | E | P1-adjacent, learner-state |
+| REG-351e | `skill_state_readers_fail_soft` | Every `student_skill_state` reader tolerates empty results AND DB errors: foxy `loadCognitiveContext` and workflows `loadWorkflowCognitiveContext` return empty context/arrays (never throw, never 500) on all-error, zero-rows, and skill-state-only-error scenarios. Audit note: learning-action never reads the table (write-ban contract only, pinned by its source-guards test); suggest-prompts static fallback pinned by `suggest-prompts-bloom.test.ts`; adaptive-loops-rules null-input paths pinned by its own suite. | `apps/host/src/__tests__/api/foxy/skill-state-reader-fallbacks.test.ts` | E | fail-soft readers |
+
+---
+
+## REG-352 — Foxy North-Star Phase 2: quiz_responses event-capture contract (D2 server-held version/hash, D3/D6 normalize-never-abort, D7 original-index misconception lifecycle) (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 2 batch). Migrations
+`20260807000200` (columns) / `20260807000300` (writer support) /
+`20260807000500` (submit_quiz_results_v2 rewire).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-352 | `submit_v2_event_capture_structural` | **D2 zero client trust**: `quiz_responses.question_version`/`content_hash` copied from the SERVER-HELD `quiz_session_shuffles.options_version_at_serve`/`integrity_hash`; the RPC exposes NO parameter (`p_question_version`/`p_content_hash`/`p_integrity_hash`/`p_options_version` all absent) through which a client could supply either. **D3**: `answer_method` server whitelist ('mcq','typed','voice','scan') ELSE 'mcq'. **D6**: `confidence` regex `'^[1-5]$'` else NULL (same normalize-never-abort pattern as F8's `'^[0-3]$'` hint_level — a malformed payload can never abort the P4 submit transaction). **D7**: misconception match on the TRUE ORIGINAL-space index (`qm.distractor_index = v_selected_orig`, re-derived from the server shuffle snapshot) with per-iteration reset; open/resolve lifecycle in an ERROR-ISOLATED sub-block (`EXCEPTION WHEN OTHERS THEN NULL` — never aborts submit); ONE open row per (student, pattern, concept) via partial unique index `uq_student_misconceptions_open`; free-text columns (question_text/student_answer/correct_answer) NEVER written — P13. 000200 columns additive `IF NOT EXISTS`, no DROP. | `apps/host/src/__tests__/migrations/submit-quiz-v2-event-capture-structural.test.ts` (13 pins) | P | P4, P13, P1-adjacent |
+
+Known gap (explicit): structural SQL-text pins only — no live-Postgres
+execution of the 20260807* migrations this session (same honesty posture as
+REG-350).
+
+---
+
+## REG-353 — Foxy North-Star Phase 2: consolidation ratchet (single BKT, retired-table baselines, cme-engine 410 tombstone) (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 2 batch).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-353 | `consolidation_ratchet` | **(1) Single BKT**: analyzer check-6/check-7 exist and run; the BKT-update allowlist is EXACTLY `['packages/lib/src/cognitive-engine.ts']` (the documented module-private survivor) — the deleted quiz-completion-service and queue-consumer copies are gone from SOURCE, not just the allowlist; the one approved TS mirror (`bkt-mirror.ts`) declares display-only and imports no supabase client. **(2) Retired-table baselines**: `cme_concept_state: 6` and `topic_mastery: 20` frozen literals pinned — the analyzer FAILs (not warns) on growth, so any bump is a reviewable two-place diff. **(3) cme-engine tombstone**: structured 410 (`code: 'cme_engine_retired'`, `error: 'gone'`), 401 preserved for unauthenticated probes (jwt-user posture, auth-guard sweep intact), replacement pointer to the learner-model facade + `update_learner_state_post_quiz`; the retired write target `cme_concept_state` COMMENT-tombstoned RETIRED in `20260808000100`. | `apps/host/src/__tests__/regressions/reg-353-consolidation-ratchet.test.ts` (10 pins) | E | E1/E3/E6, P9-adjacent |
+
+Deployment caution (carried from the quiz-generator-v2 lesson): the tombstone
+is on-disk state — verify the DEPLOYED cme-engine version with
+`supabase functions list` post-merge before trusting the 410 in production.
+
+Pre-REG-351: 350 entries (through REG-350 — see `02-foxy-ai.md`). Adds
+REG-351 (canonical-facade lockstep), REG-352 (event-capture contract),
+REG-353 (consolidation ratchet).
+**Total catalog: 353 entries (target: 35 — TARGET EXCEEDED).**
 
 ---

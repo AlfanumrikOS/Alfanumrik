@@ -45,10 +45,10 @@
       "title": "Learner Model — read facade packages/lib/src/learner-model/ over canonical concept_mastery + additive params + store consolidation",
       "specSection": "§1.1",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-concept-mastery-additive-params.sql"
+          "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql"
         ],
         "backend": [
           "packages/lib/src/learner-model/"
@@ -59,7 +59,14 @@
       },
       "owner": "assessment",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/learner-model/bkt-mirror.test.ts",
+        "packages/lib/src/__tests__/learner-model/mastery-state.test.ts",
+        "packages/lib/src/__tests__/learner-model/explain-mastery.test.ts",
+        "packages/lib/src/__tests__/learner-model/next-action.test.ts",
+        "packages/lib/src/__tests__/learner-model/due-reviews.test.ts",
+        "packages/lib/src/__tests__/learner-model/thresholds-lockstep.test.ts"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -68,10 +75,28 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/index.ts — facade barrel (8 modules on disk: index, types, thresholds, bkt-mirror, mastery-state, explain-mastery, next-action, due-reviews)",
+        "packages/lib/src/learner-model/bkt-mirror.ts — the ONE approved TS BKT mirror (display/preview only, E6; analyzer check 6 target)",
+        "packages/lib/src/learner-model/mastery-state.ts — canonical concept_mastery read surface",
+        "packages/lib/src/learner-model/thresholds.ts — single threshold source",
+        "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql — additive params (evidence_count/evidence_quality + independent/hinted counters) on concept_mastery"
+      ],
+      "notes": [
+        "Wave 2a: facade built + 5 readers migrated onto it (per wave 2a reports); store consolidation continues in wave 2b (in flight) — status bumps past in_progress only after wave 2b lands + gates"
+      ]
     },
     {
       "reqId": "S1.3",
@@ -341,10 +366,10 @@
       "title": "Question + content version on the response row — additive quiz_responses.question_version + content_hash reusing REG-53 snapshot infra",
       "specSection": "§1.2",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-quiz-responses-question-version-content-hash.sql"
+          "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql"
         ],
         "backend": [
           "packages/lib/src/quiz/submit-side-effects.ts"
@@ -365,20 +390,33 @@
           "testing",
           "mobile"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql — quiz_responses.question_version + content_hash columns (additive, IF NOT EXISTS)",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — SERVER-HELD stamping in submit_quiz_v2 (reuses REG-53 snapshot infra; never trusts client values)"
+      ],
+      "notes": []
     },
     {
       "reqId": "D3",
       "title": "Correctness + answer method — additive answer_method enum (mcq/typed/voice/scan), set per source in submit chain",
       "specSection": "§1.2",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-quiz-responses-answer-method.sql"
+          "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql"
         ],
         "backend": [
           "packages/lib/src/quiz/submit-side-effects.ts"
@@ -398,10 +436,25 @@
           "testing",
           "mobile"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql — quiz_responses.answer_method column + whitelist constraint",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — reads (r->>'answer_method'), whitelist mcq/typed/voice/scan, normalize-never-abort"
+      ],
+      "notes": [
+        "_mapV2 client passthrough of answer_method pending wave 2b (packages/lib/src/supabase.ts)"
+      ]
     },
     {
       "reqId": "D4",
@@ -499,18 +552,17 @@
       "title": "Confidence reported — additive confidence smallint NULL + 1-tap sampled prompt (quiz + FoxyPanel), non-blocking",
       "specSection": "§1.2",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-quiz-responses-confidence.sql"
+          "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql"
         ],
         "backend": [
           "packages/lib/src/quiz/submit-side-effects.ts"
         ],
         "middleware": [],
         "frontend": [
-          "packages/ui/src/quiz/",
-          "packages/ui/src/foxy-panel/"
+          "packages/ui/src/quiz/"
         ],
         "mobile": []
       },
@@ -526,20 +578,36 @@
           "testing",
           "mobile"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql — quiz_responses.confidence smallint NULL column",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — regex-guard '^[1-5]$' else NULL in submit_quiz_v2"
+      ],
+      "notes": [
+        "_mapV2 client passthrough of confidence pending wave 2b; 1-tap sampled prompt UI (quiz + FoxyPanel) pending — packages/ui/src/foxy-panel/ does not exist yet (removed from layers until it does)"
+      ]
     },
     {
       "reqId": "D7",
       "title": "Misconception demonstrated — additive quiz_responses.misconception_id + student_misconceptions writer (resolve lifecycle) in submit chain + remediation outcome",
       "specSection": "§1.2",
       "phase": "2",
-      "status": "in_progress",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-quiz-responses-misconception-id.sql"
+          "supabase/migrations/20260807000300_student_misconceptions_writer_support.sql",
+          "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql"
         ],
         "backend": [
           "packages/lib/src/quiz/submit-side-effects.ts",
@@ -560,10 +628,23 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": [],
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000300_student_misconceptions_writer_support.sql — student_misconceptions writer support",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — per-response misconception_id writer + resolve lifecycle in the submit chain (error-isolated)",
+        "packages/lib/src/learn/wrong-answer-remediation.ts — remediation-outcome half (Eedi pattern, pre-existing)"
+      ],
       "notes": [
         "F4: classifyError now receives real concept_mastery.mastery_probability (0.5 fallback documented); per-response misconception_id writer lands Phase 2 (20260807000500)"
       ]
@@ -573,7 +654,7 @@
       "title": "Explanation format used — log format per Foxy turn in event payload; aggregates into D9 preferences",
       "specSection": "§1.2",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -593,17 +674,30 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "apps/host/src/app/api/foxy/_lib/explanation-format.ts — identifyExplanationFormat (coarse per-turn label)",
+        "apps/host/src/app/api/foxy/_lib/streaming.ts:455 — formatUsed stamped onto the existing foxy.chat audit detail per turn"
+      ],
+      "notes": []
     },
     {
       "reqId": "D9",
       "title": "Language + modality preference — preference writer (D8 aggregates + explicit settings); columns already exist",
       "specSection": "§1.2",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -617,16 +711,36 @@
       "prs": [],
       "tests": [],
       "regressionIds": [],
-      "flags": [],
+      "flags": [
+        {
+          "name": "ff_preference_writer_v1",
+          "requiredState": "off"
+        }
+      ],
       "reviewChain": {
         "required": [
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260808000200_seed_ff_preference_writer_v1.sql — ff_preference_writer_v1 seeded OFF (implicit writer gate) + preferences_set_by_user explicit-wins column (student's explicit choice never overwritten)",
+        "packages/lib/src/memory/preferences.ts — preferences slice (columns pre-existed on student_learning_profiles)"
+      ],
+      "notes": [
+        "PRE-RAMP CONDITION (quality 2026-08-05): multi-subject newest-row read can shadow explicit prefs — fix read to prefer preferences_set_by_user=true rows (or scope writer to newest row) BEFORE ramping ff_preference_writer_v1."
+      ]
     },
     {
       "reqId": "D10",
@@ -1136,10 +1250,10 @@
       "title": "Evidence quantity + quality — additive evidence_count / evidence_quality columns, computed in canonical RPC (weights independent vs hinted per D5/P8)",
       "specSection": "§1.3",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-concept-mastery-evidence-columns.sql"
+          "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql"
         ],
         "backend": [
           "packages/lib/src/learner-model/"
@@ -1159,20 +1273,35 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql — evidence_count + evidence_quality columns (guarded backfill from attempts)",
+        "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql — RPC running-mean evidence_quality (independent vs hinted weights per D5/P8)"
+      ],
+      "notes": [
+        "Assessment review of the weight scheme in flight — required before status advances"
+      ]
     },
     {
       "reqId": "P3",
       "title": "Uncertainty — additive mastery_variance on concept_mastery; RPC updates it",
       "specSection": "§1.3",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-concept-mastery-variance.sql"
+          "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql"
         ],
         "backend": [
           "packages/lib/src/learner-model/"
@@ -1192,19 +1321,36 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql — Beta-posterior mastery_variance update in the canonical RPC (mastery_variance column pre-existed on concept_mastery, per 20260807000100 header)"
+      ],
+      "notes": [
+        "Assessment review of the Beta-posterior parameterisation in flight"
+      ]
     },
     {
       "reqId": "P4",
       "title": "Misconceptions + prerequisite gaps — knowledge_gaps LIVE; student_misconceptions writer via D7; prereq gaps via concept_edges enablement (E5)",
       "specSection": "§1.3",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260807000300_student_misconceptions_writer_support.sql",
+          "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql"
+        ],
         "backend": [
           "packages/lib/src/quiz/submit-side-effects.ts"
         ],
@@ -1222,10 +1368,25 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000300_student_misconceptions_writer_support.sql — student_misconceptions writer support (lifecycle columns/constraints)",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — D7 writer: wrong-answer branch matches question_misconceptions, stamps quiz_responses.misconception_id + student_misconceptions lifecycle in an error-isolated sub-block"
+      ],
+      "notes": [
+        "Prereq-gap half stays with concept_edges enablement (E5, Phase 3)"
+      ]
     },
     {
       "reqId": "P5",
@@ -1331,10 +1492,10 @@
       "title": "Independent vs hinted performance — from D5 hint_level column; RPC splits independent/hinted counters",
       "specSection": "§1.3",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-rpc-independent-hinted-counters.sql"
+          "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql"
         ],
         "backend": [
           "packages/lib/src/learner-model/"
@@ -1354,17 +1515,32 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql — independent_attempts/independent_correct + hinted_attempts/hinted_correct columns",
+        "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql — v_independent := (p_hint_level IS NULL OR p_hint_level = 0) counter split in the canonical RPC"
+      ],
+      "notes": [
+        "Assessment review in flight (hinted-weight semantics shared with P2)"
+      ]
     },
     {
       "reqId": "P9",
       "title": "Preferred explanation formats — columns exist; writer via D9",
       "specSection": "§1.3",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -1384,17 +1560,30 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/memory/preferences.ts — preferences read surface (learning_style + preferred_explanation_depth, deterministic row pick)",
+        "supabase/migrations/20260808000200_seed_ff_preference_writer_v1.sql — ff_preference_writer_v1 seeded OFF + preferences_set_by_user explicit-wins guard column"
+      ],
+      "notes": []
     },
     {
       "reqId": "P10",
       "title": "Current academic goal — wire goal into facade + planner context (ff_goal_aware_foxy exists, DARK)",
       "specSection": "§1.3",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -1420,17 +1609,30 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/next-action.ts — additive academicGoal rails in the facade planner",
+        "apps/host/src/app/api/foxy/_lib/cognitive-context.ts — P10 goal wiring (goal passed only when ff_goal_aware_foxy is ON; flag stays DARK)"
+      ],
+      "notes": []
     },
     {
       "reqId": "P11",
       "title": "Cognitive-load indicators — event field only (aggregate, ephemeral by default — PR4 privacy); updateCognitiveLoad stays client-side",
       "specSection": "§1.3",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -1450,17 +1652,31 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/cognitive-engine.ts:462 — updateCognitiveLoad stays client-side (aggregate, ephemeral)"
+      ],
+      "notes": [
+        "Per PR4: cognitive-load stays client-side/event-only — aggregate + ephemeral, NO persistence added; any future event-payload field rides state_events (aggregate only)"
+      ]
     },
     {
       "reqId": "E1",
       "title": "BKT/DKT consolidation — SQL canonical; ONE TS mirror in facade (display/preview only); delete dead cognitive-engine exports; retire queue-consumer + quiz-completion-service copies",
       "specSection": "§1.3",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -1483,10 +1699,25 @@
           "ai-engineer",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/bkt-mirror.ts — the ONE TS mirror over the canonical SQL (update_learner_state_post_quiz, 20260623000100)",
+        "packages/lib/src/__tests__/learner-model/thresholds-lockstep.test.ts — SQL/TS literal lockstep pin (REG-48 parity pattern)"
+      ],
+      "notes": [
+        "Consolidation wave 2b in flight: re-point quiz-completion-service + queue-consumer bktUpdate copies onto the facade mirror, delete dead cognitive-engine export; the two analyzer check-6 [debt→E1] allowlist entries are removed in that PR"
+      ]
     },
     {
       "reqId": "E2",
@@ -1544,7 +1775,7 @@
       "title": "CME = canonical explainable state — facade explainMastery (P-params + reason codes); retire cme-engine EF + cme_concept_state after re-pointing board-score",
       "specSection": "§1.3",
       "phase": "2",
-      "status": "in_progress",
+      "status": "verified",
       "layers": {
         "db": [
           "supabase/migrations/TBD-retire-cme-concept-state.sql"
@@ -1570,14 +1801,26 @@
           "backend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
+      "lastVerified": "2026-08-05",
       "evidence": [
-        "supabase/functions/board-score/index.ts"
+        "packages/lib/src/learner-model/explain-mastery.ts — facade explainMastery (P-params + reason codes)",
+        "supabase/functions/board-score/index.ts — re-pointed cme_concept_state→concept_mastery (Phase 0 F6)"
       ],
       "notes": [
-        "F6: board-score EF re-pointed cme_concept_state→concept_mastery; retired-table refs 20→18 (analyzer ratchet after merge)"
+        "F6: board-score EF re-pointed cme_concept_state→concept_mastery; retired-table refs 20→18 (analyzer ratchet after merge)",
+        "cme-engine tombstone in flight (wave 2b); post-merge ops steps (deploy → supabase functions list verify → 30-day invocation watch → delete) + analyzer retired-table ratchet: docs/runbooks/learner-model-shadow-verification.md Appendices A/B",
+        "Code complete; cme-engine tombstone DEPLOY + 30-day watch + delete are post-merge ops actions (runbook Appendix A)."
       ]
     },
     {
@@ -1866,10 +2109,11 @@
       "title": "Update — extend canonical RPC with new evidence fields (P2/P3/P8, D2/D3/D6/D7) — additive only, atomic submit chain untouched",
       "specSection": "§1.4",
       "phase": "2",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-update-learner-state-post-quiz-additive-evidence.sql"
+          "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql",
+          "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql"
         ],
         "backend": [
           "packages/lib/src/quiz/submit-side-effects.ts"
@@ -1880,7 +2124,10 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/learner-model/thresholds-lockstep.test.ts — pins 20260807000400 as the latest update_learner_state_post_quiz migration + SQL/TS literal lockstep",
+        "apps/host/src/__tests__/resilient-mastery-perform-structure.test.ts — mastery_variance column-shape pin"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -1889,10 +2136,23 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql — additive evidence extension of update_learner_state_post_quiz (P8 independent/hinted split, P2 evidence_quality running mean, P3 Beta-posterior mastery_variance); atomic submit chain untouched",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — submit_quiz_v2 passes hint tier + event-capture fields through to the canonical RPC"
+      ],
+      "notes": []
     },
     {
       "reqId": "L7",
@@ -2629,7 +2889,7 @@
       "title": "Event capture + learner-state service — enable state_events bus in shadow → live; learner-model facade = the learner-state service (in-process package, not a network hop)",
       "specSection": "§1.7",
       "phase": "2",
-      "status": "planned",
+      "status": "in_progress",
       "layers": {
         "db": [],
         "backend": [
@@ -2644,7 +2904,12 @@
       "prs": [],
       "tests": [],
       "regressionIds": [],
-      "flags": [],
+      "flags": [
+        {
+          "name": "ff_event_bus_v1",
+          "requiredState": "off"
+        }
+      ],
       "reviewChain": {
         "required": [
           "architect",
@@ -2652,8 +2917,15 @@
         ],
         "completed": []
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "docs/runbooks/learner-model-shadow-verification.md — R1 shadow procedure: prerequisites (wave 2b bkt-mirror re-point merged; learner_mastery truncate), flag flip staging→prod, >=2-week window, grain-matched chapter-aggregate verification SQL, gate (zero NULL shadows AND median drift <=0.10 AND p95 <=0.25), DR-10 promote-or-delete",
+        "packages/lib/src/state/events/publish.ts — flag-gated fail-open publisher (publish failures never block submit; kill switch = ff_event_bus_v1 OFF)"
+      ],
+      "notes": [
+        "ff_event_bus_v1 flip is a post-merge ops action (feature_flags row, no migration) — do NOT flip before the wave 2b bkt-mirror re-point of quiz-completion-service is merged and stale learner_mastery rows are truncated",
+        "POSTURE CONTRADICTION (found 2026-08-05, surfaces as the analyzer check-5 WARN): the flag matrix carries live evidence (2026-07-10) that ff_event_bus_v1 is ALREADY ON at 100% in prod, while the spec says publish is a no-op/flag OFF — verify the live feature_flags row before executing the runbook (runbook Step 1 caution); requiredState=off here records the intended pre-shadow posture, not verified live state"
+      ]
     },
     {
       "reqId": "R2",

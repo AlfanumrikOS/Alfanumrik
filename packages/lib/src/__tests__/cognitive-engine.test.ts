@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  sm2Update,
-  responseToQuality,
   getHighestMasteredBloom,
   getNextBloomTarget,
   updateBloomMastery,
@@ -15,99 +13,15 @@ import {
   predictMasteryDate,
   calculateBoardExamScore,
   BLOOM_ORDER,
-  type SM2Card,
   type BloomMastery,
   type TopicWeight,
   type CognitiveLoadState,
   type VelocityDatapoint,
 } from '../cognitive-engine';
 
-// ─── SM-2 Algorithm ──────────────────────────────────────────
-
-describe('sm2Update', () => {
-  const freshCard: SM2Card = { easeFactor: 2.5, interval: 0, repetitions: 0 };
-
-  it('perfect response (quality 5) increases interval and repetitions', () => {
-    const after1 = sm2Update(freshCard, 5);
-    expect(after1.repetitions).toBe(1);
-    expect(after1.interval).toBe(1);
-    expect(after1.easeFactor).toBeGreaterThanOrEqual(2.5);
-
-    const after2 = sm2Update(after1, 5);
-    expect(after2.repetitions).toBe(2);
-    expect(after2.interval).toBe(6);
-
-    const after3 = sm2Update(after2, 5);
-    expect(after3.repetitions).toBe(3);
-    expect(after3.interval).toBe(Math.round(6 * after2.easeFactor));
-  });
-
-  it('failed response (quality < 3) resets repetitions and interval', () => {
-    const learned: SM2Card = { easeFactor: 2.5, interval: 15, repetitions: 5 };
-    const after = sm2Update(learned, 2);
-    expect(after.repetitions).toBe(0);
-    expect(after.interval).toBe(1);
-  });
-
-  it('ease factor never drops below 1.3', () => {
-    let card: SM2Card = { easeFactor: 1.3, interval: 1, repetitions: 1 };
-    // Repeatedly give quality 0 to push EF down
-    for (let i = 0; i < 10; i++) {
-      card = sm2Update(card, 0);
-      expect(card.easeFactor).toBeGreaterThanOrEqual(1.3);
-    }
-  });
-
-  it('interval progression follows 1 -> 6 -> next * EF', () => {
-    let card = sm2Update(freshCard, 4);
-    expect(card.interval).toBe(1); // first correct
-
-    card = sm2Update(card, 4);
-    expect(card.interval).toBe(6); // second correct
-
-    const expectedThird = Math.round(6 * card.easeFactor);
-    card = sm2Update(card, 4);
-    expect(card.interval).toBe(expectedThird); // third correct
-  });
-
-  it('clamps quality to 0-5 range', () => {
-    const neg = sm2Update(freshCard, -3);
-    expect(neg.repetitions).toBe(0); // treated as quality 0 (fail)
-
-    const high = sm2Update(freshCard, 10);
-    expect(high.repetitions).toBe(1); // treated as quality 5 (pass)
-  });
-});
-
-// ─── responseToQuality ───────────────────────────────────────
-
-describe('responseToQuality', () => {
-  const avgTime = 10; // seconds
-
-  it('incorrect + slow (> 2x avg) returns 0', () => {
-    expect(responseToQuality(false, 25, avgTime)).toBe(0);
-  });
-
-  it('incorrect + normal returns 1', () => {
-    expect(responseToQuality(false, 10, avgTime)).toBe(1);
-  });
-
-  it('correct + very fast (< 0.5x avg) returns 5', () => {
-    expect(responseToQuality(true, 3, avgTime)).toBe(5);
-  });
-
-  it('correct + normal speed (< avg) returns 4', () => {
-    expect(responseToQuality(true, 8, avgTime)).toBe(4);
-  });
-
-  it('correct + slow (< 1.5x avg) returns 3', () => {
-    expect(responseToQuality(true, 12, avgTime)).toBe(3);
-  });
-
-  it('correct + very slow (>= 1.5x avg) returns 3', () => {
-    expect(responseToQuality(true, 20, avgTime)).toBe(3);
-  });
-});
+// SM-2 (sm2Update / responseToQuality) describe blocks deleted 2026-08-05
+// (tracker E1): those exports were removed from cognitive-engine.ts — the
+// live SM-2 scheduler is the update_learner_state_post_quiz SQL RPC.
 
 // ─── Bloom's Taxonomy ────────────────────────────────────────
 

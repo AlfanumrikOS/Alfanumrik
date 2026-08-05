@@ -12,7 +12,9 @@
  * ⚠️ BINDING learner-state contract (assessment-issued, non-negotiable):
  *   - This event + route are NON-EVIDENTIAL telemetry. They MUST NOT write
  *     (directly or via any subscriber) to ANY mastery surface: concept_mastery,
- *     cme_concept_state, student_skill_state, knowledge_gaps (mastery/resolution),
+ *     cme_concept_state (retired/orphaned — no remaining writer platform-wide;
+ *     verified 2026-08-05, this route has never written it),
+ *     student_skill_state, knowledge_gaps (mastery/resolution),
  *     learner_mastery, cme_error_log, quiz_sessions, student_learning_profiles,
  *     bloom_progression. A self-report cannot move mastery_mean / p_know.
  *   - Award 0 XP. Never calls submitQuizResults / atomic_quiz_profile_update.

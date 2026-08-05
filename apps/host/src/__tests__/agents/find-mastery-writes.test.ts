@@ -27,8 +27,8 @@ describe('findMasteryWrites — WHAT/HOW mastery-write detector (GenAI Phase 3)'
     });
 
     it('detects .upsert() on a forbidden table', () => {
-      const src = `await supabase.from('cme_concept_state').upsert(row);`;
-      expect(findMasteryWrites(src)).toEqual(['cme_concept_state']);
+      const src = `await supabase.from('bloom_progression').upsert(row);`;
+      expect(findMasteryWrites(src)).toEqual(['bloom_progression']);
     });
 
     it('detects .delete() on a forbidden table', () => {
@@ -126,8 +126,10 @@ describe('findMasteryWrites — WHAT/HOW mastery-write detector (GenAI Phase 3)'
       expect(findMasteryWrites(src, ['knowledge_gaps'])).toEqual(['knowledge_gaps']);
     });
 
-    it('defaults to all 9 canonical forbidden tables', () => {
-      expect(FORBIDDEN_MASTERY_WRITE_TABLES).toHaveLength(9);
+    // 8 since 2026-08-05 (tracker E1): cme_concept_state removed — table
+    // RETIRED (COMMENT-tombstoned in migration 20260808000100, no writer).
+    it('defaults to all 8 canonical forbidden tables', () => {
+      expect(FORBIDDEN_MASTERY_WRITE_TABLES).toHaveLength(8);
       // Every canonical forbidden table is detected by the default call.
       for (const table of FORBIDDEN_MASTERY_WRITE_TABLES) {
         const src = `await supabase.from('${table}').insert(row);`;

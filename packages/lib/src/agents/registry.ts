@@ -251,23 +251,25 @@ export function liveAgents(): AgentDescriptor[] {
 }
 
 // ---------------------------------------------------------------------------
-// Forbidden mastery-write table set — §2.1 (all 9 verified against schema)
+// Forbidden mastery-write table set — §2.1 (all 8 verified against schema)
 // ---------------------------------------------------------------------------
 
 /**
- * The 9 mastery/progression tables an AI agent surface MUST NEVER directly
+ * The 8 mastery/progression tables an AI agent surface MUST NEVER directly
  * WRITE (INSERT / UPDATE / UPSERT / DELETE). Reads are permitted. Mastery moves
  * onto these tables ONLY through the concept-check / BKT projector path
  * (`learner.concept_check_answered` -> `concept-mastery-projector`) and the
  * `mastery-state-writer` (`learner.mastery_changed`), both under
  * `packages/lib/src/state/subscribers/`. No agent is on that allowlist.
  *
- * All 9 confirmed real in the current schema (§2.1); none is a phantom.
+ * All 8 confirmed real in the current schema (§2.1); none is a phantom.
+ * (`cme_concept_state` was removed 2026-08-05, tracker E1: the table is
+ * RETIRED — COMMENT-tombstoned in migration 20260808000100 with no writer
+ * platform-wide after the processAdaptiveLearning/cme-engine retirement.)
  */
 export const FORBIDDEN_MASTERY_WRITE_TABLES = [
   'concept_mastery',
   'learner_mastery',
-  'cme_concept_state',
   'student_skill_state',
   'knowledge_gaps',
   'cme_error_log',

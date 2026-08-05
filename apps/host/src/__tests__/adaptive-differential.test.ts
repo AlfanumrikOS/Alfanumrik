@@ -840,9 +840,15 @@ describe('Section 5d — ghost-column repoint: concept_mastery due reads use nex
     });
   }
 
-  it('cognitive-context exports the pure deriveNextAction ladder (no cme-engine network call)', () => {
+  it('cognitive-context exposes the pure deriveNextAction ladder (canonical learner-model import, no cme-engine network call)', () => {
     const code = codeOnly(readSource('src/app/api/foxy/_lib/cognitive-context.ts'));
-    expect(code).toMatch(/export function deriveNextAction/);
+    // Phase 2 (Foxy North-Star): the ladder moved to the canonical
+    // @alfanumrik/lib/learner-model module; cognitive-context re-exports it so
+    // route.ts / prompt-sections / tests keep importing from here unchanged.
+    expect(code).toMatch(/from '@alfanumrik\/lib\/learner-model'/);
+    expect(code).toMatch(/export \{ deriveNextAction \}/);
+    // No shadow local reimplementation may come back beside the re-export.
+    expect(code).not.toMatch(/export function deriveNextAction/);
     // The retired 401-dead network call must not come back.
     expect(code).not.toMatch(/get_next_action/);
     expect(code).not.toMatch(/functions\/v1\/cme-engine/);

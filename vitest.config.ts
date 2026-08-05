@@ -369,21 +369,26 @@ export default defineConfig({
           functions: 90,
           lines: 90,
         },
-        // P22 (learning graph) defense floor restored 2026-04-28: coverage
-        // closure tests in src/__tests__/lib/cognitive-engine-coverage.test.ts
-        // hit IRT 3PL Newton-Raphson convergence + clamping, SM-2 schedule
-        // decay + EF floor + quality<3 reset, error-classification (slip/
-        // guess) thresholds, BKT adaptive parameter branches, generateQuiz-
-        // Params switch cases, calculateChapterPriority urgency tiers,
-        // generateExamStudyPlan (last-day / last-week / normal), predict-
-        // ExamScore confidence, classifyImageText heuristics, and compute-
-        // MonthlyReportMetrics. Floor pinned at 80 to leave headroom for
-        // refactors.
+        // P22 (learning graph) defense floor — RE-PINNED 2026-08-05 (Foxy
+        // North-Star Phase 2 wave 2b, tracker E1). The 7 verified-dead
+        // algorithm exports (sm2Update / responseToQuality / nextReviewDate /
+        // estimateTheta / irtProbCorrect / bktUpdate / calculateReward) were
+        // DELETED from cognitive-engine.ts along with their describe blocks
+        // (canonical algorithms now live in the update_learner_state_post_quiz
+        // SQL RPC + @alfanumrik/lib/learner-model mirror and irt/fisher-info.ts).
+        // Measured post-deletion via `npx vitest run --coverage` over the
+        // cognitive-engine test set: 98.12% stmts / 96.40% branches /
+        // 98.46% funcs / 97.70% lines — deleting the dead code RAISED the
+        // file's coverage from the old 80 floor. Each metric is pinned ~5pp
+        // below measured. Remaining surface: Bloom progression, ZPD,
+        // interleaving, cognitive load, reflection prompts, velocity, gaps,
+        // quiz params, exam planning, image classification, monthly report,
+        // mastery badge, experiment evidence (BKT internal helper).
         '../../packages/lib/src/cognitive-engine.ts': {
-          statements: 80,
-          branches: 80,
-          functions: 80,
-          lines: 80,
+          statements: 93,
+          branches: 91,
+          functions: 93,
+          lines: 92,
         },
         '../../packages/lib/src/exam-engine.ts': {
           statements: 80,

@@ -322,6 +322,56 @@ describe('Quiz page — F4 classifyError receives real topic mastery', () => {
   });
 });
 
+// ─── D6: sampled 1-tap confidence capture (Phase 2) ───────────────────────
+
+describe('Quiz page — D6 confidence capture (sampled, non-blocking)', () => {
+  it('tapped confidence rides the submit payload; unsampled questions stay undefined', async () => {
+    await renderQuizAndStart();
+
+    // Q1 (index 0 — sampled: 0 % 3 === 0): answer, then tap confidence 4.
+    await answerCurrentQuestion(3);
+    const conf4 = await screen.findByTestId('confidence-option-4');
+    await act(async () => { conf4.click(); });
+    // Tap consumes the prompt.
+    expect(screen.queryByTestId('confidence-prompt')).toBeNull();
+    await goToNextQuestion();
+    await screen.findByTestId('practice-runner-v2-option-0'); // Q2 rendered
+
+    // Q2 (index 1 — NOT sampled): answer; the prompt must never appear.
+    await answerCurrentQuestion(1);
+    expect(screen.queryByTestId('confidence-prompt')).toBeNull();
+    await goToNextQuestion();
+
+    await waitFor(() => expect(mockSubmitQuizResults).toHaveBeenCalledTimes(1));
+    const responses = mockSubmitQuizResults.mock.calls[0][5] as Array<{
+      question_id: string;
+      confidence?: number;
+    }>;
+    expect(responses).toHaveLength(2);
+    expect(responses[0].question_id).toBe('q1');
+    expect(responses[0].confidence).toBe(4); // tapped value, 1-5 contract
+    expect(responses[1].question_id).toBe('q2');
+    expect(responses[1].confidence).toBeUndefined(); // unsampled → NULL server-side
+  });
+
+  it('never blocks progression — ignoring the prompt leaves confidence undefined', async () => {
+    await renderQuizAndStart();
+
+    // Q1 sampled: prompt shows after answering, but the student just moves on.
+    await answerCurrentQuestion(3);
+    await screen.findByTestId('confidence-prompt');
+    await goToNextQuestion(); // Next works with the prompt still visible
+    await screen.findByTestId('practice-runner-v2-option-0');
+    await answerCurrentQuestion(1);
+    await goToNextQuestion();
+
+    await waitFor(() => expect(mockSubmitQuizResults).toHaveBeenCalledTimes(1));
+    const responses = mockSubmitQuizResults.mock.calls[0][5] as Array<{ confidence?: number }>;
+    expect(responses[0].confidence).toBeUndefined();
+    expect(responses[1].confidence).toBeUndefined();
+  });
+});
+
 // ─── F2: SRS grade loop (/quiz?mode=srs) ──────────────────────────────────
 
 describe('Quiz page — F2 SRS grade loop closes after submit', () => {

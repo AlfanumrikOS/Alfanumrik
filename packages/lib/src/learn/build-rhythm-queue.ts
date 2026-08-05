@@ -45,10 +45,8 @@ import {
   composeDailyRhythm,
   type CandidateProblem,
 } from '@alfanumrik/lib/learn/daily-rhythm-orchestrator';
-import {
-  dueReviewsToCards,
-  type DueReviewRow,
-} from '@alfanumrik/lib/learn/due-reviews-adapter';
+import { dueReviewsToCards } from '@alfanumrik/lib/learn/due-reviews-adapter';
+import { getDueReviews } from '@alfanumrik/lib/learner-model';
 import {
   ADAPTIVE_REMEDIATION_RULES,
   compareBySeverity,
@@ -223,73 +221,18 @@ export async function buildRhythmQueue(
     });
   }
 
-  // Load due reviews (A4). RPC returns rows already filtered to due-for-review.
+  // Load due reviews (A4) via the learner-model facade — behavior identical:
+  // the facade wraps the same get_due_reviews RPC (rows already filtered to
+  // due-for-review; SECURITY DEFINER scoped by p_student_id) AND the F7
+  // additive SM-2 merge block that previously lived inline here (ease_factor
+  // / next_review_at batch-fetched from concept_mastery, non-fatal — adapter
+  // defaults easeFactor 2.5 / nextReviewAt null apply when absent).
   // concept_mastery.student_id FKs students.id (the surrogate), not the auth
   // uid — pass the resolved studentRow.id, same as /api/dive/state.
-  const { data: dueRowsRaw, error: dueErr } = await supabase.rpc('get_due_reviews', {
-    p_student_id: studentRow.id,
-    p_subject_code: null,
-    p_limit: 20,
-  });
-  if (dueErr) {
-    logger.error('rhythm/today: get_due_reviews RPC failed', {
-      error: new Error(dueErr.message),
-      userId,
-    });
-  }
-  let dueRows: DueReviewRow[] = (dueRowsRaw ?? []).map((r: Record<string, unknown>) => ({
-    topic_id: String(r.topic_id ?? ''),
-    mastery_probability: typeof r.mastery_probability === 'number' ? r.mastery_probability : null,
-    last_attempted_at: typeof r.last_attempted_at === 'string' ? r.last_attempted_at : null,
-    review_interval_days: typeof r.review_interval_days === 'number' ? r.review_interval_days : 0,
-  }));
+  const dueRows = await getDueReviews(supabase, studentRow.id, null, 20);
 
   // Build conceptToQuestion map: one active question per due topic.
   const dueTopicIds = dueRows.map((r) => r.topic_id).filter(Boolean);
-
-  // ── F7 (Foxy North-Star Phase 0): SM-2 field merge ──────────────────────
-  // The get_due_reviews RPC's RETURNS TABLE is frozen at 6 columns and does
-  // not surface ease_factor / next_review_at, so we batch-fetch those two
-  // fields additively from concept_mastery (RLS-scoped: student reads own
-  // rows) for exactly the due topics and merge them onto the rows. NON-FATAL:
-  // on any error the fields stay absent and the adapter falls back to its
-  // documented defaults (easeFactor 2.5 = column default, nextReviewAt null),
-  // so the queue composition is unchanged — this only stops dropping data.
-  if (dueTopicIds.length > 0) {
-    try {
-      const { data: sm2Rows } = await supabase
-        .from('concept_mastery')
-        .select('topic_id, ease_factor, next_review_at')
-        .eq('student_id', studentRow.id)
-        .in('topic_id', dueTopicIds);
-      const sm2ByTopic = new Map<string, { ease_factor: number | null; next_review_at: string | null }>();
-      for (const r of sm2Rows ?? []) {
-        const row = r as {
-          topic_id?: string;
-          ease_factor?: number | null;
-          next_review_at?: string | null;
-        };
-        const tid = String(row.topic_id ?? '');
-        if (tid) {
-          sm2ByTopic.set(tid, {
-            ease_factor: typeof row.ease_factor === 'number' ? row.ease_factor : null,
-            next_review_at: typeof row.next_review_at === 'string' ? row.next_review_at : null,
-          });
-        }
-      }
-      dueRows = dueRows.map((r) => {
-        const sm2 = sm2ByTopic.get(r.topic_id);
-        return sm2
-          ? { ...r, ease_factor: sm2.ease_factor, next_review_at: sm2.next_review_at }
-          : r;
-      });
-    } catch (err) {
-      logger.error('rhythm/today: sm2 field merge fetch failed', {
-        userId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
   const conceptToQuestion = new Map<string, string>();
   if (dueTopicIds.length > 0) {
     const { data: qbRows } = await supabase

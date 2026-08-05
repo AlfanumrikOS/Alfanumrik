@@ -16,6 +16,10 @@ import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import QuizSetup from '@alfanumrik/ui/quiz/QuizSetup';
 import FeedbackOverlay from '@alfanumrik/ui/quiz/FeedbackOverlay';
+// D6 (Foxy North-Star Phase 2) — sampled, non-blocking 1-tap confidence
+// prompt shown AFTER the answer is confirmed (P3 timing untouched).
+// Sampling is deterministic via shouldPromptConfidence (no Math.random).
+import ConfidencePrompt, { shouldPromptConfidence, type ConfidenceValue } from '@alfanumrik/ui/quiz/ConfidencePrompt';
 import WrittenAnswerInput from '@alfanumrik/ui/quiz/ncert/WrittenAnswerInput';
 // Canonical math renderer (P6/P12 fail-safe; P10: KaTeX loads lazily and
 // only when the text actually contains math — plain questions cost nothing).
@@ -130,6 +134,14 @@ interface Response {
    * Optional so older stored/pending payloads stay valid.
    */
   hint_level?: number;
+  /**
+   * D6 (Foxy North-Star Phase 2): 1-tap self-reported confidence (1-5) from
+   * the sampled post-answer prompt. Fixed server contract: smallint 1-5,
+   * NULL when unanswered — so this stays `undefined` when the prompt was not
+   * sampled, auto-dismissed, or ignored. Captured AFTER answer confirm, so
+   * P3 timing semantics are unaffected.
+   */
+  confidence?: number;
   telemetry?: {
     latency_ms?: number;
     changed_answers_count?: number;
@@ -305,6 +317,10 @@ export default function QuizPage() {
   const [responses, setResponses] = useState<Response[]>([]);
   const [showExplanation, setShowExplanation] = useState(false);
   const [hintLevel, setHintLevel] = useState(0);
+  // D6: per-question confidence prompt state, keyed by question id.
+  // number = value tapped (1-5); 'dismissed' = auto-dismissed/ignored (never
+  // re-shown for that question). Absent key + sampled index → prompt renders.
+  const [confidenceByQid, setConfidenceByQid] = useState<Record<string, number | 'dismissed'>>({});
   const [timer, setTimer] = useState(0);
   const [questionTimer, setQuestionTimer] = useState(0);
   const [changedAnswersCount, setChangedAnswersCount] = useState(0);
@@ -1051,6 +1067,25 @@ export default function QuizPage() {
   };
 
   /**
+   * D6: student tapped a confidence level on the sampled post-answer prompt.
+   * Patches the already-pushed response row for that question (the response
+   * is pushed at confirm time; confidence arrives moments later). Clamped to
+   * the 1-5 server contract. Never touches time_spent / is_correct (P3/P1).
+   */
+  const handleConfidenceSelect = (questionId: string, value: ConfidenceValue) => {
+    const clamped = Math.min(Math.max(Math.round(value), 1), 5);
+    setConfidenceByQid(prev => ({ ...prev, [questionId]: clamped }));
+    setResponses(prev => prev.map(r =>
+      r.question_id === questionId ? { ...r, confidence: clamped } : r
+    ));
+  };
+
+  /** D6: prompt auto-dismissed or ignored — never re-show for this question. */
+  const handleConfidenceDismiss = (questionId: string) => {
+    setConfidenceByQid(prev => ({ ...prev, [questionId]: 'dismissed' }));
+  };
+
+  /**
    * Screen "07 Practice" (`ff_quiz_v2`) — wraps the EXISTING confirmAnswer()
    * completely unchanged (same responses[] push, feedback state, cognitive
    * load, reflection prompts, showExplanation — P1/P2/P3/P4 untouched) and
@@ -1719,6 +1754,23 @@ export default function QuizPage() {
     // immediate AI-graded feedback via handleWrittenSubmit — no gap to fix
     // there). When the flag is off, this branch never runs and the legacy
     // return below is rendered byte-identical to today.
+    // D6: sampled, non-blocking confidence prompt. Renders only AFTER the
+    // answer is confirmed (isAnswered), only on deterministically sampled
+    // question indices (~every 3rd), and only until answered/dismissed once.
+    // Exam mode never sets showExplanation, so it never appears there.
+    const showConfidencePrompt =
+      isAnswered &&
+      shouldPromptConfidence(currentIdx) &&
+      confidenceByQid[q.id] === undefined;
+    const confidencePromptEl = showConfidencePrompt ? (
+      <ConfidencePrompt
+        key={q.id}
+        isHi={isHi}
+        onSelect={(v) => handleConfidenceSelect(q.id, v)}
+        onDismiss={() => handleConfidenceDismiss(q.id)}
+      />
+    ) : null;
+
     if (practiceV2On && quizMode === 'practice' && isQuestionMCQ(q)) {
       const check = answerChecks[q.id];
       const checkResultProp =
@@ -1733,7 +1785,15 @@ export default function QuizPage() {
                 explanationHi: check.explanation_hi,
               };
       return (
-        <PracticeRunner
+        <>
+          {/* D6: floating, non-blocking — PracticeRunner is untouched and the
+              student can always continue without interacting. */}
+          {confidencePromptEl && (
+            <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 w-[92vw] max-w-sm shadow-lg rounded-2xl">
+              {confidencePromptEl}
+            </div>
+          )}
+          <PracticeRunner
           isHi={isHi}
           question={{
             id: q.id,
@@ -1758,7 +1818,8 @@ export default function QuizPage() {
           onConfirm={confirmAnswerPracticeV2}
           onNext={nextQuestion}
           onRequestHint={() => setHintLevel(1)}
-        />
+          />
+        </>
       );
     }
 
@@ -1983,6 +2044,10 @@ export default function QuizPage() {
                   </p>
                 </div>
               )}
+
+              {/* D6: sampled 1-tap confidence — inline, after the explanation,
+                  never blocks the Next button below. */}
+              {confidencePromptEl}
 
               {/* Pedagogy v2 — Wave 1: distractor micro-explainer.
                   Mounts only on wrong MCQ (legacy path; v2 path defers feedback

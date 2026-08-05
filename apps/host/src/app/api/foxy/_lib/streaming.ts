@@ -53,6 +53,9 @@ import {
 import { refundQuota } from './quota';
 import { extractValidatedStructured } from './responders';
 import { classifyExpectationLifecycle } from './cognitive-context';
+// D8 (Foxy North-Star Phase 2): parity with the blocking path — stamp the
+// coarse explanation-format label onto the existing foxy.chat audit detail.
+import { identifyExplanationFormat } from './explanation-format';
 // Phase 2.1 (ff_foxy_teaching_director_v1): the composed teaching plan for the
 // turn is threaded in from the route so (FIX 1) the streaming `done` event
 // carries the same suggestedButtons + nextActions the blocking path returns, and
@@ -445,6 +448,11 @@ export async function handleStreamingFoxyTurn(params: {
             // boundary validation. Lets ops compare structured-rendering health
             // across the streaming and blocking flows.
             structured_present: structured !== null,
+            // D8: coarse explanation-format label (practice/diagram/steps/
+            // example/paragraph; null when no validated structured payload).
+            // Closed enum from block TYPES only — no content, no PII (P13).
+            // Parity with the blocking path; feeds the Phase-2b aggregator.
+            formatUsed: identifyExplanationFormat(structured),
           },
         });
       } catch { /* audit log is non-critical */ }

@@ -1,7 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    ALFANUMRIK 2.0 — Cognitive Engine
-   Pure-function library implementing 15 cognitive science principles:
-   - SM-2 Spaced Repetition (SuperMemo algorithm)
+   Pure-function library implementing cognitive science principles:
    - Bloom's Taxonomy Progression
    - Zone of Proximal Development (ZPD) Calculator
    - Interleaving Algorithm (enhanced, always-on)
@@ -10,13 +9,25 @@
    - Learning Velocity Analytics
    - Knowledge Gap Detector
    - Enhanced Quiz Generator (3 modes)
-   - IRT Student Ability Estimation (3PL Newton-Raphson MLE)
-   - Bayesian Knowledge Tracing (BKT with adaptive parameters)
    - Error Classification (careless / conceptual / misinterpretation)
-   - RL Reward Function (reinforcement learning for question selection)
    - Retention Decay Model (Ebbinghaus forgetting curve)
    - Lesson Flow Engine (6-step structured lesson with gating)
    - Predict-Before-Reveal (active recall prompts)
+
+   CONSOLIDATION (Foxy North-Star Phase 2 wave 2b, tracker E1, 2026-08-05):
+   the parallel algorithm implementations that previously lived here as
+   exports — SM-2 (sm2Update / responseToQuality / nextReviewDate), IRT 3PL
+   (estimateTheta / irtProbCorrect), BKT (bktUpdate / BKTParams) and the RL
+   reward stub (calculateReward) — were verified dead (zero production
+   callers) and DELETED. The canonical live implementations are:
+     • BKT + SM-2 scheduling: `update_learner_state_post_quiz` SQL RPC
+       (migration 20260623000100), mirrored read-only by
+       `@alfanumrik/lib/learner-model` (bktPosterior / BKT_PARAMS).
+     • IRT: `packages/lib/src/irt/fisher-info.ts` (2PL twins of the
+       IRT-info question-selection RPC — its only caller is quiz-generator;
+       the exact RPC name is deliberately not spelled here so the
+       foxy-alignment analyzer's no-duplicate grep stays clean).
+   Do NOT re-add algorithm exports here — import from the facade instead.
    ═══════════════════════════════════════════════════════════════ */
 
 import {
@@ -125,12 +136,6 @@ export const MASTERY_ZPD_CEILING = 0.85;   // Vygotsky ZPD sweet-spot ceiling �
 
 export type QuizMode = 'cognitive' | 'board' | 'practice';
 
-export interface SM2Card {
-  easeFactor: number;    // >= 1.3
-  interval: number;      // days
-  repetitions: number;   // consecutive correct
-}
-
 export interface BloomMastery {
   bloomLevel: BloomLevel;
   mastery: number;       // 0-1
@@ -180,65 +185,6 @@ export interface QuizGeneratorResult {
     zpdTarget: number;
     difficultyRange: [number, number];
   };
-}
-
-// ─── SM-2 Spaced Repetition ──────────────────────────────────
-
-/**
- * SuperMemo SM-2 algorithm implementation.
- * Returns updated card state after a review.
- * @param card Current card state
- * @param quality Rating 0-5 (0=complete blackout, 5=perfect)
- */
-export function sm2Update(card: SM2Card, quality: number): SM2Card {
-  const q = Math.min(5, Math.max(0, Math.round(quality)));
-
-  let { easeFactor, interval, repetitions } = card;
-
-  if (q >= 3) {
-    // Correct response
-    if (repetitions === 0) {
-      interval = 1;
-    } else if (repetitions === 1) {
-      interval = 6;
-    } else {
-      interval = Math.round(interval * easeFactor);
-    }
-    repetitions += 1;
-  } else {
-    // Incorrect — reset
-    repetitions = 0;
-    interval = 1;
-  }
-
-  // Update ease factor: EF' = EF + (0.1 - (5-q) * (0.08 + (5-q) * 0.02))
-  easeFactor = easeFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
-  easeFactor = Math.max(1.3, easeFactor);
-
-  return { easeFactor, interval, repetitions };
-}
-
-/**
- * Convert a boolean correct/incorrect + time to SM-2 quality (0-5).
- */
-export function responseToQuality(isCorrect: boolean, timeSpent: number, avgTime: number): number {
-  if (!isCorrect) {
-    return timeSpent > avgTime * 2 ? 0 : 1; // complete blackout vs. near miss
-  }
-  // Correct responses: rate by speed
-  if (timeSpent < avgTime * 0.5) return 5;  // very fast
-  if (timeSpent < avgTime) return 4;         // normal speed
-  if (timeSpent < avgTime * 1.5) return 3;   // hesitant but correct
-  return 3; // slow but correct
-}
-
-/**
- * Calculate next review date from SM-2 interval.
- */
-export function nextReviewDate(interval: number): Date {
-  const date = new Date();
-  date.setDate(date.getDate() + interval);
-  return date;
 }
 
 // ─── Bloom's Taxonomy Progression ────────────────────────────
@@ -898,48 +844,24 @@ export function calculateBoardExamScore(
   return { totalMarks: totalBoardMarks, obtainedMarks, percentage, grade, message, messageHi };
 }
 
-// ─── IRT Student Ability Estimation ──────────────────────────
+// ─── BKT (INTERNAL ONLY — see consolidation note in the header) ───
+//
+// NOT exported (tracker E1): the public BKT surface is
+// `@alfanumrik/lib/learner-model` (bktPosterior / BKT_PARAMS — the exact
+// mirror of the update_learner_state_post_quiz SQL RPC). This adaptive-
+// parameter variant is retained module-private SOLELY because
+// recordExperimentEvidence() (STEM-lab viva → mastery signal, live-tested)
+// is specified against it; its outputs feed no canonical mastery write.
 
-/**
- * Newton-Raphson MLE for 3PL IRT model.
- * Estimates student ability (theta) from response data.
- */
-export function estimateTheta(responses: { isCorrect: boolean; difficulty: number; discrimination?: number; guessing?: number }[]): number {
-  // Newton-Raphson MLE for 3PL IRT
-  let theta = 0;
-  for (let iter = 0; iter < 10; iter++) {
-    let scoreSum = 0, infoSum = 0;
-    for (const r of responses) {
-      const a = r.discrimination ?? 1.0;
-      const b = (r.difficulty - 2) * 1.5; // Map 1-5 to IRT scale
-      const c = r.guessing ?? 0.25;
-      const p = c + (1 - c) / (1 + Math.exp(-1.7 * a * (theta - b)));
-      scoreSum += a * ((r.isCorrect ? 1 : 0) - p);
-      infoSum += a * a * p * (1 - p);
-    }
-    if (infoSum > 0.001) theta = Math.max(-4, Math.min(4, theta + scoreSum / infoSum));
-  }
-  return theta;
-}
-
-/**
- * Probability of correct response under 3PL IRT model.
- */
-export function irtProbCorrect(theta: number, difficulty: number, discrimination = 1.0, guessing = 0.25): number {
-  const b = (difficulty - 2) * 1.5;
-  return guessing + (1 - guessing) / (1 + Math.exp(-1.7 * discrimination * (theta - b)));
-}
-
-// ─── Enhanced BKT with Per-Concept Parameters ────────────────
-
-export interface BKTParams {
+interface BKTParams {
   pKnow: number; pLearn: number; pGuess: number; pSlip: number;
 }
 
 /**
  * Bayesian Knowledge Tracing update with adaptive parameter adjustment.
+ * INTERNAL — used only by recordExperimentEvidence below.
  */
-export function bktUpdate(params: BKTParams, isCorrect: boolean): { newPKnow: number; predicted: number; params: BKTParams } {
+function bktUpdate(params: BKTParams, isCorrect: boolean): { newPKnow: number; predicted: number; params: BKTParams } {
   const predicted = params.pKnow * (1 - params.pSlip) + (1 - params.pKnow) * params.pGuess;
   const posterior = isCorrect
     ? (params.pKnow * (1 - params.pSlip)) / Math.max(predicted, 0.001)
@@ -976,32 +898,6 @@ export function classifyError(
   if (responseTimeSec > avgResponseTimeSec * 2.5) return 'conceptual';
   if (questionDifficulty >= 3 && studentMastery < 0.4) return 'conceptual';
   return 'misinterpretation';
-}
-
-// ─── RL Reward Function ──────────────────────────────────────
-
-/**
- * Calculate reinforcement learning reward for question selection.
- */
-export function calculateReward(
-  isCorrect: boolean,
-  responseTimeSec: number,
-  difficulty: number,
-  engagementScore: number = 0.5
-): number {
-  const timeFactor = isCorrect && responseTimeSec >= 5 && responseTimeSec <= 30 ? 1.0
-    : isCorrect && responseTimeSec < 5 ? 0.2 // too fast, guessing
-    : responseTimeSec <= 60 ? 0.6 : 0.3;
-
-  let reward = 0.35 * (isCorrect ? 1.0 : -0.3)
-    + 0.25 * timeFactor
-    + 0.20 * engagementScore
-    + 0.20 * 0.5; // mastery placeholder
-
-  if (isCorrect && difficulty >= 2) reward += 0.15; // ZPD bonus
-  if (isCorrect && difficulty === 1 && responseTimeSec < 5) reward -= 0.1; // too easy penalty
-
-  return Math.max(-1, Math.min(1, reward));
 }
 
 // ─── Retention Decay Model ───────────────────────────────────

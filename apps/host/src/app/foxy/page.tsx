@@ -45,6 +45,7 @@ import {
   FALLBACK_SCIENCE,
 } from './_lib/foxy-constants';
 import type { SubjectConfig, ChatMessage } from './_lib/foxy-types';
+import { fetchMastery } from './_lib/fetch-mastery';
 import { useFoxyChat, readStoredThreadId } from './_hooks/useFoxyChat';
 import type { CoachDirective } from './_hooks/useFoxyChat';
 import type { LearningActionType } from '@alfanumrik/ui/foxy/ChatBubble';
@@ -143,10 +144,9 @@ async function fetchTopics(subjectCode: string, grade: string): Promise<any[]> {
   return data ?? [];
 }
 
-async function fetchMastery(studentId: string, subject: string): Promise<any[]> {
-  const { data } = await supabase.from('topic_mastery').select('*').eq('student_id', studentId).eq('subject', subject).order('updated_at', { ascending: false }).limit(50);
-  return data ?? [];
-}
+// fetchMastery moved to ./_lib/fetch-mastery.ts (Phase 2 re-point: the old
+// `topic_mastery` table is writerless/always-empty; reads now come from the
+// `topic_mastery_rollup` view with an explicit column contract).
 
 async function fetchRecentSession(
   studentId: string,

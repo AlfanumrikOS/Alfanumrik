@@ -24,6 +24,7 @@ export type DailyCronActionName =
   | 'purge_principal_ai'
   | 'first_quiz_nudges_sent'
   | 'safeguarding_escalations_purged'
+  | 'preference_writer'
   | 'twin_snapshots_built'
   | 'coverage_audit_triggered'
   | 'question_bank_verify_triggered'

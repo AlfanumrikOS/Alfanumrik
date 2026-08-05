@@ -144,13 +144,20 @@ const DUP_SIGNATURES = [
     name: 'BKT update',
     re: /(?:function|const)\s+bktUpdate/,
     // Canonical per plan §1.3 E1 is the SQL in update_learner_state_post_quiz;
-    // the ONE approved TS mirror will live in packages/lib/src/learner-model/
-    // (add it here deliberately when the facade lands). All three current TS
-    // copies are scheduled for retirement.
+    // the ONE approved TS mirror lives in packages/lib/src/learner-model/
+    // (bktPosterior — a different symbol, not matched by this grep).
+    // 2026-08-05 (post-consolidation, Phase 2): the quiz-completion-service
+    // and queue-consumer duplicate copies were DELETED (E1 debt paid) and
+    // their allowlist entries removed in the same PR (ratchet locked).
     allow: [
-      'packages/lib/src/cognitive-engine.ts',                    // [debt→E1] dead export, delete
-      'packages/lib/src/state/services/quiz-completion-service.ts', // [debt→E1] retire onto facade mirror
-      'supabase/functions/queue-consumer/index.ts',              // [debt→E1] retire onto facade mirror
+      // [module-private, display-only] cognitive-engine's exported BKT copy
+      // was deleted in the E1 consolidation; what remains is a module-PRIVATE
+      // `function bktUpdate` used only by recordExperimentEvidence (simulation
+      // /experiment evidence display signal — not a learner-state writer).
+      // The grep cannot distinguish private from exported, so this entry
+      // stays, documented, until that internal helper is folded into the
+      // learner-model facade.
+      'packages/lib/src/cognitive-engine.ts',
     ],
   },
   {
@@ -159,7 +166,9 @@ const DUP_SIGNATURES = [
     allow: [
       'apps/host/src/app/api/learner/review/grade/helpers.ts',   // [canonical] live SM-2 writer; F10 freezes params = SQL values
       'apps/host/src/app/api/learner/review/grade/route.ts',     // [canonical] caller of the helper above
-      'packages/lib/src/cognitive-engine.ts',                    // [debt→E4] one of the 5 divergent impls → 1
+      // 2026-08-05 (post-consolidation, Phase 2): cognitive-engine's divergent
+      // SM-2 impl (sm2Update) was DELETED in the E1/E4 consolidation — its
+      // [debt→E4] entry removed in the same PR (ratchet locked).
     ],
   },
   {
@@ -201,16 +210,21 @@ const APPROVED_NEW_TABLES = ['safeguarding_escalations']; // plan §2 Phase 1 (U
 // the number here in the same PR to lock the ratchet.
 const RETIRED_TABLES = ['cme_concept_state', 'topic_mastery'];
 const RETIRED_TABLE_REF_BASELINE = {
-  // 20 = cme-engine EF (6) + board-score EF (2) + foxy cognitive-context (2)
-  //    + foxy learning-action comment (1) + supabase.ts docs (4)
-  //    + state/events registry comments (3) + agents/registry (1)
+  // Ratchet history: 20 (frozen 2026-08-05) → 6 (re-measured 2026-08-05
+  // post-consolidation, Phase 2 — E3 cleanup removed the bulk of the
+  // cme-engine/board-score/docs references).
+  // 6 = foxy cognitive-context (1) + foxy learning-action (1)
+  //   + database.types.ts (1) + agents/registry (1) + supabase.ts (1)
+  //   + cme-engine EF (1)
+  cme_concept_state: 6,
+  // Ratchet history: 23 (frozen 2026-08-05) → 20 (re-measured 2026-08-05
+  // post-consolidation, Phase 2).
+  // 20 = domains/assessment (4) + api/v2 progress (3) + foxy page (2)
+  //    + api/v2 contract (2) + daily-cron EF (2) + foxy route (1)
+  //    + foxy fetch-mastery (1) + domains/practice (1) + domains/types (1)
+  //    + quiz/submit-side-effects (1) + score-config (1)
   //    + database.types.ts (1)
-  cme_concept_state: 20,
-  // 23 = domains/assessment (5) + daily-cron EF (4) + api/v2 progress (3)
-  //    + foxy route (2) + foxy page (2) + api/v2 contract (2)
-  //    + domains/practice|types, quiz/submit-side-effects, score-config,
-  //      database.types.ts (1 each)
-  topic_mastery: 23,
+  topic_mastery: 20,
 };
 
 // ── Check 8 constants — INVARIANT GUARDS ────────────────────────────────────

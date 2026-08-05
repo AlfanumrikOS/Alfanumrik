@@ -154,6 +154,10 @@ import { buildExpandedGoalSection } from '@alfanumrik/lib/goals/goal-personas';
 import { fetchRecentLabContext, type LabContextEntry } from '@alfanumrik/lib/foxy/recent-lab-context';
 import { buildLabContextSection } from '@alfanumrik/lib/foxy/foxy-lab-prompt';
 import { maybeBuildFoxyContextBlock } from '@alfanumrik/lib/state/context/foxy-context-bridge';
+import {
+  WEAK_AREA_CHIP_THRESHOLD,
+  WEAK_AREA_MIN_ATTEMPTS,
+} from '@alfanumrik/lib/learner-model';
 import { randomUUID } from 'node:crypto';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
 // Phase 3 of Foxy conversation continuity (2026-05-18) — "the moat".
@@ -239,6 +243,10 @@ import {
   EMPTY_TOPIC_PROGRESS,
   type ChapterTopicProgress,
 } from './_lib/cognitive-context';
+// D8 (Foxy North-Star Phase 2): pure explanation-format classifier over the
+// validated structured blocks — stamps `formatUsed` onto the EXISTING
+// foxy.chat audit detail write below (feeds the Phase-2b preference aggregator).
+import { identifyExplanationFormat } from './_lib/explanation-format';
 // H1 REFACTOR M6a — legacy Foxy flow (the ff_grounded_ai_foxy-OFF kill-switch
 // path + the grounded-service abstain fallback) extracted to a co-located
 // module. Imported and called identically here at the same two call sites;
@@ -1057,9 +1065,33 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     role: 'student',
     userId: auth.userId!,
   });
+  // Phase 1 — Goal-Adaptive Foxy persona gate (hoisted ahead of the context
+  // load so the P10 goal can be threaded into the deriveNextAction call path
+  // inside loadCognitiveContext). `ff_goal_aware_foxy` is seeded by the
+  // architect (DISABLED by default in both production and staging). When it's
+  // off, every downstream prompt builder receives `useExpandedPersona: false`
+  // AND the next-action ladder receives academicGoal=null, producing output
+  // byte-identical to the pre-Phase-1 path. Per-user deterministic rollout is
+  // keyed off `studentId` so a given student gets a stable experience through
+  // the rollout window. Flag evaluation lives HERE at the route — the
+  // cognitive-context loader and the learner-model facade stay flag-free.
+  const useExpandedPersona = await isFeatureEnabled('ff_goal_aware_foxy', {
+    role: 'student',
+    environment:
+      process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
+    userId: studentId,
+  });
   try {
     const [ctx, hist, prior, labs, prog] = await Promise.all([
-      loadCognitiveContext(studentId, subject, grade, chapter),
+      loadCognitiveContext(
+        studentId,
+        subject,
+        grade,
+        chapter,
+        // P10: thread the resolved academic goal into the next-action ladder
+        // ONLY when ff_goal_aware_foxy is ON. OFF → null → pre-P10 behavior.
+        useExpandedPersona && academicGoal ? { code: academicGoal } : null,
+      ),
       loadHistory(resolvedSessionId),
       loadPriorSessionContext(
         studentId,
@@ -1459,20 +1491,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     });
   }
 
-  // Phase 1 — Goal-Adaptive Foxy persona gate.
-  //
-  // `ff_goal_aware_foxy` is seeded by the architect (DISABLED by default in
-  // both production and staging). When it's off, every downstream prompt
-  // builder receives `useExpandedPersona: false` and produces output
-  // byte-identical to the pre-Phase-1 path. Per-user deterministic rollout
-  // is keyed off `studentId` so a given student gets a stable experience
-  // through the rollout window.
-  const useExpandedPersona = await isFeatureEnabled('ff_goal_aware_foxy', {
-    role: 'student',
-    environment:
-      process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
-    userId: studentId,
-  });
+  // Phase 1 — Goal-Adaptive Foxy persona gate: `useExpandedPersona` is now
+  // evaluated ONCE, hoisted above the cognitive-context load (see the
+  // ff_goal_aware_foxy block before the Promise.all) so the same verdict
+  // gates both the P10 next-action goal threading and the prompt persona.
 
   logger.info('foxy.persona_mode', {
     studentId,
@@ -1589,23 +1611,30 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     }
   }
 
-  // ── P0 chip-action fix (2026-05-04): mastery context injection ──────────
-  // When the student taps "My weak areas" or "What should I study today?",
-  // the client sends `intent: 'weak_areas' | 'study_today'`. We pull a
-  // small slice of `topic_mastery` (the canonical table — the audit doc
-  // called it `student_topic_mastery`, which doesn't exist; see
-  // `src/lib/domains/assessment.ts` for the real schema) and append a
-  // grounding section to the system prompt. SAFE: every step is wrapped
-  // in try/catch; a missing table or query failure is logged but never
-  // blocks the chat. P13: only counts logged, never the topic strings.
+  // ── P0 chip-action fix (2026-05-04) → Phase 2 rollup re-point (2026-08-05):
+  // mastery context injection. When the student taps "My weak areas" or
+  // "What should I study today?", the client sends
+  // `intent: 'weak_areas' | 'study_today'`. We pull a small slice of the
+  // `topic_mastery_rollup` view (architect-owned; columns include topic_tag,
+  // mastery_percent, mastery_probability). The previous read was silently
+  // broken TWICE: it selected a nonexistent `topic` column on `topic_mastery`
+  // (query errored every call) and numeric-compared the TEXT `mastery_level`
+  // column against 0.5 (always false) — both no-oped inside the try/catch, so
+  // the weak-areas / study-today intent chips NEVER received real data. With
+  // this re-point the chips start receiving real mastery data for the first
+  // time (assessment flagged and accepted this behavior change). SAFE: every
+  // step stays wrapped in try/catch; a missing view or query failure is
+  // logged but never blocks the chat. P13: only counts logged, never the
+  // topic strings.
   if (intent === 'weak_areas' || intent === 'study_today') {
     try {
       const { data: masteryRows, error: masteryErr } = await supabaseAdmin
-        .from('topic_mastery')
-        .select('topic, mastery_level, total_attempts, correct_attempts')
+        .from('topic_mastery_rollup')
+        .select('topic_tag, mastery_percent, mastery_probability, total_attempts')
         .eq('student_id', studentId)
         .eq('subject', subject)
-        .order('mastery_level', { ascending: true })
+        .eq('grade', grade)
+        .order('mastery_probability', { ascending: true })
         .limit(5);
 
       if (masteryErr) {
@@ -1618,7 +1647,16 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       }
 
       const rows = Array.isArray(masteryRows) ? masteryRows : [];
-      const weakRows = rows.filter((r) => (r.mastery_level ?? 0) < 0.5);
+      // Weak = mastery_probability < WEAK_AREA_CHIP_THRESHOLD (the rollup's
+      // 0-1 BKT probability — NOT the text mastery_level label the old code
+      // numeric-compared) AND total_attempts >= WEAK_AREA_MIN_ATTEMPTS.
+      // Assessment mandate (2026-08-05): BKT prior 0.1 puts a 1-for-1 topic
+      // at ~0.43 — thin evidence means "not enough data yet", never "weak".
+      const weakRows = rows.filter(
+        (r) =>
+          (r.total_attempts ?? 0) >= WEAK_AREA_MIN_ATTEMPTS &&
+          (r.mastery_probability ?? 0) < WEAK_AREA_CHIP_THRESHOLD,
+      );
 
       let masterySection = '';
       if (intent === 'weak_areas') {
@@ -1632,8 +1670,8 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
           ].join('\n');
         } else {
           const lines = weakRows.map((r) => {
-            const pct = Math.round((r.mastery_level ?? 0) * 100);
-            return `  • ${r.topic} — ${pct}% mastery (${r.correct_attempts ?? 0}/${r.total_attempts ?? 0} correct)`;
+            const pct = Math.round(r.mastery_percent ?? (r.mastery_probability ?? 0) * 100);
+            return `  • ${r.topic_tag} — ${pct}% mastery`;
           });
           masterySection = [
             '',
@@ -1656,11 +1694,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
             'DO NOT invent a personalized recommendation.',
           ].join('\n');
         } else {
-          const pct = Math.round((target.mastery_level ?? 0) * 100);
+          const pct = Math.round(target.mastery_percent ?? (target.mastery_probability ?? 0) * 100);
           masterySection = [
             '',
             '── STUDENT MASTERY CONTEXT (intent=study_today) ──',
-            `Next-best topic to study: ${target.topic} (${pct}% mastery).`,
+            `Next-best topic to study: ${target.topic_tag} (${pct}% mastery).`,
             'Build today\'s study plan around this topic.',
           ].join('\n');
         }
@@ -3225,6 +3263,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       // progress and (b) malformed-payload rate (gap between
       // upstream-presence and persisted-presence).
       structured_present: structured !== null,
+      // D8: coarse explanation-format label for this turn (practice/diagram/
+      // steps/example/paragraph; null when no validated structured payload).
+      // Closed enum from block TYPES only — no content, no PII (P13). Feeds
+      // the Phase-2b explanation-format preference aggregator.
+      formatUsed: identifyExplanationFormat(structured),
     },
   });
 

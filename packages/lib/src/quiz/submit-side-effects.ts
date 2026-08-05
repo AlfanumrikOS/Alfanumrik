@@ -38,7 +38,7 @@ import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { capture as posthogCapture, hashDistinctId } from '@alfanumrik/lib/posthog/server';
 import { maybeDispatchQuizCompletion } from '@alfanumrik/lib/state/quiz-orchestrator-bridge';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
-import { bktUpdate } from '@alfanumrik/lib/state/services/quiz-completion-service';
+import { bktPosterior, BKT_PARAMS } from '@alfanumrik/lib/learner-model/bkt-mirror';
 import {
   runQuizPostSubmitTelemetry,
   type QuizTelemetryPre,
@@ -480,7 +480,8 @@ export function masteryChangedIdempotencyKey(
 
 /**
  * Compute per-chapter mastery deltas from the RPC's per-question grades.
- * Mirrors quiz-completion-service.ts's BKT chain (same priors, same bktUpdate).
+ * Mirrors quiz-completion-service.ts's BKT chain (same canonical facade —
+ * bktPosterior + BKT_PARAMS from @alfanumrik/lib/learner-model, tracker E1/E3).
  * Returns one entry per chapter that appeared in this quiz session.
  *
  * Pure and exported for unit tests. fromMastery is null when we have no prior
@@ -491,19 +492,18 @@ export function masteryChangedIdempotencyKey(
  *   any question that didn't carry its own chapter override).
  * @param gradedQuestions Per-question correctness from the RPC.
  * @param priorByChapter Optional per-chapter prior mastery reading. When absent
- *   for a chapter, we use the BKT_PRIOR_INIT (0.3) as the prior but emit
+ *   for a chapter, we use BKT_PARAMS.priorInit as the prior but emit
  *   fromMastery=null on the event so subscribers can distinguish "we don't
- *   know" from "we know it's 0.3".
+ *   know" from "we know it's the default prior".
  */
 export function computeMasteryDeltas(
   chapterNumber: number,
   gradedQuestions: Array<{ correct: boolean; chapterNumberOverride?: number | null }>,
   priorByChapter: Record<number, number | null> = {},
 ): Array<{ chapterNumber: number; fromMastery: number | null; toMastery: number }> {
-  // Same constant as quiz-completion-service.ts. Keep these in lockstep — if
-  // BKT_PRIOR_INIT changes there, mirror it here.
-  const BKT_PRIOR_INIT = 0.3;
-
+  // Canonical prior from the learner-model facade (tracker E1/E3): the same
+  // priorInit the update_learner_state_post_quiz SQL RPC uses. Previously a
+  // duplicated 0.3 literal kept "in lockstep" by comment; now a single source.
   const byChapter = new Map<number, boolean[]>();
   for (const q of gradedQuestions) {
     const ch = q.chapterNumberOverride ?? chapterNumber;
@@ -517,9 +517,9 @@ export function computeMasteryDeltas(
     const fromMastery = (typeof priorRaw === 'number' && Number.isFinite(priorRaw))
       ? priorRaw
       : null;
-    let m = fromMastery ?? BKT_PRIOR_INIT;
+    let m = fromMastery ?? BKT_PARAMS.priorInit;
     for (const ok of outcomes) {
-      m = bktUpdate(m, ok);
+      m = bktPosterior(m, ok);
     }
     const toMastery = Math.max(0, Math.min(1, m));
     out.push({ chapterNumber: ch, fromMastery, toMastery });

@@ -176,6 +176,14 @@ export interface QuizResponse {
    * input). Field name is a fixed cross-agent contract — do not rename.
    */
   hint_level?: number;
+  /**
+   * Foxy North-Star Phase 2 wave 2b (tracker E, 2026-08-05): additive
+   * evidence-capture companions (columns added by migration 20260807000200).
+   * Optional/additive — undefined serializes to SQL NULL. Telemetry only:
+   * never scoring/XP/anti-cheat input. Fixed cross-agent contract names.
+   */
+  confidence?: number;
+  answer_method?: string;
 }
 
 /* ── Mastery ── */

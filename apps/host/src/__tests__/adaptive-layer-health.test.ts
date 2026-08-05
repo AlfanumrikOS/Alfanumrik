@@ -12,14 +12,10 @@ vi.mock('@alfanumrik/lib/sounds', () => ({
 // These require zero mocking — they are stateless, pure computations.
 
 import {
-  sm2Update,
   getNextBloomTarget,
   getHighestMasteredBloom,
   calculateZPD,
   difficultyToBloom,
-  estimateTheta,
-  irtProbCorrect,
-  bktUpdate,
   classifyError,
   predictRetention,
   shouldRetest,
@@ -32,10 +28,8 @@ import {
   BLOOM_LEVELS,
   BLOOM_ORDER,
   LESSON_STEPS,
-  type SM2Card,
   type BloomMastery,
   type BloomLevel,
-  type BKTParams,
   type CognitiveLoadState,
   type LessonState,
 } from '@alfanumrik/lib/cognitive-engine';
@@ -57,41 +51,9 @@ import {
 describe('Section 1: Cognitive Engine Health', () => {
   // ── SM-2 Algorithm ────────────────────────────────────────────────────
 
-  describe('SM-2 algorithm produces valid intervals', () => {
-    it('increases interval on correct response (quality >= 3)', () => {
-      const card: SM2Card = { easeFactor: 2.5, interval: 6, repetitions: 2 };
-      const updated = sm2Update(card, 4);
-      // After 2 repetitions, interval = round(6 * easeFactor) > 6
-      expect(updated.interval).toBeGreaterThan(card.interval);
-      expect(updated.repetitions).toBe(3);
-    });
-
-    it('resets interval to 1 on incorrect response (quality < 3)', () => {
-      const card: SM2Card = { easeFactor: 2.5, interval: 15, repetitions: 5 };
-      const updated = sm2Update(card, 1);
-      expect(updated.interval).toBe(1);
-      expect(updated.repetitions).toBe(0);
-    });
-
-    it('ease factor never drops below 1.3', () => {
-      let card: SM2Card = { easeFactor: 1.3, interval: 1, repetitions: 0 };
-      // Repeatedly answer incorrectly
-      for (let i = 0; i < 10; i++) {
-        card = sm2Update(card, 0);
-      }
-      expect(card.easeFactor).toBeGreaterThanOrEqual(1.3);
-    });
-
-    it('first correct answer produces interval = 1, second = 6', () => {
-      const fresh: SM2Card = { easeFactor: 2.5, interval: 0, repetitions: 0 };
-      const first = sm2Update(fresh, 4);
-      expect(first.interval).toBe(1);
-      expect(first.repetitions).toBe(1);
-      const second = sm2Update(first, 4);
-      expect(second.interval).toBe(6);
-      expect(second.repetitions).toBe(2);
-    });
-  });
+  // SM-2 describe deleted 2026-08-05 (tracker E1): the sm2Update export was
+  // removed; the live SM-2 scheduler is the update_learner_state_post_quiz
+  // SQL RPC (mirrored read-only by @alfanumrik/lib/learner-model).
 
   // ── Bloom's Progression ──────────────────────────────────────────────
 
@@ -167,86 +129,11 @@ describe('Section 1: Cognitive Engine Health', () => {
     });
   });
 
-  // ── IRT estimateTheta ────────────────────────────────────────────────
-
-  describe('IRT estimateTheta converges for consistent patterns', () => {
-    it('all correct responses produce positive theta', () => {
-      const responses = Array.from({ length: 10 }, () => ({
-        isCorrect: true,
-        difficulty: 3,
-      }));
-      const theta = estimateTheta(responses);
-      expect(theta).toBeGreaterThan(0);
-    });
-
-    it('all incorrect responses produce negative theta', () => {
-      const responses = Array.from({ length: 10 }, () => ({
-        isCorrect: false,
-        difficulty: 3,
-      }));
-      const theta = estimateTheta(responses);
-      expect(theta).toBeLessThan(0);
-    });
-
-    it('theta is bounded between -4 and 4', () => {
-      const extremeCorrect = Array.from({ length: 20 }, () => ({
-        isCorrect: true,
-        difficulty: 1,
-      }));
-      const extremeIncorrect = Array.from({ length: 20 }, () => ({
-        isCorrect: false,
-        difficulty: 5,
-      }));
-      expect(estimateTheta(extremeCorrect)).toBeLessThanOrEqual(4);
-      expect(estimateTheta(extremeIncorrect)).toBeGreaterThanOrEqual(-4);
-    });
-
-    it('mixed responses produce theta near 0', () => {
-      const mixed = [
-        { isCorrect: true, difficulty: 3 },
-        { isCorrect: false, difficulty: 3 },
-        { isCorrect: true, difficulty: 3 },
-        { isCorrect: false, difficulty: 3 },
-        { isCorrect: true, difficulty: 3 },
-        { isCorrect: false, difficulty: 3 },
-      ];
-      const theta = estimateTheta(mixed);
-      // Near zero for 50/50 performance on medium difficulty
-      expect(Math.abs(theta)).toBeLessThan(2);
-    });
-  });
-
-  // ── BKT Update ───────────────────────────────────────────────────────
-
-  describe('BKT update adjusts pKnow correctly', () => {
-    const baseParams: BKTParams = {
-      pKnow: 0.3,
-      pLearn: 0.1,
-      pGuess: 0.25,
-      pSlip: 0.1,
-    };
-
-    it('increases pKnow on correct answer', () => {
-      const result = bktUpdate(baseParams, true);
-      expect(result.newPKnow).toBeGreaterThan(baseParams.pKnow);
-    });
-
-    it('decreases pKnow on incorrect answer', () => {
-      const result = bktUpdate(baseParams, false);
-      expect(result.newPKnow).toBeLessThan(baseParams.pKnow);
-    });
-
-    it('returns a predicted probability between 0 and 1', () => {
-      const result = bktUpdate(baseParams, true);
-      expect(result.predicted).toBeGreaterThan(0);
-      expect(result.predicted).toBeLessThanOrEqual(1);
-    });
-
-    it('adapts pSlip downward on correct answer', () => {
-      const result = bktUpdate(baseParams, true);
-      expect(result.params.pSlip).toBeLessThan(baseParams.pSlip);
-    });
-  });
+  // IRT + BKT describes deleted 2026-08-05 (tracker E1): the estimateTheta /
+  // irtProbCorrect / bktUpdate exports were removed from cognitive-engine.ts.
+  // Live algorithms: packages/lib/src/irt/fisher-info.ts (IRT, tested in
+  // fisher-info.test.ts) and the update_learner_state_post_quiz SQL RPC +
+  // @alfanumrik/lib/learner-model mirror (BKT, tested in bkt-mirror.test.ts).
 
   // ── Error Classification ─────────────────────────────────────────────
 
@@ -753,39 +640,25 @@ describe('Section 3: Adaptive Pipeline Integration', () => {
     });
   });
 
-  describe('CME engine (supabase/functions/cme-engine/index.ts) handles all 5 actions', () => {
+  describe('CME engine (supabase/functions/cme-engine/index.ts) is a structured 410 tombstone', () => {
+    // Retired 2026-08-05 (tracker E1/E3) following the quiz-generator-v2
+    // tombstone precedent (docs/runbooks/edge-function-drift-report.md).
+    // The old 5-action pins were deleted with the implementation.
     let cmeSource: string;
 
     beforeAll(() => {
       cmeSource = readSource('supabase/functions/cme-engine/index.ts');
     });
 
-    it('handles get_next_action', () => {
-      expect(cmeSource).toContain("action === 'get_next_action'");
+    it('serves the structured 410 tombstone payload', () => {
+      expect(cmeSource).toContain("code: 'cme_engine_retired'");
+      expect(cmeSource).toContain('410');
+      expect(cmeSource).toContain("replacement: '/api + learner-model facade'");
     });
 
-    it('handles record_response', () => {
-      expect(cmeSource).toContain("action === 'record_response'");
-    });
-
-    it('handles get_concept_state', () => {
-      expect(cmeSource).toContain("action === 'get_concept_state'");
-    });
-
-    it('handles get_revision_due', () => {
-      expect(cmeSource).toContain("action === 'get_revision_due'");
-    });
-
-    it('handles get_exam_readiness', () => {
-      expect(cmeSource).toContain("action === 'get_exam_readiness'");
-    });
-
-    it('requires authorization header', () => {
-      expect(cmeSource).toContain('Authorization required');
-    });
-
-    it('validates student exists before processing', () => {
-      expect(cmeSource).toContain('Student not found');
+    it('no longer contains any action handler or mastery write', () => {
+      expect(cmeSource).not.toContain("action === '");
+      expect(cmeSource).not.toMatch(/\.from\(\s*['"]cme_concept_state['"]\s*\)/);
     });
   });
 
@@ -949,14 +822,7 @@ describe('Section 5: Cross-Component Contracts', () => {
       expect(Object.keys(BLOOM_ORDER)).toHaveLength(6);
     });
 
-    it('CME engine uses bloom_focus field compatible with BLOOM_LEVELS', () => {
-      const cmeSource = fs.readFileSync(
-        path.resolve('supabase/functions/cme-engine/index.ts'),
-        'utf-8',
-      );
-      // CME reads bloom_focus from curriculum_topics
-      expect(cmeSource).toContain('bloom_focus');
-    });
+    // (cme-engine bloom_focus pin deleted 2026-08-05 — function tombstoned.)
 
     it('difficultyToBloom returns valid BLOOM_LEVELS values for all ranges', () => {
       const testDifficulties = [0.0, 0.17, 0.33, 0.50, 0.67, 0.83, 1.0];
@@ -967,38 +833,10 @@ describe('Section 5: Cross-Component Contracts', () => {
     });
   });
 
-  describe('Difficulty scales are consistent between IRT and quiz generation', () => {
-    it('irtProbCorrect returns values between 0 and 1 for all difficulty levels', () => {
-      for (let diff = 1; diff <= 5; diff++) {
-        const prob = irtProbCorrect(0, diff);
-        expect(prob).toBeGreaterThan(0);
-        expect(prob).toBeLessThanOrEqual(1);
-      }
-    });
-
-    it('higher theta produces higher probability of correct answer', () => {
-      const lowAbility = irtProbCorrect(-2, 3);
-      const highAbility = irtProbCorrect(2, 3);
-      expect(highAbility).toBeGreaterThan(lowAbility);
-    });
-
-    it('higher difficulty produces lower probability for same theta', () => {
-      const easyQuestion = irtProbCorrect(0, 1);
-      const hardQuestion = irtProbCorrect(0, 5);
-      expect(easyQuestion).toBeGreaterThan(hardQuestion);
-    });
-
-    it('CME engine uses 1-5 difficulty scale consistent with IRT', () => {
-      const cmeSource = fs.readFileSync(
-        path.resolve('supabase/functions/cme-engine/index.ts'),
-        'utf-8',
-      );
-      // CME normalizes difficulty: (questionDifficulty || 2) - 3
-      expect(cmeSource).toContain('questionDifficulty');
-      // Max difficulty succeeded tracked on 1-5 scale
-      expect(cmeSource).toContain('max_difficulty_succeeded');
-    });
-  });
+  // 'Difficulty scales are consistent between IRT and quiz generation'
+  // describe deleted 2026-08-05 (tracker E1): the irtProbCorrect export was
+  // removed and cme-engine is tombstoned. IRT SQL↔TS parity is pinned in
+  // src/__tests__/lib/irt/fisher-info.test.ts.
 
   describe('Feedback engine streak tracking is compatible with cognitive load fatigue', () => {
     it('feedback engine tracks correctStreak independently', () => {

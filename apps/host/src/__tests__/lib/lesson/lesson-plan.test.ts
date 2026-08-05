@@ -211,6 +211,12 @@ describe('planLesson — depth + persona from preferences', () => {
     expect(planLesson(baseRequest(), memory).depth).toBe('brief');
   });
 
+  it("'quick' maps to brief (assessment-mandated D9 mapping fix, Phase 2 review)", () => {
+    const memory = emptyMemory('medium');
+    memory.preferences.preferredExplanationDepth = 'quick';
+    expect(planLesson(baseRequest(), memory).depth).toBe('brief');
+  });
+
   it('unknown preferred depth falls back to standard', () => {
     const memory = emptyMemory('medium');
     memory.preferences.preferredExplanationDepth = 'wibble';
@@ -237,6 +243,26 @@ describe('planLesson — depth + persona from preferences', () => {
 
     memory.preferences.learningStyle = null;
     expect(planLesson(baseRequest(), memory).personaTone).toBe('balanced');
+  });
+
+  it("D9 contract enum coverage: 'example-first' → concrete; no D9 style falls to the default", () => {
+    // The D9 implicit-preference writer emits exactly
+    // visual | verbal | example-first | balanced. Each must map deliberately
+    // (assessment-mandated, Phase 2 review: 'example-first' → 'concrete').
+    const memory = emptyMemory('medium');
+    memory.preferences.learningStyle = 'example-first';
+    expect(planLesson(baseRequest(), memory).personaTone).toBe('concrete');
+
+    const expected: Record<string, string> = {
+      visual: 'visual',
+      verbal: 'narrative',
+      'example-first': 'concrete',
+      balanced: 'balanced',
+    };
+    for (const [style, tone] of Object.entries(expected)) {
+      memory.preferences.learningStyle = style;
+      expect(planLesson(baseRequest(), memory).personaTone).toBe(tone);
+    }
   });
 });
 

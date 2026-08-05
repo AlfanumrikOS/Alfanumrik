@@ -20,10 +20,11 @@ import {
   dashboardSuggestNextQuizRule,
   upsellFamilyPlanRule,
 } from '@alfanumrik/lib/state/rules/stdlib';
-import {
-  bktUpdate,
-  quizCompletionService,
-} from '@alfanumrik/lib/state/services/quiz-completion-service';
+import { quizCompletionService } from '@alfanumrik/lib/state/services/quiz-completion-service';
+// Canonical BKT (tracker E1/E3, 2026-08-05): the service's divergent local
+// bktUpdate (prior 0.3 / transition 0.1) was deleted; it now folds mastery
+// through the learner-model facade — the exact SQL-RPC mirror.
+import { bktPosterior, BKT_PARAMS } from '@alfanumrik/lib/learner-model';
 
 /**
  * Tests for the unified state architecture. We pin the pure-logic
@@ -239,24 +240,29 @@ describe('event registry', () => {
   });
 });
 
-// ── BKT math ─────────────────────────────────────────────────────────
+// ── BKT math (canonical facade — bktPosterior/BKT_PARAMS) ───────────
 
-describe('bktUpdate', () => {
+describe('bktPosterior (quiz-completion-service BKT chain)', () => {
+  it('pins the canonical SQL-mirror params the service now uses', () => {
+    // Lockstep with update_learner_state_post_quiz (migration 20260623000100).
+    expect(BKT_PARAMS).toEqual({ pLearn: 0.2, pSlip: 0.1, pGuess: 0.25, priorInit: 0.1 });
+  });
+
   it('raises mastery on a correct answer', () => {
-    expect(bktUpdate(0.3, true)).toBeGreaterThan(0.3);
+    expect(bktPosterior(0.3, true)).toBeGreaterThan(0.3);
   });
 
   it('lowers (or holds barely) mastery on a wrong answer at high prior', () => {
-    // Single wrong at high prior should still leave mastery > 0.5
-    // because the transition param keeps learning a chance.
-    const next = bktUpdate(0.8, false);
+    // Single wrong at high prior should still leave mastery > 0.3
+    // because the learn param keeps learning a chance.
+    const next = bktPosterior(0.8, false);
     expect(next).toBeLessThan(0.8);
     expect(next).toBeGreaterThan(0.3);
   });
 
   it('clamps to [0,1] in practice', () => {
     let m = 0.99;
-    for (let i = 0; i < 30; i++) m = bktUpdate(m, true);
+    for (let i = 0; i < 30; i++) m = bktPosterior(m, true);
     expect(m).toBeLessThanOrEqual(1);
     expect(m).toBeGreaterThan(0.99);
   });

@@ -31,6 +31,7 @@ import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { logger } from '@alfanumrik/lib/logger';
+import { getDueReviews } from '@alfanumrik/lib/learner-model';
 
 export const dynamic = 'force-dynamic';
 
@@ -163,31 +164,18 @@ export async function POST(request: Request) {
       }
       if (studentRow) studentDbId = (studentRow as { id: string }).id ?? null;
     }
-    const { data: dueRows, error: dueErr } = studentDbId
-      ? await supabase.rpc('get_due_reviews', {
-          p_student_id: studentDbId,
-          p_subject_code: null,
-          p_limit: WEAK_TOPIC_RPC_LIMIT,
-        })
-      : { data: null, error: null };
-    if (dueErr) {
-      logger.warn('dive/start: get_due_reviews RPC failed (degrading)', {
-        userId, error: dueErr.message,
-      });
-    }
-    const match = ((dueRows ?? []) as Record<string, unknown>[]).find(
-      (r) => String(r.topic_id ?? '') === body.weakTopicId,
-    );
+    // Facade read: same get_due_reviews RPC underneath; degrades to [] on
+    // any RPC error (the facade logs the warn), so resolution falls through
+    // to the generic label exactly as before — NEVER 500.
+    const dueRows = studentDbId
+      ? await getDueReviews(supabase, studentDbId, null, WEAK_TOPIC_RPC_LIMIT)
+      : [];
+    const match = dueRows.find((r) => r.topic_id === body.weakTopicId);
     if (match) {
-      const title = typeof match.title === 'string' ? match.title.trim() : '';
+      const title = (match.title ?? '').trim();
       diveTopic = title.length > 0 ? title : body.weakTopicId;
       // Best-effort subject: prefer subject_code, fall back to subject.
-      const subjectCode =
-        typeof match.subject_code === 'string' && match.subject_code.length > 0
-          ? match.subject_code
-          : typeof match.subject === 'string' && match.subject.length > 0
-            ? match.subject
-            : null;
+      const subjectCode = match.subject_code ?? match.subject ?? null;
       diveSubjects = subjectCode ? [subjectCode] : [];
     } else {
       // No match (RPC errored, or the topic aged out of the due window). Use the
