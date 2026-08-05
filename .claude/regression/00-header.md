@@ -6,8 +6,64 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 366 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-366 (2026-08-05, K9 leadership standalone-route fold-in — the
+**Total catalog: 370 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-367..REG-370 (2026-08-05, Student-OS IA consolidation —
+four guards for ONE failure class: a cross-file contract that no compiler,
+linter, type or render test relates, so when the two sides disagree NOTHING
+fails and the student silently gets a duplicated panel, an unreadable label,
+a clipped ring, or a 404. REG-367 AppShell rail/aside breakpoint parity —
+`StudentOSDashboard` renders `MasterySnapshot`/`RevisionRail` twice on
+purpose and relies on CSS to show one; the Tailwind `{bp}:hidden` numbers in
+the TSX had drifted from the `@media (min-width:)` numbers in
+`packages/ui/src/globals.css`, double-rendering across 768-1023px and
+1024-1279px. The guard resolves the Tailwind breakpoint to PIXELS and
+compares it to the media query PARSED OUT OF globals.css at test time, with
+a brace-aware CSS reader that THROWS rather than defaulting, the
+no-`theme.screens`-override precondition asserted, both markup hooks proven
+to carry zero CSS rules anywhere, the two-copies premise pinned, and both
+shipped regressions proven to FLAG. REG-368 MasteryRing centre-label fit —
+the fallback label was hardcoded `text-xs` regardless of `size`, painting
+over the stroke at the Foxy 40/4 geometry; tests RENDER the barrel-exported
+component and read `style.fontSize` off the DOM rather than restating the
+implementation's own formula (which would pin nothing), judge fit with a
+model deliberately STRICTER than the component's, carry an explicit
+regression witness that the old 12px would NOT have fit, and pin the default
+size=64 at exactly 12px as the no-visual-regression guarantee. REG-369
+internal-link canary — `BoardScoreWidget` shipped an AnswerChecker™ CTA to
+`/answer-checker`, a path with no page and no redirect, 404ing for exactly
+the engaged students it targeted; the canary enumerates the App Router tree
++ the `redirects()` sources and resolves every LITERAL internal href, with
+non-vacuity floors asserted, the `/answer-checker` case pinned as a HARD
+non-allowlisted assertion, and DELIBERATE limits stated (literal hrefs only,
+no `router.push`, no `/api/*`) so passing is never over-claimed. **REG-369
+carries a documented anti-rot allowlist of exactly TWO pre-existing dead
+links — `/super-admin/students` and `/upgrade` — each a real user-visible
+404 that predates this pass; a dedicated test asserts each is STILL dead AND
+STILL linked, so the moment either is fixed the suite FAILS and forces the
+entry to be DELETED. The allowlist cannot rot into permanent cover.**
+REG-367..369 in `15-cross-cutting.md`. REG-370 Foxy MasteryAwareness ring
+no-shrink — the 40px ring is a flex sibling of a `flex-1 min-w-0` text block,
+so a long topic title compressed its box and clipped the stroke; the fix is
+ONE wrapper `div` carrying `shrink-0`, because `MasteryRing` takes no
+`className` — trivially lost in a refactor with no type error to announce
+it. Pinned on the RENDERED tree in BOTH languages (P7 — the Hindi title is
+longer, so the squeeze is worse), together with the flex-sibling coupling
+that makes the guard necessary, the deliberate ASYMMETRY that the text block
+must STAY shrinkable for `truncate`, and the 40/4 geometry shared with
+REG-368; `02-foxy-ai.md`. All four are static/DOM canaries, not
+browser-truth: JSDOM evaluates no media query and computes no layout, so
+REG-367/368/370 verify the contract or the guard is PRESENT, not that a
+browser honours it — a visual-regression run would be strictly stronger and
+is not part of this pass. Sanity: the 4 new suites plus the
+`parent-calendar-live-events` suite touched for a pre-existing timeout flake
+were re-run green in ONE vitest pass from apps/host — 74/74, 5 files.
+**Renumbered from REG-345..REG-348 during the 2026-08-05 rebase:** upstream
+PR #1465 (Foxy North-Star, 7-commit program) reached `main` first and
+consumed REG-345..REG-366, so per this catalog's numbering convention — the
+side that reaches `main` first keeps its ids — this batch moved up by 22.
+No upstream entry was dropped, reworded or renumbered; only these four
+numerals moved, and the total grew by 4.)
+Prior: REG-366 (2026-08-05, K9 leadership standalone-route fold-in — the
 `/school-admin/leadership` standalone route is retired; the nav Leadership
 entry now deep-links to `/school-admin/reports?tab=leadership` and the
 LeadershipTab loads inside the existing school-admin reports tab strip
@@ -292,10 +348,46 @@ REG-344 on 2026-08-04, then the Foxy North-Star Phase 0 gate batch took
 REG-345..REG-347 on 2026-08-05, and the same-day Phase 1 Safety & Trust
 batch then took REG-348..REG-350, then Phase 2 Canonical Learner Model took
 REG-351..REG-353, Phase 3 Adaptive + Check took REG-354..REG-358, and the
-Phase 4 wave 4a/4b promotion + FoxyPanel guard took REG-359..REG-360, so
-**REG-367 is now the next free id.** (REG-361..REG-365 taken by the Phase 5
-Stakeholders + Play batch above; REG-366 taken by the same-day K9 leadership
-standalone-route fold-in pinned at the top of this file.)
+Phase 4 wave 4a/4b promotion + FoxyPanel guard took REG-359..REG-360.
+(REG-361..REG-365 taken by the Phase 5 Stakeholders + Play batch above;
+REG-366 taken by the same-day K9 leadership standalone-route fold-in.) That
+made REG-367 the next free id, and the same-day Student-OS IA consolidation
+batch then took **REG-367..REG-370**, so **REG-371 is now the next free id.**
+
+ID-collision note (2026-08-05, resolved): the Student-OS IA consolidation
+batch was authored as REG-345..REG-348 while still uncommitted. Upstream
+PR #1465 (Foxy North-Star, 7 commits) reached `main` first and consumed
+REG-345..REG-366 — including its own, unrelated REG-345 (SRS grade loop
+closure) and REG-348 (safeguarding two-tier fail-closed contract). Per this
+catalog's established convention (the side that reaches `main` first keeps
+its ids; the not-yet-merged side renumbers up — the same resolution used for
+the 2026-08-03 REG-332/333 and the 2026-07-29 REG-322..325 collisions), the
+IA batch was renumbered REG-345→REG-367, REG-346→REG-368, REG-347→REG-369
+and REG-348→REG-370: heading, table-row id and every cross-reference updated
+in `02-foxy-ai.md` and `15-cross-cutting.md`. No upstream entry was dropped
+or reworded. Separately, the ops-owned spec
+`docs/superpowers/specs/2026-08-05-student-ia-consolidation-design.md` had
+proposed REG-349..REG-355 (which the same upstream merge also collides
+with); ops is renumbering those to REG-371..REG-377 in a parallel pass — if
+that batch lands, the next free id becomes REG-378. Anything still reading
+"REG-345 is the next free id", or attributing REG-345..REG-348 to the IA
+consolidation batch, is stale.
+
+Honesty note on the declared total (2026-08-05, unresolved — upstream gap, not
+this batch's): the 370 above is 366 (upstream PR #1465's own declared total) +
+this batch's 4. It is a carried-forward number, not an independently derived
+one. A direct sweep of every shard at rebase time found **REG-361 through
+REG-365 narrated in this header but with NO body entry — no `## REG-N`
+section and no `| REG-N |` table row — in ANY shard.** The header points them
+at `03-quiz-integrity.md`, `10-rbac-rls.md` and `12-observability.md`; they
+are in none of those files, and the only string match for any of them outside
+this header is REG-365 cited *inside REG-366's* row in `07-teacher-school.md`.
+Of the Phase 5 batch only REG-366 was actually filed. Their pinning test files
+may well exist; the catalog rows do not. Until upstream files those five (or
+confirms they were counted in error), treat 370 as an upper bound — if they
+were counted but never written, the honest total is 365. This affects only the
+total, never the ids: REG-361..REG-365 are RESERVED to upstream's Phase 5
+batch either way and must not be reissued.
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

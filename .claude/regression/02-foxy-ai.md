@@ -2616,3 +2616,78 @@ guard, Phase 4 wave 4b).
 
 ---
 
+## Foxy MasteryAwareness — mastery ring no-shrink guard (2026-08-05) — REG-370
+
+> **Renumbered 2026-08-05 (was REG-348).** Upstream PR #1465 (Foxy North-Star,
+> 7-commit program) reached `main` first and consumed REG-345..REG-366 — its
+> own REG-348 is the safeguarding two-tier fail-closed contract earlier in this
+> same shard — so per this catalog's numbering convention the not-yet-merged
+> side moves up. This entry's three siblings moved REG-345..REG-347 →
+> REG-367..REG-369 in `15-cross-cutting.md` in the same pass.
+
+Source: `docs/superpowers/specs/2026-08-05-student-ia-consolidation-design.md`
+— the Foxy-surface member of the same four-defect IA-consolidation pass whose
+other three guards are REG-367..REG-369 in `15-cross-cutting.md`.
+
+The Foxy weak-topic nudge row is a flex container holding two children:
+
+```
+[ MasteryRing (fixed 40px) ]   [ text block: flex-1 min-w-0 ]
+```
+
+`flex-1 min-w-0` deliberately lets the text block grow AND shrink past its
+content width — that is what makes the `truncate` on the topic title work.
+But flex items default to `flex-shrink: 1`, and the ring has no intrinsic
+minimum once it is a flex item, so with a long topic title on a narrow
+viewport the ring's box is compressed below its declared 40px. `MasteryRing`
+renders a fixed-size `<svg width={size} height={size}>`, so the SVG keeps its
+40px while the box around it shrinks: **the stroke visibly clips**.
+
+The fix wraps the ring in `shrink-0`. It has to be a WRAPPER because
+`MasteryRing` accepts no `className` prop — so the guard is ONE LINE OF
+MARKUP, trivially lost in any future refactor of this row, with no type error
+and no test failure to announce it. That fragility is the entire reason this
+entry exists.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-370 | `foxy_mastery_ring_no_shrink` | The component is RENDERED for real (only the `useMasteryOverview` data seam is mocked, following the hook/fetch-seam convention of `momentum-wave2-visuals.test.tsx`), fed one "started but not mastered" row — the only state in which the nudge, and therefore the ring, renders — with a deliberately long real-world topic title, which is the actual squeeze trigger. **Premise pinned first:** the nudge really does render a `MasteryRing` (`role="img"` with `aria-label="Mastery: 42%"` from the 0.42 probability), and renders NO ring when the only topic is already mastered — so a future change that stops rendering the ring shows up as a premise failure rather than a vacuously-green guard. **The guard:** the element that actually WRAPS the ring's `role="img"` node carries a no-shrink utility (`shrink-0` or `flex-shrink-0`), in English AND in Hindi (the Hindi title is longer, so the squeeze is worse there). **The coupling is pinned in both directions:** the ring's flex SIBLING still carries `flex-1 min-w-0` — the condition that makes the guard NECESSARY — and both live in the SAME parent, which is asserted to be a `flex` row, so they really are competing flex items rather than incidentally-adjacent nodes; and the text block is asserted NOT to be shrink-protected and to still contain a `.truncate` child, because guarding both would break the title truncation — asserting the ASYMMETRY stops an over-eager "fix". **Geometry coupling to REG-368:** the call site is pinned to ask for exactly `size=40 strokeWidth=4` (asserted on the rendered `<svg width/height>` and the circle's `stroke-width`), so if this site ever moves to a different size, REG-368's 40/4 worst-case case must move with it. **Documented limit:** JSDOM applies no CSS and computes no layout, so this asserts the utility classes on the RENDERED tree rather than a measured width — it verifies the guard is PRESENT, not that the browser honours it. That is the strongest check available below a visual-regression run. | `apps/host/src/__tests__/foxy/mastery-awareness-ring-no-shrink.test.tsx` (8) | E | P7 (the guard is asserted in both EN and HI), P12-adjacent (Foxy student surface integrity) |
+
+### Invariants covered by this section
+
+- **P7 (bilingual UI)** — the guard is asserted in BOTH language modes, not
+  just the English default. The Hindi title is longer, so the Hindi render is
+  the worse squeeze; a guard that only held in English would fail exactly the
+  users it matters most for.
+- **P12-adjacent (Foxy student-facing surface)** — no AI behaviour changes
+  here; this pins the presentation integrity of the Foxy mastery nudge, the
+  surface through which the tutor communicates a student's own mastery. A
+  clipped ring misreports nothing numerically (the `aria-label` and the
+  percentage are unaffected), so this is adjacent to P12 rather than an AI
+  safety pin.
+- **Fragile-by-construction markup** — the load-bearing artifact is one
+  wrapper `div`. There is no type, no prop and no lint rule that can protect
+  it, which is precisely what makes a regression entry the right instrument.
+
+### Catalog total
+
+Pre-REG-370: 369 entries (through REG-369, the internal-link canary — see
+`15-cross-cutting.md`, where REG-367..REG-369 from this same
+IA-consolidation pass are catalogued). Adds REG-370 (Foxy MasteryAwareness
+mastery-ring no-shrink guard — rendered-DOM class assertions in both
+languages plus the flex-sibling coupling and the 40/4 geometry pin shared
+with REG-368; presence-not-browser-truth, see the documented limit above).
+**Total catalog: 370 entries (target: 35 — TARGET EXCEEDED). REG-371 is the
+next free id** (the ops-owned student-IA spec's own proposals are being
+renumbered into REG-371..REG-377 in a parallel pass; if that batch lands
+first, the next free id moves to REG-378).
+
+Note on this shard's two running counters: the `### Catalog total (updated)`
+block immediately above this section reads 360 because it is upstream PR
+#1465's Phase 4 wave-4a/4b counter, written before Phase 5 (REG-361..REG-365)
+and the K9 fold-in (REG-366) landed. 369 above is the header's declared 366
+plus this pass's three `15-cross-cutting.md` entries; it is not derived
+independently. See the honesty note in `00-header.md` about REG-361..REG-365.
+
+---
+

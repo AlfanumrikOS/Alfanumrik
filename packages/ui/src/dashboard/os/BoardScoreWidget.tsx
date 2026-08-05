@@ -11,7 +11,8 @@
  *   - Chapter breakdown with status icons + mastery bars (WCAG 1.4.1 — icon+label,
  *     not colour alone)
  *   - Score Recovery Plan (top 5 chapters by recoverable marks)
- *   - AnswerChecker™ CTA with dynamic score/gain message
+ *   (An AnswerChecker™ CTA used to close the widget; removed because it linked
+ *    to a /answer-checker route that was never built.)
  *
  * Design: matches MasterySnapshot patterns — rounded-3xl p-5 wrapper,
  * rounded-2xl p-3 cards, CSS variable palette, bilingual via isHi.
@@ -162,7 +163,8 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
     retry:         isHi ? 'पुनः प्रयास'                : 'Retry',
     comingSoon:    isHi ? 'जल्द आ रहा है'              : 'Coming Soon',
     comingSoonDesc:isHi ? 'BoardScore™ जल्द उपलब्ध होगा।' : 'BoardScore™ will be available soon.',
-    tryAC:         isHi ? 'AnswerChecker™ आज़माएं →'   : 'Try AnswerChecker™ →',
+    // `tryAC` was removed with the dead AnswerChecker™ CTA (no /answer-checker
+    // route exists). Re-add it when a real AnswerChecker route ships.
   };
 
   // ── Loading ─────────────────────────────────────────────────────────────────
@@ -282,13 +284,10 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
   const totalMax       = predictions.reduce((s, p) => s + p.max_score, 0);
   const overallPct     = totalMax > 0 ? Math.round(totalPredicted / totalMax * 100) : Math.round(sel.predicted_pct);
 
-  // Total recoverable marks across all subjects (CTA gain figure)
-  const ctaGain = Math.round(
-    predictions.reduce(
-      (acc, p) => acc + (p.recovery_plan ?? []).reduce((s, r) => s + r.recoverable_marks, 0),
-      0,
-    ),
-  );
+  // NOTE: the `ctaGain` total (sum of recoverable_marks across subjects) was
+  // removed alongside the AnswerChecker™ CTA — see the note at the end of this
+  // component. Nothing else consumed it. Per-item `recoverable_marks` are
+  // still rendered in the recovery-plan list above.
 
   // Gauge colour — semantic tokens (mastered green / warm / danger).
   const gaugeColor =
@@ -578,38 +577,11 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
         </div>
       )}
 
-      {/* ── AnswerChecker™ CTA ──────────────────────────────────────────────── */}
-      {ctaGain > 0 && (
-        <a
-          href="/answer-checker"
-          className="flex items-start gap-3 rounded-2xl p-4 transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-          style={{
-            // Warm wash via the stable channel (was hardcoded #FFF7ED/#FEF3E2).
-            background: 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.10), rgb(var(--accent-warm-rgb) / 0.04))',
-            border: '1.5px solid rgb(var(--accent-warm-rgb) / 0.20)',
-            textDecoration: 'none',
-            display: 'flex',
-          }}
-          aria-label={
-            isHi
-              ? `आपका अनुमानित स्कोर ${overallPct}% है। AnswerChecker™ से ${ctaGain} और अंक पाएं।`
-              : `Your predicted score is ${overallPct}%. Gain ${ctaGain} more marks with AnswerChecker™.`
-          }
-        >
-          <span className="text-2xl flex-shrink-0 mt-0.5" aria-hidden="true">🦊</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold leading-snug" style={{ color: 'var(--text-1)' }}>
-              {isHi
-                ? <>आपका अनुमानित स्कोर है <strong>{overallPct}%</strong>। लिखित उत्तरों को बेहतर बनाकर <strong>+{ctaGain} अंक</strong> पाएं — AnswerChecker™ आज़माएं।</>
-                : <>Your predicted score is <strong>{overallPct}%</strong>. Gain <strong>{ctaGain} more marks</strong> by improving your written answers — try AnswerChecker™.</>
-              }
-            </p>
-            <p className="text-xs font-bold mt-1.5" style={{ color: WARM }}>
-              {T.tryAC}
-            </p>
-          </div>
-        </a>
-      )}
+      {/* The AnswerChecker™ CTA that used to render here was removed: it linked
+          to /answer-checker, for which no route, page, or redirect has ever
+          existed, so it 404'd for every student whose recovery plan carried
+          any recoverable marks. Restore it only once a real AnswerChecker
+          route ships. */}
     </section>
   );
 }

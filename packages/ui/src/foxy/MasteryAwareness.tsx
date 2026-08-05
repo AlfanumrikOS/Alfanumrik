@@ -120,7 +120,13 @@ export default function MasteryAwareness({
               : `${weak.title} at ${masteryPercent(weak)}% — practice this`
           }
         >
-          <MasteryRing value={masteryPercent(weak)} size={40} strokeWidth={4} />
+          {/* shrink-0: this flex row's sibling is `flex-1 min-w-0`, so without
+              an explicit no-shrink the ring compresses below its declared
+              40px on narrow viewports. MasteryRing takes no className, so the
+              guard lives on a wrapper. */}
+          <span className="shrink-0 inline-flex">
+            <MasteryRing value={masteryPercent(weak)} size={40} strokeWidth={4} />
+          </span>
           <span className="flex-1 min-w-0">
             <span className="block text-xs font-bold" style={{ color: 'var(--orange, #E8581C)' }}>
               {weak.due_for_review

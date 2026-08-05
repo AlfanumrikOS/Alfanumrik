@@ -434,3 +434,113 @@ statement above). **Total catalog: 331 entries (target: 35 — TARGET
 EXCEEDED). REG-332 is the next free id.**
 
 ---
+
+## REG-367..REG-369 — Student-OS IA consolidation: silent-failure guards (2026-08-05)
+
+> **Renumbered 2026-08-05 (was REG-345..REG-347).** Upstream PR #1465 (Foxy
+> North-Star, 7-commit program) reached `main` first and consumed
+> REG-345..REG-366, so per this catalog's numbering convention the
+> not-yet-merged side moves up. This batch's Foxy sibling moved
+> REG-348 → REG-370 in `02-foxy-ai.md` in the same pass. Anything still
+> reading "REG-345..REG-348" for these four guards is stale.
+
+Source: `docs/superpowers/specs/2026-08-05-student-ia-consolidation-design.md`.
+Three of the four defects fixed in this pass share ONE failure class — a
+cross-file contract that no compiler, no linter, no type and no render test
+relates, so when the two sides disagree **nothing fails**. The student
+silently sees a duplicated panel, an unreadable label, or a 404. Each guard
+below is a static/DOM canary written specifically because the ordinary gates
+are structurally blind to its defect. (The fourth, the Foxy mastery-ring
+squeeze, is REG-370 in `02-foxy-ai.md`.)
+
+**REG-367 — AppShell rail/aside breakpoint parity.** `StudentOSDashboard`
+renders `MasterySnapshot` and `RevisionRail` TWICE on purpose (once in
+`AppShell`'s `rail`/`aside` slots, once inline in the content column) and
+relies on CSS to show exactly one of each. But the slots are revealed by
+`@media (min-width: …)` rules in `packages/ui/src/globals.css` while the
+inline copies are hidden by Tailwind `{bp}:hidden` utilities in the TSX —
+two mechanisms, two files, two languages, no relation. They had drifted:
+inline copies hid at `lg`(1024)/`xl`(1280) while the slots revealed at
+768/1024, so `MasterySnapshot` double-rendered across 768-1023px and
+`RevisionRail` across 1024-1279px. JSDOM evaluates no media query, so a
+render test cannot see this; the only distinguishing fact is whether the two
+NUMBERS agree.
+
+**REG-368 — MasteryRing centre label must fit inside the ring.** The
+wonder-blocks `MasteryRing` fallback centre label was hardcoded `text-xs`
+(12px) regardless of `size`. At the Foxy call site (`size=40 strokeWidth=4`)
+the inner clear diameter is 32px while a bold "100%" at 12px measures
+~30-31px, so the absolutely-positioned label painted over the ring stroke.
+Purely visual: no error, no warning, no failing assertion anywhere.
+
+**REG-369 — internal-link canary.** `BoardScoreWidget` shipped a prominent
+AnswerChecker™ CTA linking to `/answer-checker`. No `page.tsx` and no
+`next.config.js` redirect for that path has ever existed, so it 404'd for
+every student whose recovery plan carried recoverable marks — i.e. exactly
+the engaged users it targeted. A plain string `href` is not type-checked
+against the route tree, the CTA rendered only behind a data condition
+(`ctaGain > 0`) that no fixture produced, and a 404 is a runtime event on
+the USER's machine — invisible to build, lint and every render test.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-367 | `student_os_inline_breakpoint_parity` | **The invariant, not the current string:** the hide-breakpoint of each inline copy, resolved to PIXELS through the Tailwind screens scale, EQUALS the `min-width` of the media query that reveals its rail/aside counterpart, PARSED OUT OF `packages/ui/src/globals.css` at test time (move the media query to 820px and this fails until the TSX follows). Supporting pins that stop the parity check going vacuous: (a) a minimal brace-aware CSS reader attributes a declaration block to its ENCLOSING at-rule (a flat regex over a 4k-line stylesheet cannot), strips comments first so a `{` in prose cannot desync the stack, and THROWS rather than defaulting when `.app-shell-v2 > .app-shell-{rail,aside} { display: block }` is not found exactly once or does not sit inside exactly one `@media (min-width: Npx)`; (b) the current reveal values (rail 768, aside 1024) are asserted so a deliberate shell redesign surfaces as a reviewed change instead of silently re-pointing the parity assertions; (c) `apps/host/tailwind.config.js` is asserted NOT to define `theme.screens`, which is the only thing making the `md`=768/`lg`=1024 px translation legitimate; (d) both markup hooks (`student-os-snapshot-inline`, `student-os-revision-inline`) are proven to have ZERO CSS rules anywhere across `apps/host/src` + `packages/ui/src` + `packages/lib/src`, so "the Tailwind class is the sole visibility control" is a pinned fact, not an assumption; (e) the PREMISE is pinned — after comment-stripping, `<MasterySnapshot>` and `<RevisionRail>` each appear exactly TWICE and both `rail={`/`aside={` slots exist, so a refactor that drops one copy cannot make the parity assertions meaningless. **Teeth, on pure helpers with no source touched:** the two exact shipped regressions (`snapshot lg:hidden` vs rail@768, `revision xl:hidden` vs aside@1024) are asserted to FLAG; the fixed classNames are asserted to ACCEPT; ambiguous (`md:hidden lg:hidden`), missing, unconditional-`hidden`, and unknown-breakpoint (`tablet:hidden`) inputs all THROW rather than silently passing; the CSS reader refuses a `display:block` rule with no enclosing media query (which would silently mean "always shown"). | `apps/host/src/__tests__/student-os-inline-duplicate-render.test.ts` (18) | E | P7-adjacent (student-visible layout integrity), operational integrity |
+| REG-368 | `mastery_ring_label_fits_ring` | Tests RENDER the component exported from the `@alfanumrik/ui/ui` barrel (the same barrel every app call site imports, so a re-point follows automatically) and read `style.fontSize` + text content OFF THE DOM. They never restate the implementation's own `Math.max(9, Math.round(size * 0.1875))` — a test that recomputed the formula would agree with any future formula, correct or not, and would pin nothing. **No-visual-regression pin:** the DEFAULT `size=64` must render EXACTLY 12px, identical to the old hardcoded `text-xs`, both implicitly and explicitly. **Fit model:** this suite uses its OWN typographic model, deliberately STRICTER than the component's (0.65em per glyph vs the component's 0.62), applied to the ACTUAL rendered glyph count against the ACTUAL inner clear diameter (`size - 2*strokeWidth`) with NO breathing-room subtraction — so the geometry assertions pass only with real margin. Worst-case "100%" is asserted to fit at the exact 40/4 geometry that overflowed, with an explicit REGRESSION WITNESS that the old 12px would NOT have fit there (proving the assertion has teeth rather than passing trivially). The fit + legibility (`>= 9px` floor, never fractional px) + `%`-glyph-retention checks then run across every real call-site `size`/`strokeWidth` pair, enumerated from a filtered grep and documented IN the file — including the fact that the 64/5 row is the component's declared DEFAULTS with NO shipping call site (`dev/ui/page.tsx` imports a DIFFERENT same-named component from `@alfanumrik/ui/ui/primitives`, proved by the `bandLabel` prop wonder-blocks does not declare), while the real size-64 site is `learn/os/SubjectHeader.tsx:59` at 64/6. Also pinned: monotonic scaling (a bigger ring never gets a smaller label); the `%` glyph is dropped ONLY on a synthetic sub-shipping ring too narrow for four glyphs, never on a real call site, and never yields empty/`NaN`; the fallback label is bypassed entirely when `children` are passed (most call sites) while `aria-label` still reports `Mastery: N%` on BOTH paths — the a11y contract must not depend on whether the glyph fit; display-only clamping of out-of-range values (150→100%, -20→0%) is asserted as a DISPLAY guard explicitly not P1 quiz math. **Documented limit:** JSDOM does no layout and no font metrics, so this is a geometric model against rendered inputs, not a measured text width — the strongest check available short of a screenshot test. | `apps/host/src/__tests__/components/ui/mastery-ring-label-fit.test.tsx` (31) | E | P1-adjacent (display-only clamp, explicitly NOT quiz scoring), a11y |
+| REG-369 | `no_dead_internal_links` | Enumerates the App Router page tree (route groups `(x)` contribute no URL segment, `_private` folders are not routable, `[id]`/`[...slug]`/`[[...path]]` become matchers), parses `source` values out of `next.config.js`'s `redirects()` body ONLY (bounded at the next `async <name>(` sibling so `rewrites()`/`headers()` cannot bleed in), collects every LITERAL internal `href="/…"` / `to="/…"` across `apps/host/src` + `packages/ui/src`, and asserts each resolves to a page, a redirect, or an allowlisted known-dead entry. The BROAD form was chosen over a narrow `/answer-checker` grep because it generalises the fix instead of pinning one string. **Non-vacuity is asserted, not assumed:** >100 routes enumerated (incl. `/dashboard`, `/pricing`), >100 source files scanned, >20 literal internal hrefs found, and the redirect parser is proven to have found the right function body (contains the Study Menu v2 `/review` + `/study-plan` sources, and does NOT contain the `rewrites()`/`headers()` `/(.*)`/`/ingest*` sources). **The specific defect is a HARD assertion, not allowlist-mediated:** no `/answer-checker` href exists anywhere in scanned source, no `/answer-checker` page or redirect exists either (stated as the REASON the first assertion holds — if AnswerChecker ships for real this flips first and the CTA may legitimately return), and `BoardScoreWidget.tsx` carries no anchor to it while still documenting the removal (so a wholesale revert is visible here too). **Anti-rot allowlist:** `KNOWN_DEAD_LINKS` carries exactly TWO reviewed PRE-EXISTING dead links outside this pass's four fixes — `/super-admin/students` (the directory exists but holds only `[id]/page.tsx`, no index, so the Foxy-report "back to students" link 404s) and `/upgrade` (no page, no redirect; `/pricing` and `/billing` are both plausible targets, so picking one is a product decision). A dedicated test asserts each allowlisted path is STILL dead AND STILL linked — so the moment either is fixed the suite FAILS and forces the entry to be DELETED. The allowlist cannot rot into permanent cover, and it is documented in-file with a `TODO(frontend)`. **Teeth, on pure matchers with no source touched:** flags the `/answer-checker` class; accepts exact static routes, correctly-filled dynamic segments (and rejects wrong segment counts in both directions), catch-all (`[...slug]` needs ≥1 segment) and optional catch-all (`[[...path]]` matches the bare parent), and redirect-only paths; strips route groups without leaking a literal `(student)` and without banning legitimate underscores INSIDE segment names (`/support/[ticket_id]` is a real route); normalizes query/hash/trailing slash; and does not treat a literal `.` in a route as a wildcard. **Deliberate limits, stated so the canary is not over-claimed:** literal hrefs only (template/computed hrefs are skipped — resolving them needs data-flow analysis and guessing produces false positives), `router.push`/`redirect()` call sites are not scanned, `/api/*` is skipped (route handlers, covered by the API route-manifest specs), and external/`#`/`mailto:`/`tel:` are not internal links. So PASSING does not prove every link works; FAILING always means a real dead literal link. | `apps/host/src/__tests__/internal-href-route-resolution.test.ts` (16) | E | P15-adjacent (student navigation funnel), operational integrity |
+
+### Invariants covered by this section (REG-367..REG-369)
+
+- **P7-adjacent (student-visible UI integrity)** — REG-367 pins that the
+  responsive dashboard shows each panel exactly once at every viewport. The
+  defect was language-independent (a layout duplication, not a copy gap), so
+  this is adjacent to P7 rather than a bilingual-parity pin.
+- **P1-adjacent (display-only, explicitly NOT quiz scoring)** — REG-368's
+  clamp assertions pin `MasteryRing` as a DISPLAY guard over whatever value
+  it is handed. P1 lives in `submitQuizResults()`; nothing here re-derives
+  `score_percent`, and the suite says so in-file so a future reader does not
+  mistake the clamp for scoring authority.
+- **P15-adjacent (navigation funnel integrity)** — REG-369 closes a
+  user-visible 404 on a prominent CTA. Not the signup funnel P15 names, but
+  the same class of "the path the user is invited to take must exist".
+- **Operational integrity (silent-failure classes)** — all three defects
+  produced NO error, NO warning, NO type error and NO failing test. Each
+  guard exists because the ordinary gates are structurally blind to its
+  defect: JSDOM evaluates no media query (REG-367), does no layout or font
+  metrics (REG-368), and a 404 happens on the user's machine after the build
+  is long green (REG-369).
+
+### Known limits — stated, not papered over
+
+None of these three is a browser-truth check. REG-367 and REG-369 are
+static-source canaries; REG-368 renders for real but asserts a geometric
+model against rendered inputs because JSDOM supplies no font metrics. A
+visual-regression or Playwright-viewport run would be strictly stronger for
+REG-367/REG-368 and is not part of this pass. REG-369's `KNOWN_DEAD_LINKS`
+allowlist means the suite is green while two real 404s remain in production
+— they are documented above and in-file with a `TODO(frontend)`, and the
+anti-rot test forces their deletion the moment either is fixed.
+
+### Catalog total
+
+Pre-REG-367: 366 entries (through REG-366, the K9 leadership standalone-route
+fold-in — see `07-teacher-school.md`; REG-332..REG-366 live in
+`02-foxy-ai.md`, `03-quiz-integrity.md`, `04-payments.md`, `05-xp-scoring.md`,
+`07-teacher-school.md`, `10-rbac-rls.md`, `11-infrastructure.md` and
+`13-rag-cache.md`, not this shard, which is why this file's previous running
+counter above still reads 331). That 366 is the header's declared total and
+is carried forward here unaltered — see the honesty note in `00-header.md`
+about REG-361..REG-365, which are narrated in the header but have no shard
+body entry yet; if those five are later found to be uncatalogued rather than
+merely unfiled, every total in this paragraph shifts down by 5 in lock-step
+and the ids assigned below do not move. The Student-OS IA consolidation batch
+adds REG-367 (AppShell rail/aside breakpoint parity), REG-368 (MasteryRing
+centre-label fit) and REG-369 (internal-link canary, carrying a documented
+2-entry anti-rot allowlist). REG-370 (the Foxy mastery-ring no-shrink guard
+from the same pass) lands in `02-foxy-ai.md`.
+**Total catalog after this shard's three: 369 entries (target: 35 — TARGET
+EXCEEDED); after REG-370: 370 entries. REG-371 is the next free id** (the
+ops-owned `docs/superpowers/specs/2026-08-05-student-ia-consolidation-design.md`
+proposals are being renumbered into REG-371..REG-377 in a parallel pass; if
+that batch lands first, the next free id moves to REG-378).
+
+---

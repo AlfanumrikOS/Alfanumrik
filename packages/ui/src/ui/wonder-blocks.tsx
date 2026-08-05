@@ -891,6 +891,31 @@ export function MasteryRing({ value, size = 64, strokeWidth = 5, color, children
   const offset = circumference - (pct / 100) * circumference;
   const ringColor = color ?? (pct < 40 ? '#DC2626' : pct < 70 ? 'var(--orange)' : 'var(--green)');
 
+  /* Fallback centre label sizing (only applies when no `children` are passed).
+     Previously hardcoded `text-xs` (12px) regardless of `size`, so on small
+     rings the label overflowed the inner clear area onto the stroke — e.g.
+     size=40/strokeWidth=4 leaves a 32px clear diameter while "100%" at 12px
+     bold measures ~30-31px, and the absolutely-positioned label paints above
+     the SVG.
+
+     Coefficient 0.1875 is chosen so the DEFAULT size=64 resolves to exactly
+     round(64 * 0.1875) = 12px — byte-identical in rendered size to today's
+     `text-xs`, so no existing screen shifts. The 9px floor mirrors the ring
+     in foxy/mobile/FoxyStudySheet.tsx, the smallest legible size already in
+     use. */
+  const labelFontSize = Math.max(9, Math.round(size * 0.1875));
+  /* Inner clear diameter, i.e. the chord available to the label at the
+     vertical centre. Widest possible label is "100%" (4 glyphs). 0.62em is a
+     DIGIT-advance approximation for bold tabular-nums and is applied
+     uniformly here; `%` is materially wider in most sans faces (~0.85-1.0em),
+     so this under-measures "100%". The 4px of total breathing room absorbs
+     that error at every shipping size, which is why the predicate still
+     holds. If you retune the coefficient, model the `%` branch as
+     3 * 0.6 + 1.0 em instead of 4 * 0.62. Drop the `%` glyph only when the
+     test fails — on a tiny ring the bare number stays legible. */
+  const labelFitsPercentGlyph =
+    4 * 0.62 * labelFontSize <= size - strokeWidth * 2 - 4;
+
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }} role="img" aria-label={`Mastery: ${Math.round(pct)}%`}>
       <svg width={size} height={size} className="ring-fill" style={{ transform: 'rotate(-90deg)' }} aria-hidden="true">
@@ -908,7 +933,14 @@ export function MasteryRing({ value, size = 64, strokeWidth = 5, color, children
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        {children ?? <span className="text-xs font-bold" style={{ color: ringColor }}>{Math.round(pct)}%</span>}
+        {children ?? (
+          <span
+            className="font-bold tabular-nums leading-none whitespace-nowrap"
+            style={{ color: ringColor, fontSize: labelFontSize }}
+          >
+            {Math.round(pct)}{labelFitsPercentGlyph ? '%' : ''}
+          </span>
+        )}
       </div>
     </div>
   );
