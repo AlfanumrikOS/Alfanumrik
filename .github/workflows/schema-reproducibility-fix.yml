@@ -84,7 +84,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -818,7 +818,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -890,7 +890,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -983,7 +983,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -1079,7 +1079,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -1167,7 +1167,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -1206,7 +1206,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
 
