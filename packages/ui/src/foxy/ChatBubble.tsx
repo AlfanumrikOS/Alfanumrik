@@ -44,7 +44,13 @@ export type LearningActionType =
   | 'explain_simpler'
   | 'show_example'
   | 'quiz_me'
-  | 'save';
+  | 'save'
+  // Foxy North-Star Phase 3 (U4) — coaching actions. Telemetry-only per the
+  // /api/foxy/learning-action route's binding contract (no XP, no mastery).
+  // Registry `learner.learning_action` was widened 2026-08-05 to include
+  // these enum values (packages/lib/src/state/events/registry.ts).
+  | 'give_hint'
+  | 'let_me_try';
 
 /**
  * The four PRIMARY post-answer buttons the Teaching Director may suggest — the
@@ -511,6 +517,33 @@ export function ChatBubble({
                   {isHi ? 'इस पर क्विज़ लो' : 'Quiz me on this'}
                 </button>
               )}
+
+              {/* Foxy North-Star Phase 3 (U4) — coaching actions. Telemetry-only
+                  (no XP / no mastery). Registry enum widened 2026-08-05; the
+                  /api/foxy/learning-action route validator must include these
+                  values for the POST to succeed (see backend-review note). */}
+              <button
+                type="button"
+                onClick={() => onLearningAction?.('give_hint')}
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
+                style={{
+                  background: 'color-mix(in srgb, var(--orange) 8%, transparent)',
+                  color: 'var(--orange)',
+                  border: '1px solid color-mix(in srgb, var(--orange) 20%, transparent)',
+                }}
+                data-testid="learning-action-give-hint"
+              >
+                {isHi ? 'एक संकेत दो' : 'Give me a hint'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onLearningAction?.('let_me_try')}
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
+                style={{ background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+                data-testid="learning-action-let-me-try"
+              >
+                {isHi ? 'मुझे कोशिश करने दो' : 'Let me try'}
+              </button>
 
               {/* Overflow "⋯" menu — Save · Read aloud · Report an issue */}
               <div className="relative">

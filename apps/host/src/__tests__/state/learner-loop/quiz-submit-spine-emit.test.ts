@@ -83,7 +83,8 @@ describe('computeMasteryDeltas', () => {
     const out = computeMasteryDeltas(7, [{ correct: true }]);
     expect(out[0].fromMastery).toBeNull();
     // Even with null fromMastery, toMastery is well-defined (BKT seeded
-    // from BKT_PRIOR_INIT=0.3 internally).
+    // from the canonical BKT_PARAMS.priorInit=0.1 — learner-model facade,
+    // tracker E1/E3).
     expect(out[0].toMastery).toBeGreaterThan(0);
     expect(out[0].toMastery).toBeLessThanOrEqual(1);
   });

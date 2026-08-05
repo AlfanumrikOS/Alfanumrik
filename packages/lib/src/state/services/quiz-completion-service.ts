@@ -34,6 +34,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { bktPosterior, BKT_PARAMS } from '../../learner-model/bkt-mirror';
 import type { DomainEvent } from '../events/registry';
 import type { StudentState } from '../student-state';
 import { pickSubjectMastery } from '../student-state';
@@ -73,32 +74,15 @@ export interface QuizCompletionOutput {
   }>;
 }
 
-// ── BKT parameters (Phase 1 — match cognitive-engine.ts conservatives) ─
-
-/** Initial mastery prior when we've never seen a chapter. */
-const BKT_PRIOR_INIT = 0.3;
-/** Probability of transition from not-mastered to mastered on a try. */
-const BKT_TRANSITION = 0.1;
-/** Probability of a slip (correct response despite not knowing). */
-const BKT_SLIP = 0.1;
-/** Probability of a guess (correct response without knowing). */
-const BKT_GUESS = 0.25;
-
-/**
- * Single-question BKT update. Pure function, exported for unit tests.
- * Returns the new mastery posterior given the prior and outcome.
- */
-export function bktUpdate(prior: number, correct: boolean): number {
-  // Posterior P(known | observation)
-  const pCorrectGivenKnown = 1 - BKT_SLIP;
-  const pCorrectGivenUnknown = BKT_GUESS;
-  const pCorrect = prior * pCorrectGivenKnown + (1 - prior) * pCorrectGivenUnknown;
-  const posteriorObserved = correct
-    ? (prior * pCorrectGivenKnown) / Math.max(pCorrect, 1e-9)
-    : (prior * (1 - pCorrectGivenKnown)) / Math.max(1 - pCorrect, 1e-9);
-  // Apply transition: even after observation, learning has occurred.
-  return posteriorObserved + (1 - posteriorObserved) * BKT_TRANSITION;
-}
+// ── BKT parameters (Foxy North-Star Phase 2 wave 2b, tracker E1/E3) ─
+//
+// CONSOLIDATED: this service previously carried its own divergent BKT
+// (prior 0.3, transition 0.1). It now uses the canonical learner-model
+// facade — `bktPosterior` + `BKT_PARAMS` (`@alfanumrik/lib/learner-model`),
+// the exact TS mirror of the `update_learner_state_post_quiz` SQL RPC
+// (pLearn 0.2, pSlip 0.1, pGuess 0.25, priorInit 0.1).
+// Behavior-neutral in prod: this service only runs behind ff_event_bus_v1
+// (OFF → zero rows); its param-pinning tests were updated in the same PR.
 
 // XP formula. Designed to be predictable and copy-paste-replicable in
 // the parent-facing report. 5 XP per correct, capped at 60 per session.
@@ -138,9 +122,9 @@ export const quizCompletionService: Service<QuizCompletionInput, QuizCompletionO
     for (const [chapterNumber, outcomes] of byChapter) {
       const priorChapter = subject?.chapters.find(c => c.chapterNumber === chapterNumber);
       const fromMastery = priorChapter?.mastery ?? null;
-      let m = fromMastery ?? BKT_PRIOR_INIT;
+      let m = fromMastery ?? BKT_PARAMS.priorInit;
       for (const ok of outcomes) {
-        m = bktUpdate(m, ok);
+        m = bktPosterior(m, ok);
       }
       // Clamp to [0,1] in case of float drift.
       const toMastery = Math.max(0, Math.min(1, m));

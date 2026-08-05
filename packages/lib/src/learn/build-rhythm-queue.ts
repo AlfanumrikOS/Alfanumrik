@@ -45,10 +45,8 @@ import {
   composeDailyRhythm,
   type CandidateProblem,
 } from '@alfanumrik/lib/learn/daily-rhythm-orchestrator';
-import {
-  dueReviewsToCards,
-  type DueReviewRow,
-} from '@alfanumrik/lib/learn/due-reviews-adapter';
+import { dueReviewsToCards } from '@alfanumrik/lib/learn/due-reviews-adapter';
+import { getDueReviews } from '@alfanumrik/lib/learner-model';
 import {
   ADAPTIVE_REMEDIATION_RULES,
   compareBySeverity,
@@ -223,26 +221,15 @@ export async function buildRhythmQueue(
     });
   }
 
-  // Load due reviews (A4). RPC returns rows already filtered to due-for-review.
+  // Load due reviews (A4) via the learner-model facade — behavior identical:
+  // the facade wraps the same get_due_reviews RPC (rows already filtered to
+  // due-for-review; SECURITY DEFINER scoped by p_student_id) AND the F7
+  // additive SM-2 merge block that previously lived inline here (ease_factor
+  // / next_review_at batch-fetched from concept_mastery, non-fatal — adapter
+  // defaults easeFactor 2.5 / nextReviewAt null apply when absent).
   // concept_mastery.student_id FKs students.id (the surrogate), not the auth
   // uid — pass the resolved studentRow.id, same as /api/dive/state.
-  const { data: dueRowsRaw, error: dueErr } = await supabase.rpc('get_due_reviews', {
-    p_student_id: studentRow.id,
-    p_subject_code: null,
-    p_limit: 20,
-  });
-  if (dueErr) {
-    logger.error('rhythm/today: get_due_reviews RPC failed', {
-      error: new Error(dueErr.message),
-      userId,
-    });
-  }
-  const dueRows: DueReviewRow[] = (dueRowsRaw ?? []).map((r: Record<string, unknown>) => ({
-    topic_id: String(r.topic_id ?? ''),
-    mastery_probability: typeof r.mastery_probability === 'number' ? r.mastery_probability : null,
-    last_attempted_at: typeof r.last_attempted_at === 'string' ? r.last_attempted_at : null,
-    review_interval_days: typeof r.review_interval_days === 'number' ? r.review_interval_days : 0,
-  }));
+  const dueRows = await getDueReviews(supabase, studentRow.id, null, 20);
 
   // Build conceptToQuestion map: one active question per due topic.
   const dueTopicIds = dueRows.map((r) => r.topic_id).filter(Boolean);

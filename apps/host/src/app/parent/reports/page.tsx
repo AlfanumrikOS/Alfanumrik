@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
@@ -10,6 +11,7 @@ import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@alfanumrik/lib/constants';
 import { getQuizScoreColor } from '@alfanumrik/lib/score-colors';
 import ParentLabReportWidget from '@alfanumrik/ui/parent/ParentLabReportWidget';
+import { ConversationPromptsCard } from '@alfanumrik/ui/parent/ConversationPromptsCard';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 import { StatCard } from '@alfanumrik/ui/admin-ui';
@@ -21,6 +23,15 @@ import {
   resolveLinkedChild,
   withParentChildId,
 } from '../_components/parent-child-scope';
+
+// P10 FOLD-IN (2026-08-05): the standalone `/parent/progress` route was
+// deleted; its surface now mounts here as a third viewMode ('progress') deep-
+// linked via `?tab=progress`. Dynamic-imported (ssr:false, null loading) so
+// the host page's first-load JS is unchanged.
+const ProgressPanel = dynamic(() => import('./ProgressPanel'), {
+  ssr: false,
+  loading: () => null,
+});
 
 const SESSION_KEY = 'alfanumrik_parent_session';
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
@@ -119,6 +130,8 @@ interface ReportData {
   insights?: Array<string | InsightItem>;
   parentTips?: Array<string | TipItem>;
   tips?: Array<string | TipItem>;
+  /** K8 — up to 3 bilingual conversation-starters authored server-side. */
+  conversation_prompts?: string[];
 }
 
 interface MonthlyReportData {
@@ -1448,7 +1461,12 @@ function ParentReportsPage() {
   const [scopeError, setScopeError] = useState('');
   const [scopeAttempt, setScopeAttempt] = useState(0);
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'all'>('week');
-  const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
+  // P10 FOLD-IN (2026-08-05): 'progress' is the folded-in `/parent/progress`
+  // surface (deep-linked via `?tab=progress`). 'weekly' | 'monthly' unchanged.
+  const initialTab = (searchParams.get('tab') || '').toLowerCase();
+  const [viewMode, setViewMode] = useState<'weekly' | 'monthly' | 'progress'>(
+    initialTab === 'progress' ? 'progress' : initialTab === 'monthly' ? 'monthly' : 'weekly',
+  );
   const reportSequence = useRef(0);
 
   // Auth: resolve guardian + student + children list
@@ -1789,6 +1807,20 @@ function ParentReportsPage() {
           >
             {t(isHi, 'Monthly Report', 'मासिक रिपोर्ट')}
           </button>
+          {/* P10 FOLD-IN (2026-08-05): folded-in /parent/progress surface */}
+          <button
+            onClick={() => setViewMode('progress')}
+            style={{
+              padding: '7px 16px',
+              backgroundColor: viewMode === 'progress' ? '#FFFFFF' : 'rgba(255,255,255,0.15)',
+              color: viewMode === 'progress' ? '#15803D' : 'rgba(255,255,255,0.9)',
+              border: 'none', borderRadius: 20, fontSize: 13,
+              fontWeight: viewMode === 'progress' ? 700 : 500,
+              cursor: 'pointer', transition: 'all 0.2s',
+            }}
+          >
+            {t(isHi, 'Progress', 'प्रगति')}
+          </button>
         </div>
 
         {/* Date range selector (only in weekly mode) */}
@@ -1829,6 +1861,13 @@ function ParentReportsPage() {
           onSelect={handleSelectChild}
         />
 
+        {/* ── PROGRESS VIEW (folded-in /parent/progress surface) ── */}
+        {viewMode === 'progress' && (
+          <SectionErrorBoundary section="Progress">
+            <ProgressPanel />
+          </SectionErrorBoundary>
+        )}
+
         {/* ── MONTHLY REPORT VIEW ── */}
         {viewMode === 'monthly' && guardian && student && (
           <SectionErrorBoundary section="Monthly Report">
@@ -1861,6 +1900,11 @@ function ParentReportsPage() {
           </div>
         )}
 
+        {viewMode === 'weekly' && !loading && !error && report?.conversation_prompts && report.conversation_prompts.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <ConversationPromptsCard prompts={report.conversation_prompts} isHi={isHi} />
+          </div>
+        )}
         {viewMode === 'weekly' && !loading && !error && (
           <>
             {/* ── 1. PERFORMANCE SUMMARY CARDS ── */}

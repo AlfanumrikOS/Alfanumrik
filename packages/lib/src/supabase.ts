@@ -33,8 +33,10 @@ import { shuffle } from './shuffle';
 // Re-export from the canonical client module — new code uses supabase-client.ts
 export { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
 
-// Internal: import client + constants for use by the data functions below
-import { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
+// Internal: import client for use by the data functions below (the URL/key
+// constants are no longer needed here since the cme-engine fetch-outs were
+// deleted — tracker E1; they remain re-exported above for external consumers)
+import { supabase } from './supabase-client';
 
 /* ── Timeout wrapper for fetch calls ── */
 function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
@@ -340,32 +342,27 @@ async function validateQuestions(questions: QuestionRecord[]): Promise<QuestionR
 /**
  * ARCHITECTURAL CONTRACT -- DO NOT MODIFY WITHOUT REVIEW
  *
- * Quiz submission MUST update adaptive learning state. This happens in TWO layers:
- *
- * Layer 1 (SERVER-SIDE, in RPC):
+ * Quiz submission MUST update adaptive learning state. This happens
+ * SERVER-SIDE, in the RPC:
  *   submit_quiz_results RPC -> update_learner_state_post_quiz()
  *   Updates: concept_mastery (BKT), bloom_progression, spaced_repetition,
  *            error classification, retention half-life, streak, CME action
  *   Requires: question_bank.topic_id IS NOT NULL (currently 99.9% populated)
  *   Guarded by: IF v_q_topic_id IS NOT NULL THEN ... END IF
  *
- * Layer 2 (CLIENT-SIDE, belt-and-braces backup):
- *   processAdaptiveLearning() -> CME Edge Function record_response
- *   Updates: cme_concept_state (IRT mastery), error classification
- *   Fires after Layer 1 succeeds, fire-and-forget
- *   NOTE: This is redundant with Layer 1 since migration 20260405000001
- *   unified concept_mastery and cme_concept_state. Kept as safety net
- *   in case Layer 1's topic_id lookup returns NULL for edge-case questions.
+ * HISTORY (Foxy North-Star Phase 2 wave 2b, tracker E1, 2026-08-05):
+ *   The former client-side "Layer 2 backup" — processAdaptiveLearning()
+ *   fanning out to the cme-engine Edge Function's record_response, writing
+ *   the parallel retired cme store — was DELETED. It had zero live
+ *   callers (the quiz page stopped calling it when CME mastery moved
+ *   server-side; see adaptive-pipeline.test.ts) and its target table is
+ *   COMMENT-tombstoned as RETIRED (migration 20260808000100).
+ *   getCmeNextAction() (cme-engine get_next_action) was deleted in the same
+ *   pass — its replacement is the pure deriveNextAction ladder in
+ *   @alfanumrik/lib/learner-model. Do NOT re-add client-side mastery writes.
  *
- * FALLBACK PATH WARNING:
- *   If submit_quiz_results RPC fails, the fallback uses atomic_quiz_profile_update
- *   which does NOT call update_learner_state_post_quiz. In that case, Layer 2
- *   (processAdaptiveLearning) is the ONLY mastery update path. This is acceptable
- *   because the RPC failure is already logged, and Layer 2 is always called from
- *   the quiz page regardless of which submission path succeeded.
- *
- * INVARIANT: Every quiz submission MUST trigger both layers.
- * If you add a new quiz page, it MUST call submitQuizResults() + processAdaptiveLearning().
+ * INVARIANT: Every quiz submission MUST flow through submitQuizResults() so
+ * the server-side RPC chain updates learner state.
  * Test: src/__tests__/adaptive-pipeline.test.ts verifies this contract.
  */
 /**
@@ -500,6 +497,19 @@ export interface QuizResponseV2 {
   marks_awarded?: number;
   marks_possible?: number;
   rubric_feedback?: string;
+  /**
+   * Foxy North-Star F8 (2026-08-05): highest hint tier used on this question
+   * (0 = none, 1-3). Optional — undefined → SQL NULL. Persisted to
+   * quiz_responses.hint_level by submit_quiz_results_v2 (telemetry only).
+   */
+  hint_level?: number;
+  /**
+   * Foxy North-Star Phase 2 wave 2b (tracker E, 2026-08-05): additive
+   * evidence-capture companions (migration 20260807000200). Optional —
+   * undefined → SQL NULL. Telemetry only: no scoring/XP/anti-cheat input.
+   */
+  confidence?: number;
+  answer_method?: string;
 }
 
 // Dedup guard: prevents double-click / SWR retry from re-submitting a quiz (5 min window).
@@ -508,7 +518,11 @@ const _quizDedup = new Set<string>();
 // v2 response mapper -- strips is_correct + shuffle_map; server re-derives both from snapshot.
 type _RX = import('./types').QuizResponse & { error_type?: string; student_answer_text?: string; marks_awarded?: number; marks_possible?: number; rubric_feedback?: string };
 function _mapV2(responses: import('./types').QuizResponse[]) {
-  return responses.map(r => { const rx = r as _RX; return { question_id: r.question_id, selected_displayed_index: typeof r.selected_option === 'number' ? r.selected_option : Number(r.selected_option), time_spent: r.time_spent, error_type: rx.error_type, student_answer_text: rx.student_answer_text, marks_awarded: rx.marks_awarded, marks_possible: rx.marks_possible, rubric_feedback: rx.rubric_feedback }; });
+  // hint_level (F8, 2026-08-05): additive optional pass-through — undefined is
+  // dropped by JSON serialization and lands as SQL NULL in the RPC.
+  // confidence + answer_method (wave 2b, 2026-08-05): same additive pattern —
+  // per-response evidence capture; undefined → dropped → SQL NULL.
+  return responses.map(r => { const rx = r as _RX; return { question_id: r.question_id, selected_displayed_index: typeof r.selected_option === 'number' ? r.selected_option : Number(r.selected_option), time_spent: r.time_spent, error_type: rx.error_type, student_answer_text: rx.student_answer_text, marks_awarded: rx.marks_awarded, marks_possible: rx.marks_possible, rubric_feedback: rx.rubric_feedback, hint_level: r.hint_level, confidence: r.confidence, answer_method: r.answer_method }; });
 }
 
 /**
@@ -651,129 +665,10 @@ export async function submitQuizResults(studentId: string, subject: string, grad
   }
 }
 
-/**
- * Post-quiz adaptive processing — fire-and-forget, non-blocking.
- *
- * Calls the CME Edge Function `record_response` action per question to update
- * mastery state in `cme_concept_state`. This enables:
- * - Adaptive difficulty in future quizzes (quiz-generator uses concept_mastery)
- * - Spaced repetition scheduling (retention half-life tracking)
- * - Knowledge gap detection (error classification)
- * - Bloom's progression tracking
- *
- * Called from the quiz page AFTER submitQuizResults succeeds. Receives both
- * the responses and the original questions (needed for chapter_number, difficulty,
- * bloom_level which are on the question, not the response).
- *
- * IMPORTANT: This is a best-effort enhancement. If it fails, the quiz score and
- * XP are already saved correctly via the atomic RPC (P1/P2/P3/P4 untouched).
- */
-export async function processAdaptiveLearning(
-  studentId: string,
-  subject: string,
-  grade: string,
-  responses: Array<{ question_id: string; is_correct: boolean; time_spent: number; selected_option: number; error_type?: string; telemetry?: { latency_ms?: number, changed_answers_count?: number, hints_used?: number } }>,
-  questions: Array<{ id: string; chapter_number: number; difficulty: number; bloom_level: string }>,
-  sessionId: string,
-): Promise<void> {
-  // Get the user's access token for CME Edge Function auth
-  const { data: { session: authSession } } = await supabase.auth.getSession();
-  const token = authSession?.access_token;
-  if (!token) return; // Can't call Edge Function without auth
-
-  // Build question lookup by ID
-  const questionMap = new Map(questions.map(q => [q.id, q]));
-
-  // Resolve subject code -> subject UUID for curriculum_topics lookup
-  const { data: subjectRow } = await supabase
-    .from('subjects')
-    .select('id')
-    .eq('code', subject)
-    .maybeSingle();
-  if (!subjectRow) return;
-
-  // Collect unique chapter numbers from questions to resolve topic IDs
-  const chapterNumbers = new Set<number>();
-  for (const q of questions) {
-    if (typeof q.chapter_number === 'number' && q.chapter_number > 0) {
-      chapterNumbers.add(q.chapter_number);
-    }
-  }
-
-  // Resolve chapter_number -> curriculum_topics.id (UUID) for CME
-  const topicMap = new Map<number, string>(); // chapter_number -> topic UUID
-  if (chapterNumbers.size > 0) {
-    const { data: topics } = await supabase
-      .from('curriculum_topics')
-      .select('id, chapter_number')
-      .eq('subject_id', subjectRow.id)
-      .eq('grade', grade)
-      .in('chapter_number', [...chapterNumbers])
-      .is('parent_topic_id', null) // top-level chapter topics
-      .limit(50);
-    if (topics) {
-      for (const t of topics) {
-        if (t.chapter_number != null && !topicMap.has(t.chapter_number)) {
-          topicMap.set(t.chapter_number, t.id);
-        }
-      }
-    }
-  }
-
-  // Call CME record_response for each question response.
-  // This updates cme_concept_state with BKT mastery, error classification,
-  // retention scheduling per concept.
-  let cmeFailureCount = 0;
-  let cmeSuccessCount = 0;
-  for (const response of responses) {
-    const question = questionMap.get(response.question_id);
-    if (!question) continue;
-
-    const conceptId = topicMap.get(question.chapter_number);
-    if (!conceptId) continue; // No matching curriculum_topic — skip
-
-    try {
-      await fetchWithTimeout(`${supabaseUrl}/functions/v1/cme-engine`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          action: 'record_response',
-          concept_id: conceptId,
-          question_id: response.question_id,
-          correct: response.is_correct,
-          difficulty: question.difficulty ?? 2,
-          response_time_ms: (response.time_spent ?? 10) * 1000,
-          telemetry: response.telemetry,
-        }),
-      }, 5000); // 5s timeout per call — best-effort
-      cmeSuccessCount++;
-    } catch {
-      cmeFailureCount++;
-    }
-  }
-
-  // Report adaptive pipeline failures to ops_events via /api/client-error
-  // so they appear in the Observability Console and alert rules can fire.
-  if (cmeFailureCount > 0) {
-    try {
-      fetch('/api/client-error', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: `[adaptive-pipeline] CME record_response failed for ${cmeFailureCount}/${cmeFailureCount + cmeSuccessCount} questions`,
-          url: '/quiz',
-        }),
-      }).catch((err: unknown) => {
-        console.warn('[adaptive-pipeline] error-report POST failed:', err instanceof Error ? err.message : String(err));
-      }); // fire-and-forget, never block
-    } catch {
-      // Reporting failure is itself non-fatal
-    }
-  }
-}
+// processAdaptiveLearning() was DELETED here (tracker E1, 2026-08-05) — see
+// the ARCHITECTURAL CONTRACT HISTORY note above submitQuizResults. Adaptive
+// learner state is updated exclusively server-side inside the submit RPC
+// chain (update_learner_state_post_quiz).
 
 export async function getLeaderboard(period = 'weekly', limit = 20) {
   try {
@@ -862,47 +757,9 @@ export async function getReviewCards(studentId: string, limit = 10) {
 
 export const sendToFoxy = chatWithFoxy;
 
-/* ── CME Engine: get next learning action ── */
-export async function getCmeNextAction(
-  studentId: string,
-  subject: string,
-  grade: string
-): Promise<import('./types').CmeAction | null> {
-  try {
-    // Resolve subject code → subject_id (UUID)
-    const { data: subjectRow } = await supabase
-      .from('subjects')
-      .select('id')
-      .eq('code', subject)
-      .single();
-    if (!subjectRow) return null;
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token || supabaseAnonKey;
-
-    const res = await fetchWithTimeout(`${supabaseUrl}/functions/v1/cme-engine`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        apikey: supabaseAnonKey, // Required by Supabase Edge Functions for JWT verification
-      },
-      body: JSON.stringify({
-        action: 'get_next_action',
-        subject_id: subjectRow.id,
-      }),
-    }, 10000);
-
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.error || !data.type) return null;
-    return data as import('./types').CmeAction;
-  } catch {
-    // Silently fail — CME is best-effort enhancement
-    return null;
-  }
-}
-
+// getCmeNextAction() was DELETED here (tracker E1, 2026-08-05) — zero callers.
+// Its replacement is the pure deriveNextAction ladder in
+// @alfanumrik/lib/learner-model (no network call, no cme-engine).
 
 /* ═══ ROLE & CLASS RPCs ═══ */
 
@@ -1525,7 +1382,27 @@ export async function getQuizQuestionsV2(
         } catch {
           allowFisherInfo = false; // fail-closed: proxy_distance ranking
         }
-        const { questions: adaptiveRows, weakTopicsTargeted } = await selectAdaptiveQuestions(
+        // ── IRT SHADOW gate (ff_irt_shadow_v1 — Phase 3 E2) ──────────────────
+        // When ON, the selector scores every candidate BOTH ways (live serving
+        // path + fisher_info-forced shadow path) on rows it already fetched —
+        // zero extra I/O — and returns a divergence sample we ship to
+        // /api/telemetry/irt-shadow fire-and-forget. Serving is UNAFFECTED.
+        // FAIL-CLOSED: flag missing / read error / false → no shadow scoring.
+        // Flag seeded OFF by migration 20260809000000; evaluated per-student
+        // for deterministic percentage ramps (same convention as
+        // ff_irt_question_selection above). The telemetry route re-checks the
+        // flag server-side — this client gate is a cost gate, not a security
+        // boundary.
+        let computeShadow = false;
+        try {
+          computeShadow = await isFeatureEnabled(
+            'ff_irt_shadow_v1',
+            { userId: studentId, role: 'student' },
+          );
+        } catch {
+          computeShadow = false; // fail-closed: no shadow scoring
+        }
+        const { questions: adaptiveRows, weakTopicsTargeted, shadow } = await selectAdaptiveQuestions(
           supabase as unknown as AdaptiveClient,
           {
             studentId,
@@ -1535,12 +1412,53 @@ export async function getQuizQuestionsV2(
             irtTheta,
             excludeIds: [],
             allowFisherInfo,
+            computeShadow,
           },
         );
         if (Array.isArray(adaptiveRows) && adaptiveRows.length > 0 && weakTopicsTargeted > 0) {
           // weakTopicsTargeted is computed for observability/tests; the
           // candidates themselves are what matter for selection.
           adaptiveCandidates = adaptiveRows;
+        }
+        // ── Shadow telemetry (fire-and-forget; NEVER touches the quiz path) ──
+        // Contract (backend E2, apps/host/src/app/api/telemetry/irt-shadow):
+        //   POST { theta, nCandidates, nCalibrated, spearmanRho, top5Overlap,
+        //          top10Overlap, subject, grade } → 204.
+        // The route's zod schema requires all three divergence metrics as
+        // finite numbers, so null-metric samples (degenerate candidate sets:
+        // < 2 candidates or zero score variance) are not sent — they carry no
+        // divergence signal anyway. No studentId in the payload (the server
+        // derives it from auth; P13 — no identifiers beyond the session).
+        // keepalive so a navigation right after quiz start does not drop the
+        // beacon. Guarded for non-browser contexts; any telemetry failure is
+        // swallowed — the quiz path must be unaware.
+        if (
+          shadow &&
+          typeof fetch === 'function' &&
+          shadow.spearmanRho !== null &&
+          shadow.top5Overlap !== null &&
+          shadow.top10Overlap !== null
+        ) {
+          try {
+            void fetch('/api/telemetry/irt-shadow', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              keepalive: true,
+              body: JSON.stringify({
+                theta: shadow.theta,
+                nCandidates: shadow.nCandidates,
+                nCalibrated: shadow.nCalibrated,
+                spearmanRho: shadow.spearmanRho,
+                top5Overlap: shadow.top5Overlap,
+                top10Overlap: shadow.top10Overlap,
+                subject,
+                grade,
+              }),
+            }).catch(() => { /* telemetry is best-effort */ });
+          } catch {
+            /* telemetry failure never touches the quiz path */
+          }
         }
       }
     } catch (e) {

@@ -2314,3 +2314,305 @@ Known gap above).
 
 ---
 
+## REG-348 — Safeguarding two-tier fail-closed contract: a Tier-1 regex hit can NEVER silently degrade to "no escalation" when Tier-2 fails (2026-08-05)
+
+**Status: E.** Foxy North-Star Phase 1 (spec
+`docs/superpowers/specs/2026-08-05-foxy-north-star-alignment-design.md`,
+S5.6/U6, approval A1), uncommitted at promotion time on branch
+`Alfanumrik/foxy-system-spec-22f565`.
+
+The safeguarding flow is two-tier: Tier-1 is a deterministic regex pre-screen
+(`packages/lib/src/ai/validation/safeguarding-screen.ts`, zero network),
+Tier-2 is an LLM confirmation classifier
+(`packages/lib/src/ai/validation/safeguarding-classify.ts`, gateway
+`callModel`, temperature 0, jsonMode, 0.7 inclusive confirm threshold). The
+contract this entry pins is the FAIL-CLOSED branch: **after a Tier-1 hit, any
+Tier-2 failure — gateway all-candidates-failed result, gateway throw,
+unparseable prose, empty content, non-numeric confidence, JSON-array shape —
+resolves to `{ confirmed: true, category: categories[0], confidence: 0,
+tier: 'regex_only' }`**, i.e. the escalation proceeds on regex evidence alone
+rather than the disclosure being silently dropped because a model was down.
+The classifier itself never throws.
+
+Downstream of a confirmed verdict (either tier), the route
+(`apps/host/src/app/api/foxy/route.ts`, gated by `ff_safeguarding_v1`)
+terminates the turn WITHOUT any LLM answer call and:
+- returns the terminal envelope (`badgeState: 'safeguarding'`,
+  `safeguarding.helpline = { name: 'Childline', number: '1098' }`, bilingual
+  EN + Devanagari copy, warm/non-clinical — no diagnosis language);
+- inserts the `safeguarding_escalations` row (excerpt capped at 500 chars,
+  `classifier_meta` = confidence + label ONLY);
+- fans out via `escalateSafeguarding` with `{ escalationId, schoolId,
+  category }` — NO excerpt (see REG-349);
+- REFUNDS the consumed quota unit (`refundQuota(studentId, 'foxy_chat')`) —
+  a safeguarding disclosure never costs the student a chat;
+- awards 0 XP / touches no mastery table (P2).
+
+The complements are pinned in both directions: an AMBIGUOUS Tier-2 verdict
+(confirmed=false, or model-said-confirmed but confidence < 0.7) lets the turn
+continue completely normally (no row, no refund, grounded answer runs), and a
+route-level classifier rejection (defense-in-depth — the module contract says
+it can't happen) also continues normally rather than 500ing the student.
+Flag OFF → Tier-1 is NEVER invoked (zero `screenForSafeguarding` /
+`classifySafeguarding` calls, no escalation write, legacy grounded path —
+the rollback contract).
+
+Pinned by:
+- `packages/lib/src/__tests__/ai/validation/safeguarding-classify.test.ts`
+  (the "FAIL-CLOSED after a Tier-1 hit" describe: 6 failure shapes → the
+  exact regex_only verdict; plus confirm/below-threshold/JSON-repair/request-
+  hygiene pins, incl. the PR2 no-diagnosis boundary + sessionMood
+  prior-only + prompt-injection-resistant mood token);
+- `packages/lib/src/__tests__/ai/validation/safeguarding-screen.test.ts`
+  (Tier-1 deterministic screen contract);
+- `apps/host/src/__tests__/api/foxy/safeguarding-route.test.ts` (flag-OFF
+  no-op A; confirmed-terminal B incl. refund + no-LLM + capped excerpt;
+  ambiguous-continues C incl. classifier-rejection defense; sessionMood
+  enum validation D — invalid mood dropped silently, never a 400);
+- `apps/host/src/__tests__/api/foxy/respond-safeguarding.test.ts` (terminal
+  envelope: bilingual P7, helpline card data, foxy_chat_messages persistence
+  only, 0 XP; **old-APK safety pin, added 2026-08-05** — 'Childline' AND
+  '1098' must appear in BOTH the EN and the Devanagari-HI segments of the
+  top-level flat `response` string, asserted WITHOUT reference to the
+  structured `safeguarding` envelope, because pre-safeguarding mobile APKs
+  render only `response` and never see `badgeState`/`safeguarding.helpline`;
+  moving the helpline solely into the envelope would show a distressed child
+  a reply with no helpline at all — a child-safety regression).
+
+P12 (no unfiltered/absent safety handling of a disclosure) + P7 + P2.
+
+## REG-349 — Safeguarding data boundary (P13): disclosure text lives in EXACTLY ONE place; notifications, list APIs, and audits are metadata-only (2026-08-05)
+
+**Status: E.** Same Phase 1 change set as REG-348.
+
+Migration `20260806000100_safeguarding_escalations.sql` declares
+`disclosure_excerpt` (≤500 chars, CHECK-enforced) as **the ONE sanctioned home
+for student disclosure text** (PR5: sensitive conversations retained only
+with a safeguarding purpose, 90-day `retain_until`). Everything around it is
+pinned metadata-only:
+
+- **Fan-out** (`apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts`):
+  one `notifications` row per ACTIVE school admin, `data` carries
+  `{ escalation_id, category }` ONLY — the serialized payload is asserted to
+  never contain `disclosure`/`excerpt`/`student_id`/name/email/phone. Zero
+  active admins → count 0 with the case row still standing in the
+  super-admin queue; B2C (null schoolId) → no lookup at all; DB failure →
+  never throws, count 0.
+- **Review list APIs** (`/api/super-admin/safeguarding` +
+  `/api/school-admin/safeguarding`, canonical `{rows}`/`{row}`/PATCH
+  contracts): the LIST projection NEVER selects or returns
+  `disclosure_excerpt` — only the single-row `?id=` detail does. Super-admin
+  gate is `authorizeAdmin(request, 'admin')` on BOTH verbs; school-admin is
+  `authorizeSchoolAdmin` with EVERY query (list, detail, PATCH load, PATCH
+  update) hard-scoped to the caller's `school_id` (P8). PATCH transitions
+  `pending_review → reviewed/actioned/dismissed` only; non-pending → 409;
+  audit metadata-only.
+- **Route audit**: the `flow:'safeguarding'` audit row carries
+  category/tier/escalated only — asserted to never contain the student's
+  message text. `classifier_meta` on the escalation row is
+  `{ confidence, label }` only.
+
+Pinned by `safeguarding-escalate.test.ts`,
+`super-admin-safeguarding.test.ts`, `school-admin-safeguarding.test.ts`, and
+the audit/fan-out assertions in `safeguarding-route.test.ts` (all under
+`apps/host/src/__tests__/api/`). P13 + P8 + P9.
+
+## REG-350 — Student memory self-access whitelist + scoped erasure routing + RLS-closed safeguarding table (2026-08-05)
+
+**Status: E** on the TS surfaces; the four memory/erasure migrations
+(`20260806000300` scope column, `20260806000400` memory permissions,
+`20260806000600` guardian_id nullable, `20260806000700` scoped purge RPC,
+`20260806000800` frustration_threshold drop + affective fn rewrite) have
+structural coverage only — no live-Postgres execution this session.
+2026-08-05 addendum (PR6 review pin): `20260806000800` now carries a
+dedicated static structure pin,
+`apps/host/src/__tests__/security/affective-profile-drop-migration.test.ts`
+(5 tests, comment-stripped active-DDL assertions): the replaced
+`compute_student_affective_profile` body contains NO
+`frustration_threshold` write and NO `PERCENTILE_CONT` feeder while
+preserving the adaptive_profile boredom_floor/frustration_ceiling upsert;
+exactly ONE `DROP COLUMN` (IF EXISTS, on `student_learning_profiles`
+only), function-first ordering inside a single BEGIN/COMMIT;
+`evaluation_state` (whose same-named integer column is NOT covered by
+approval A4) untouched — the only ALTER TABLE target is
+`public.student_learning_profiles`; SECURITY DEFINER + search_path +
+PUBLIC/anon/authenticated EXECUTE revoke re-asserted.
+
+Three boundaries pinned together:
+
+1. **RLS-closed safeguarding table** — static structure pin
+   `apps/host/src/__tests__/security/safeguarding-escalations-migration.test.ts`
+   (8 tests) on migration `20260806000100`: RLS enabled in the same
+   migration (P8); EXACTLY ONE policy and it is `service_role` ALL; NO
+   `TO authenticated`/`anon`/`auth.uid()`/parent-link/teacher-assigned
+   predicate in active DDL; the DELIBERATE-DEVIATION rationale comment
+   (no student self-read — flag-discovery is itself a harm vector; no
+   parent-linked — A1 human-in-the-loop, the parent may be the subject; no
+   teacher-assigned) pinned PRESENT so a future "conformance fix" toward the
+   house 4-pattern template cannot claim ignorance; excerpt-cap/enum CHECKs;
+   `safeguarding.review` seeded + granted (institution_admin + explicit
+   admin/super_admin replay-order grants) in the SAME migration; additive-only.
+2. **Memory self-access whitelist** — `GET /api/learner/memory`
+   (`memory.view_own` + `requireStudentId`) returns ONLY the student-facing
+   projection: cognitive {weakTopics, strongTopics, revisionDue,
+   recentErrors}, longMemory {summary, highConcepts, lowConcepts,
+   topMisconceptions}, preferences, **twin: null** — cohortPercentile,
+   loSkills/pKnow, knowledgeGaps, nextAction, remediationText asserted
+   ABSENT from the serialized body. Grade is the SERVER-fetched string (P5),
+   409 pre-onboarding. Erasure guard tripped → empty layers +
+   `erasurePending: true` with `getStudentMemory` never called (fail-closed
+   blank, DPDP posture consistent with REG-309).
+3. **Scoped erasure never hits the full-account cascade** —
+   `DELETE /api/learner/memory` (`memory.erase_own`) zod-validates the scope
+   layer (unknown layer → 400, nothing inserted) and writes a pending
+   `data_erasure_requests` row with `scope` jsonb + purge_at ≈ now+30d,
+   metadata-only audit. The worker (`packages/lib/src/data-erasure-purger.ts`
+   + `data-erasure-purger` Edge Function + daily-cron purge step) ROUTES
+   scoped rows into the scope-aware `execute_data_erasure_purge` RPC
+   (migration `20260806000700`: scope IS NOT NULL → mapped memory-layer
+   tables only, unknown layer fails closed INSIDE the RPC — never the
+   full-account cascade); `parent.child_erasure_completed` fires ONLY for
+   full-account (parent-initiated) rows, never scoped ones; pre-migration
+   deploys fall back to the legacy projection (backward-compat pin).
+
+Pinned by `apps/host/src/__tests__/api/learner-memory.test.ts`,
+`apps/host/src/__tests__/lib/data-erasure-purger-scoped-skip.test.ts`, the
+migration structure test above, and
+`packages/lib/src/__tests__/policy/prohibited-inferences.test.ts` (PR2
+never-disclose/never-diagnose policy module shared with the classifier
+prompt). P13 + P8 + P5.
+
+**Known gaps (honest):** no live-Postgres execution of any 202608060001xx-08xx
+migration this session (structural pins only, same posture as REG-346); the
+scoped-purge RPC's per-layer table mapping is pinned at the routing/TS layer,
+not by executing the plpgsql; the review QUEUES (folded into tabs at
+`/super-admin/foxy-quality?tab=safeguarding` and
+`/school-admin/escalations?tab=safeguarding` — components
+`apps/host/src/app/super-admin/foxy-quality/SafeguardingQueue.tsx` /
+`apps/host/src/app/school-admin/escalations/SafeguardingQueue.tsx`) and
+memory screen have component-level tests
+(`HelplineCard.test.tsx`, `memory-page.test.tsx`) but no E2E.
+
+### Catalog total
+
+Pre-REG-348: 347 entries (through REG-347, IRT resurrect behavior-neutrality
+— see `00-header.md`). Adds REG-348 (safeguarding two-tier fail-closed
+contract), REG-349 (safeguarding P13 data boundary), REG-350 (memory
+self-access whitelist + scoped erasure routing + RLS-closed safeguarding
+table).
+**Total catalog: 350 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-357 — Foxy North-Star Phase 3: IRT shadow serving-order-unchanged + telemetry P13 (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 3 batch). Sits alongside the IRT/AI
+observability pins (REG-311 ResponseEval sensor, REG-316 RAG confidence v2
+shadow) rather than in `03-quiz-integrity.md`, because the pattern is
+identical: an OBSERVABILITY-ONLY signal that must not touch serving order
+until it graduates.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-357a | `irt_shadow_serving_order_unchanged` | The `select_questions_by_irt_info_v2` RPC (migration `20260809000100`) is a shadow-only extension: its return set and ORDER BY match the v1 RPC exactly, so quiz-question serving order is identical whether the caller reads v1 or v2. Flag `ff_irt_shadow_v1` (seed `20260809000000_seed_ff_irt_shadow_v1.sql`, default OFF/0%) gates ONLY the emission of shadow telemetry — no serving path reads it as a selection input. `estimateTheta` (`packages/lib/src/irt/estimate-theta.ts`) is a pure TS mirror of the SQL Newton-Raphson used for shadow-metric computation; production selection continues to run through the v1 Fisher-info RPC (pinned by the existing `packages/lib/src/irt/fisher-info.ts` tests). Flag-OFF → zero shadow calls, zero telemetry rows, zero serving-order diff. | `apps/host/src/__tests__/lib/irt/estimate-theta.test.ts`; `apps/host/src/__tests__/lib/irt/shadow-metrics.test.ts`; `eval/irt/` harness | E | P1-adjacent (serving order), P12 (observability-only contract) |
+| REG-357b | `irt_shadow_telemetry_p13` | The `POST /api/telemetry/irt-shadow` payload carries UUIDs + numbers only: `studentId` (UUID), `questionId` (UUID), `theta` (number), `discrimination` (number), `difficulty` (number), `probability` (number), `served_via` (short enum, one of `'v1_fisher'`/`'v2_shadow'`). ZOD schema rejects free text, names, emails, phones. Route is `authorizeRequest`-gated (server-side), never called from browser code without a session token. Error responses carry generic messages — no student identifiers echoed. This mirrors REG-311's ResponseEval PII-clean fire-and-forget shape and REG-134's audit-log PII boundary. | `apps/host/src/__tests__/api/telemetry/irt-shadow.test.ts` | E | P13, P12 |
+
+Honest gap: the migration `20260809000100_select_questions_by_irt_info_v2.sql`
+has never executed against a real Postgres this session — structural pins on
+the SQL text only. The Vitest pins exercise the pure TS mirror and the
+route's request/response envelope, neither of which touches the DB.
+
+### Catalog total (updated)
+
+Pre-REG-357: 356 entries (through REG-356, which lives in `03-quiz-integrity.md`
+alongside the other Phase 3 quiz-facing pins). Adds REG-357 (IRT shadow
+serving-order + telemetry P13). REG-358 (SRS single predicate) is also in
+`03-quiz-integrity.md`.
+**Total catalog: 358 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-359 — Foxy route CHARACTERIZATION FIXTURES (R3 decomposition tripwire) (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 4 wave 4a). Promoted into the shard by
+ops as part of Phase 4 wave 4b so the R3 pipeline-decomposition wave has a
+sanctioned catalog entry to point at (see also
+`docs/runbooks/foxy-r3-decomposition-plan.md`).
+
+Byte-for-byte characterization of the CURRENT
+`apps/host/src/app/api/foxy/route.ts` (post Phases 0-3) so the R3
+decomposition PR series — which extracts named pipeline stages out of
+`handleFoxyPost` into `apps/host/src/app/api/foxy/_pipeline/{observe,gate,
+diagnose,decide,teach,check,update,close}.ts` — can prove behavior
+preservation by re-running this suite unchanged.
+
+Per pinned turn, THREE artifacts:
+1. `groundedRequest` — the full `GroundedRequest` handed to the mocked
+   `callGroundedAnswer`; fingerprints prompt-assembly output (every template
+   variable, scope, generation config, retrieval config). `null` for turns
+   that never reach the grounded call (kill-switch OFF, quota 429, grade
+   spoof, math terminal, safeguarding terminal, curriculum-scope fail,
+   out-of-scope terminal).
+2. `wireJson` — the parsed HTTP response body. Deep-equaled against the
+   fixture; top-level key insertion order also pinned via `wireJsonKeyOrder`
+   (V8 preserves insertion order, and the mobile parser depends on it —
+   see R3 risk register #2).
+3. `dbOps` — ordered sequence of `.from(<table>)` calls observed against
+   the fake supabaseAdmin, tagged with the writing op
+   (insert/update/upsert/delete/select) and top-level PATCH keys where
+   present. Fingerprints persistence side-effect ordering.
+
+Flag-sweep contract: every flag the route reads is exercised in the flag-
+sweep block: one ON run and one OFF run against the baseline "learn
+cold-start" fixture (itself captured with every flag OFF). Every OFF run
+MUST deep-equal the baseline; this pins the "OFF is byte-identical" claim
+the route documents inline for each flag. Current OFF sweep covers 20
+flag-OFF paths.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-359a | `foxy_route_characterization_fixtures` | 11 seeded fixtures deep-equal the pinned `groundedRequest` + `wireJson` (with `wireJsonKeyOrder`) + `dbOps` triple for the current route: `001-learn-cold-start`, `002-learn-full-cognitive-context`, `003-quiz-me-intent`, `004-real-practice-flag-on`, `005-abstain-upstream-error-refund-legacy`, `006-abstain-low-similarity-no-refund`, `007-abstain-chapter-not-ready-refund`, `008-legacy-kill-switch`, `009-grade-spoof-403`, `010-quota-429`, `011-streaming-requested-flag-off`. Fixture update mechanism is `FIXTURE_UPDATE=1 npx vitest run …` and re-running WITHOUT that env var MUST be byte-identical. | `apps/host/src/__tests__/api/foxy/foxy-route-characterization.test.ts`; `apps/host/src/__tests__/fixtures/foxy-golden-turns/001-011*.json` | P (11 of 16 pinned; 5 turns declared `pending:true` — math-solve mock, curriculum-scope T3, safeguarding two-tier chain, `foxy_messages` roster, `chapter_concepts` snapshot — seeded by R3-A per `docs/runbooks/foxy-r3-decomposition-plan.md` §2) | P12 (behavior-preservation of the AI-facing route), P13 (fixtures redact PII), P6 (question-quality path preserved) |
+| REG-359b | `foxy_route_flag_off_byte_identity` | Every OFF run in the flag sweep deep-equals the baseline `001-learn-cold-start` fixture. Enforces the OFF-identity contract each flag documents inline in `route.ts`. | same file | E | P14 (flag-OFF byte identity is a review-chain contract) |
+
+Post-R3-B/R3-C extension: after each stage extraction, re-running this suite
+unchanged is the go/no-go gate; a fixture diff means the extraction was NOT
+byte-identical and the PR is blocked. R3-A seeds the remaining 5 pending
+fixtures so R3-B has full coverage before extraction begins.
+
+---
+
+## REG-360 — FoxyPanel embed static-import guard (P10 bundle boundary) (2026-08-05)
+
+Added 2026-08-05 (Phase 4 wave 4b — U1 rollout). See runbook
+`docs/runbooks/foxy-panel-embed-rollout.md`.
+
+The Phase 4 U1 rollout extracted the Foxy chat panel to
+`packages/ui/src/foxy-panel/` and gave it a sanctioned tap-gated entry-point
+`packages/ui/src/foxy-launcher/FoxyPanelLauncher.tsx` that dynamic-imports
+the panel module via `next/dynamic({ ssr:false })` ONLY on tap. Three live
+embed points (dashboard, learn chapter, quiz results) use the launcher; the
+panel's ~200+ kB combined chat+streaming+markdown+KaTeX chunk therefore
+never contributes to those pages' first-load JS. This regression pins that
+boundary: if any `apps/host/src/app/**/page.tsx` ever statically imports
+`@alfanumrik/ui/foxy-panel/*`, first-load JS for that page balloons and
+breaks the P10 budget for the embed hosts.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-360 | `foxy_panel_no_static_embed` | Walks every `apps/host/src/app/**/page.tsx` and asserts NO file contains a static import matching `/from\s+['"]@alfanumrik\/ui\/foxy-panel(\/[^'"]+)?['"]/`. The launcher path (`@alfanumrik/ui/foxy-launcher/*`) is intentionally out of scope — it IS the sanctioned static entry-point. The `/foxy` page's own `apps/host/src/app/foxy/_...` re-export stubs are transitive and do not appear as literal `@alfanumrik/ui/foxy-panel` strings in the page's own source, so the walk cleanly ignores them (preserves pre-Phase-4 /foxy behavior). | `apps/host/src/__tests__/regressions/foxy-panel-no-static-embed.test.ts` | E | P10 (bundle budget for embed hosts), P14 (frontend->ops review-chain contract on embed changes) |
+
+Adjacent evidence: `packages/ui/src/foxy-panel/` (FoxyPanel + MessageInput +
+MessageList + useFoxyChat + foxy-types + foxy-constants),
+`packages/ui/src/foxy-launcher/FoxyPanelLauncher.tsx`, first-load JS
+baselines unchanged for the three embed pages (dashboard 124.5, learn 167.4,
+quiz 177.0 kB).
+
+### Catalog total (updated)
+
+Pre-REG-359: 358 entries. Adds REG-359 (Foxy characterization fixtures,
+Phase 4 wave 4a promoted this wave) and REG-360 (FoxyPanel static-import
+guard, Phase 4 wave 4b).
+**Total catalog: 360 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

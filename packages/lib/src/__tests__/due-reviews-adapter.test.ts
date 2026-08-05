@@ -70,6 +70,65 @@ describe('dueReviewsToCards', () => {
     expect(out.map((c) => c.questionId)).toEqual(['q2', 'q1']);
   });
 
+  // ── F7 (Foxy North-Star Phase 0): SM-2 fields flow through ──────────────
+
+  it('carries SM-2 scheduling fields through to the card (no longer dropped)', () => {
+    const rows: DueReviewRow[] = [
+      {
+        topic_id: 't1',
+        mastery_probability: 0.42,
+        last_attempted_at: '2026-08-01T00:00:00Z',
+        review_interval_days: 6,
+        ease_factor: 2.1,
+        next_review_at: '2026-08-05T00:00:00Z',
+      },
+    ];
+    const out = dueReviewsToCards({
+      rows,
+      conceptToQuestion: new Map([['t1', 'q1']]),
+      aheadOfGradeConceptIds: new Set(),
+    });
+    expect(out[0].easeFactor).toBe(2.1);
+    expect(out[0].reviewIntervalDays).toBe(6);
+    expect(out[0].nextReviewAt).toBe('2026-08-05T00:00:00Z');
+    expect(out[0].masteryProbability).toBe(0.42);
+  });
+
+  it('defaults easeFactor to 2.5 and nextReviewAt to null when the merge fetch supplied nothing', () => {
+    const rows: DueReviewRow[] = [
+      { topic_id: 't1', mastery_probability: null, last_attempted_at: null, review_interval_days: 1 },
+    ];
+    const out = dueReviewsToCards({
+      rows,
+      conceptToQuestion: new Map([['t1', 'q1']]),
+      aheadOfGradeConceptIds: new Set(),
+    });
+    expect(out[0].easeFactor).toBe(2.5);
+    expect(out[0].reviewIntervalDays).toBe(1);
+    expect(out[0].nextReviewAt).toBeNull();
+    expect(out[0].masteryProbability).toBeNull();
+  });
+
+  it('treats a null ease_factor the same as absent (2.5 default)', () => {
+    const rows: DueReviewRow[] = [
+      {
+        topic_id: 't1',
+        mastery_probability: 0.3,
+        last_attempted_at: null,
+        review_interval_days: 2,
+        ease_factor: null,
+        next_review_at: null,
+      },
+    ];
+    const out = dueReviewsToCards({
+      rows,
+      conceptToQuestion: new Map([['t1', 'q1']]),
+      aheadOfGradeConceptIds: new Set(),
+    });
+    expect(out[0].easeFactor).toBe(2.5);
+    expect(out[0].nextReviewAt).toBeNull();
+  });
+
   it('returns empty array when input rows is empty', () => {
     const out = dueReviewsToCards({
       rows: [],

@@ -26,8 +26,19 @@ export const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 export const FoxyRequestBodySchema = z
   .object({
     grade: z.enum(['6', '7', '8', '9', '10', '11', '12']),
+    // Safeguarding Phase 1: optional self-reported session mood. UNTRUSTED
+    // client field (same posture as coachDirective): an invalid value is
+    // dropped silently via .catch(undefined) — it must NEVER 400 the turn.
+    // Consumed only as classifier context for Tier-2 safeguarding.
+    sessionMood: z.enum(['great', 'good', 'ok', 'tired', 'stressed']).optional().catch(undefined),
   })
   .passthrough();
+
+// Safeguarding Phase 1 — valid self-reported session moods (mirror of the
+// FoxyRequestBodySchema enum above; the route's hand-rolled parser uses this
+// list so invalid values are dropped silently, never rejected).
+export const VALID_SESSION_MOODS = ['great', 'good', 'ok', 'tired', 'stressed'] as const;
+export type SessionMood = typeof VALID_SESSION_MOODS[number];
 
 // FOX-3 (Cycle 4, assessment-approved): widened to the full documented Foxy mode
 // set so the route no longer coerces doubt/homework/explorer down to 'learn'.

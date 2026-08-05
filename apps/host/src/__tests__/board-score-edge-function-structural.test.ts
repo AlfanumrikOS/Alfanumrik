@@ -8,11 +8,13 @@
  * Two independent concerns pinned here:
  *
  * 1. Bug 1 fix — the broken PostgREST nested-embed
- *    (`curriculum_topics!inner(... subjects!inner(code) ...)` on
- *    `cme_concept_state`, which fails because no FK from
- *    `cme_concept_state.concept_id` to `curriculum_topics.id` is declared)
- *    is GONE, replaced by the flat three-query + in-memory Map join pattern
- *    that mirrors `cme-engine/index.ts`.
+ *    (`curriculum_topics!inner(... subjects!inner(code) ...)` on the mastery
+ *    read, which failed because no FK relationship was declared for the
+ *    embed) is GONE, replaced by the flat three-query + in-memory Map join
+ *    pattern that mirrors `cme-engine/index.ts`. F6 (Foxy North-Star
+ *    Phase 0, 2026-08-05) re-pointed the mastery read from the retired
+ *    orphan CME state table to canonical `concept_mastery`; the flat-fetch
+ *    pattern pins below were updated to the new table name.
  *
  * 2. P1-adjacent formula-untouched guarantee (spec §6, §8 item 8) — the
  *    scoring formula, retention decay, confidence-band widening, chapter
@@ -52,15 +54,27 @@ describe('board-score Edge Function — PostgREST embed fix (structural)', () =>
     expect(sourceWithoutLineComments).not.toMatch(/subjects!inner\s*\(\s*code\s*\)/);
   });
 
-  it('does NOT filter cme_concept_state by curriculum_topics.* dotted PostgREST embed columns', () => {
+  it('does NOT filter the mastery read by curriculum_topics.* dotted PostgREST embed columns', () => {
     expect(source).not.toMatch(/\.eq\(\s*['"]curriculum_topics\.grade['"]/);
     expect(source).not.toMatch(/\.eq\(\s*['"]curriculum_topics\.subjects\.code['"]/);
   });
 
-  it('DOES contain the flat three-query pattern: subjects lookup, curriculum_topics fetch, cme_concept_state fetch', () => {
+  it('DOES contain the flat three-query pattern: subjects lookup, curriculum_topics fetch, concept_mastery fetch', () => {
     expect(source).toMatch(/\.from\(\s*['"]subjects['"]\s*\)/);
     expect(source).toMatch(/\.from\(\s*['"]curriculum_topics['"]\s*\)/);
-    expect(source).toMatch(/\.from\(\s*['"]cme_concept_state['"]\s*\)/);
+    expect(source).toMatch(/\.from\(\s*['"]concept_mastery['"]\s*\)/);
+  });
+
+  it('F6: does NOT read the retired orphan CME state table (retired tables gain no new readers)', () => {
+    expect(source).not.toMatch(/\.from\(\s*['"]cme_concept_state['"]\s*\)/);
+  });
+
+  it('F6: reads canonical columns and excludes not_started seed rows (phantom-coverage guard)', () => {
+    expect(source).toMatch(/mastery_probability/);
+    expect(source).toMatch(/last_attempted_at/);
+    expect(source).toMatch(/\.neq\(\s*['"]mastery_level['"]\s*,\s*['"]not_started['"]\s*\)/);
+    // No half-life column exists on concept_mastery — documented fixed default.
+    expect(source).toMatch(/retention_half_life:\s*48/);
   });
 
   it('DOES join in application code via an in-memory Map keyed by curriculum_topics.id', () => {
@@ -69,10 +83,10 @@ describe('board-score Edge Function — PostgREST embed fix (structural)', () =>
     expect(source).toMatch(/topicChapterMap\.has\(/);
   });
 
-  it('the cme_concept_state fetch no longer filters by subject/grade in the query itself (filtered by the Map join instead)', () => {
-    // Post-fix: cme_concept_state is fetched scoped only to student_id, then
-    // filtered in JS by concept_id membership in topicChapterMap.
-    expect(source).toMatch(/\.from\(\s*['"]cme_concept_state['"]\s*\)[\s\S]{0,400}\.eq\(\s*['"]student_id['"]/);
+  it('the concept_mastery fetch no longer filters by subject/grade in the query itself (filtered by the Map join instead)', () => {
+    // Post-fix: concept_mastery is fetched scoped only to student_id, then
+    // filtered in JS by topic_id membership in topicChapterMap.
+    expect(source).toMatch(/\.from\(\s*['"]concept_mastery['"]\s*\)[\s\S]{0,400}\.eq\(\s*['"]student_id['"]/);
   });
 });
 

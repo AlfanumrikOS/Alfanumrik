@@ -12,7 +12,9 @@
  * ⚠️ BINDING learner-state contract (assessment-issued, non-negotiable):
  *   - This event + route are NON-EVIDENTIAL telemetry. They MUST NOT write
  *     (directly or via any subscriber) to ANY mastery surface: concept_mastery,
- *     cme_concept_state, student_skill_state, knowledge_gaps (mastery/resolution),
+ *     the retired cme table (orphaned — no remaining writer platform-wide;
+ *     verified 2026-08-05, this route has never written it),
+ *     student_skill_state, knowledge_gaps (mastery/resolution),
  *     learner_mastery, cme_error_log, quiz_sessions, student_learning_profiles,
  *     bloom_progression. A self-report cannot move mastery_mean / p_know.
  *   - Award 0 XP. Never calls submitQuizResults / atomic_quiz_profile_update.
@@ -70,13 +72,27 @@ import { publishEvent } from '@alfanumrik/lib/state/events/publish';
 import { loadOpenExpectation, markExpectationAnswered } from '@alfanumrik/lib/learn/foxy-expectations';
 import { randomUUID } from 'node:crypto';
 
-type ActionType = 'got_it' | 'explain_simpler' | 'show_example' | 'quiz_me' | 'save';
+// Foxy North-Star Phase 3 (U4) — coaching actions widened 2026-08-05 to
+// match the `learner.learning_action` event registry enum widening
+// (packages/lib/src/state/events/registry.ts:192). Additive-only: telemetry-
+// only, no XP / no mastery, no new side-effects. The switch/case blocks below
+// take no branch for these values — they publish the event and return.
+type ActionType =
+  | 'got_it'
+  | 'explain_simpler'
+  | 'show_example'
+  | 'quiz_me'
+  | 'save'
+  | 'give_hint'
+  | 'let_me_try';
 const VALID_ACTIONS: readonly ActionType[] = [
   'got_it',
   'explain_simpler',
   'show_example',
   'quiz_me',
   'save',
+  'give_hint',
+  'let_me_try',
 ];
 
 // Expectation kinds that are gradable against the student's NEXT message. For

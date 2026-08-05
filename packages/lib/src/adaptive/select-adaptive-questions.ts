@@ -72,6 +72,13 @@
 // Owning agent: ai-engineer. Assessment reviews retrieval/selection correctness.
 
 import { computeSelectionScore, type IrtItemParams } from '@alfanumrik/lib/irt/fisher-info';
+import {
+  spearmanRank,
+  topKOverlap,
+  type IrtShadowSample,
+} from '@alfanumrik/lib/irt/shadow-metrics';
+
+export type { IrtShadowSample } from '@alfanumrik/lib/irt/shadow-metrics';
 
 // ── Bloom helpers (lifted verbatim from the dead edge-fn logic) ──────────────
 
@@ -165,6 +172,21 @@ export interface SelectAdaptiveQuestionsParams {
    * This module never reads flags itself — it stays a pure, injectable selector.
    */
   allowFisherInfo?: boolean;
+  /**
+   * IRT SHADOW-SCORING gate (ff_irt_shadow_v1 — Phase 3 E2).
+   *
+   * Default FALSE. When true, every candidate that enters ranking is scored a
+   * SECOND time with the fisher_info branch force-allowed
+   * ({ allowFisherInfo: true }) — pure extra math on rows already fetched,
+   * ZERO extra I/O — and the divergence between the two score vectors is
+   * summarised into `shadow` on the result (Spearman rho + top-K overlap +
+   * path counts). SERVING IS UNAFFECTED: ranking, sorting, and the returned
+   * `questions` are computed exactly as before from the live-path scores
+   * (pinned byte-identical by test). The caller (getQuizQuestionsV2)
+   * evaluates the flag fail-closed and ships the sample to
+   * /api/telemetry/irt-shadow fire-and-forget.
+   */
+  computeShadow?: boolean;
 }
 
 export interface SelectAdaptiveQuestionsResult {
@@ -172,6 +194,11 @@ export interface SelectAdaptiveQuestionsResult {
   questions: any[];
   /** Number of distinct weak topics the candidates were drawn from. */
   weakTopicsTargeted: number;
+  /**
+   * Shadow-divergence sample — present ONLY when `computeShadow` was true AND
+   * at least one candidate was scored. Never affects `questions`.
+   */
+  shadow?: IrtShadowSample;
 }
 
 interface ConceptMasteryJoinRow {
@@ -267,6 +294,16 @@ export async function selectAdaptiveQuestions(
   // true (i.e. ff_irt_question_selection evaluated genuinely enabled for this
   // student). Omitted / undefined / flag-read failure → proxy ranking.
   const allowFisherInfo = params.allowFisherInfo === true;
+  // Shadow scoring (ff_irt_shadow_v1): pure extra math, zero extra I/O, never
+  // touches serving. Default off.
+  const computeShadow = params.computeShadow === true;
+  const shadowAccumulator: Array<{
+    id: string;
+    servingScore: number;
+    servingPath: 'fisher_info' | 'proxy_distance' | 'uncalibrated';
+    shadowScore: number;
+    calibrated: boolean;
+  }> = [];
   const excludeIds = new Set<string>(params.excludeIds ?? []);
   const now = new Date().toISOString();
 
@@ -411,10 +448,26 @@ export async function selectAdaptiveQuestions(
     //    P6-shape guard.
     const ranked = rows
       .filter((q) => q && typeof q.id === 'string' && !usedIds.has(q.id) && isUsableCandidate(q))
-      .map((q) => ({
-        q,
-        score: computeSelectionScore(theta, toIrtItemParams(q), { allowFisherInfo }).score,
-      }))
+      .map((q) => {
+        const item = toIrtItemParams(q);
+        // LIVE serving score — the ONLY input to ranking below. Identical
+        // call to the pre-shadow code path (serving stays byte-identical).
+        const serving = computeSelectionScore(theta, item, { allowFisherInfo });
+        if (computeShadow) {
+          // SHADOW score: fisher_info force-allowed. Pure math on the same
+          // already-fetched row — zero extra I/O, no effect on `serving`.
+          const shadow = computeSelectionScore(theta, item, { allowFisherInfo: true });
+          shadowAccumulator.push({
+            id: q.id,
+            servingScore: serving.score,
+            servingPath: serving.path,
+            shadowScore: shadow.score,
+            calibrated:
+              item.irt_calibration_n >= 30 && item.irt_a != null && item.irt_b != null,
+          });
+        }
+        return { q, score: serving.score };
+      })
       .sort((a, b) => b.score - a.score);
 
     let pickedThisTopic = 0;
@@ -429,5 +482,43 @@ export async function selectAdaptiveQuestions(
     if (pickedThisTopic > 0) weakTopicsTargeted++;
   }
 
-  return { questions: picked.slice(0, count), weakTopicsTargeted };
+  const result: SelectAdaptiveQuestionsResult = {
+    questions: picked.slice(0, count),
+    weakTopicsTargeted,
+  };
+
+  // ── Shadow-divergence summary (additive; never touches `questions`) ────────
+  if (computeShadow && shadowAccumulator.length > 0) {
+    const servingScores = shadowAccumulator.map((c) => c.servingScore);
+    const shadowScores = shadowAccumulator.map((c) => c.shadowScore);
+
+    // Deterministic orderings for the top-K overlap: score desc, id asc as the
+    // tie-break (Array.prototype.sort tie order is engine-dependent; the
+    // divergence metric must not be).
+    const byServing = [...shadowAccumulator]
+      .sort((a, b) => b.servingScore - a.servingScore || (a.id < b.id ? -1 : 1))
+      .map((c) => c.id);
+    const byShadow = [...shadowAccumulator]
+      .sort((a, b) => b.shadowScore - a.shadowScore || (a.id < b.id ? -1 : 1))
+      .map((c) => c.id);
+
+    const servedPathCounts = { fisher_info: 0, proxy_distance: 0, uncalibrated: 0 };
+    let nCalibrated = 0;
+    for (const c of shadowAccumulator) {
+      servedPathCounts[c.servingPath]++;
+      if (c.calibrated) nCalibrated++;
+    }
+
+    result.shadow = {
+      theta,
+      nCandidates: shadowAccumulator.length,
+      nCalibrated,
+      spearmanRho: spearmanRank(servingScores, shadowScores),
+      top5Overlap: topKOverlap(byServing, byShadow, 5),
+      top10Overlap: topKOverlap(byServing, byShadow, 10),
+      servedPathCounts,
+    };
+  }
+
+  return result;
 }

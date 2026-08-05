@@ -47,6 +47,8 @@ import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
+import { XP_RULES } from '@alfanumrik/lib/xp-config';
+import { awardXpCapped } from '@alfanumrik/lib/xp-award';
 import { applySm2, coerceSource, parseChapterNumber } from './helpers';
 
 // ─── Constants — mirror the legacy client's caps ────────────────────
@@ -150,6 +152,26 @@ export async function POST(request: NextRequest) {
   if (updateErr) {
     logger.warn('review.grade: card update failed', { cardId, error: updateErr.message });
     return NextResponse.json({ ok: false, error: 'card_update_failed' }, { status: 500 });
+  }
+
+  // XP: successful retention review (Foxy North-Star Phase 3). Awarded only
+  // for a passing grade (quality >= 3) on a card that had a real interval
+  // (>= 1 day pre-update) — same-day re-grades of a fresh card earn nothing.
+  // Amount + cap from XP_RULES (P2, never literals); the RPC owns the daily
+  // cap clamp and the reference-id idempotency. FIRE-AND-FORGET: awardXpCapped
+  // never rejects, and we do not await — an award failure can never block or
+  // break the grade response.
+  if (quality >= 3 && card.interval_days >= 1) {
+    void awardXpCapped(supabaseAdmin, {
+      studentId,
+      source: 'review_graded',
+      amount: XP_RULES.review_graded_xp,
+      dailyCap: XP_RULES.review_graded_daily_cap,
+      dailyCategory: 'retention',
+      referenceId: `review_${card.id}_${newTotalReviews}`,
+      // P13: counts-only metadata (UUID lives in p_student_id/reference).
+      metadata: { quality, totalReviews: newTotalReviews, previousIntervalDays: card.interval_days },
+    });
   }
 
   // Publish learner.review_graded. Best-effort — never blocks the response.

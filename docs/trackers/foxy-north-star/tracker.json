@@ -1,0 +1,3692 @@
+{
+  "version": 1,
+  "spec": "docs/superpowers/specs/2026-08-05-foxy-north-star-alignment-design.md",
+  "approvedBy": "CEO (full approval, no conditions)",
+  "approvedOn": "2026-08-05",
+  "records": [
+    {
+      "reqId": "S1.1",
+      "title": "Foxy Memory — wire 4 dark memory layers; add preference writer + unresolved-misconception lifecycle (transparency screen tracked under T2)",
+      "specSection": "§1.1",
+      "phase": "2",
+      "status": "planned",
+      "layers": {
+        "db": [
+          "supabase/migrations/TBD-student-misconceptions-lifecycle.sql"
+        ],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts",
+          "packages/lib/src/learn/foxy-long-memory.ts",
+          "apps/host/src/lib/memory/student-memory.ts",
+          "packages/lib/src/memory/preferences.ts"
+        ],
+        "middleware": "inherit",
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "backend",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": []
+    },
+    {
+      "reqId": "S1.2",
+      "title": "Learner Model — read facade packages/lib/src/learner-model/ over canonical concept_mastery + additive params + store consolidation",
+      "specSection": "§1.1",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/learner-model/bkt-mirror.test.ts",
+        "packages/lib/src/__tests__/learner-model/mastery-state.test.ts",
+        "packages/lib/src/__tests__/learner-model/explain-mastery.test.ts",
+        "packages/lib/src/__tests__/learner-model/next-action.test.ts",
+        "packages/lib/src/__tests__/learner-model/due-reviews.test.ts",
+        "packages/lib/src/__tests__/learner-model/thresholds-lockstep.test.ts"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality",
+          "ai-engineer"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/index.ts — facade barrel (8 modules on disk: index, types, thresholds, bkt-mirror, mastery-state, explain-mastery, next-action, due-reviews)",
+        "packages/lib/src/learner-model/bkt-mirror.ts — the ONE approved TS BKT mirror (display/preview only, E6; analyzer check 6 target)",
+        "packages/lib/src/learner-model/mastery-state.ts — canonical concept_mastery read surface",
+        "packages/lib/src/learner-model/thresholds.ts — single threshold source",
+        "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql — additive params (evidence_count/evidence_quality + independent/hinted counters) on concept_mastery"
+      ],
+      "notes": [
+        "Wave 2a: facade built + 5 readers migrated onto it (per wave 2a reports); store consolidation continues in wave 2b (in flight) — status bumps past in_progress only after wave 2b lands + gates"
+      ]
+    },
+    {
+      "reqId": "S1.3",
+      "title": "Adaptive Planner — add top 2 spec tiers (safety hold, teacher-assigned work) to deriveNextAction; expose via facade only",
+      "specSection": "§1.1",
+      "phase": "4",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts",
+          "packages/lib/src/learner-model/next-action.ts",
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/learner-model/next-action-order.test.ts",
+        "packages/lib/src/__tests__/learner-model/next-action.test.ts"
+      ],
+      "regressionIds": [],
+      "flags": [
+        {
+          "name": "ff_foxy_decide_ladder_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "ai-engineer",
+          "testing",
+          "ops",
+          "architect",
+          "backend",
+          "frontend",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/next-action.ts — deriveNextAction planner now carries all 7 tiers via facade extension (S1.3 covered by same code path as L3)"
+      ],
+      "notes": [
+        "Same code as L3 — S1.3 is the S-layer view of the planner extension, L3 is the L-layer decide-loop view. Both flip together behind ff_foxy_decide_ladder_v1."
+      ]
+    },
+    {
+      "reqId": "S1.4",
+      "title": "Foxy Teacher — promote teaching-director code over prompt text; real 5-rung hint ladder (via L5); single threshold source in facade",
+      "specSection": "§1.1",
+      "phase": "4",
+      "status": "planned",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/foxy/teaching-director.ts",
+          "packages/lib/src/foxy/prompt-sections.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": []
+    },
+    {
+      "reqId": "S1.5",
+      "title": "Foxy Companion — CASEL mapping module, mood-to-routing (feeds U6/S5.6), anti-dependency guardrails codified in packages/lib/src/companion/",
+      "specSection": "§1.1",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/companion/"
+        ],
+        "middleware": [],
+        "frontend": [
+          "apps/host/src/app/foxy/page.tsx"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/companion/"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "ai-engineer",
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/companion/"
+      ]
+    },
+    {
+      "reqId": "S1.6",
+      "title": "Play Engine — mission framework (missions/mysteries/teach-Foxy-back/student-vs-Foxy) on the dive/challenge substrate; no new engine, no XP paths outside xp-config",
+      "specSection": "§1.1",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/learn/weekly-dive-orchestrator.ts"
+        ],
+        "middleware": "inherit",
+        "frontend": [
+          "apps/host/src/app/dive/",
+          "packages/ui/src/dive/"
+        ],
+        "mobile": []
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/play/"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "frontend",
+          "testing",
+          "mobile",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/play/",
+        "apps/host/src/app/(student)/missions/",
+        "packages/ui/src/play/"
+      ]
+    },
+    {
+      "reqId": "S1.7",
+      "title": "Foxy Guardian — self-harm/abuse safeguarding escalation + human routing (umbrella; build tracked under U6/S5.6)",
+      "specSection": "§1.1",
+      "phase": "1",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260806000100_safeguarding_escalations.sql",
+          "supabase/migrations/20260806000200_seed_ff_safeguarding_v1.sql"
+        ],
+        "backend": [
+          "packages/lib/src/ai/validation/safeguarding-screen.ts",
+          "packages/lib/src/ai/validation/safeguarding-classify.ts",
+          "apps/host/src/app/api/foxy/route.ts",
+          "apps/host/src/app/api/foxy/_lib/responders.ts",
+          "apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/api/foxy/safeguarding-route.test.ts",
+        "apps/host/src/__tests__/api/foxy/safeguarding-escalate.test.ts",
+        "apps/host/src/__tests__/api/foxy/respond-safeguarding.test.ts",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-screen.test.ts — classifier tests (138 across screen+classify)",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-classify.test.ts — classifier tests (138 across screen+classify)",
+        "apps/host/src/__tests__/security/safeguarding-escalations-migration.test.ts"
+      ],
+      "regressionIds": [
+        "REG-348",
+        "REG-349"
+      ],
+      "flags": [
+        {
+          "name": "ff_safeguarding_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "testing",
+          "ops",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/ai/validation/safeguarding-screen.ts — Tier-1 deterministic regex pre-filter",
+        "packages/lib/src/ai/validation/safeguarding-classify.ts — Tier-2 LLM confirmation (confirmation floor >=0.7; clearance deliberately floorless)",
+        "apps/host/src/app/api/foxy/route.ts — Tier-1 wired :663, Tier-2 wired :914",
+        "apps/host/src/app/api/foxy/_lib/responders.ts — respondSafeguarding (Childline 1098 template)",
+        "apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts — school-admin notification fan-out (metadata-only, P13)",
+        "supabase/migrations/20260806000100_safeguarding_escalations.sql — table + RLS + safeguarding.review grant",
+        "supabase/migrations/20260806000200_seed_ff_safeguarding_v1.sql — flag seeded OFF"
+      ],
+      "notes": [
+        "ops/mobile/quality verdicts land via orchestrator before status bumps to verified",
+        "Rollout runbook: docs/runbooks/safeguarding-escalation-rollout.md (5%→25%→100% staged enablement; kill switch = ff_safeguarding_v1 OFF)"
+      ]
+    },
+    {
+      "reqId": "S1.8",
+      "title": "Evidence Engine — student-facing Close (via L7) + teacher evidence citations (via K3) + parent evidence completion",
+      "specSection": "§1.1",
+      "phase": "4",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/remediation-evidence.test.ts"
+      ],
+      "regressionIds": [
+        "REG-362"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "ops",
+          "assessment",
+          "testing",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/remediation-evidence.ts"
+      ],
+      "notes": [
+        "S1.8 lives entirely on top of L7 (student Close), K3 (teacher evidence citations) and parent completion — Phase-5 evidence-citations territory. No code moves this wave; graduates once L7 close-stage lands with R3-B/C and K3 lands independently."
+      ]
+    },
+    {
+      "reqId": "D1",
+      "title": "Concept attempted — captured per interaction (LIVE)",
+      "specSection": "§1.2",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/quiz/submit-side-effects.ts — writes quiz_responses.topic_tag + question_id per response",
+        "packages/lib/src/state/events/registry.ts — concept_check event kind"
+      ],
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
+    },
+    {
+      "reqId": "D2",
+      "title": "Question + content version on the response row — additive quiz_responses.question_version + content_hash reusing REG-53 snapshot infra",
+      "specSection": "§1.2",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": []
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql — quiz_responses.question_version + content_hash columns (additive, IF NOT EXISTS)",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — SERVER-HELD stamping in submit_quiz_v2 (reuses REG-53 snapshot infra; never trusts client values)"
+      ],
+      "notes": []
+    },
+    {
+      "reqId": "D3",
+      "title": "Correctness + answer method — additive answer_method enum (mcq/typed/voice/scan), set per source in submit chain",
+      "specSection": "§1.2",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": []
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql — quiz_responses.answer_method column + whitelist constraint",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — reads (r->>'answer_method'), whitelist mcq/typed/voice/scan, normalize-never-abort"
+      ],
+      "notes": [
+        "_mapV2 client passthrough of answer_method pending wave 2b (packages/lib/src/supabase.ts)"
+      ]
+    },
+    {
+      "reqId": "D4",
+      "title": "Response time — captured per interaction (LIVE)",
+      "specSection": "§1.2",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts",
+          "packages/lib/src/quiz/post-submit-telemetry.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/quiz/submit-side-effects.ts — time_taken_seconds per response",
+        "packages/lib/src/quiz/post-submit-telemetry.ts — responseTimeMs / avg_response_time_ms"
+      ],
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
+    },
+    {
+      "reqId": "D5",
+      "title": "Hints requested — persist hint_level (Phase 0 defect fix F8; hint ladder completes in Phase 3 via L5)",
+      "specSection": "§1.2",
+      "phase": "0",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260805100100_quiz_responses_hint_level.sql",
+          "supabase/migrations/20260805100200_submit_quiz_v2_persist_hint_level.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
+        "middleware": [],
+        "frontend": [
+          "apps/host/src/app/(student)/quiz/page.tsx"
+        ],
+        "mobile": []
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/api/quiz-server-shuffle-authority.test.ts — F8 case"
+      ],
+      "regressionIds": [
+        "REG-346"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "assessment",
+          "mobile",
+          "testing",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260805100100_quiz_responses_hint_level.sql",
+        "supabase/migrations/20260805100200_submit_quiz_v2_persist_hint_level.sql",
+        "packages/lib/src/supabase.ts — _mapV2 hint_level",
+        "packages/lib/src/types.ts",
+        "apps/host/src/app/(student)/quiz/page.tsx — 5 capture sites"
+      ]
+    },
+    {
+      "reqId": "D6",
+      "title": "Confidence reported — additive confidence smallint NULL + 1-tap sampled prompt (quiz + FoxyPanel), non-blocking",
+      "specSection": "§1.2",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
+        "middleware": [],
+        "frontend": [
+          "packages/ui/src/quiz/"
+        ],
+        "mobile": []
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000200_quiz_responses_event_capture_columns.sql — quiz_responses.confidence smallint NULL column",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — regex-guard '^[1-5]$' else NULL in submit_quiz_v2"
+      ],
+      "notes": [
+        "_mapV2 client passthrough of confidence pending wave 2b; 1-tap sampled prompt UI (quiz + FoxyPanel) pending — packages/ui/src/foxy-panel/ does not exist yet (removed from layers until it does)"
+      ]
+    },
+    {
+      "reqId": "D7",
+      "title": "Misconception demonstrated — additive quiz_responses.misconception_id + student_misconceptions writer (resolve lifecycle) in submit chain + remediation outcome",
+      "specSection": "§1.2",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000300_student_misconceptions_writer_support.sql",
+          "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts",
+          "packages/lib/src/learn/wrong-answer-remediation.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000300_student_misconceptions_writer_support.sql — student_misconceptions writer support",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — per-response misconception_id writer + resolve lifecycle in the submit chain (error-isolated)",
+        "packages/lib/src/learn/wrong-answer-remediation.ts — remediation-outcome half (Eedi pattern, pre-existing)"
+      ],
+      "notes": [
+        "F4: classifyError now receives real concept_mastery.mastery_probability (0.5 fallback documented); per-response misconception_id writer lands Phase 2 (20260807000500)"
+      ]
+    },
+    {
+      "reqId": "D8",
+      "title": "Explanation format used — log format per Foxy turn in event payload; aggregates into D9 preferences",
+      "specSection": "§1.2",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts"
+        ],
+        "middleware": "inherit",
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "apps/host/src/app/api/foxy/_lib/explanation-format.ts — identifyExplanationFormat (coarse per-turn label)",
+        "apps/host/src/app/api/foxy/_lib/streaming.ts:455 — formatUsed stamped onto the existing foxy.chat audit detail per turn"
+      ],
+      "notes": []
+    },
+    {
+      "reqId": "D9",
+      "title": "Language + modality preference — preference writer (D8 aggregates + explicit settings); columns already exist",
+      "specSection": "§1.2",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/memory/preferences.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": []
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [
+        {
+          "name": "ff_preference_writer_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260808000200_seed_ff_preference_writer_v1.sql — ff_preference_writer_v1 seeded OFF (implicit writer gate) + preferences_set_by_user explicit-wins column (student's explicit choice never overwritten)",
+        "packages/lib/src/memory/preferences.ts — preferences slice (columns pre-existed on student_learning_profiles)"
+      ],
+      "notes": [
+        "PRE-RAMP CONDITION (quality 2026-08-05): multi-subject newest-row read can shadow explicit prefs — fix read to prefer preferences_set_by_user=true rows (or scope writer to newest row) BEFORE ramping ff_preference_writer_v1."
+      ]
+    },
+    {
+      "reqId": "D10",
+      "title": "Revision history — captured (LIVE: review_graded events, spaced_repetition_cards, review_count / next_review_at)",
+      "specSection": "§1.2",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/domains/practice.ts",
+          "packages/lib/src/state/events/registry.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/state/events/registry.ts — review_graded event kind",
+        "packages/lib/src/domains/practice.ts — spaced_repetition_cards (review_count / next_review_at)"
+      ],
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
+    },
+    {
+      "reqId": "D11",
+      "title": "Teacher assignments + feedback — capture exists (LIVE); planner-ingest half tracked under L3",
+      "specSection": "§1.2",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts",
+          "packages/lib/src/learn/assignment-submission.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/functions/teacher-dashboard/index.ts — assignment_submissions.teacher_feedback + teacher_student_notes",
+        "packages/lib/src/learn/assignment-submission.ts — submission capture path"
+      ],
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
+    },
+    {
+      "reqId": "D12",
+      "title": "Retention + transfer evidence — retention LIVE; transfer-evidence check on cross-concept success once concept_edges enabled (with E5)",
+      "specSection": "§1.2",
+      "phase": "3",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260809000600_concept_mastery_transfer_evidence.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learn/transfer-evidence.ts",
+          "packages/lib/src/learner-model/",
+          "apps/host/src/app/api/cron/build-twin-snapshots/route.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/learn/transfer-evidence.test.ts",
+        "apps/host/src/__tests__/api/cron/build-twin-snapshots-transfer.test.ts",
+        "apps/host/src/__tests__/regressions/phase3-transfer-event-payload-shape.test.ts"
+      ],
+      "regressionIds": [
+        "REG-356"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ai-engineer",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260809000600_concept_mastery_transfer_evidence.sql — record_transfer_evidence RPC + concept_mastery transfer-evidence columns",
+        "packages/lib/src/learn/transfer-evidence.ts — pure resolver walking concept_edges for cross-concept success",
+        "apps/host/src/app/api/cron/build-twin-snapshots/route.ts — nightly transfer-evidence emitter (SOURCE/TARGET orientation pinned by REG-356a; learner.transfer_evidence bus payload keys sourceTopicId/targetTopicId parity across NEXT + Deno registries pinned by REG-356b)"
+      ],
+      "notes": [
+        "Retention half remains LIVE (P5/P6). Transfer-evidence half is code-complete + pinned; orchestrator bumps to verified after quality gate.",
+        "ops/architect/quality verdicts land post-task; review chain for the XP-touching Phase 3 records is [assessment, testing, ai-engineer, backend, frontend, mobile]"
+      ]
+    },
+    {
+      "reqId": "PR1",
+      "title": "No intelligence/personality labels — policy denylist module packages/lib/src/policy/prohibited-inferences.ts + fix prompt-sections.ts:749",
+      "specSection": "§1.2",
+      "phase": "1",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/policy/prohibited-inferences.ts",
+          "packages/lib/src/foxy/prompt-sections.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/policy/prohibited-inferences.test.ts — module shape + findProhibitedPhrases + analyzer-8e parity"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/policy/prohibited-inferences.ts — policy denylist module",
+        "packages/lib/src/foxy/prompt-sections.ts — rail 9 + :749 fix + demo rename + Hindi entries"
+      ],
+      "notes": [
+        "Policy module + rail 9 + prompt-sections.ts:749 fix + demo rename + Hindi denylist entries; analyzer check 8e derives from the policy module"
+      ]
+    },
+    {
+      "reqId": "PR2",
+      "title": "No mental-health diagnoses — add to policy module + safeguarding classifier boundaries (with U6/S5.6)",
+      "specSection": "§1.2",
+      "phase": "1",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/policy/prohibited-inferences.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/policy/prohibited-inferences.test.ts",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-classify.test.ts — classifier boundary cases"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/policy/prohibited-inferences.ts — second-person diagnosis denylist",
+        "packages/lib/src/ai/validation/safeguarding-classify.ts — classifier boundary (routes, never diagnoses)"
+      ],
+      "notes": [
+        "Second-person denylist + classifier boundary: safeguarding classifier categorises for routing only, never emits a diagnosis label"
+      ]
+    },
+    {
+      "reqId": "PR3",
+      "title": "No passive camera/mic observation — codify in policy module; analyzer guard (no getUserMedia outside explicit voice/scan routes)",
+      "specSection": "§1.2",
+      "phase": "1",
+      "status": "built",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/policy/prohibited-inferences.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": [
+        "packages/lib/src/policy/prohibited-inferences.ts — passive camera/mic observation codified as prohibited"
+      ],
+      "notes": [
+        "Policy codified; the getUserMedia analyzer guard (no capture outside explicit voice/scan routes) was already live before Phase 1"
+      ]
+    },
+    {
+      "reqId": "PR4",
+      "title": "No irrelevant private emotions — SEL mood retention window + aggregate-only storage defined in the Phase 1 spec",
+      "specSection": "§1.2",
+      "phase": "1",
+      "status": "built",
+      "layers": {
+        "db": [],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "architect",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": [
+        "apps/host/src/app/api/foxy/route.ts — sessionMood held in-request only"
+      ],
+      "notes": [
+        "SEL mood is in-request only — no persistence of per-turn mood; aggregate-only posture per the Phase 1 spec"
+      ]
+    },
+    {
+      "reqId": "PR5",
+      "title": "Sensitive conversations only with safeguarding purpose — scoped table, retention policy, access restricted to the safeguarding role (with U6)",
+      "specSection": "§1.2",
+      "phase": "1",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260806000100_safeguarding_escalations.sql"
+        ],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "architect",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/security/safeguarding-escalations-migration.test.ts"
+      ],
+      "regressionIds": [
+        "REG-349"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "backend",
+          "frontend",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260806000100_safeguarding_escalations.sql — disclosure_excerpt (<=500 chars) is the single sanctioned home for disclosure text; 90d retain_until; service-role-only RLS gated by safeguarding.review"
+      ],
+      "notes": [
+        "disclosure_excerpt is the ONE sanctioned location for disclosure text (REG-349); pending_review rows are never purged (daily-cron safeguarding_escalations_purged)"
+      ]
+    },
+    {
+      "reqId": "PR6",
+      "title": "Latent labeling columns — learning_style becomes the D9 preference store (allowed use); frustration_threshold DROPPED (approval A4 granted)",
+      "specSection": "§1.2",
+      "phase": "1",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260806000800_affective_profile_drop_frustration_threshold.sql"
+        ],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "architect",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "backend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260806000800_affective_profile_drop_frustration_threshold.sql — frustration_threshold dropped (approval A4)"
+      ],
+      "notes": [
+        "frustration_threshold dropped via 20260806000800; learning_style is deliberately RETAINED as the D9 preference store (allowed use) — do not drop it under this record"
+      ]
+    },
+    {
+      "reqId": "T1",
+      "title": "Describe evidence, never judge identity — PR1 policy module + copy audit of all student-facing mastery surfaces + analyzer banned-phrase lint",
+      "specSection": "§1.2",
+      "phase": "1",
+      "status": "built",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/policy/prohibited-inferences.ts"
+        ],
+        "middleware": [],
+        "frontend": [
+          "apps/host/src/app/(student)/memory/page.tsx"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": [
+        "packages/lib/src/policy/prohibited-inferences.ts — banned-phrase source",
+        "apps/host/src/app/(student)/memory/page.tsx — evidence-language fixes + band labels"
+      ],
+      "notes": [
+        "Evidence-language fixes + band labels shipped on the memory screen; full copy audit continues via analyzer 8e ratchet [fix→T1] — pending exceptions: apps/host/src/app/teacher/students/page.tsx + for-teachers/page.tsx"
+      ]
+    },
+    {
+      "reqId": "T2",
+      "title": "What-Foxy-remembers screen (view / correct / remove) — student memory page + /api/learner/memory + per-item erasure via erasure-guard + DPDP flow (RBAC addition A3 granted)",
+      "specSection": "§1.2",
+      "phase": "1",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260806000300_data_erasure_requests_scope.sql",
+          "supabase/migrations/20260806000400_seed_memory_self_access_permissions.sql",
+          "supabase/migrations/20260806000600_data_erasure_requests_student_initiated.sql",
+          "supabase/migrations/20260806000700_execute_data_erasure_purge_scoped.sql"
+        ],
+        "backend": [
+          "apps/host/src/app/api/learner/memory/route.ts",
+          "supabase/functions/data-erasure-purger/index.ts"
+        ],
+        "middleware": "inherit",
+        "frontend": [
+          "apps/host/src/app/(student)/memory/page.tsx",
+          "packages/ui/src/memory/"
+        ],
+        "mobile": []
+      },
+      "owner": "frontend",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/api/learner-memory.test.ts",
+        "apps/host/src/__tests__/components/memory/memory-page.test.tsx — 10 tests",
+        "apps/host/src/__tests__/lib/data-erasure-purger.test.ts",
+        "apps/host/src/__tests__/lib/data-erasure-purger-scoped-skip.test.ts"
+      ],
+      "regressionIds": [
+        "REG-350"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "backend",
+          "ops",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "apps/host/src/app/api/learner/memory/route.ts — what-Foxy-remembers read + per-item erasure API",
+        "apps/host/src/app/(student)/memory/page.tsx — memory transparency screen",
+        "packages/ui/src/memory/MemoryLayerCard.tsx — layer cards",
+        "packages/ui/src/memory/ErasePanel.tsx — per-item erasure UI",
+        "supabase/migrations/20260806000300_data_erasure_requests_scope.sql — erasure scope",
+        "supabase/migrations/20260806000400_seed_memory_self_access_permissions.sql — memory self-access permissions",
+        "supabase/migrations/20260806000600_data_erasure_requests_student_initiated.sql — student-initiated requests",
+        "supabase/migrations/20260806000700_execute_data_erasure_purge_scoped.sql — scoped purge RPC",
+        "supabase/functions/data-erasure-purger/index.ts — scoped purge routing"
+      ],
+      "notes": [
+        "Band labels + evidence-language copy on the memory screen also serve T1"
+      ]
+    },
+    {
+      "reqId": "P1",
+      "title": "Mastery probability — LIVE (concept_mastery.mastery_probability + p_know via update_learner_state_post_quiz)",
+      "specSection": "§1.3",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"
+        ],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql — concept_mastery.mastery_probability + p_know written only by update_learner_state_post_quiz inside the atomic submit chain"
+      ],
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
+    },
+    {
+      "reqId": "P2",
+      "title": "Evidence quantity + quality — additive evidence_count / evidence_quality columns, computed in canonical RPC (weights independent vs hinted per D5/P8)",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql — evidence_count + evidence_quality columns (guarded backfill from attempts)",
+        "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql — RPC running-mean evidence_quality (independent vs hinted weights per D5/P8)"
+      ],
+      "notes": [
+        "Assessment review of the weight scheme in flight — required before status advances"
+      ]
+    },
+    {
+      "reqId": "P3",
+      "title": "Uncertainty — additive mastery_variance on concept_mastery; RPC updates it",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql — Beta-posterior mastery_variance update in the canonical RPC (mastery_variance column pre-existed on concept_mastery, per 20260807000100 header)"
+      ],
+      "notes": [
+        "Assessment review of the Beta-posterior parameterisation in flight"
+      ]
+    },
+    {
+      "reqId": "P4",
+      "title": "Misconceptions + prerequisite gaps — knowledge_gaps LIVE; student_misconceptions writer via D7; prereq gaps via concept_edges enablement (E5)",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000300_student_misconceptions_writer_support.sql",
+          "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000300_student_misconceptions_writer_support.sql — student_misconceptions writer support (lifecycle columns/constraints)",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — D7 writer: wrong-answer branch matches question_misconceptions, stamps quiz_responses.misconception_id + student_misconceptions lifecycle in an error-isolated sub-block"
+      ],
+      "notes": [
+        "Prereq-gap half stays with concept_edges enablement (E5, Phase 3)"
+      ]
+    },
+    {
+      "reqId": "P5",
+      "title": "Retention strength — LIVE (retention_half_life, current_retention)",
+      "specSection": "§1.3",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"
+        ],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql — retention_half_life + current_retention maintained in the canonical RPC"
+      ],
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
+    },
+    {
+      "reqId": "P6",
+      "title": "Last practice / next review — LIVE (next_review_at, review_interval_days, ease_factor)",
+      "specSection": "§1.3",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"
+        ],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql — next_review_at / review_interval_days / ease_factor maintained in the canonical RPC"
+      ],
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
+    },
+    {
+      "reqId": "P7",
+      "title": "Bloom / competency demonstrated — LIVE (bloom fields + BLOOM_CONFIG)",
+      "specSection": "§1.3",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"
+        ],
+        "backend": [
+          "packages/lib/src/cognitive-engine.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/cognitive-engine.ts — BLOOM_CONFIG",
+        "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql — bloom fields in the canonical RPC"
+      ],
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
+    },
+    {
+      "reqId": "P8",
+      "title": "Independent vs hinted performance — from D5 hint_level column; RPC splits independent/hinted counters",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000100_concept_mastery_evidence_columns.sql — independent_attempts/independent_correct + hinted_attempts/hinted_correct columns",
+        "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql — v_independent := (p_hint_level IS NULL OR p_hint_level = 0) counter split in the canonical RPC"
+      ],
+      "notes": [
+        "Assessment review in flight (hinted-weight semantics shared with P2)"
+      ]
+    },
+    {
+      "reqId": "P9",
+      "title": "Preferred explanation formats — columns exist; writer via D9",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/memory/preferences.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/memory/preferences.ts — preferences read surface (learning_style + preferred_explanation_depth, deterministic row pick)",
+        "supabase/migrations/20260808000200_seed_ff_preference_writer_v1.sql — ff_preference_writer_v1 seeded OFF + preferences_set_by_user explicit-wins guard column"
+      ],
+      "notes": []
+    },
+    {
+      "reqId": "P10",
+      "title": "Current academic goal — wire goal into facade + planner context (ff_goal_aware_foxy exists, DARK)",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/learner-model/",
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [
+        {
+          "name": "ff_goal_aware_foxy",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/next-action.ts — additive academicGoal rails in the facade planner",
+        "apps/host/src/app/api/foxy/_lib/cognitive-context.ts — P10 goal wiring (goal passed only when ff_goal_aware_foxy is ON; flag stays DARK)"
+      ],
+      "notes": []
+    },
+    {
+      "reqId": "P11",
+      "title": "Cognitive-load indicators — event field only (aggregate, ephemeral by default — PR4 privacy); updateCognitiveLoad stays client-side",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/state/events/registry.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/cognitive-engine.ts:462 — updateCognitiveLoad stays client-side (aggregate, ephemeral)"
+      ],
+      "notes": [
+        "Per PR4: cognitive-load stays client-side/event-only — aggregate + ephemeral, NO persistence added; any future event-payload field rides state_events (aggregate only)"
+      ]
+    },
+    {
+      "reqId": "E1",
+      "title": "BKT/DKT consolidation — SQL canonical; ONE TS mirror in facade (display/preview only); delete dead cognitive-engine exports; retire queue-consumer + quiz-completion-service copies",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/cognitive-engine.ts",
+          "packages/lib/src/learner-model/",
+          "supabase/functions/queue-consumer/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "backend",
+          "ai-engineer",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality",
+          "ai-engineer"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/bkt-mirror.ts — the ONE TS mirror over the canonical SQL (update_learner_state_post_quiz, 20260623000100)",
+        "packages/lib/src/__tests__/learner-model/thresholds-lockstep.test.ts — SQL/TS literal lockstep pin (REG-48 parity pattern)"
+      ],
+      "notes": [
+        "Consolidation wave 2b in flight: re-point quiz-completion-service + queue-consumer bktUpdate copies onto the facade mirror, delete dead cognitive-engine export; the two analyzer check-6 [debt→E1] allowlist entries are removed in that PR"
+      ]
+    },
+    {
+      "reqId": "E2",
+      "title": "IRT question selection — Phase 0 F1: code out of comment block, behavior-neutral, flag-gated (completes in Phase 3: shadow eval → cohort enable with kill switch; theta writer fills student_skill_state)",
+      "specSection": "§1.3",
+      "phase": "3",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260809000000_seed_ff_irt_shadow_v1.sql",
+          "supabase/migrations/20260809000100_select_questions_by_irt_info_v2.sql"
+        ],
+        "backend": [
+          "supabase/functions/quiz-generator/index.ts",
+          "packages/lib/src/irt/estimate-theta.ts",
+          "packages/lib/src/irt/shadow-metrics.ts",
+          "apps/host/src/app/api/telemetry/irt-shadow/route.ts",
+          "apps/host/src/app/api/cron/irt-calibrate/route.ts",
+          "eval/irt/harness/cli.ts",
+          "eval/irt/harness/run-eval.ts",
+          "eval/irt/harness/metrics.ts",
+          "eval/irt/harness/verdict.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/lib/irt/estimate-theta.test.ts",
+        "apps/host/src/__tests__/lib/irt/shadow-metrics.test.ts",
+        "apps/host/src/__tests__/api/telemetry/irt-shadow.test.ts"
+      ],
+      "regressionIds": [
+        "REG-347",
+        "REG-357"
+      ],
+      "flags": [
+        {
+          "name": "ff_irt_question_selection",
+          "requiredState": "off"
+        },
+        {
+          "name": "ff_irt_shadow_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/functions/quiz-generator/index.ts:371 — IRT code un-commented, flag-gated (F1)",
+        "packages/lib/src/flags/protected-flags.ts — IRT reason corrected (F9)",
+        "supabase/migrations/20260805100300_update_ff_irt_protected_reason.sql",
+        "supabase/migrations/20260809000000_seed_ff_irt_shadow_v1.sql — ff_irt_shadow_v1 seeded OFF (0%)",
+        "supabase/migrations/20260809000100_select_questions_by_irt_info_v2.sql — v2 RPC with bilingual columns (question_hi/explanation_hi/hint) + Tier-0 predicates; resolves P7 blocker",
+        "packages/lib/src/irt/estimate-theta.ts — pure TS Newton-Raphson mirror for shadow-metric computation",
+        "packages/lib/src/irt/shadow-metrics.ts — shadow divergence (Spearman rho + top-K overlap, informational-only)",
+        "apps/host/src/app/api/telemetry/irt-shadow/route.ts — P13-clean per-request telemetry (UUIDs + numbers only; REG-357b)",
+        "eval/irt/harness/cli.ts — paired ramp-evidence gate CLI",
+        "eval/irt/harness/run-eval.ts — runner",
+        "eval/irt/harness/metrics.ts — 2PL calibration + AUC/Brier metrics",
+        "eval/irt/harness/verdict.ts — evaluateIrtVerdict (>=500 responses, >=50 students, deltaAUC >= +0.03, deltaBrier <= -0.005; INCONCLUSIVE = re-run signal, not a fail)",
+        "docs/runbooks/irt-enablement-rollout.md — E2 enablement checklist (staged ff_irt_shadow_v1 5%→25%→100%, paired eval gate, cohort ramp of ff_irt_question_selection with instant kill switch)"
+      ],
+      "notes": [
+        "P7 named blocker RESOLVED by select_questions_by_irt_info_v2 (bilingual + Tier-0 predicates).",
+        "Serving order pinned unchanged by REG-357a: v2 RPC return set + ORDER BY match v1 exactly; ff_irt_shadow_v1 gates telemetry emission only.",
+        "Rollout runbook: docs/runbooks/irt-enablement-rollout.md — ops/architect/quality verdicts land post-task before status bumps to verified"
+      ]
+    },
+    {
+      "reqId": "E3",
+      "title": "CME = canonical explainable state — facade explainMastery (P-params + reason codes); retire cme-engine EF + cme_concept_state after re-pointing board-score",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260808000100_topic_mastery_rollup_view.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/",
+          "supabase/functions/board-score/index.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/board-score-edge-function-structural.test.ts"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "backend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality",
+          "ai-engineer"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/explain-mastery.ts — facade explainMastery (P-params + reason codes)",
+        "supabase/functions/board-score/index.ts — re-pointed cme_concept_state→concept_mastery (Phase 0 F6)",
+        "supabase/migrations/20260808000100_topic_mastery_rollup_view.sql — COMMENT ON TABLE cme_concept_state RETIRED",
+        "supabase/functions/cme-engine/index.ts — 410 tombstone (structured gone response)",
+        "docs/runbooks/edge-function-drift-report.md — Execution log 2026-08-05 entry"
+      ],
+      "notes": [
+        "F6: board-score EF re-pointed cme_concept_state→concept_mastery; retired-table refs 20→18 (analyzer ratchet after merge)",
+        "cme-engine tombstone in flight (wave 2b); post-merge ops steps (deploy → supabase functions list verify → 30-day invocation watch → delete) + analyzer retired-table ratchet: docs/runbooks/learner-model-shadow-verification.md Appendices A/B",
+        "Code complete; cme-engine tombstone DEPLOY + 30-day watch + delete are post-merge ops actions (runbook Appendix A)."
+      ]
+    },
+    {
+      "reqId": "E4",
+      "title": "Spaced repetition — Phase 0 defect fixes F2/F3/F10 (close SRS grade loop, single-store count+content, freeze canonical SM-2 params = SQL values); single scheduler completes in Phase 3",
+      "specSection": "§1.3",
+      "phase": "3",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/learn/sm2.ts",
+          "packages/lib/src/learn/srs-source.ts",
+          "packages/lib/src/learn/srs-predicate.ts",
+          "apps/host/src/app/api/learner/srs/due/route.ts",
+          "apps/host/src/app/api/learner/review/grade/route.ts"
+        ],
+        "middleware": [],
+        "frontend": [
+          "apps/host/src/app/(student)/quiz/page.tsx",
+          "packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx",
+          "packages/ui/src/quiz/QuizResults.tsx"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts",
+        "apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx",
+        "apps/host/src/__tests__/lib/learn/srs-source.test.ts",
+        "apps/host/src/__tests__/api/learner/srs-due.test.ts",
+        "packages/lib/src/__tests__/learn/sm2.test.ts"
+      ],
+      "regressionIds": [
+        "REG-345",
+        "REG-358"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "backend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learn/srs-quiz-review.ts — Phase 0 F2 srs grade-loop closer (NEW)",
+        "apps/host/src/app/(student)/quiz/page.tsx — srs grade loop closed",
+        "packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx — count=content via single predicate",
+        "packages/lib/src/learn/due-reviews-adapter.ts — DueSm2Card SM-2 fields (build-rhythm-queue + daily-rhythm-orchestrator on the same adapter)",
+        "packages/ui/src/quiz/QuizResults.tsx — canonical SM-2 seeds",
+        "packages/lib/src/learn/sm2.ts — canonical SM-2 params + grader (Phase 3 single scheduler)",
+        "packages/lib/src/learn/srs-source.ts — single source-typed reader (quiz_wrong_answer path)",
+        "packages/lib/src/learn/srs-predicate.ts — SRS_DUE_PREDICATE_DESCRIPTOR + buildSrsDueQuery (single predicate — count and content agree by construction, REG-358)",
+        "apps/host/src/app/api/learner/srs/due/route.ts — server due-cards endpoint reading through the single predicate",
+        "apps/host/src/app/api/learner/review/grade/route.ts — grade route wired to sm2.ts + xp_award (review_graded lane, REG-354)"
+      ]
+    },
+    {
+      "reqId": "E5",
+      "title": "Curriculum graph controls prerequisites — new flag ff_prereq_gating_v1; fail-open first (suggest), then enforce; wire into main quiz path + planner tier 4",
+      "specSection": "§1.3",
+      "phase": "3",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260809000200_seed_ff_prereq_gating_v1.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learn/prereq-gating.ts",
+          "apps/host/src/app/api/learn/prereq-check/route.ts",
+          "supabase/functions/quiz-generator/index.ts",
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"
+        ],
+        "middleware": [],
+        "frontend": [
+          "packages/ui/src/quiz/QuizSetup.tsx",
+          "packages/ui/src/quiz/PrereqSuggestion.tsx"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/learn/prereq-gating.test.ts",
+        "apps/host/src/__tests__/api/learn/prereq-check.test.ts",
+        "apps/host/src/__tests__/components/quiz/PrereqSuggestion.test.tsx"
+      ],
+      "regressionIds": [],
+      "flags": [
+        {
+          "name": "ff_prereq_gating_v1",
+          "requiredState": "off"
+        },
+        {
+          "name": "ff_digital_twin_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260809000200_seed_ff_prereq_gating_v1.sql — ff_prereq_gating_v1 seeded OFF (0%)",
+        "packages/lib/src/learn/prereq-gating.ts — pure resolver walking concept_edges (fail-open on every error path)",
+        "apps/host/src/app/api/learn/prereq-check/route.ts — server endpoint; returns 200 + empty array on any error (never blocks quiz start)",
+        "packages/ui/src/quiz/PrereqSuggestion.tsx — student-visible suggestion card (EN + Hindi, P7)",
+        "docs/runbooks/prereq-gating-rollout.md — staged shadow → cohort → full with fail-open contract + monitoring (nudge shown/tapped, warm-up completion, quiz-start-block canary MUST stay zero)"
+      ]
+    },
+    {
+      "reqId": "E6",
+      "title": "LLM never declares mastery — codify facade as sole mastery API for AI paths; analyzer check: no mastery-table writes from ai/foxy code paths",
+      "specSection": "§1.3",
+      "phase": "2",
+      "status": "planned",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": []
+    },
+    {
+      "reqId": "L1",
+      "title": "Observe — add school-assignment context read (assignment_submissions) + due-review read via facade to loadCognitiveContext",
+      "specSection": "§1.4",
+      "phase": "4",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "apps/host/src/app/api/foxy/_lib/assignments.ts",
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts",
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "ai-engineer",
+          "ops",
+          "testing",
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "apps/host/src/app/api/foxy/_lib/assignments.ts — L1 open-assignments reader (per approved design §4.3); reads through supabaseAdmin bound to server-derived studentId only; earliest-due-first, cap 3; covered by idx_assignments_class_active_due"
+      ]
+    },
+    {
+      "reqId": "L2",
+      "title": "Diagnose — one short question first, codified as first director step; served via foxy_served_items so the check is evidential",
+      "specSection": "§1.4",
+      "phase": "4",
+      "status": "planned",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/foxy/teaching-director.ts",
+          "apps/host/src/app/api/foxy/route.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": []
+    },
+    {
+      "reqId": "L3",
+      "title": "Decide — full priority ladder (add tier 1 safety hold from S5.6 signal + tier 2 assigned work from D11); exact spec ordering; facade getNextAction; unit-pinned order test",
+      "specSection": "§1.4",
+      "phase": "4",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260811000000_seed_ff_foxy_decide_ladder_v1.sql"
+        ],
+        "backend": [
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts",
+          "packages/lib/src/learner-model/next-action.ts",
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/learner-model/next-action-order.test.ts",
+        "packages/lib/src/__tests__/learner-model/next-action.test.ts"
+      ],
+      "regressionIds": [],
+      "flags": [
+        {
+          "name": "ff_foxy_decide_ladder_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "ai-engineer",
+          "ops",
+          "testing",
+          "architect",
+          "backend",
+          "frontend",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/next-action.ts — 7-tier decide ladder (adds safety_hold + assigned_work tiers behind ff_foxy_decide_ladder_v1); order pinned by next-action-order.test.ts",
+        "supabase/migrations/20260811000000_seed_ff_foxy_decide_ladder_v1.sql — flag seeded OFF/0% (rollback = flip flag off, byte-identical to pre-ladder ordering)"
+      ]
+    },
+    {
+      "reqId": "L4",
+      "title": "Teach — promote teaching-director (code twin) over prompt text; ADD teach-back activity type (S1.6); strategy choice logged (D8)",
+      "specSection": "§1.4",
+      "phase": "4",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260811000002_seed_ff_foxy_director_prompt_v1.sql"
+        ],
+        "backend": [
+          "packages/lib/src/foxy/teaching-director.ts",
+          "packages/lib/src/foxy/teaching-director-config.ts",
+          "packages/lib/src/foxy/prompt-sections.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/foxy/teaching-director-section.test.ts"
+      ],
+      "regressionIds": [],
+      "flags": [
+        {
+          "name": "ff_foxy_director_prompt_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "ai-engineer",
+          "ops",
+          "testing",
+          "architect",
+          "backend",
+          "frontend",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/foxy/teaching-director-config.ts — director config (code twin over prompt text) with threshold mirror-drift snapshot",
+        "packages/lib/src/foxy/teaching-director.ts — section renderer",
+        "supabase/migrations/20260811000002_seed_ff_foxy_director_prompt_v1.sql — flag seeded OFF/0%; inline.ts slot swap deferred to R3-B extraction (see docs/runbooks/foxy-r3-decomposition-plan.md §2 R3-B)"
+      ]
+    },
+    {
+      "reqId": "L5",
+      "title": "Check — real 5-rung hint ladder service (packages/lib/src/learn/hint-ladder.ts) reusing question_bank.hint, wrong_answer_remediations, explanation, equivalent question via quiz-generator + foxy_served_items; wire /api/foxy/remediation; hint_level recorded (D5)",
+      "specSection": "§1.4",
+      "phase": "3",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260809000400_quiz_responses_hint_level_widen_0_5.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learn/hint-ladder.ts",
+          "apps/host/src/app/api/foxy/remediation/route.ts"
+        ],
+        "middleware": "inherit",
+        "frontend": [
+          "packages/ui/src/quiz/",
+          "packages/ui/src/quiz/HintLadder.tsx"
+        ],
+        "mobile": []
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/learn/hint-ladder.test.ts",
+        "apps/host/src/__tests__/components/quiz/HintLadder.test.tsx"
+      ],
+      "regressionIds": [
+        "REG-355"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learn/hint-ladder.ts — 5-rung state machine (nextRung refuses rungs 2-5 pre-attempt via locked_pre_attempt; rung 5 = skip in v1, honest label; same-misconception evidential twin deferred, see header TODO(L5))",
+        "supabase/migrations/20260809000400_quiz_responses_hint_level_widen_0_5.sql — hint_level CHECK widened 0..5 with backfill clamp (REG-355)",
+        "packages/ui/src/quiz/HintLadder.tsx — student-visible ladder that calls nextRung() (no rung numbers synthesized in UI)"
+      ]
+    },
+    {
+      "reqId": "L6",
+      "title": "Update — extend canonical RPC with new evidence fields (P2/P3/P8, D2/D3/D6/D7) — additive only, atomic submit chain untouched",
+      "specSection": "§1.4",
+      "phase": "2",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql",
+          "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/learner-model/thresholds-lockstep.test.ts — pins 20260807000400 as the latest update_learner_state_post_quiz migration + SQL/TS literal lockstep",
+        "apps/host/src/__tests__/resilient-mastery-perform-structure.test.ts — mastery_variance column-shape pin"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260807000400_update_learner_state_post_quiz_evidence.sql — additive evidence extension of update_learner_state_post_quiz (P8 independent/hinted split, P2 evidence_quality running mean, P3 Beta-posterior mastery_variance); atomic submit chain untouched",
+        "supabase/migrations/20260807000500_submit_quiz_v2_event_capture.sql — submit_quiz_v2 passes hint tier + event-capture fields through to the canonical RPC"
+      ],
+      "notes": []
+    },
+    {
+      "reqId": "L7",
+      "title": "Close — what improved (facade delta) + why next (ladder reason codes) + when review returns (next_review_at); close card in FoxyPanel + quiz results; close payload in turn pipeline",
+      "specSection": "§1.4",
+      "phase": "4",
+      "status": "planned",
+      "layers": {
+        "db": [],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts",
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [
+          "packages/ui/src/foxy-panel/",
+          "packages/ui/src/quiz/QuizResults.tsx"
+        ],
+        "mobile": []
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": []
+    },
+    {
+      "reqId": "U1",
+      "title": "Foxy contextual inside Today/Learn/Practice — slim FoxyPanel (packages/ui/src/foxy-panel/) reusing useFoxyChat; /foxy becomes thin shell on the SAME panel; no duplicate chat code; dynamic import within bundle budget",
+      "specSection": "§1.5",
+      "phase": "4",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [],
+        "middleware": "inherit",
+        "frontend": [
+          "packages/ui/src/foxy-panel/",
+          "packages/ui/src/foxy-launcher/FoxyPanelLauncher.tsx",
+          "apps/host/src/app/foxy/page.tsx",
+          "apps/host/src/app/(student)/dashboard/page.tsx",
+          "apps/host/src/app/(student)/learn/page.tsx",
+          "packages/ui/src/quiz/QuizResults.tsx"
+        ],
+        "mobile": []
+      },
+      "owner": "frontend",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/regressions/foxy-panel-no-static-embed.test.ts"
+      ],
+      "regressionIds": [
+        "REG-360"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "frontend",
+          "ops",
+          "testing",
+          "assessment",
+          "architect",
+          "backend",
+          "mobile",
+          "quality",
+          "ai-engineer"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/ui/src/foxy-panel/ — 6 modules: FoxyPanel.tsx, MessageList.tsx, MessageInput.tsx, useFoxyChat.ts, foxy-types.ts, foxy-constants.ts",
+        "packages/ui/src/foxy-launcher/FoxyPanelLauncher.tsx — sanctioned tap-gated entry-point (next/dynamic ssr:false), the ONLY static path any host page.tsx may take",
+        "apps/host/src/__tests__/regressions/foxy-panel-no-static-embed.test.ts",
+        "docs/runbooks/foxy-panel-embed-rollout.md"
+      ]
+    },
+    {
+      "reqId": "U2",
+      "title": "One question at a time; Hindi/English code-switching — LIVE as prompt policy; move into director config (single source)",
+      "specSection": "§1.5",
+      "phase": "4",
+      "status": "planned",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/foxy/teaching-director.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": []
+    },
+    {
+      "reqId": "U3",
+      "title": "Confusion via learning behavior, not observation — enable ff_foxy_perception_v1 staged; signals feed planner tier 1 + teacher alerts; PR3 stays enforced",
+      "specSection": "§1.5",
+      "phase": "4",
+      "status": "planned",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/foxy/struggle-detection.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [
+        {
+          "name": "ff_foxy_perception_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": []
+    },
+    {
+      "reqId": "U4",
+      "title": "Student actions — ADD give_hint (wired to L5 ladder) + let_me_try (serves evidential item); reuse learning-action route, no new endpoint",
+      "specSection": "§1.5",
+      "phase": "3",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "apps/host/src/app/api/foxy/learning-action/route.ts"
+        ],
+        "middleware": "inherit",
+        "frontend": [
+          "packages/ui/src/quiz/",
+          "packages/ui/src/quiz/HintLadder.tsx",
+          "packages/ui/src/foxy/ChatBubble.tsx"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "frontend",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/components/quiz/HintLadder.test.tsx",
+        "packages/lib/src/__tests__/learn/hint-ladder.test.ts"
+      ],
+      "regressionIds": [
+        "REG-355"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "backend",
+          "ai-engineer",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/ui/src/foxy/ChatBubble.tsx — give_hint + let_me_try action affordances surfaced on Foxy replies (U4 wave 3b)",
+        "packages/ui/src/quiz/HintLadder.tsx — quiz-surface ladder invoking learning-action give_hint via the L5 state machine",
+        "apps/host/src/app/api/foxy/learning-action/route.ts — reused endpoint (no new route); give_hint / let_me_try dispatch through it"
+      ]
+    },
+    {
+      "reqId": "U5",
+      "title": "SEL per CASEL — companion module CASEL mapping (5 competencies → behaviors); reuse getReflectionPrompt; copy audit",
+      "specSection": "§1.5",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/companion/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/parent/"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "ai-engineer",
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/parent/use-parent-child-scope.ts",
+        "packages/lib/src/parent/weekly-report-schema.ts",
+        "packages/ui/src/parent/ConversationPromptsCard.tsx"
+      ]
+    },
+    {
+      "reqId": "U6",
+      "title": "Safeguarding flow (UNICEF) — pre-LLM disclosure classifier; safeguarding_escalations table + RLS (safeguarding role only); human review lane (school-admin + super-admin); Childline 1098 response template; SEL mood routing; anti-dependency rails; metadata-only audit (P13). Approval A1 granted",
+      "specSection": "§1.5",
+      "phase": "1",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260806000100_safeguarding_escalations.sql",
+          "supabase/migrations/20260806000200_seed_ff_safeguarding_v1.sql"
+        ],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts",
+          "packages/lib/src/policy/prohibited-inferences.ts",
+          "apps/host/src/app/api/foxy/_lib/responders.ts",
+          "apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts"
+        ],
+        "middleware": "inherit",
+        "frontend": [
+          "apps/host/src/app/school-admin/escalations/SafeguardingQueue.tsx",
+          "apps/host/src/app/super-admin/foxy-quality/SafeguardingQueue.tsx"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/api/foxy/safeguarding-route.test.ts",
+        "apps/host/src/__tests__/api/foxy/safeguarding-escalate.test.ts",
+        "apps/host/src/__tests__/api/foxy/respond-safeguarding.test.ts",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-screen.test.ts — classifier tests (138 across screen+classify)",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-classify.test.ts — classifier tests (138 across screen+classify)",
+        "apps/host/src/__tests__/security/safeguarding-escalations-migration.test.ts",
+        "apps/host/src/__tests__/api/super-admin-safeguarding.test.ts",
+        "apps/host/src/__tests__/api/school-admin-safeguarding.test.ts"
+      ],
+      "regressionIds": [
+        "REG-348"
+      ],
+      "flags": [
+        {
+          "name": "ff_safeguarding_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "backend",
+          "frontend",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/ai/validation/safeguarding-screen.ts — Tier-1 pre-filter (same family as S1.7)",
+        "packages/lib/src/ai/validation/safeguarding-classify.ts — Tier-2 LLM confirmation (same family as S1.7)",
+        "apps/host/src/app/api/foxy/route.ts — Tier-1 :663 / Tier-2 :914 + sessionMood plumbing (SEL mood routing into disclosure lane; in-request only per PR4)",
+        "apps/host/src/app/api/foxy/_lib/responders.ts — respondSafeguarding (Childline 1098)",
+        "apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts — school-admin fan-out (metadata-only, P13)",
+        "apps/host/src/app/school-admin/escalations/SafeguardingQueue.tsx — school-scoped human review lane (P10 fold-in: tab at /school-admin/escalations?tab=safeguarding)",
+        "apps/host/src/app/super-admin/foxy-quality/SafeguardingQueue.tsx — platform human review lane (P10 fold-in: tab at /super-admin/foxy-quality?tab=safeguarding)",
+        "supabase/functions/daily-cron/index.ts — safeguarding_escalations_purged step (90d retention, pending never purged, >30d stale-pending counts-only WARN)"
+      ],
+      "notes": [
+        "SEL guardrails + disclosure routing tested; ops review verdict 2026-08-05 APPROVE (queue operability, stale-pending WARN surfaces in daily ops log review, no PII in operational logs)",
+        "Rollout runbook: docs/runbooks/safeguarding-escalation-rollout.md"
+      ]
+    },
+    {
+      "reqId": "U7",
+      "title": "Engagement from curiosity + visible progress, not addictive mechanics — mission framework on existing substrate (S1.6); Close stage (L7) supplies visible progress",
+      "specSection": "§1.5",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/play/"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/play/",
+        "apps/host/src/app/(student)/missions/"
+      ]
+    },
+    {
+      "reqId": "U8",
+      "title": "XP for independent mastery, retention, recovery, thoughtful questions, consistency — ADD xp-config sources (review_graded, remediation_recovered, unhinted-mastery bonus via D5, thoughtful-question via quality-eval). P2 invariant; values approval A2 granted (proposed at Phase 3 start); ALL constants in xp-config only",
+      "specSection": "§1.5",
+      "phase": "3",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260809000300_xp_sources_widen_and_award_rpc.sql",
+          "supabase/migrations/20260809000500_submit_quiz_v2_unhinted_bonus.sql",
+          "supabase/migrations/20260809000700_foxy_quality_scores_question_depth.sql"
+        ],
+        "backend": [
+          "packages/lib/src/xp-config.ts",
+          "packages/lib/src/xp-award.ts",
+          "packages/lib/src/foxy/quality-eval.ts",
+          "apps/host/src/app/api/learner/review/grade/route.ts",
+          "apps/host/src/app/api/cron/foxy-quality-sample/route.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": []
+      },
+      "owner": "assessment",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/lib/xp-award.test.ts",
+        "apps/host/src/__tests__/api/learner/review-grade-xp-award.test.ts",
+        "apps/host/src/__tests__/api/cron/foxy-quality-thoughtful-xp.test.ts"
+      ],
+      "regressionIds": [
+        "REG-354"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile"
+        ],
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/xp-config.ts — Phase 3 XP_RULES additions: review_graded_xp=2 cap=20; remediation_recovered_xp=8 cap=16; unhinted_mastery_bonus=2 cap=30; thoughtful_question_xp=5 cap=5. Package daily max = 71 XP <<< 200 XP quiz_daily_cap (P2 invariant, A2 approved)",
+        "packages/lib/src/xp-award.ts — awardXpCapped helper (fail-safe: never throws; RPC error → null with counts-only warn log per P13; no XP number in helper)",
+        "supabase/migrations/20260809000300_xp_sources_widen_and_award_rpc.sql — xp_transactions.source CHECK widened + award_xp_capped RPC (SECURITY DEFINER, service_role-only EXECUTE, IST day boundary, xp_transactions_reference_id_uniq idempotency; REG-354)",
+        "supabase/migrations/20260809000500_submit_quiz_v2_unhinted_bonus.sql — per-response unhinted-mastery bonus wired into submit chain (hint_level === 0 AND correct)",
+        "supabase/migrations/20260809000700_foxy_quality_scores_question_depth.sql — quality-eval v3 question-depth column for thoughtful-question classifier",
+        "packages/lib/src/foxy/quality-eval.ts — v3 classifier for the thoughtful_question lane (server-owned; client cannot flag its own message)",
+        "apps/host/src/app/api/learner/review/grade/route.ts — review_graded lane call site (quality >= 3 path)",
+        "apps/host/src/app/api/cron/foxy-quality-sample/route.ts — thoughtful_question lane call site (sampled + capped 1/day/student)",
+        "docs/runbooks/xp-source-additions-rollout.md — lane definitions, reference-id patterns, monitoring queries (per-student daily package <= 71 XP invariant), rollback via REVOKE EXECUTE on award_xp_capped"
+      ],
+      "notes": [
+        "PRE-RAMP CONDITION (from Phase 2 quality finding): ff_preference_writer_v1 stays OFF until the D9 multi-subject newest-row read is fixed to prefer preferences_set_by_user=true rows. Wave 3 does not touch that flag but keeps it pinned OFF in the ops calendar.",
+        "P2 invariant: all XP amounts + caps live ONLY in packages/lib/src/xp-config.ts; helpers and call sites take literals from XP_RULES.*. Analyzer check 6 (no-duplicate code) monitors this."
+      ]
+    },
+    {
+      "reqId": "U9",
+      "title": "No XP for raw screen time — LIVE posture (foxy_chat = 0, streak_daily = 0 deliberately); analyzer guard keeps it so (analyzer check 8)",
+      "specSection": "§1.5",
+      "phase": "T0",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ops",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "testing"
+        ],
+        "completed": [
+          "testing"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/xp-config.ts — foxy_chat=0, streak_daily=0",
+        "scripts/foxy-alignment/analyze.mjs — check 8 (live in CI)"
+      ]
+    },
+    {
+      "reqId": "U10",
+      "title": "No leaderboards exposing weaker students — personal absolute rank + (You) tags replaced by percentile bands; keep top-N; no bottom lists. Approval A7 granted",
+      "specSection": "§1.5",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260813000006_leaderboard_percentile_rpc.sql"
+        ],
+        "backend": [
+          "apps/host/src/app/api/v1/leaderboard/me/"
+        ],
+        "middleware": "inherit",
+        "frontend": [
+          "packages/ui/src/leaderboard/PercentileBandCard.tsx"
+        ],
+        "mobile": []
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/api/v1/leaderboard/me.test.ts"
+      ],
+      "regressionIds": [
+        "REG-361"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "frontend",
+          "testing",
+          "mobile",
+          "assessment",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "apps/host/src/app/api/v1/leaderboard/me/",
+        "packages/ui/src/leaderboard/PercentileBandCard.tsx",
+        "supabase/migrations/20260813000006_leaderboard_percentile_rpc.sql"
+      ]
+    },
+    {
+      "reqId": "U11",
+      "title": "No monetary XP conversion until safety review — none exists today; analyzer guard blocks any xp-to-money/voucher code path (analyzer check 8)",
+      "specSection": "§1.5",
+      "phase": "T0",
+      "status": "built",
+      "layers": {
+        "db": [],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ops",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": [],
+      "notes": [
+        "Analyzer guard 8c live; BASELINE_EXCEPTION XPRewardShop (COIN_SHOP digital goods) pending audit — no monetary conversion path exists"
+      ]
+    },
+    {
+      "reqId": "K1",
+      "title": "Students needing attention today — unify needs_attention / at-risk alerts / Student Pulse into one lane WITH evidence payload (K3); enable ff_school_pulse_v1 staged",
+      "specSection": "§1.6",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts",
+          "packages/lib/src/pulse/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/"
+      ],
+      "regressionIds": [],
+      "flags": [
+        {
+          "name": "ff_school_pulse_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "frontend",
+          "ops",
+          "testing",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/use-teacher-data.ts",
+        "apps/host/src/app/teacher/CommandCenter.tsx"
+      ]
+    },
+    {
+      "reqId": "K2",
+      "title": "Class-level misconception clusters — teacher-dashboard action get_misconception_clusters over student_misconceptions (post-D7 writer) grouped by misconception_code; CommandCenter cluster panel",
+      "specSection": "§1.6",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts"
+        ],
+        "middleware": [],
+        "frontend": [
+          "apps/host/src/app/teacher/"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "frontend",
+          "testing",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/heat-scale.ts"
+      ]
+    },
+    {
+      "reqId": "K3",
+      "title": "Evidence behind recommendations — event citations (attempts, hints, timestamps) attached to alerts + interventions from enriched quiz_responses/state_events; UUIDs only (P13)",
+      "specSection": "§1.6",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260813000002_remediation_evidence_column.sql"
+        ],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts",
+          "apps/host/src/app/api/teacher/remediation/route.ts",
+          "packages/lib/src/teacher/remediation-evidence.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/remediation-evidence.test.ts"
+      ],
+      "regressionIds": [
+        "REG-362"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "architect",
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/remediation-evidence.ts",
+        "apps/host/src/app/api/teacher/remediation/route.ts",
+        "supabase/migrations/20260813000002_remediation_evidence_column.sql"
+      ]
+    },
+    {
+      "reqId": "K4",
+      "title": "Suggested small-group interventions — approval lane in CommandCenter wiring the EXISTING deploy_intervention action; groups derived from K2 clusters",
+      "specSection": "§1.6",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260813000003_adaptive_interventions_teacher_decision.sql"
+        ],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts",
+          "packages/lib/src/state/events/registry.ts",
+          "supabase/functions/_shared/state-runtime/events-registry.ts"
+        ],
+        "middleware": [],
+        "frontend": [
+          "apps/host/src/app/teacher/"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "frontend",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/state/events-registry.test.ts"
+      ],
+      "regressionIds": [
+        "REG-364"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "backend",
+          "testing"
+        ],
+        "completed": [
+          "backend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/state/events/registry.ts",
+        "supabase/functions/_shared/state-runtime/events-registry.ts",
+        "supabase/migrations/20260813000003_adaptive_interventions_teacher_decision.sql"
+      ]
+    },
+    {
+      "reqId": "K5",
+      "title": "Draft assignments / worksheets — teacher draft flow reusing bulk-question-gen + export-report EFs (no new generator); oracle-gated output (REG-54 pattern)",
+      "specSection": "§1.6",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260813000004_teacher_assignment_drafts.sql"
+        ],
+        "backend": [
+          "supabase/functions/bulk-question-gen/",
+          "packages/lib/src/teacher/draft-question-validator.ts"
+        ],
+        "middleware": [],
+        "frontend": [
+          "apps/host/src/app/teacher/"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/security/teacher-assignment-drafts-rls.test.ts",
+        "packages/lib/src/__tests__/teacher/draft-question-validator.test.ts"
+      ],
+      "regressionIds": [
+        "REG-363"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "ai-engineer",
+          "assessment",
+          "frontend",
+          "testing",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260813000004_teacher_assignment_drafts.sql",
+        "packages/lib/src/teacher/draft-question-validator.ts"
+      ]
+    },
+    {
+      "reqId": "K6",
+      "title": "Fast-progressing student highlights — small addition to get_class_overview (positive deltas from facade)",
+      "specSection": "§1.6",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "supabase/functions/teacher-dashboard/__tests__/contract.test.ts"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "frontend",
+          "testing",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/functions/teacher-dashboard/",
+        "apps/host/src/app/teacher/assignments/page.tsx"
+      ]
+    },
+    {
+      "reqId": "K7",
+      "title": "Teacher approve/override Foxy — approve/override on interventions (K4 lane); teacher.override event kind; override feeds planner tier 2 (D11); autonomy tiers documented per loop",
+      "specSection": "§1.6",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts",
+          "packages/lib/src/state/events/registry.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "frontend",
+          "testing",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/",
+        "apps/host/src/app/teacher/"
+      ]
+    },
+    {
+      "reqId": "K8",
+      "title": "Parents — ADD conversation_prompts[] to weekly report JSON (dinner prompts); surface reports in-app at /parent/reports?tab=progress (folded in from the retired /parent/progress route, 2026-08-05); NO transcript exposure (stays)",
+      "specSection": "§1.6",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "supabase/functions/parent-report-generator/"
+        ],
+        "middleware": [],
+        "frontend": [
+          "apps/host/src/app/parent/reports/ProgressPanel.tsx"
+        ],
+        "mobile": []
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "supabase/functions/teacher-dashboard/__tests__/contract.test.ts"
+      ],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "frontend",
+          "testing",
+          "mobile",
+          "assessment",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/functions/teacher-dashboard/actions.ts"
+      ]
+    },
+    {
+      "reqId": "K9",
+      "title": "Leadership — dashboard assembling facade aggregates (growth/retention), syllabus coverage views (exist), safety-incident counts from safeguarding_escalations (counts only); PARAKH-style; reuses school-admin surface",
+      "specSection": "§1.6",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [
+          "supabase/migrations/20260813000005_leadership_readmodels.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/",
+          "apps/host/src/app/api/school-admin/leadership/"
+        ],
+        "middleware": [],
+        "frontend": [
+          "apps/host/src/app/school-admin/",
+          "apps/host/src/app/school-admin/reports/LeadershipTab.tsx",
+          "packages/ui/src/leadership/"
+        ],
+        "mobile": "n/a"
+      },
+      "owner": "frontend",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/migrations/leadership-readmodels-p13.test.ts"
+      ],
+      "regressionIds": [
+        "REG-365",
+        "REG-366"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "backend",
+          "architect",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "backend",
+          "architect",
+          "ops",
+          "testing",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260813000005_leadership_readmodels.sql",
+        "apps/host/src/app/api/school-admin/leadership/",
+        "apps/host/src/app/school-admin/reports/LeadershipTab.tsx",
+        "packages/ui/src/leadership/"
+      ]
+    },
+    {
+      "reqId": "R1",
+      "title": "Event capture + learner-state service — enable state_events bus in shadow → live; learner-model facade = the learner-state service (in-process package, not a network hop)",
+      "specSection": "§1.7",
+      "phase": "2",
+      "status": "in_progress",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/state/events/registry.ts",
+          "packages/lib/src/learner-model/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [
+        {
+          "name": "ff_event_bus_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "docs/runbooks/learner-model-shadow-verification.md — R1 shadow procedure: prerequisites (wave 2b bkt-mirror re-point merged; learner_mastery truncate), flag flip staging→prod, >=2-week window, grain-matched chapter-aggregate verification SQL, gate (zero NULL shadows AND median drift <=0.10 AND p95 <=0.25), DR-10 promote-or-delete",
+        "packages/lib/src/state/events/publish.ts — flag-gated fail-open publisher (publish failures never block submit; kill switch = ff_event_bus_v1 OFF)"
+      ],
+      "notes": [
+        "ff_event_bus_v1 flip is a post-merge ops action (feature_flags row, no migration) — do NOT flip before the wave 2b bkt-mirror re-point of quiz-completion-service is merged and stale learner_mastery rows are truncated",
+        "POSTURE CONTRADICTION (found 2026-08-05, surfaces as the analyzer check-5 WARN): the flag matrix carries live evidence (2026-07-10) that ff_event_bus_v1 is ALREADY ON at 100% in prod, while the spec says publish is a no-op/flag OFF — verify the live feature_flags row before executing the runbook (runbook Step 1 caution); requiredState=off here records the intended pre-shadow posture, not verified live state"
+      ]
+    },
+    {
+      "reqId": "R2",
+      "title": "Curriculum/context retrieval + adaptive recommendation — retrieval LIVE (grounded-answer RAG); recommendation move behind facade tracked under E3/L3; retrieval untouched",
+      "specSection": "§1.7",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "supabase/functions/grounded-answer/index.ts",
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [
+        "REG-50"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/functions/grounded-answer/index.ts — RAG retrieval (Voyage rerank-2, RRF k=60, confidence scoring)",
+        "apps/host/src/app/api/foxy/_lib/cognitive-context.ts — deriveNextAction adaptive recommendation"
+      ]
+    },
+    {
+      "reqId": "R3",
+      "title": "Pedagogical orchestrator + model router — decompose handleFoxyPost into named typed stages (= spec loop L1-L7); director ON; consolidate routing to ONE gateway (retire 2 duplicates). Approval A5 granted",
+      "specSection": "§1.7",
+      "phase": "4",
+      "status": "in_progress",
+      "layers": {
+        "db": [],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts",
+          "apps/host/src/app/api/foxy/_pipeline/compose.ts",
+          "apps/host/src/app/api/foxy/_pipeline/types.ts",
+          "apps/host/src/app/api/foxy/_pipeline/observe.ts",
+          "apps/host/src/app/api/foxy/_pipeline/gate.ts",
+          "apps/host/src/app/api/foxy/_pipeline/diagnose.ts",
+          "apps/host/src/app/api/foxy/_pipeline/decide.ts",
+          "apps/host/src/app/api/foxy/_pipeline/teach.ts",
+          "apps/host/src/app/api/foxy/_pipeline/check.ts",
+          "apps/host/src/app/api/foxy/_pipeline/update.ts",
+          "apps/host/src/app/api/foxy/_pipeline/close.ts",
+          "packages/lib/src/ai/gateway/"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [
+        "apps/host/src/__tests__/api/foxy/foxy-route-characterization.test.ts"
+      ],
+      "regressionIds": [
+        "REG-359"
+      ],
+      "flags": [
+        {
+          "name": "ff_foxy_decide_ladder_v1",
+          "requiredState": "off"
+        },
+        {
+          "name": "ff_foxy_director_prompt_v1",
+          "requiredState": "off"
+        },
+        {
+          "name": "ff_foxy_close_stage_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "backend",
+          "testing"
+        ],
+        "completed": [
+          "ops"
+        ]
+      },
+      "lastVerified": null,
+      "evidence": [
+        "apps/host/src/app/api/foxy/_pipeline/compose.ts — runPipeline runner (timing ledger + terminal short-circuit + publish-once at close, never-throws-from-instrumentation); scaffolding, NOT yet wired into route.ts",
+        "apps/host/src/app/api/foxy/_pipeline/{observe,gate,diagnose,decide,teach,check,update,close}.ts — 8 empty stage stubs, each with R3 header note",
+        "apps/host/src/__tests__/api/foxy/foxy-route-characterization.test.ts — REG-359 characterization suite: 11 seeded fixtures + 5 pending + 20-flag OFF-identity sweep against the current route",
+        "docs/runbooks/foxy-r3-decomposition-plan.md — sub-wave plan (R3-A seeds remaining 5 fixtures; R3-B extracts 8 stages byte-identical; R3-C wires runPipeline)"
+      ],
+      "notes": [
+        "BINDING SEQUENCING RULES (Phase 4 design review): (1) characterization golden fixtures captured against post-Phase-0-3 merged route BEFORE decomposition; (2) L3 tier-order swap + L4 tree replacement behind OFF-default flags ff_foxy_decide_ladder_v1/ff_foxy_director_prompt_v1; (3) route.ts single-writer lock per step — no parallel PRs into route.ts/_lib until R3 merges.",
+        "R3 correctly deferred by ai-engineer this wave (Phase 4 wave 4b): scaffolding + fixtures + Group B router consolidation are done; the byte-identical extraction is a multi-PR wave of its own. Sub-waves: R3-A (seed the 5 pending characterization fixtures: math-solve, curriculum-scope T3, safeguarding two-tier chain, foxy_messages roster, chapter_concepts snapshot), R3-B (extract handleFoxyPost sections into the 8 pipeline stage modules in canonical order, byte-identical, re-run REG-359 after each stage), R3-C (wire runPipeline into route.ts; shrink handleFoxyPost to `return runPipeline(ctx, stages)`; verify REG-359 + all 20 flag-OFF sweeps still deep-equal). Rollback = git revert (no runtime dual-path flag per design report). See docs/runbooks/foxy-r3-decomposition-plan.md for the full plan."
+      ]
+    },
+    {
+      "reqId": "R4",
+      "title": "Safety service + conversation/session service — safeguarding stage (U6) joins the safety chain as stage 1; session service stays",
+      "specSection": "§1.7",
+      "phase": "1",
+      "status": "in_progress",
+      "layers": {
+        "db": [],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": [],
+      "notes": [
+        "F5: foxy_sessions.mode CHECK widened 4→9 (20260805100000) — fixes latent mobile 23514 for doubt/explorer",
+        "Tier-1/Tier-2 safeguarding stages (route.ts:663/:914) staged as gate-stage inputs for the Phase 4 pipeline decomposition (R3)"
+      ]
+    },
+    {
+      "reqId": "R5",
+      "title": "Evidence validator + teacher escalation — teacher escalation lane from safeguarding + K4 approval flow (oracle gates + foxy_served_items + anti-fake-quiz-claim already live)",
+      "specSection": "§1.7",
+      "phase": "5",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts",
+          "apps/host/src/app/api/teacher/remediation/route.ts",
+          "packages/lib/src/teacher/remediation-evidence.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "backend",
+      "prs": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/remediation-evidence.test.ts"
+      ],
+      "regressionIds": [
+        "REG-362"
+      ],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "frontend",
+          "testing"
+        ],
+        "completed": [
+          "ai-engineer",
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/remediation-evidence.ts",
+        "apps/host/src/app/api/teacher/remediation/route.ts"
+      ]
+    },
+    {
+      "reqId": "R6",
+      "title": "Analytics + observability — tracker (this file) + analyzer scripts/foxy-alignment/analyze.mjs + CI job + per-stage timing/outcome metrics emitted by the composition root (R3)",
+      "specSection": "§1.7",
+      "phase": "T0",
+      "status": "in_progress",
+      "layers": {
+        "db": [],
+        "backend": [],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ops",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [
+          "testing"
+        ],
+        "completed": []
+      },
+      "lastVerified": null,
+      "evidence": [],
+      "notes": [
+        "Tracker+analyzer live in CI (Phase T0); per-stage pipeline metrics land Phase 4 (compose.ts timing)"
+      ]
+    },
+    {
+      "reqId": "R7",
+      "title": "Multi-model strategy — LIVE (OpenAI-primary chain gpt-4o-mini → gpt-4o → Haiku → Sonnet since 2026-08-02; task-typed routing matrices); consolidation tracked under R3; provider strategy unchanged",
+      "specSection": "§1.7",
+      "phase": "live",
+      "status": "verified",
+      "layers": {
+        "db": [],
+        "backend": [
+          "packages/lib/src/ai/gateway/router.ts",
+          "packages/lib/src/ai/gateway/gateway.ts",
+          "packages/lib/src/ai/gateway/registry.ts"
+        ],
+        "middleware": [],
+        "frontend": [],
+        "mobile": "n/a"
+      },
+      "owner": "ai-engineer",
+      "prs": [],
+      "tests": [],
+      "regressionIds": [],
+      "flags": [],
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/ai/gateway/router.ts — task-typed routing matrices",
+        "packages/lib/src/ai/gateway/registry.ts — OpenAI-primary chain gpt-4o-mini → gpt-4o → Haiku → Sonnet (since 2026-08-02)"
+      ],
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
+    }
+  ]
+}

@@ -168,6 +168,14 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     generatedAt: FIXTURE_ISO,
     expiresAt: FIXTURE_ISO,
   },
+  // D12 transfer evidence (Foxy North-Star Phase 3). Observability-only.
+  'learner.transfer_evidence': {
+    studentId: FIXTURE_UUID_B,
+    sourceTopicId: FIXTURE_UUID_A, // already-solid prerequisite
+    targetTopicId: FIXTURE_UUID_C, // dependent topic student succeeded on
+    subjectCode: 'math',
+    sourceMastery: 0.82,
+  },
   'ai.foxy_session_started': {
     foxySessionId: FIXTURE_UUID_C,
     subjectCode: 'math',
@@ -304,6 +312,17 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     studentId: FIXTURE_UUID_C,
     bodyLength: 18,
     isNewThread: false,
+  },
+  // Phase 5 K4/K7 (Foxy North-Star) — teacher override on an autonomous
+  // adaptive_interventions row. IDs + enums only; reasonCode is bounded (P13).
+  'teacher.override': {
+    interventionId: FIXTURE_UUID_C,
+    classId:        FIXTURE_UUID_A,
+    studentId:      FIXTURE_UUID_B,
+    decision:       'overridden',
+    originalTier:   'auto_remediation',
+    chosenTier:     'escalate_teacher',
+    reasonCode:     'knows_student',
   },
   'school.module_toggled': {
     moduleKey: 'ai_tutor',

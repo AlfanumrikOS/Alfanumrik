@@ -6,8 +6,222 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 344 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-344 (2026-08-04, P2-2 API response-envelope wrapper — pins
+**Total catalog: 366 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-366 (2026-08-05, K9 leadership standalone-route fold-in — the
+`/school-admin/leadership` standalone route is retired; the nav Leadership
+entry now deep-links to `/school-admin/reports?tab=leadership` and the
+LeadershipTab loads inside the existing school-admin reports tab strip
+behind `ff_school_pulse_v1` staged (5%→25%→100%), mirroring the Phase 1
+safeguarding fold-in precedent (P10 bundle boundary). Pinned by
+`apps/host/src/__tests__/school-admin/reports-leadership-tab.test.tsx` +
+`apps/host/src/__tests__/school-admin/consolidated-nav-mobile.test.tsx`; see
+`07-teacher-school.md`.
+Prior: REG-361..REG-365 (2026-08-05, Foxy North-Star Phase 5 Stakeholders +
+Play batch — five pins across three shards covering the ~50-file uncommitted
+Phase 5 change set on branch `Alfanumrik/foxy-system-spec-22f565`.
+REG-361 U10 leaderboard percentile-band contract [E]: `/api/v1/leaderboard/me`
+returns a percentile band descriptor ONLY (`top_10` / `top_25` / `top_50` /
+`keep_going`), NEVER an absolute rank or a `(You)`-tagged position;
+`PercentileBandCard` renders bands only; top-N leaderboard tiles unchanged;
+`/me` responses are private-cached; pinned by
+`apps/host/src/__tests__/api/v1/leaderboard/me.test.ts` +
+`packages/ui/src/leaderboard/PercentileBandCard.tsx` + migration
+`20260813000006_leaderboard_percentile_rpc.sql`; see `03-quiz-integrity.md`.
+REG-362 K3/S1.8/R5 evidence P13 boundary [E]: the teacher-facing evidence
+payload attached to remediation alerts carries only bounded fact records
+(attempts, incorrect count, hint_level_max, misconception_ids, timestamps,
+UUIDs) — never `name`/`email`/`phone`/free-text answer content or transcripts;
+pinned by `packages/lib/src/__tests__/teacher/remediation-evidence.test.ts` +
+migration `20260813000002_remediation_evidence_column.sql`; see
+`03-quiz-integrity.md`.
+REG-363 K5 draft quarantine [E]: `teacher_assignment_drafts` has EXACTLY
+TWO policies (teacher_own_all + service_role_all) — deliberately NO
+student, parent, or authenticated read path until the publish action stamps
+`published_assignment_id`; pinned by
+`apps/host/src/__tests__/security/teacher-assignment-drafts-rls.test.ts`
+(NEW — 6 tests structural pin) + migration
+`20260813000004_teacher_assignment_drafts.sql`; see `10-rbac-rls.md`.
+REG-364 K4 teacher.override event kind [E]: the six new teacher.decision /
+teacher.override event kinds are declared with a bounded payload enum only
+(no free-text `reason`/`comment`); both event registries (Next
+`packages/lib/src/state/events/registry.ts` + Deno
+`supabase/functions/_shared/state-runtime/events-registry.ts`) agree on the
+exact shape; pinned by `apps/host/src/__tests__/state/events-registry.test.ts`
++ migration `20260813000003_adaptive_interventions_teacher_decision.sql`;
+see `12-observability.md`.
+REG-365 K9 leadership read-model P13 contract [E]: the two SECURITY DEFINER
+RPCs added by migration `20260813000005_leadership_readmodels.sql`
+(`get_school_safeguarding_counts`, `get_school_competency_summary`) return
+ONLY counts and averages — the SQL bodies never SELECT `student_id`,
+`disclosure_excerpt`, `email`, `phone`, or `full_name`; each is guarded by
+an active-school-admin scope guard before any read, both revoke PUBLIC/anon
+and grant EXECUTE only to authenticated; pinned by
+`apps/host/src/__tests__/migrations/leadership-readmodels-p13.test.ts`
+(NEW — 6 tests structural pin, integration lane); see `10-rbac-rls.md`.
+Prior: REG-359..REG-360 (2026-08-05, Foxy North-Star Phase 4 wave 4a/4b
+batch — REG-359 promotes the Foxy route CHARACTERIZATION FIXTURES suite
+(11 seeded + 5 pending, 20-flag OFF-identity sweep) into
+`02-foxy-ai.md` as the R3 pipeline-decomposition tripwire (runbook
+`docs/runbooks/foxy-r3-decomposition-plan.md`); REG-360 pins the FoxyPanel
+embed static-import guard (P10 bundle boundary) — no
+`apps/host/src/app/**/page.tsx` may statically import
+`@alfanumrik/ui/foxy-panel/*`, only the sanctioned tap-gated launcher
+`@alfanumrik/ui/foxy-launcher/*` — runbook
+`docs/runbooks/foxy-panel-embed-rollout.md`.
+Prior: REG-354..REG-358 (2026-08-05, Foxy North-Star Phase 3 Adaptive +
+Check loop batch — five pins across `03-quiz-integrity.md` (REG-354, 355,
+356, 358) and `02-foxy-ai.md` (REG-357) covering the ~50-file uncommitted
+Phase 3 change set on branch `Alfanumrik/foxy-system-spec-22f565`.
+REG-354 XP capped-award contract [E]: `award_xp_capped` RPC in migration
+`20260809000300` is SECURITY DEFINER + service_role-only EXECUTE (browser
+callers cannot invoke); per-source idempotency via `p_reference_id` on the
+partial-unique `xp_transactions_reference_id_uniq` (replay returns
+`effective_xp: 0`); IST day boundary anchor (`date_trunc('day', now() AT
+TIME ZONE 'Asia/Kolkata')` — extends REG-318's mixed-anchor fix); the three
+Phase-3 lane amounts (`retention_award=6`, `remediation_recovery_award=15`,
+`thoughtful_question_award=5`) sum to a daily maximum of 71 XP — <<< the
+200 XP `quiz_daily_cap`; `awardXpCapped` helper (`packages/lib/src/xp-award.ts`)
+never throws / rejects / defines an XP number (all amounts + caps come from
+XP_RULES at the call site).
+REG-355 hint-ladder P3 lock [E]: `nextRung()` returns
+`{ok:false, reason:'locked_pre_attempt'}` when pre-attempt — the P3 lock
+lives IN the state machine, no UI loop can bypass; rung 5 is the HONEST
+skip-only descriptor (`source:'skip', kind:'skip'`) with same-topic
+evidential twin deferred (TODO(L5) in module header, plan-tracker E5/L5);
+hint_level widened 0..5 via migration `20260809000400` with USING-clamp
+preserving existing rows; `HintLevel` type = `0|1|2|3|4|5`; unhinted
+XP bonus keys off `hint_level === 0`.
+REG-356 transfer-evidence direction & registry parity (D12) [E]: canonical
+RPC call inverts pure-module naming (`p_topic_id = rec.fromTopicId` = SOURCE,
+`p_from_topic_id = rec.topicId` = TARGET — mastery lands on the already-solid
+prerequisite); bus payload uses `sourceTopicId`/`targetTopicId` role-anchored
+keys; BOTH event registries (Next `packages/lib/src/state/events/registry.ts`
++ Deno `supabase/functions/_shared/state-runtime/events-registry.ts`) declare
+that shape and only that shape; a new repo-wide static test
+(`apps/host/src/__tests__/regressions/phase3-transfer-event-payload-shape.test.ts`,
+5 pins) confirms NO non-test source file pairs the `'learner.transfer_evidence'`
+kind literal with a payload literal carrying the pre-fix keys — closes the
+assessment "no other consumer besides journey/edge registry depended on old
+sourceTopicId names" concern.
+REG-357 IRT shadow serving-order-unchanged + telemetry P13 [E in
+02-foxy-ai.md]: `select_questions_by_irt_info_v2` (migration `20260809000100`)
+is a shadow-only extension — return set + ORDER BY identical to v1, so
+quiz-question serving order is unchanged whether callers read v1 or v2;
+`ff_irt_shadow_v1` (seed `20260809000000`, default OFF/0%) gates ONLY
+telemetry emission, not selection; `estimateTheta` (`packages/lib/src/irt/
+estimate-theta.ts`) is a pure TS mirror of the Newton-Raphson for
+shadow-metric computation; `/api/telemetry/irt-shadow` payload carries
+UUIDs + numbers + a short `served_via` enum only (P13). Honest gap: the
+20260809000100 migration has never executed against real Postgres this
+session.
+REG-358 SRS single predicate [E]: `packages/lib/src/learn/srs-predicate.ts`
+freezes `SRS_DUE_PREDICATE_DESCRIPTOR` (`is_active=true`,
+`source='quiz_wrong_answer'`, `source_id IS NOT NULL`, `next_review_date <=
+today`, `ORDER BY next_review_date ASC`, defaultLimit 50, hardLimit 100)
+and exposes `buildSrsDueQuery`, called by BOTH the client-side deep-link
+consumer (`srs-quiz-review.ts` → `fetchSrsDueQuizCards` →
+`selectSrsReviewSet`) AND the server-side `/api/learner/srs/due` route AND
+the `DailyRhythmQueue` count — the dashboard SRS lane COUNT and the
+`/quiz?mode=srs` CONTENT cannot disagree because they resolve through the
+same predicate object; closes the drift REG-345 pinned at the fetcher level
+one layer deeper at the predicate level.)
+Prior: REG-351..REG-353 (2026-08-05, Foxy North-Star Phase 2 Canonical
+Learner Model batch — three pins in `03-quiz-integrity.md` covering the
+~70-file uncommitted Phase 2 change set on branch
+`Alfanumrik/foxy-system-spec-22f565`.
+REG-351 canonical-facade lockstep [E]: the `@alfanumrik/lib/learner-model`
+facade's thresholds/BKT mirror are pinned to BOTH RPC migrations
+(`20260623000100` canonical + `20260807000400` evidence re-creation — SQL
+WINS on divergence); `bkt-mirror.ts` is display-only (no supabase import,
+posterior parity fixtures); the 5-rung next-action ladder order survived the
+move verbatim (`getNextAction` IS `deriveNextAction`); sub-entry REG-351d
+pins the confidence_score SCALE SHIFT (Beta-posterior variance replaces the
+pseudo-decay: 1-attempt blend ≈ ×0.944 vs old ×0.773, hard floor ×0.9167)
+plus the consumer-survival result — the progress-page/KnowledgeGapActions
+severity split consumes gap-RPC confidence derived as `1 −
+mastery_probability` (20260623000700/000800 never read
+`cm.confidence_score`), so its >0.7/>0.4 semantics survive; REG-351e pins
+every `student_skill_state` reader fail-soft on empty/error (new file
+`skill-state-reader-fallbacks.test.ts`).
+REG-352 event-capture contract [P — structural pins only, zero live-Postgres
+this session]: D2 server-held `question_version`/`content_hash` from
+`quiz_session_shuffles` with NO client-suppliable parameter; D3 answer_method
+whitelist ELSE 'mcq' + D6 confidence `'^[1-5]$'` else NULL
+(normalize-never-abort, P4); D7 misconception match on the ORIGINAL-space
+index with per-iteration reset, error-isolated open/resolve lifecycle
+(`uq_student_misconceptions_open`, one open row per student+pattern+concept),
+free-text columns never written (P13).
+REG-353 consolidation ratchet [E]: single-BKT analyzer gate (allowlist ==
+exactly `packages/lib/src/cognitive-engine.ts`; deleted copies gone from
+source), retired-table baselines frozen (`cme_concept_state: 6`,
+`topic_mastery: 20` — analyzer FAILs on growth), cme-engine tombstone
+(structured 410 `cme_engine_retired`, 401 posture preserved, facade
+replacement pointer, `cme_concept_state` COMMENT-tombstoned in
+`20260808000100`); deployed-state caution: verify with
+`supabase functions list` post-merge.)
+Prior: REG-348..REG-350 (2026-08-05, Foxy North-Star Phase 1 Safety & Trust
+batch — three pins in `02-foxy-ai.md` covering the ~40-file uncommitted
+Phase 1 change set on branch `Alfanumrik/foxy-system-spec-22f565`.
+REG-348 safeguarding two-tier fail-closed contract [E]: after a Tier-1 regex
+hit, ANY Tier-2 gateway failure (all-failed / throw / unparseable / empty /
+NaN-confidence / wrong-shape JSON) resolves to `{confirmed:true,
+tier:'regex_only'}` — a disclosure can never silently degrade to "no
+escalation" because a model was down; downstream the route terminates the
+turn with the bilingual Childline-1098 helpline envelope, inserts the
+escalation row (500-char excerpt cap, confidence+label-only classifier_meta),
+fans out WITHOUT the excerpt, REFUNDS the quota unit, never calls the LLM,
+awards 0 XP; ambiguous verdicts continue the turn normally in both the
+module and route lanes; `ff_safeguarding_v1` OFF → Tier-1 never invoked
+(zero classifier calls — the rollback contract). REG-349 safeguarding P13
+data boundary [E]: `disclosure_excerpt` is the ONE sanctioned home for
+disclosure text; notifications carry `{escalation_id, category}` only, the
+super-admin + school-admin review LIST projections never select the excerpt
+(only `?id=` detail does), school-admin queries hard-scoped to caller
+school_id on every verb, PATCH `pending_review→reviewed/actioned/dismissed`
+only with 409 on non-pending and metadata-only audit. REG-350 memory
+self-access + scoped erasure [E on TS surfaces, migrations structural-only]:
+migration `20260806000100` pinned RLS-enabled with EXACTLY ONE service_role
+policy and the DELIBERATE-DEVIATION comment present (no
+student/parent/teacher read path — new structure test
+`safeguarding-escalations-migration.test.ts`, 8 tests); `/api/learner/memory`
+GET whitelists the student projection (twin ALWAYS null, cohortPercentile/
+loSkills/knowledgeGaps/nextAction asserted absent) with erasure-guard
+fail-closed blank; scoped DELETE rows route into the scope-aware
+`execute_data_erasure_purge` RPC and NEVER the full-account cascade, with
+`parent.child_erasure_completed` reserved for full-account rows. Honest
+gap: zero live-Postgres execution of the 20260806* migrations this session.)
+Prior: REG-345..REG-347 (2026-08-05, Foxy North-Star Phase 0 gate batch —
+three pins in `03-quiz-integrity.md` covering the ~23-file Phase 0 change set.
+REG-345 SRS grade loop closure [E]: `/quiz?mode=srs` grades each served
+`spaced_repetition_cards` card EXACTLY ONCE via the existing
+`POST /api/learner/review/grade` endpoint with the zod-accepted quality set
+{0,3,4,5} mapped from server-truth `is_correct` + speed (correct <10s→5 else
+4; wrong→ALWAYS 0, never 3 — SM-2 treats quality>=3 as successful recall, so
+3 for a wrong answer would advance the interval; only the flashcard UI may
+send 3 — re-pinned 2026-08-05 per assessment mandate, superseding this
+entry's original "wrong <5s→0 else 3" mapping),
+fire-and-forget/never-throws, and the dashboard SRS
+lane COUNT and the quiz CONTENT both flow through the ONE shared
+`fetchSrsDueQuizCards` + `selectSrsReviewSet` pair so they can never disagree;
+plus the F4 rider that `classifyError` receives REAL per-topic mastery with
+0.5 only as the explicit no-row fallback. REG-346 hint_level end-to-end
+persistence [P]: UI captures 0-3 at answer time, `_mapV2` forwards verbatim
+(omitted → undefined → SQL NULL) without disturbing the v2 strip contract,
+migration `20260805100100` adds the nullable CHECKed column, `20260805100200`
+regex-guards (`^[0-3]$`) so malformed payloads can never abort the submit
+transaction, and a sanctioned-sites sweep proves v_hint_level feeds NO
+scoring/XP/anti-cheat logic — P, honestly: zero live-Postgres execution of
+either migration this session, structural pins only. REG-347 IRT resurrect
+behavior-neutrality [P]: quiz-generator's `useIRT` gate is live code reading
+`ff_irt_question_selection` (requires enabled AND rollout ≥100, FAIL-CLOSED
+on read error; flag seeded OFF/0%, posture unchanged — F9 only corrected the
+self-contradictory reason text), the RPC call pinned to the exact six
+baseline:~6702 arg names with the `question_id`→`id` row normalization —
+explicit known gap: NO Deno-lane test executes the flag-ON branch; new pin
+file `apps/host/src/__tests__/regressions/foxy-phase0-structural.test.ts`
+(11 tests). Full-suite + type-check + lint run as the Phase 0 gate in the
+same session.)
+Prior: REG-344 (2026-08-04, P2-2 API response-envelope wrapper — pins
 `withRoute()` [`packages/lib/src/api/v2/with-route.ts`], the shared
 error-safety net now adopted by the 11-route `/v2` reference slice: a
 successful handler's `NextResponse` (success OR a deliberate non-200
@@ -74,7 +288,14 @@ meta-test on the config shape yet, an explicit known gap
 test files were re-run green in ONE vitest pass from apps/host — 191/191.)
 **REG-344 is the next free id.** That was true before this pass and is
 superseded above — the P2-2 API response-envelope wrapper regression took
-REG-344 on 2026-08-04, so **REG-345 is now the next free id.**
+REG-344 on 2026-08-04, then the Foxy North-Star Phase 0 gate batch took
+REG-345..REG-347 on 2026-08-05, and the same-day Phase 1 Safety & Trust
+batch then took REG-348..REG-350, then Phase 2 Canonical Learner Model took
+REG-351..REG-353, Phase 3 Adaptive + Check took REG-354..REG-358, and the
+Phase 4 wave 4a/4b promotion + FoxyPanel guard took REG-359..REG-360, so
+**REG-367 is now the next free id.** (REG-361..REG-365 taken by the Phase 5
+Stakeholders + Play batch above; REG-366 taken by the same-day K9 leadership
+standalone-route fold-in pinned at the top of this file.)
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

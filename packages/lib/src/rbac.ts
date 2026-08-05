@@ -1044,6 +1044,36 @@ export const PERMISSIONS = {
   // will switch to authorizeRequest(request, 'super_admin.subjects.manage')
   // once the migration runs.
   SUPER_ADMIN_SUBJECTS_MANAGE: 'super_admin.subjects.manage',
+
+  // ── Safeguarding review lane (Foxy North-Star Phase 1, S5.6/U6) ──
+  // Granted to: institution_admin (+ admin/super_admin defensively; wildcard
+  // roles hold it anyway). Gates the SCHOOL-ADMIN human review lane over
+  // safeguarding_escalations (/api/school-admin/safeguarding via
+  // authorizeSchoolAdmin(request, 'safeguarding.review')). The SUPER-ADMIN
+  // lane (/api/super-admin/safeguarding) deliberately does NOT gate on this
+  // code — it uses authorizeAdmin(request, 'admin') per the dominant
+  // /api/super-admin/* house convention. Within the school-admin lane, the
+  // Wave C capability matrix (SCHOOL_ADMIN_ROLE_CAPABILITIES in
+  // school-admin-auth.ts) additionally narrows this code to principal +
+  // institution_admin only under ff_school_admin_rbac — vice_principal and
+  // academic_coordinator must NOT read disclosure excerpts.
+  // DELIBERATELY not granted to student/parent/teacher — see the RLS deviation
+  // comment in migration 20260806000100_safeguarding_escalations.sql (student
+  // self-read reveals flagging = harm vector; parent excluded by approved A1
+  // policy; teacher is not the review lane). Seed migration: 20260806000100.
+  // RBAC addition approved 2026-08-05 under A1.
+  SAFEGUARDING_REVIEW: 'safeguarding.review',
+
+  // ── Student memory self-access (DPDP transparency, T2 screen) ──
+  // Granted to: student. Self-scope codes like account.delete above — a
+  // regulatory/transparency floor, not an authorization expansion; route-layer
+  // ownership checks remain the security boundary. view_own = read/annotate
+  // what Foxy remembers about YOUR account; erase_own = per-item/per-layer
+  // erasure via the DPDP flow (data_erasure_requests.scope, migration
+  // 20260806000300), never a direct delete. Seed migration: 20260806000400.
+  // RBAC addition approved 2026-08-05 under A3 (read + per-item erase only).
+  MEMORY_VIEW_OWN: 'memory.view_own',
+  MEMORY_ERASE_OWN: 'memory.erase_own',
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

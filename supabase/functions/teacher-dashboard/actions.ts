@@ -26,6 +26,14 @@ export const teacherDashboardActionNames = [
   'set_lesson_plan',
   'get_in_the_moment_alerts',
   'deploy_intervention',
+  // Phase 5 (Foxy North-Star) — deliberate contract extension.
+  // K2 misconception clusters, K4 record_intervention_decision (teacher review
+  // of autonomous system interventions), K5 assignment-draft workflow.
+  'get_misconception_clusters',
+  'record_intervention_decision',
+  'generate_draft_assignment',
+  'publish_draft_assignment',
+  'export_draft_assignment',
 ] as const
 
 export type TeacherDashboardActionName = typeof teacherDashboardActionNames[number]

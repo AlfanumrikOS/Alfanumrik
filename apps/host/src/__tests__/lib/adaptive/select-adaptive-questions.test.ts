@@ -846,3 +846,147 @@ describe('selectAdaptiveQuestions — verification-gate Tier-0 mirroring (2026-0
     expect(ids).not.toContain('failed-verifier');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3 E2 — IRT shadow scoring (computeShadow)
+//
+// Shadow scoring re-scores every ranked candidate with fisher_info forced ON
+// (pure extra math on already-fetched rows) and summarises the divergence.
+// Two BLOCKING pins:
+//   - serving order byte-identical with computeShadow on vs off;
+//   - shadow OFF (default) is zero-cost: no shadow field, identical query log.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('selectAdaptiveQuestions — IRT shadow scoring (computeShadow)', () => {
+  /** Mixed pool: 4 calibrated (fisher-eligible) + 4 uncalibrated proxy items. */
+  function shadowPool(): any[] {
+    return [
+      // Calibrated: n >= 30 with 2PL params. Placed at varying b so the
+      // fisher_info shadow ordering genuinely differs from proxy distance.
+      makeQuestion({ id: 'cal-1', irt_a: 1.8, irt_b: 0.1, irt_calibration_n: 50, irt_difficulty: 2.4 }),
+      makeQuestion({ id: 'cal-2', irt_a: 0.4, irt_b: 3.0, irt_calibration_n: 40, irt_difficulty: 0.1 }),
+      makeQuestion({ id: 'cal-3', irt_a: 1.2, irt_b: -0.2, irt_calibration_n: 31, irt_difficulty: 1.9 }),
+      makeQuestion({ id: 'cal-4', irt_a: 0.9, irt_b: 1.5, irt_calibration_n: 90, irt_difficulty: 0.4 }),
+      // Uncalibrated: proxy-ranked on both paths.
+      makeQuestion({ id: 'prox-1', irt_difficulty: 0.0 }),
+      makeQuestion({ id: 'prox-2', irt_difficulty: 0.8 }),
+      makeQuestion({ id: 'prox-3', irt_difficulty: 1.6 }),
+      makeQuestion({ id: 'prox-4', irt_difficulty: 2.2 }),
+    ];
+  }
+
+  // ONE shared pool for every client in this suite: makeQuestion() has a
+  // module-global id counter, so two shadowPool() calls would produce rows
+  // with different question_text and defeat the byte-identical comparison.
+  // The selector never mutates rows, so sharing is safe.
+  const SHARED_POOL = shadowPool();
+
+  function shadowConfig(): FakeConfig {
+    return {
+      subject: { data: { id: 'subj-uuid-1' }, error: null },
+      mastery: { data: [masteryRow(0.6)], error: null },
+      questionBank: () => ({ data: SHARED_POOL, error: null }),
+    };
+  }
+
+  it('(BLOCKING) serving order is byte-identical with computeShadow on vs off', async () => {
+    const { client: clientOff } = makeFakeClient(shadowConfig());
+    const { client: clientOn } = makeFakeClient(shadowConfig());
+
+    const off = await selectAdaptiveQuestions(clientOff, { ...BASE_PARAMS, count: 8 });
+    const on = await selectAdaptiveQuestions(clientOn, {
+      ...BASE_PARAMS,
+      count: 8,
+      computeShadow: true,
+    });
+
+    // Same ids, same order, same row objects' content — serving untouched.
+    expect(on.questions.map((q: any) => q.id)).toEqual(off.questions.map((q: any) => q.id));
+    expect(on.questions).toEqual(off.questions);
+    expect(on.weakTopicsTargeted).toBe(off.weakTopicsTargeted);
+  });
+
+  it('(BLOCKING) shadow off (default) is zero-cost: no shadow field, identical query log', async () => {
+    const { client: c1, log: log1 } = makeFakeClient(shadowConfig());
+    const { client: c2, log: log2 } = makeFakeClient(shadowConfig());
+
+    const offImplicit = await selectAdaptiveQuestions(c1, { ...BASE_PARAMS, count: 8 });
+    const onExplicit = await selectAdaptiveQuestions(c2, {
+      ...BASE_PARAMS,
+      count: 8,
+      computeShadow: true,
+    });
+
+    expect(offImplicit.shadow).toBeUndefined();
+    // Zero extra I/O either way: the shadow path issues NO additional queries.
+    expect(log2.map((l) => l.table)).toEqual(log1.map((l) => l.table));
+    expect(onExplicit.shadow).toBeDefined();
+  });
+
+  it('computeShadow: false explicitly behaves like omitted', async () => {
+    const { client } = makeFakeClient(shadowConfig());
+    const res = await selectAdaptiveQuestions(client, {
+      ...BASE_PARAMS,
+      count: 8,
+      computeShadow: false,
+    });
+    expect(res.shadow).toBeUndefined();
+  });
+
+  it('shadow sample shape: counts, path counts, bounded metrics', async () => {
+    const { client } = makeFakeClient(shadowConfig());
+    const res = await selectAdaptiveQuestions(client, {
+      ...BASE_PARAMS,
+      count: 8,
+      computeShadow: true,
+      irtTheta: 0.3,
+      allowFisherInfo: false, // live serving path: proxy for ALL items
+    });
+
+    const s = res.shadow!;
+    expect(s).toBeDefined();
+    expect(s.theta).toBe(0.3);
+    expect(s.nCandidates).toBe(8);
+    expect(s.nCalibrated).toBe(4); // cal-1..cal-4
+    // Live path with allowFisherInfo false → every item proxy-ranked.
+    expect(s.servedPathCounts).toEqual({ fisher_info: 0, proxy_distance: 8, uncalibrated: 0 });
+    // Bounded metrics.
+    expect(s.spearmanRho).not.toBeNull();
+    expect(Math.abs(s.spearmanRho!)).toBeLessThanOrEqual(1);
+    expect(s.top5Overlap).toBeGreaterThanOrEqual(0);
+    expect(s.top5Overlap).toBeLessThanOrEqual(1);
+    expect(s.top10Overlap).toBeGreaterThanOrEqual(0);
+    expect(s.top10Overlap).toBeLessThanOrEqual(1);
+  });
+
+  it('when serving already uses fisher_info (allowFisherInfo true) shadow diverges nowhere', async () => {
+    const { client } = makeFakeClient(shadowConfig());
+    const res = await selectAdaptiveQuestions(client, {
+      ...BASE_PARAMS,
+      count: 8,
+      computeShadow: true,
+      allowFisherInfo: true, // serving == shadow by construction
+    });
+    const s = res.shadow!;
+    expect(s.servedPathCounts.fisher_info).toBe(4);
+    expect(s.servedPathCounts.proxy_distance).toBe(4);
+    // Identical score vectors → perfect rank agreement and full overlap.
+    expect(s.spearmanRho).toBeCloseTo(1, 10);
+    expect(s.top5Overlap).toBe(1);
+    expect(s.top10Overlap).toBe(1);
+  });
+
+  it('no candidates (cold-start) → no shadow sample even when computeShadow is on', async () => {
+    const { client } = makeFakeClient({
+      subject: { data: { id: 'subj-uuid-1' }, error: null },
+      mastery: { data: [], error: null },
+    });
+    const res = await selectAdaptiveQuestions(client, {
+      ...BASE_PARAMS,
+      count: 8,
+      computeShadow: true,
+    });
+    expect(res.questions).toEqual([]);
+    expect(res.shadow).toBeUndefined();
+  });
+});

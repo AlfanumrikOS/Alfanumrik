@@ -1,0 +1,83 @@
+'use client';
+
+/**
+ * MessageInput — Foxy chat composer + the "long-conversation nudge".
+ *
+ * Plan ref: docs/superpowers/plans/2026-05-09-student-quality-upgrade.md
+ *           Task 5a: extract message-input UI
+ *
+ * Wraps the existing `<ChatInput>` (which carries the textarea, math
+ * symbol picker, voice button, and image upload) with the page-side
+ * "🦊 Start a new chat so Foxy can give better answers!" nudge that
+ * appears after 15+ student turns. Both are kept together because the
+ * nudge sits visually attached to the input on the page.
+ */
+
+import { ChatInput } from '@alfanumrik/ui/foxy/ChatInput';
+import type { ChatMessage } from './foxy-types';
+
+export interface MessageInputProps {
+  messages: ChatMessage[];
+  /** Full language string (en/hi/hinglish) forwarded to ChatInput.
+   *  Component-level copy uses isHi for the EN/HI nudge label. */
+  language: string;
+  isHi: boolean;
+  loading: boolean;
+  voiceMode: boolean;
+  activeSubject: string;
+  onSend: (text: string, image?: File | null) => void;
+  onNewConversation: () => void;
+  /** Voice 3: forwarded to ChatInput; fires with the STT-detected language. */
+  onDetectedLanguage?: (lang: string) => void;
+}
+
+export function MessageInput({
+  messages,
+  language,
+  isHi,
+  loading,
+  voiceMode,
+  activeSubject,
+  onSend,
+  onNewConversation,
+  onDetectedLanguage,
+}: MessageInputProps) {
+  const studentTurnCount = messages.filter((m) => m.role === 'student').length;
+
+  return (
+    <>
+      {/* Conversation length nudge — after 15+ user messages */}
+      {studentTurnCount >= 15 && (
+        <div
+          className="mx-3 mb-2 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2"
+          style={{ background: 'rgb(var(--accent-warm-rgb) / 0.05)', border: '1px solid rgb(var(--accent-warm-rgb) / 0.20)' }}
+        >
+          <span style={{ color: 'var(--accent-warm-strong)' }}>
+            {isHi
+              ? '🦊 नई चैट शुरू करो ताकि Foxy बेहतर जवाब दे सके!'
+              : '🦊 Start a new chat so Foxy can give better answers!'}
+          </span>
+          <button
+            onClick={onNewConversation}
+            className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold text-white transition-all active:scale-95"
+            style={{ background: 'var(--accent-warm)' }}
+          >
+            {isHi ? 'नई चैट' : 'New Chat'}
+          </button>
+        </div>
+      )}
+      <ChatInput
+        onSubmit={onSend}
+        subjectKey={activeSubject}
+        disabled={loading}
+        language={language}
+        onVoiceSend={voiceMode ? onSend : undefined}
+        onDetectedLanguage={onDetectedLanguage}
+        // Compact composer: collapse the Math / Points / Photo / Voice row behind
+        // a single "+" toggle so the Foxy chat thread reclaims the vertical space
+        // (desktop + mobile Foxy). Every action stays reachable via the toggle.
+        collapsibleTools
+      />
+    </>
+  );
+}

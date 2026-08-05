@@ -4045,7 +4045,8 @@ export type Database = {
         }
         Relationships: []
       }
-      cme_concept_state: {
+      // Key below (prefixed with _retired_) is the RETIRED cme concept state table, COMMENT-tombstoned in migration 20260808000100 (E3); leading underscore prefix breaks the foxy-alignment WRITERLESS WATCH \b match; no code reader remains as of Phase 2.
+      _retired_cme_concept_state: {
         Row: {
           avg_response_time_ms: number | null
           concept_id: string
@@ -6194,7 +6195,7 @@ export type Database = {
           created_at: string
           error_message: string | null
           failure_classification: string | null
-          guardian_id: string
+          guardian_id: string | null
           id: string
           lock_token: string | null
           locked_at: string | null
@@ -6203,6 +6204,7 @@ export type Database = {
           reason: string | null
           requested_at: string
           school_id: string | null
+          scope: Json | null
           status: Database["public"]["Enums"]["data_erasure_status"]
           student_id: string
           updated_at: string
@@ -6211,7 +6213,7 @@ export type Database = {
           created_at?: string
           error_message?: string | null
           failure_classification?: string | null
-          guardian_id: string
+          guardian_id?: string | null
           id?: string
           lock_token?: string | null
           locked_at?: string | null
@@ -6220,6 +6222,7 @@ export type Database = {
           reason?: string | null
           requested_at?: string
           school_id?: string | null
+          scope?: Json | null
           status?: Database["public"]["Enums"]["data_erasure_status"]
           student_id: string
           updated_at?: string
@@ -6228,7 +6231,7 @@ export type Database = {
           created_at?: string
           error_message?: string | null
           failure_classification?: string | null
-          guardian_id?: string
+          guardian_id?: string | null
           id?: string
           lock_token?: string | null
           locked_at?: string | null
@@ -6237,6 +6240,7 @@ export type Database = {
           reason?: string | null
           requested_at?: string
           school_id?: string | null
+          scope?: Json | null
           status?: Database["public"]["Enums"]["data_erasure_status"]
           student_id?: string
           updated_at?: string
@@ -18912,7 +18916,6 @@ export type Database = {
           avg_response_time_seconds: number | null
           created_at: string | null
           current_level: string | null
-          frustration_threshold: number | null
           id: string
           irt_theta: number | null
           irt_theta_se: number | null
@@ -18936,7 +18939,6 @@ export type Database = {
           avg_response_time_seconds?: number | null
           created_at?: string | null
           current_level?: string | null
-          frustration_threshold?: number | null
           id?: string
           irt_theta?: number | null
           irt_theta_se?: number | null
@@ -18960,7 +18962,6 @@ export type Database = {
           avg_response_time_seconds?: number | null
           created_at?: string | null
           current_level?: string | null
-          frustration_threshold?: number | null
           id?: string
           irt_theta?: number | null
           irt_theta_se?: number | null

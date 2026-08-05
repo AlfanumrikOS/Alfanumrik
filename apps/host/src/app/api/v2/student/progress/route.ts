@@ -22,6 +22,7 @@ import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
 import { cacheFetchAsync, CACHE_TTL } from '@alfanumrik/lib/cache';
 import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
+import { getMasteryState } from '@alfanumrik/lib/learner-model';
 
 export const GET = withRoute(async (request: NextRequest) => {
   try {
@@ -50,17 +51,17 @@ export const GET = withRoute(async (request: NextRequest) => {
       CACHE_TTL.USER,
       async () => {
     // Same sources the /progress page fetches, run in parallel server-side.
-    const [perfRes, masteryRes, gapsRes, velocityRes, decayRes] = await Promise.all([
+    // concept_mastery reads go through the learner-model facade
+    // (getMasteryState) — same table, same filters/order/limits, wire shape
+    // byte-identical (packages/lib/src/api/v2/contract.ts unchanged). The
+    // facade degrades to [] on error, matching the pre-facade behavior of
+    // mapping a failed read to an empty list.
+    const [perfRes, masteryRows, gapsRes, velocityRes, decayRows] = await Promise.all([
       admin
         .from('performance_scores')
         .select('subject, overall_score, level_name, updated_at')
         .eq('student_id', studentId),
-      admin
-        .from('concept_mastery')
-        .select('topic_id, mastery_probability, consecutive_correct, updated_at')
-        .eq('student_id', studentId)
-        .order('updated_at', { ascending: false })
-        .limit(200),
+      getMasteryState(admin, studentId, { orderBy: 'updated_desc', limit: 200 }),
       admin.rpc('get_knowledge_gaps', { p_student_id: studentId, p_limit: 20 }),
       admin
         .from('learning_velocity')
@@ -68,13 +69,11 @@ export const GET = withRoute(async (request: NextRequest) => {
         .eq('student_id', studentId)
         .limit(50),
       // decay_topics: low mastery, ordered worst-first (mirrors /progress page).
-      admin
-        .from('concept_mastery')
-        .select('topic_id, mastery_probability, next_review_at')
-        .eq('student_id', studentId)
-        .lt('mastery_probability', 0.5)
-        .order('mastery_probability', { ascending: true })
-        .limit(8),
+      getMasteryState(admin, studentId, {
+        masteryBelow: 0.5,
+        orderBy: 'mastery_asc',
+        limit: 8,
+      }),
     ]);
 
     const performance_scores = (perfRes.data ?? []).map((p) => ({
@@ -84,11 +83,11 @@ export const GET = withRoute(async (request: NextRequest) => {
       updated_at: (p.updated_at as string | null) ?? null,
     }));
 
-    const topic_mastery = (masteryRes.data ?? []).map((m) => ({
-      topic_id: (m.topic_id as string | null) ?? null,
-      mastery_probability: m.mastery_probability ?? 0,
-      consecutive_correct: (m.consecutive_correct as number | null) ?? null,
-      updated_at: (m.updated_at as string | null) ?? null,
+    const topic_mastery = masteryRows.map((m) => ({
+      topic_id: (m.topicId as string | null) ?? null,
+      mastery_probability: m.masteryProbability ?? 0,
+      consecutive_correct: m.consecutiveCorrect ?? null,
+      updated_at: m.updatedAt ?? null,
     }));
 
     const knowledge_gaps = (Array.isArray(gapsRes.data) ? gapsRes.data : []).map(
@@ -108,11 +107,11 @@ export const GET = withRoute(async (request: NextRequest) => {
       predicted_mastery_date: (v.predicted_mastery_date as string | null) ?? null,
     }));
 
-    const decay_topics = (decayRes.data ?? []).map((d) => ({
-      topic_id: (d.topic_id as string | null) ?? null,
+    const decay_topics = decayRows.map((d) => ({
+      topic_id: (d.topicId as string | null) ?? null,
       subject: null,
-      mastery_probability: (d.mastery_probability as number | null) ?? null,
-      next_review_at: (d.next_review_at as string | null) ?? null,
+      mastery_probability: d.masteryProbability ?? null,
+      next_review_at: d.nextReviewAt ?? null,
     }));
 
         return {

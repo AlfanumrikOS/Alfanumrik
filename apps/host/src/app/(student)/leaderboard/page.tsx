@@ -15,6 +15,10 @@ import StreakBadge from '@alfanumrik/ui/challenge/StreakBadge';
 import { STREAK_VISIBILITY_THRESHOLD } from '@alfanumrik/lib/challenge-config';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
 import { toast } from '@alfanumrik/ui/ui/toast';
+import {
+  PercentileBandCard,
+  type PercentileBand,
+} from '@alfanumrik/ui/leaderboard/PercentileBandCard';
 
 /** Row shape returned by /api/v1/leaderboard/mastery. Phase 5 follow-on. */
 interface MasteryLeaderEntry {
@@ -147,6 +151,17 @@ export default function LeaderboardPage() {
       return res.json() as Promise<{ items: ClassLeaderEntry[] }>;
     },
     { refreshInterval: 60000 },
+  );
+
+  // U10 — personal percentile band (never expose absolute numeric rank).
+  const { data: bandData } = useSWR<{ percentile: number; band: PercentileBand } | null>(
+    isLoggedIn ? '/api/v1/leaderboard/me' : null,
+    async (url: string) => {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      return res.json() as Promise<{ percentile: number; band: PercentileBand }>;
+    },
+    { refreshInterval: 300_000 },
   );
 
   useEffect(() => {
@@ -463,72 +478,8 @@ export default function LeaderboardPage() {
               ))}
             </div>
 
-            {/* My Rank — Not in leaderboard */}
-            {myRank < 0 && !loading && entries.length > 0 && (
-              <div
-                className="rounded-2xl p-4"
-                style={{
-                  background:
-                    'linear-gradient(135deg, color-mix(in srgb, var(--purple) 8%, var(--surface-1)), rgb(var(--accent-warm-rgb) / 0.06))',
-                  border: '1px solid color-mix(in srgb, var(--purple) 20%, transparent)',
-                }}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-[var(--text-3)]">{isHi ? 'तुम्हारा रैंक' : 'Your Rank'}</p>
-                    <p className="text-2xl font-bold" style={{ color: 'var(--purple)' }}>#---</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-[var(--text-3)]">XP</p>
-                    <p className="text-lg font-semibold">{student?.xp_total ?? 0}</p>
-                  </div>
-                </div>
-                <p className="text-xs text-[var(--text-3)] mt-2">
-                  {isHi ? 'क्विज़ दो और लीडरबोर्ड पर आओ!' : 'Take quizzes to climb the leaderboard!'}
-                </p>
-              </div>
-            )}
-
-            {/* My Rank Highlight */}
-            {myRank >= 0 && (
-              <PremiumCard glow gradient className="warm-cta !p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white"
-                    style={{ background: 'linear-gradient(135deg, var(--accent-warm), var(--gold))' }}>
-                    #{myRank + 1}
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-bold">{isHi ? 'तुम्हारी रैंक' : 'Your Rank'}</div>
-                    {usePerformanceScores && entries[myRank]?.performance_score != null ? (
-                      <div className="text-xs text-[var(--text-3)]">
-                        <span className="font-semibold" style={{ color: getScoreColor(entries[myRank].performance_score!) }}>
-                          {entries[myRank].performance_score}/100
-                        </span>
-                        {' '}{isHi ? 'प्रदर्शन स्कोर' : 'Performance Score'}
-                        {entries[myRank].foxy_coins != null && (
-                          <span> · {entries[myRank].foxy_coins?.toLocaleString()} Foxy Coins</span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-[var(--text-3)]">
-                        {entries[myRank]?.total_xp?.toLocaleString() ?? 0} XP · {entries[myRank]?.accuracy ?? 0}% {isHi ? 'सटीकता' : 'accuracy'}
-                      </div>
-                    )}
-                    {entries[myRank]?.level_name && usePerformanceScores && (
-                      <div className="text-xs mt-0.5 font-semibold" style={{ color: getScoreColor(entries[myRank].performance_score ?? 0) }}>
-                        {entries[myRank].level_name}
-                      </div>
-                    )}
-                    {entries[myRank]?.top_title && (
-                      <div className="text-xs mt-1 font-semibold" style={{ color: 'var(--purple)' }}>
-                        {entries[myRank].top_title}
-                      </div>
-                    )}
-                  </div>
-                  <span className="text-3xl">{myRank < 3 ? MEDALS[myRank] : ''}</span>
-                </div>
-              </PremiumCard>
-            )}
+            {/* U10 — personal percentile band (no absolute rank ever). */}
+            {bandData && <PercentileBandCard band={bandData.band} isHi={isHi} />}
 
             {/* Top 3 Podium */}
             {entries.length >= 3 && (

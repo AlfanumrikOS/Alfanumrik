@@ -56,6 +56,11 @@ import {
 } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import {
+  buildEvidenceForStudents,
+  evidenceToJsonb,
+  type EvidenceQueryClient,
+} from '@alfanumrik/lib/teacher/remediation-evidence';
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -379,6 +384,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: existing, idempotent: true }, { status: 200 });
   }
 
+  // K3 (Foxy North-Star Phase 5): stamp evidence JSONB on insert.
+  // Batched over a single-student "batch" — the API route serves ONE
+  // student at a time, but the pure builder is the same one the EF uses.
+  // Fail-soft: on error the evidence field is null (helper returns
+  // zero-evidence rather than throwing).
+  let evidenceJsonb: Record<string, unknown> | null = null;
+  try {
+    const evidenceMap = await buildEvidenceForStudents(
+      supabaseAdmin as unknown as EvidenceQueryClient,
+      [studentId],
+    );
+    const ev = evidenceMap.get(studentId);
+    evidenceJsonb = ev ? evidenceToJsonb(ev) : null;
+  } catch (e) {
+    logger.warn('teacher_remediation_evidence_build_failed', {
+      error: e instanceof Error ? e : new Error(String(e)),
+      route: 'teacher/remediation',
+    });
+    evidenceJsonb = null;
+  }
+
   // Insert the new assignment (status 'assigned').
   const { data: inserted, error: insertErr } = await supabaseAdmin
     .from('teacher_remediation_assignments')
@@ -389,6 +415,7 @@ export async function POST(request: NextRequest) {
       chapter_id: chapterId,
       source_alert_id: sourceAlertId,
       status: 'assigned',
+      evidence: evidenceJsonb,
     })
     .select(
       'id, teacher_id, student_id, class_id, chapter_id, source_alert_id, status, created_at, resolved_at',

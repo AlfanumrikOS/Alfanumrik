@@ -6,9 +6,6 @@ import {
   LESSON_STEPS,
   getLessonStepPrompt,
   getNextLessonStep,
-  sm2Update,
-  responseToQuality,
-  nextReviewDate,
   getHighestMasteredBloom,
   getNextBloomTarget,
   updateBloomMastery,
@@ -23,22 +20,16 @@ import {
   calculateLearningVelocity,
   predictMasteryDate,
   estimateSessionsToMastery,
-  estimateTheta,
-  irtProbCorrect,
-  bktUpdate,
   classifyError,
-  calculateReward,
   predictRetention,
   shouldRetest,
   shouldInterleave,
   generatePredictionPrompt,
   interleaveTopics,
   type BloomLevel,
-  type SM2Card,
   type BloomMastery,
   type CognitiveLoadState,
   type LessonState,
-  type BKTParams,
   type TopicWeight,
 } from '@alfanumrik/lib/cognitive-engine';
 
@@ -47,15 +38,18 @@ import {
  *
  * Tests the pure-function cognitive science library covering:
  * - Bloom's Taxonomy constants and progression
- * - SM-2 Spaced Repetition algorithm
  * - Zone of Proximal Development (ZPD)
  * - Cognitive Load Manager
  * - Lesson Flow Engine
  * - Learning Velocity Analytics
- * - IRT and BKT models
  * - Error Classification
- * - RL Reward Function
  * - Retention Decay (Ebbinghaus)
+ *
+ * SM-2 / IRT / BKT / RL-reward describe blocks were deleted 2026-08-05
+ * (tracker E1): those exports were removed from cognitive-engine.ts. The
+ * live algorithms are the update_learner_state_post_quiz SQL RPC (BKT +
+ * SM-2, mirrored by @alfanumrik/lib/learner-model) and
+ * packages/lib/src/irt/fisher-info.ts (IRT).
  */
 
 // ─── Bloom's Taxonomy Constants ─────────────────────────────
@@ -234,85 +228,6 @@ describe('getNextLessonStep', () => {
 });
 
 // ─── SM-2 Spaced Repetition ────────────────────────────────
-
-describe('sm2Update', () => {
-  const freshCard: SM2Card = { easeFactor: 2.5, interval: 0, repetitions: 0 };
-
-  it('first correct answer sets interval to 1 day', () => {
-    const result = sm2Update(freshCard, 4);
-    expect(result.interval).toBe(1);
-    expect(result.repetitions).toBe(1);
-  });
-
-  it('second correct answer sets interval to 6 days', () => {
-    const after1 = sm2Update(freshCard, 4);
-    const after2 = sm2Update(after1, 4);
-    expect(after2.interval).toBe(6);
-    expect(after2.repetitions).toBe(2);
-  });
-
-  it('incorrect answer resets repetitions and interval', () => {
-    const after2 = sm2Update(sm2Update(freshCard, 4), 4);
-    const afterFail = sm2Update(after2, 1);
-    expect(afterFail.repetitions).toBe(0);
-    expect(afterFail.interval).toBe(1);
-  });
-
-  it('ease factor never drops below 1.3', () => {
-    let card = { ...freshCard };
-    for (let i = 0; i < 20; i++) {
-      card = sm2Update(card, 0); // worst quality repeatedly
-    }
-    expect(card.easeFactor).toBeGreaterThanOrEqual(1.3);
-  });
-
-  it('quality is clamped to 0-5 range', () => {
-    const resultHigh = sm2Update(freshCard, 10);
-    const resultPerfect = sm2Update(freshCard, 5);
-    expect(resultHigh.easeFactor).toBe(resultPerfect.easeFactor);
-
-    const resultLow = sm2Update(freshCard, -5);
-    const resultZero = sm2Update(freshCard, 0);
-    expect(resultLow.easeFactor).toBe(resultZero.easeFactor);
-  });
-});
-
-describe('responseToQuality', () => {
-  it('returns 5 for very fast correct answers', () => {
-    expect(responseToQuality(true, 5, 20)).toBe(5);
-  });
-
-  it('returns 4 for normal speed correct answers', () => {
-    expect(responseToQuality(true, 15, 20)).toBe(4);
-  });
-
-  it('returns 3 for slow but correct answers', () => {
-    expect(responseToQuality(true, 25, 20)).toBe(3);
-  });
-
-  it('returns 0 for very slow incorrect answers', () => {
-    expect(responseToQuality(false, 50, 20)).toBe(0);
-  });
-
-  it('returns 1 for quick incorrect answers (near miss)', () => {
-    expect(responseToQuality(false, 10, 20)).toBe(1);
-  });
-});
-
-describe('nextReviewDate', () => {
-  it('returns a date in the future for positive interval', () => {
-    const date = nextReviewDate(7);
-    expect(date.getTime()).toBeGreaterThan(Date.now());
-  });
-
-  it('returns approximately interval days from now', () => {
-    const date = nextReviewDate(10);
-    const diffDays = (date.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    expect(Math.round(diffDays)).toBe(10);
-  });
-});
-
-// ─── Bloom's Mastery and ZPD ────────────────────────────────
 
 describe('getHighestMasteredBloom', () => {
   it('returns remember when no levels are mastered', () => {
@@ -689,85 +604,6 @@ describe('estimateSessionsToMastery', () => {
 
 // ─── IRT and BKT ────────────────────────────────────────────
 
-describe('estimateTheta', () => {
-  it('returns approximately 0 for balanced responses', () => {
-    const responses = [
-      { isCorrect: true, difficulty: 2 },
-      { isCorrect: false, difficulty: 3 },
-      { isCorrect: true, difficulty: 2 },
-      { isCorrect: false, difficulty: 3 },
-    ];
-    const theta = estimateTheta(responses);
-    expect(theta).toBeGreaterThanOrEqual(-4);
-    expect(theta).toBeLessThanOrEqual(4);
-  });
-
-  it('returns higher theta for all correct', () => {
-    const allCorrect = [
-      { isCorrect: true, difficulty: 3 },
-      { isCorrect: true, difficulty: 4 },
-      { isCorrect: true, difficulty: 5 },
-    ];
-    const mixed = [
-      { isCorrect: true, difficulty: 3 },
-      { isCorrect: false, difficulty: 4 },
-      { isCorrect: false, difficulty: 5 },
-    ];
-    expect(estimateTheta(allCorrect)).toBeGreaterThan(estimateTheta(mixed));
-  });
-
-  it('theta is bounded to [-4, 4]', () => {
-    const responses = Array(20).fill(null).map(() => ({ isCorrect: true, difficulty: 1 }));
-    const theta = estimateTheta(responses);
-    expect(theta).toBeGreaterThanOrEqual(-4);
-    expect(theta).toBeLessThanOrEqual(4);
-  });
-});
-
-describe('irtProbCorrect', () => {
-  it('returns value between 0 and 1', () => {
-    const p = irtProbCorrect(0, 3);
-    expect(p).toBeGreaterThanOrEqual(0);
-    expect(p).toBeLessThanOrEqual(1);
-  });
-
-  it('higher theta means higher probability', () => {
-    const pLow = irtProbCorrect(-2, 3);
-    const pHigh = irtProbCorrect(2, 3);
-    expect(pHigh).toBeGreaterThan(pLow);
-  });
-
-  it('probability is at least the guessing parameter', () => {
-    const p = irtProbCorrect(-4, 5, 1.0, 0.25);
-    expect(p).toBeGreaterThanOrEqual(0.25);
-  });
-});
-
-describe('bktUpdate', () => {
-  const defaultParams: BKTParams = {
-    pKnow: 0.5, pLearn: 0.1, pGuess: 0.2, pSlip: 0.1,
-  };
-
-  it('increases pKnow after correct answer', () => {
-    const result = bktUpdate(defaultParams, true);
-    expect(result.newPKnow).toBeGreaterThan(defaultParams.pKnow);
-  });
-
-  it('returns predicted probability', () => {
-    const result = bktUpdate(defaultParams, true);
-    expect(result.predicted).toBeGreaterThan(0);
-    expect(result.predicted).toBeLessThanOrEqual(1);
-  });
-
-  it('adapts parameters over time', () => {
-    const result = bktUpdate(defaultParams, true);
-    // pSlip should decrease on correct answer
-    expect(result.params.pSlip).toBeLessThanOrEqual(defaultParams.pSlip);
-  });
-});
-
-// ─── Error Classification ───────────────────────────────────
-
 describe('classifyError', () => {
   it('returns correct for correct answers', () => {
     expect(classifyError(true, 15, 20, 3, 0.5)).toBe('correct');
@@ -795,32 +631,6 @@ describe('classifyError', () => {
 });
 
 // ─── RL Reward Function ─────────────────────────────────────
-
-describe('calculateReward', () => {
-  it('returns positive reward for correct, good-time answer', () => {
-    const reward = calculateReward(true, 15, 3);
-    expect(reward).toBeGreaterThan(0);
-  });
-
-  it('returns lower reward for too-fast correct (guessing)', () => {
-    const fast = calculateReward(true, 2, 1);
-    const normal = calculateReward(true, 15, 1);
-    expect(fast).toBeLessThan(normal);
-  });
-
-  it('returns negative or lower reward for incorrect', () => {
-    const incorrect = calculateReward(false, 15, 3);
-    const correct = calculateReward(true, 15, 3);
-    expect(incorrect).toBeLessThan(correct);
-  });
-
-  it('reward is bounded to [-1, 1]', () => {
-    expect(calculateReward(true, 15, 5, 1.0)).toBeLessThanOrEqual(1);
-    expect(calculateReward(false, 100, 1, 0)).toBeGreaterThanOrEqual(-1);
-  });
-});
-
-// ─── Retention Decay ────────────────────────────────────────
 
 describe('predictRetention', () => {
   it('returns 1.0 for 0 days since study', () => {

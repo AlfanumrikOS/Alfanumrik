@@ -54,7 +54,8 @@
  * ═══ RATIFIED VERIFICATION WINDOW: 7 DAYS ════════════════════════════════════
  *
  * • SM-2 anchoring: after the reset a cliff typically causes, SM-2's first two
- *   review intervals are 1 day and 6 days (cognitive-engine `sm2Update`). A
+ *   review intervals are 1 day and 6 days (the live SM-2 scheduler in the
+ *   `update_learner_state_post_quiz` SQL RPC, migration 20260623000100). A
  *   7-day window guarantees the student is scheduled to touch the remediated
  *   material at least TWICE inside the window — the minimum needed to
  *   distinguish durable recovery from one lucky review. 3-4 days would expire

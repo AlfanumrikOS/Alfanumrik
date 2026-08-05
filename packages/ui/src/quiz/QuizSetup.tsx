@@ -54,6 +54,13 @@ interface QuizSetupProps {
     questionTypes: string[];
   }) => void;
   onGoBack: () => void;
+  /**
+   * Foxy North-Star Phase 3 (E5) — notify parent whenever the (subject,
+   * chapter) selection changes, so the parent can render a prerequisite
+   * warm-up suggestion above the setup. Optional; omit to keep byte-
+   * identical behaviour with today.
+   */
+  onSelectionChange?: (state: { subject: string | null; chapter: number | null }) => void;
 }
 
 export default function QuizSetup({
@@ -68,6 +75,7 @@ export default function QuizSetup({
   onStartSmartQuiz,
   onStart,
   onGoBack,
+  onSelectionChange,
 }: QuizSetupProps) {
   const [quizMode, setQuizMode] = useState<QuizMode>(initialMode);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(initialSubject);
@@ -83,6 +91,13 @@ export default function QuizSetup({
   const [showCustom, setShowCustom] = useState(!smartSuggestion);
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
+
+  // E5: emit (subject, chapter) so the parent can render PrereqSuggestion.
+  // Fired on every selection change (including reset-to-null).
+  useEffect(() => {
+    onSelectionChange?.({ subject: selectedSubject, chapter: selectedChapter });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSubject, selectedChapter]);
 
   // Allowed subjects — grade + plan aware, comes from subjects service.
   const { unlocked: allowedSubjects } = useAllowedSubjects();

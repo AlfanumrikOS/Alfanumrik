@@ -34,6 +34,14 @@ export interface DueReviewRow {
   mastery_probability: number | null;
   last_attempted_at: string | null;
   review_interval_days: number;
+  /**
+   * SM-2 fields NOT surfaced by the `get_due_reviews` RPC (its RETURNS TABLE
+   * is frozen at 6 columns). The route/queue-builder batch-fetches these
+   * additively from `concept_mastery` and merges them onto the row (F7).
+   * Optional so existing row constructors remain valid.
+   */
+  ease_factor?: number | null;
+  next_review_at?: string | null;
 }
 
 export interface DueReviewsAdapterInput {
@@ -69,5 +77,17 @@ export function dueReviewsToCards(input: DueReviewsAdapterInput): DueSm2Card[] {
       questionId: input.conceptToQuestion.get(r.topic_id)!,
       topicId: r.topic_id,
       isAheadOfGrade: input.aheadOfGradeConceptIds.has(r.topic_id),
+      // F7 (additive): carry the SM-2 scheduling signals through instead of
+      // dropping them. easeFactor defaults to 2.5 — the SM-2 canonical
+      // starting ease AND the concept_mastery column default — when the
+      // merge fetch didn't supply one. Slot composition does not read these
+      // yet (Phase 3); this only stops the data loss.
+      easeFactor:
+        typeof r.ease_factor === 'number' && Number.isFinite(r.ease_factor)
+          ? r.ease_factor
+          : 2.5,
+      reviewIntervalDays: r.review_interval_days,
+      nextReviewAt: r.next_review_at ?? null,
+      masteryProbability: r.mastery_probability,
     }));
 }

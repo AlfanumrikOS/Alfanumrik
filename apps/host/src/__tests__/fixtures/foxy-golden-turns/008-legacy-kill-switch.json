@@ -1,0 +1,136 @@
+{
+  "turn": "008-legacy-kill-switch",
+  "description": "ff_grounded_ai_foxy OFF → runLegacyFoxyFlow (routeIntent), grounded client NEVER called",
+  "input": {
+    "message": "Explain photosynthesis",
+    "subject": "science",
+    "grade": "8"
+  },
+  "status": 200,
+  "groundedRequest": null,
+  "wireJson": {
+    "success": true,
+    "response": "LEGACY_ANSWER",
+    "sessionId": "session-uuid-1",
+    "quotaRemaining": 9,
+    "tokensUsed": 11,
+    "groundingStatus": "grounded",
+    "groundedFromChunks": false,
+    "citationsCount": 0,
+    "traceId": "legacy-trace-1"
+  },
+  "wireJsonKeyOrder": [
+    "success",
+    "response",
+    "sessionId",
+    "quotaRemaining",
+    "tokensUsed",
+    "groundingStatus",
+    "groundedFromChunks",
+    "citationsCount",
+    "traceId"
+  ],
+  "dbOps": [
+    {
+      "table": "students",
+      "op": "select"
+    },
+    {
+      "table": "system_metrics",
+      "op": "insert",
+      "patchKeys": [
+        "metric_name",
+        "recorded_at",
+        "route",
+        "tags",
+        "value"
+      ]
+    },
+    {
+      "table": "foxy_sessions",
+      "op": "insert",
+      "patchKeys": [
+        "chapter",
+        "grade",
+        "last_active_at",
+        "mode",
+        "student_id",
+        "subject"
+      ]
+    },
+    {
+      "table": "subjects",
+      "op": "select"
+    },
+    {
+      "table": "foxy_chat_messages",
+      "op": "select"
+    },
+    {
+      "table": "foxy_sessions",
+      "op": "select"
+    },
+    {
+      "table": "concept_mastery",
+      "op": "select"
+    },
+    {
+      "table": "knowledge_gaps",
+      "op": "select"
+    },
+    {
+      "table": "concept_mastery",
+      "op": "select"
+    },
+    {
+      "table": "cme_error_log",
+      "op": "select"
+    },
+    {
+      "table": "student_skill_state",
+      "op": "select"
+    },
+    {
+      "table": "quiz_responses",
+      "op": "select"
+    },
+    {
+      "table": "students",
+      "op": "select"
+    },
+    {
+      "table": "foxy_chat_messages",
+      "op": "insert",
+      "patchKeys": [
+        "0",
+        "1"
+      ]
+    },
+    {
+      "table": "learning_events",
+      "op": "insert",
+      "patchKeys": [
+        "context",
+        "event_type",
+        "object_type",
+        "occurred_at",
+        "result",
+        "session_id",
+        "student_id",
+        "topic_id",
+        "verb"
+      ]
+    },
+    {
+      "table": "system_metrics",
+      "op": "insert",
+      "patchKeys": [
+        "metric_name",
+        "recorded_at",
+        "route",
+        "tags",
+        "value"
+      ]
+    }
+  ]
+}

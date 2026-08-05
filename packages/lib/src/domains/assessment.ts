@@ -16,7 +16,8 @@
  *
  * Phase 0f scope (per docs/architecture/MICROSERVICES_EXTRACTION_PLAN.md):
  *   - concept_mastery     (read)
- *   - topic_mastery       (read)
+ *   - topic_mastery_rollup (read; VIEW over concept_mastery — re-pointed
+ *     2026-08-05 from the parallel topic_mastery store, soft-fail preserved)
  *   - knowledge_gaps      (read)
  *   - diagnostic_sessions (read, including grade coercion)
  *   - learning_graph_nodes (read; table not yet provisioned — soft-fail)
@@ -159,40 +160,55 @@ export async function getConceptMastery(opts: {
 
 // ── topic_mastery ─────────────────────────────────────────────────────────────
 
-type TopicMasteryRow = {
-  id: string;
+// ── Foxy North-Star Phase 2 (2026-08-05): getTopicMastery re-pointed from the
+// parallel `topic_mastery` store onto the NEW `topic_mastery_rollup` VIEW
+// (architect-owned; derived from concept_mastery, the canonical learner
+// model). The view surfaces `mastery_probability` NUMERIC (0-1) — mapped onto
+// the existing TopicMastery.masteryLevel field so the domain contract is
+// unchanged. Views have no surrogate id, so `id` is synthesized
+// deterministically. The schema-missing fail-soft below (ok([]) on
+// 42P01/42703) is PRESERVED — until the view lands (parallel migration),
+// callers degrade to an empty list exactly as before.
+// View columns verified against migration 20260808000100_topic_mastery_rollup_view.sql:
+//   student_id, subject (subjects.code), grade, topic_tag (curriculum_topics.title),
+//   chapter_number, total_attempts, correct_attempts, mastery_percent,
+//   mastery_level, mastery_probability, last_attempted_at, next_review_at,
+//   review_interval_days, ease_factor, consecutive_correct, updated_at.
+type TopicMasteryRollupRow = {
   student_id: string;
   subject: string;
-  topic: string;
-  mastery_level: number | null;
+  topic_tag: string;
+  mastery_probability: number | null;
   total_attempts: number | null;
   correct_attempts: number | null;
-  last_attempted: string | null;
-  created_at: string | null;
+  last_attempted_at: string | null;
   updated_at: string | null;
 };
 
-const TOPIC_MASTERY_COLUMNS =
-  'id, student_id, subject, topic, mastery_level, total_attempts, ' +
-  'correct_attempts, last_attempted, created_at, updated_at';
+const TOPIC_MASTERY_ROLLUP_COLUMNS =
+  'student_id, subject, topic_tag, mastery_probability, total_attempts, ' +
+  'correct_attempts, last_attempted_at, updated_at';
 
-function mapTopicMastery(row: TopicMasteryRow): TopicMastery {
+function mapTopicMastery(row: TopicMasteryRollupRow): TopicMastery {
   return {
-    id: row.id,
+    // Deterministic synthetic id — the rollup view has no surrogate key.
+    id: `${row.student_id}:${row.subject}:${row.topic_tag}`,
     studentId: row.student_id,
     subject: row.subject,
-    topic: row.topic,
-    masteryLevel: row.mastery_level ?? 0,
+    topic: row.topic_tag,
+    masteryLevel: row.mastery_probability ?? 0,
     totalAttempts: row.total_attempts ?? 0,
     correctAttempts: row.correct_attempts ?? 0,
-    lastAttempted: row.last_attempted,
-    createdAt: row.created_at,
+    lastAttempted: row.last_attempted_at,
+    createdAt: null,
     updatedAt: row.updated_at,
   };
 }
 
 /**
- * Read topic_mastery rows for a student. Optionally narrow to a subject.
+ * Read topic-level mastery rollups for a student (from the
+ * `topic_mastery_rollup` view over concept_mastery). Optionally narrow to a
+ * subject. `masteryLevel` carries `mastery_probability` (numeric 0-1).
  */
 export async function getTopicMastery(opts: {
   studentId: string;
@@ -203,8 +219,8 @@ export async function getTopicMastery(opts: {
   }
 
   let query = supabaseAdmin
-    .from('topic_mastery')
-    .select(TOPIC_MASTERY_COLUMNS)
+    .from('topic_mastery_rollup')
+    .select(TOPIC_MASTERY_ROLLUP_COLUMNS)
     .eq('student_id', opts.studentId);
 
   if (opts.subject) {
@@ -228,7 +244,7 @@ export async function getTopicMastery(opts: {
     return fail(`topic_mastery lookup failed: ${error.message}`, 'DB_ERROR');
   }
 
-  return ok((data ?? []).map((r) => mapTopicMastery(r as unknown as TopicMasteryRow)));
+  return ok((data ?? []).map((r) => mapTopicMastery(r as unknown as TopicMasteryRollupRow)));
 }
 
 // ── knowledge_gaps ────────────────────────────────────────────────────────────

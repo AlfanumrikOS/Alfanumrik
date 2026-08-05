@@ -154,6 +154,10 @@ import { buildExpandedGoalSection } from '@alfanumrik/lib/goals/goal-personas';
 import { fetchRecentLabContext, type LabContextEntry } from '@alfanumrik/lib/foxy/recent-lab-context';
 import { buildLabContextSection } from '@alfanumrik/lib/foxy/foxy-lab-prompt';
 import { maybeBuildFoxyContextBlock } from '@alfanumrik/lib/state/context/foxy-context-bridge';
+import {
+  WEAK_AREA_CHIP_THRESHOLD,
+  WEAK_AREA_MIN_ATTEMPTS,
+} from '@alfanumrik/lib/learner-model';
 import { randomUUID } from 'node:crypto';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
 // Phase 3 of Foxy conversation continuity (2026-05-18) — "the moat".
@@ -182,6 +186,8 @@ import {
   VALID_GRADES,
   VALID_MODES,
   VALID_COACH_MODES,
+  VALID_SESSION_MOODS,
+  type SessionMood,
   type CoachMode,
   FoxyRequestBodySchema,
   REFUND_ABSTAIN_REASONS,
@@ -237,6 +243,10 @@ import {
   EMPTY_TOPIC_PROGRESS,
   type ChapterTopicProgress,
 } from './_lib/cognitive-context';
+// D8 (Foxy North-Star Phase 2): pure explanation-format classifier over the
+// validated structured blocks — stamps `formatUsed` onto the EXISTING
+// foxy.chat audit detail write below (feeds the Phase-2b preference aggregator).
+import { identifyExplanationFormat } from './_lib/explanation-format';
 // H1 REFACTOR M6a — legacy Foxy flow (the ff_grounded_ai_foxy-OFF kill-switch
 // path + the grounded-service abstain fallback) extracted to a co-located
 // module. Imported and called identically here at the same two call sites;
@@ -257,7 +267,21 @@ import {
   extractValidatedStructured,
   persistMathTurnAndRespond,
   respondCurriculumOutOfScope,
+  respondSafeguarding,
 } from './_lib/responders';
+// Safeguarding Phase 1 (ff_safeguarding_v1, default OFF). Tier-1 is a
+// deterministic lexicon screen on the ORIGINAL student message (Point A, no
+// early return); Tier-2 is the LLM classifier that runs only on a Tier-1 hit
+// after the session is resolved (Point B) and, when CONFIRMED, terminates the
+// turn with the supportive bilingual reply + escalation fan-out + quota
+// refund. Ambiguous verdicts continue the turn untouched. Both modules are
+// ai-engineer-owned fixed contracts.
+import {
+  screenForSafeguarding,
+  type SafeguardingScreenResult,
+} from '@alfanumrik/lib/ai/validation/safeguarding-screen';
+import { classifySafeguarding } from '@alfanumrik/lib/ai/validation/safeguarding-classify';
+import { escalateSafeguarding } from './_lib/safeguarding-escalate';
 // H1 REFACTOR M6c — the SSE streaming turn handler extracted to a co-located
 // module. Imported and called identically here at the same call site (the
 // handleFoxyPost streaming branch); zero behavior change. The single
@@ -601,6 +625,15 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     typeof body.intent === 'string' && VALID_INTENTS.has(body.intent)
       ? body.intent
       : null;
+  // Safeguarding Phase 1: optional self-reported session mood. UNTRUSTED
+  // client field — validated against the enum and dropped silently if invalid
+  // (same posture as coachDirective above). Used ONLY as Tier-2 classifier
+  // context; it never changes prompt assembly or the answer path.
+  const sessionMood: SessionMood | null =
+    typeof body.sessionMood === 'string' &&
+    (VALID_SESSION_MOODS as readonly string[]).includes(body.sessionMood)
+      ? (body.sessionMood as SessionMood)
+      : null;
 
   // 3. Validate inputs
   if (!message) {
@@ -633,6 +666,34 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   if (injectionGuard.neutralized) {
     // P13: boolean/category only — NEVER the student's message text or id.
     logger.warn('foxy.input.injection_neutralized', { subject, grade });
+  }
+
+  // ── Safeguarding Tier-1 screen (Point A, ff_safeguarding_v1) ──────────────
+  // Deterministic lexicon screen on the ORIGINAL message (not safeQuery —
+  // the injection neutralizer must never mask a disclosure). NO early return
+  // here: a Tier-1 hit only arms the Tier-2 classifier at Point B (after the
+  // session is resolved). Flag read is FAIL-CLOSED → any flag-infra error is
+  // treated as OFF and the turn proceeds byte-identical to today.
+  let safeguardingFlagOn = false;
+  try {
+    safeguardingFlagOn = await isFeatureEnabled('ff_safeguarding_v1', {
+      role: 'student',
+      userId: auth.userId!,
+    });
+  } catch {
+    safeguardingFlagOn = false; // fail-closed → OFF
+  }
+  let safeguardingScreen: SafeguardingScreenResult | null = null;
+  if (safeguardingFlagOn) {
+    try {
+      safeguardingScreen = screenForSafeguarding(message);
+    } catch (screenErr) {
+      // Never block the turn on a screen failure. P13: no message text.
+      logger.warn('foxy_safeguarding_screen_failed', {
+        error: screenErr instanceof Error ? screenErr.message : String(screenErr),
+      });
+      safeguardingScreen = null;
+    }
   }
 
   // 4. Resolve student ID and validate subject governance
@@ -708,10 +769,14 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // or deliberate anon-client bypass) gets the 403, while a pre-onboarding
   // user keeps the warn-and-proceed path.
   let dbOnboardingCompleted = false;
+  // Safeguarding Phase 1: the student's school_id (from the SAME already-
+  // fetched students row) is threaded into the escalation row + fan-out at
+  // Point B. Null for B2C students.
+  let dbSchoolId: string | null = null;
   try {
     const { data: studentRow } = await supabaseAdmin
       .from('students')
-      .select('subscription_plan, account_status, academic_goal, name, grade, onboarding_completed')
+      .select('subscription_plan, account_status, academic_goal, name, grade, onboarding_completed, school_id')
       .eq('id', studentId)
       .single();
     const enrollmentScope = resolveFoxyEnrollmentScope(studentRow ?? null);
@@ -726,6 +791,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     // grade.
     dbGrade = enrollmentScope.grade;
     dbOnboardingCompleted = studentRow?.onboarding_completed === true;
+    dbSchoolId = (studentRow?.school_id as string | null | undefined) ?? null;
     if (studentRow?.account_status === 'suspended') {
       return errorJson('Your account is suspended.', 'Aapka account suspend hai.', 403);
     }
@@ -853,6 +919,96 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     );
   }
 
+  // ── Safeguarding Tier-2 classify + terminal (Point B, ff_safeguarding_v1) ──
+  // Runs ONLY on a Tier-1 hit with the flag on. CONFIRMED → (a) insert the
+  // safeguarding_escalations case row, (b) fan out in-app notifications to the
+  // school's active admins (metadata only — never the excerpt), (c) refund the
+  // quota unit (the student did not consume a tutoring answer), (d) return the
+  // supportive bilingual terminal. AMBIGUOUS (not confirmed) or any classifier
+  // failure → continue the turn completely normally (no row, normal response).
+  if (safeguardingFlagOn && safeguardingScreen?.hit) {
+    try {
+      const verdict = await classifySafeguarding(message, {
+        sessionMood,
+        categories: safeguardingScreen.categories,
+      });
+      if (verdict.confirmed) {
+        // Confirmed category. On the classifier's fail-closed path (tier
+        // 'regex_only') `category` can be null — fall back to the most-severe
+        // Tier-1 category ([0] is severity-ordered by contract).
+        const confirmedCategory: string =
+          verdict.category ?? safeguardingScreen.categories[0] ?? 'acute_distress';
+        // (a) Case row. classifier_meta carries confidence + label ONLY
+        // (P13: no raw classifier output, no student message). The disclosure
+        // excerpt (first 500 chars) is stored ONLY on this row — it is
+        // surfaced exclusively through the single-row detail view of the
+        // review APIs, never in list payloads or notifications.
+        let escalationId: string | null = null;
+        try {
+          const { data: escRow, error: escErr } = await supabaseAdmin
+            .from('safeguarding_escalations')
+            .insert({
+              student_id: studentId,
+              school_id: dbSchoolId,
+              session_id: resolvedSessionId,
+              message_id: null, // user row not yet persisted at this point
+              category: confirmedCategory,
+              tier: verdict.tier,
+              classifier_meta: { confidence: verdict.confidence, label: confirmedCategory },
+              disclosure_excerpt: message.slice(0, 500),
+            })
+            .select('id')
+            .single();
+          if (escErr) throw new Error(escErr.message);
+          escalationId = (escRow as { id: string } | null)?.id ?? null;
+        } catch (escInsertErr) {
+          // The student STILL gets the supportive terminal even if the case
+          // row failed — never withhold care on a DB error. P13: no text.
+          logger.error('foxy_safeguarding_escalation_insert_failed', {
+            error: escInsertErr instanceof Error ? escInsertErr : new Error(String(escInsertErr)),
+            studentId,
+          });
+        }
+
+        // (b) Fan-out (counts-only, never throws, data = {escalation_id, category}).
+        if (escalationId) {
+          await escalateSafeguarding({
+            escalationId,
+            schoolId: dbSchoolId,
+            category: confirmedCategory,
+          });
+        }
+
+        // (c) Refund the quota unit — same pattern as the legacy-flow /
+        // grounded-failure refunds: the student did not get a tutoring answer.
+        await refundQuota(studentId, 'foxy_chat');
+
+        // (d) Terminal supportive reply (persists the turn, audits
+        // flow:'safeguarding' with category/tier only — never message text).
+        return respondSafeguarding({
+          studentId,
+          userId: auth.userId!,
+          resolvedSessionId,
+          message,
+          subject,
+          grade,
+          chapter,
+          mode,
+          quotaRemaining: remaining,
+          category: confirmedCategory,
+          tier: verdict.tier,
+          traceId: correlationId,
+        });
+      }
+      // Not confirmed (ambiguous) → fall through; the turn proceeds normally.
+    } catch (classifyErr) {
+      // Classifier unavailable ≠ confirmed. Continue the turn normally.
+      logger.warn('foxy_safeguarding_classify_failed', {
+        error: classifyErr instanceof Error ? classifyErr.message : String(classifyErr),
+      });
+    }
+  }
+
   // Fire-and-forget success logger. Called immediately before each terminal
   // SUCCESS return so the promise is initiated; never awaited in the hot path.
   // The loggers are internally try/caught and never throw, so a `void` is safe.
@@ -909,9 +1065,33 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     role: 'student',
     userId: auth.userId!,
   });
+  // Phase 1 — Goal-Adaptive Foxy persona gate (hoisted ahead of the context
+  // load so the P10 goal can be threaded into the deriveNextAction call path
+  // inside loadCognitiveContext). `ff_goal_aware_foxy` is seeded by the
+  // architect (DISABLED by default in both production and staging). When it's
+  // off, every downstream prompt builder receives `useExpandedPersona: false`
+  // AND the next-action ladder receives academicGoal=null, producing output
+  // byte-identical to the pre-Phase-1 path. Per-user deterministic rollout is
+  // keyed off `studentId` so a given student gets a stable experience through
+  // the rollout window. Flag evaluation lives HERE at the route — the
+  // cognitive-context loader and the learner-model facade stay flag-free.
+  const useExpandedPersona = await isFeatureEnabled('ff_goal_aware_foxy', {
+    role: 'student',
+    environment:
+      process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
+    userId: studentId,
+  });
   try {
     const [ctx, hist, prior, labs, prog] = await Promise.all([
-      loadCognitiveContext(studentId, subject, grade, chapter),
+      loadCognitiveContext(
+        studentId,
+        subject,
+        grade,
+        chapter,
+        // P10: thread the resolved academic goal into the next-action ladder
+        // ONLY when ff_goal_aware_foxy is ON. OFF → null → pre-P10 behavior.
+        useExpandedPersona && academicGoal ? { code: academicGoal } : null,
+      ),
       loadHistory(resolvedSessionId),
       loadPriorSessionContext(
         studentId,
@@ -1311,20 +1491,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     });
   }
 
-  // Phase 1 — Goal-Adaptive Foxy persona gate.
-  //
-  // `ff_goal_aware_foxy` is seeded by the architect (DISABLED by default in
-  // both production and staging). When it's off, every downstream prompt
-  // builder receives `useExpandedPersona: false` and produces output
-  // byte-identical to the pre-Phase-1 path. Per-user deterministic rollout
-  // is keyed off `studentId` so a given student gets a stable experience
-  // through the rollout window.
-  const useExpandedPersona = await isFeatureEnabled('ff_goal_aware_foxy', {
-    role: 'student',
-    environment:
-      process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
-    userId: studentId,
-  });
+  // Phase 1 — Goal-Adaptive Foxy persona gate: `useExpandedPersona` is now
+  // evaluated ONCE, hoisted above the cognitive-context load (see the
+  // ff_goal_aware_foxy block before the Promise.all) so the same verdict
+  // gates both the P10 next-action goal threading and the prompt persona.
 
   logger.info('foxy.persona_mode', {
     studentId,
@@ -1441,23 +1611,30 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     }
   }
 
-  // ── P0 chip-action fix (2026-05-04): mastery context injection ──────────
-  // When the student taps "My weak areas" or "What should I study today?",
-  // the client sends `intent: 'weak_areas' | 'study_today'`. We pull a
-  // small slice of `topic_mastery` (the canonical table — the audit doc
-  // called it `student_topic_mastery`, which doesn't exist; see
-  // `src/lib/domains/assessment.ts` for the real schema) and append a
-  // grounding section to the system prompt. SAFE: every step is wrapped
-  // in try/catch; a missing table or query failure is logged but never
-  // blocks the chat. P13: only counts logged, never the topic strings.
+  // ── P0 chip-action fix (2026-05-04) → Phase 2 rollup re-point (2026-08-05):
+  // mastery context injection. When the student taps "My weak areas" or
+  // "What should I study today?", the client sends
+  // `intent: 'weak_areas' | 'study_today'`. We pull a small slice of the
+  // `topic_mastery_rollup` view (architect-owned; columns include topic_tag,
+  // mastery_percent, mastery_probability). The previous read was silently
+  // broken TWICE: it selected a nonexistent `topic` column on `topic_mastery`
+  // (query errored every call) and numeric-compared the TEXT `mastery_level`
+  // column against 0.5 (always false) — both no-oped inside the try/catch, so
+  // the weak-areas / study-today intent chips NEVER received real data. With
+  // this re-point the chips start receiving real mastery data for the first
+  // time (assessment flagged and accepted this behavior change). SAFE: every
+  // step stays wrapped in try/catch; a missing view or query failure is
+  // logged but never blocks the chat. P13: only counts logged, never the
+  // topic strings.
   if (intent === 'weak_areas' || intent === 'study_today') {
     try {
       const { data: masteryRows, error: masteryErr } = await supabaseAdmin
-        .from('topic_mastery')
-        .select('topic, mastery_level, total_attempts, correct_attempts')
+        .from('topic_mastery_rollup')
+        .select('topic_tag, mastery_percent, mastery_probability, total_attempts')
         .eq('student_id', studentId)
         .eq('subject', subject)
-        .order('mastery_level', { ascending: true })
+        .eq('grade', grade)
+        .order('mastery_probability', { ascending: true })
         .limit(5);
 
       if (masteryErr) {
@@ -1470,7 +1647,16 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       }
 
       const rows = Array.isArray(masteryRows) ? masteryRows : [];
-      const weakRows = rows.filter((r) => (r.mastery_level ?? 0) < 0.5);
+      // Weak = mastery_probability < WEAK_AREA_CHIP_THRESHOLD (the rollup's
+      // 0-1 BKT probability — NOT the text mastery_level label the old code
+      // numeric-compared) AND total_attempts >= WEAK_AREA_MIN_ATTEMPTS.
+      // Assessment mandate (2026-08-05): BKT prior 0.1 puts a 1-for-1 topic
+      // at ~0.43 — thin evidence means "not enough data yet", never "weak".
+      const weakRows = rows.filter(
+        (r) =>
+          (r.total_attempts ?? 0) >= WEAK_AREA_MIN_ATTEMPTS &&
+          (r.mastery_probability ?? 0) < WEAK_AREA_CHIP_THRESHOLD,
+      );
 
       let masterySection = '';
       if (intent === 'weak_areas') {
@@ -1484,8 +1670,8 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
           ].join('\n');
         } else {
           const lines = weakRows.map((r) => {
-            const pct = Math.round((r.mastery_level ?? 0) * 100);
-            return `  • ${r.topic} — ${pct}% mastery (${r.correct_attempts ?? 0}/${r.total_attempts ?? 0} correct)`;
+            const pct = Math.round(r.mastery_percent ?? (r.mastery_probability ?? 0) * 100);
+            return `  • ${r.topic_tag} — ${pct}% mastery`;
           });
           masterySection = [
             '',
@@ -1508,11 +1694,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
             'DO NOT invent a personalized recommendation.',
           ].join('\n');
         } else {
-          const pct = Math.round((target.mastery_level ?? 0) * 100);
+          const pct = Math.round(target.mastery_percent ?? (target.mastery_probability ?? 0) * 100);
           masterySection = [
             '',
             '── STUDENT MASTERY CONTEXT (intent=study_today) ──',
-            `Next-best topic to study: ${target.topic} (${pct}% mastery).`,
+            `Next-best topic to study: ${target.topic_tag} (${pct}% mastery).`,
             'Build today\'s study plan around this topic.',
           ].join('\n');
         }
@@ -3077,6 +3263,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       // progress and (b) malformed-payload rate (gap between
       // upstream-presence and persisted-presence).
       structured_present: structured !== null,
+      // D8: coarse explanation-format label for this turn (practice/diagram/
+      // steps/example/paragraph; null when no validated structured payload).
+      // Closed enum from block TYPES only — no content, no PII (P13). Feeds
+      // the Phase-2b explanation-format preference aggregator.
+      formatUsed: identifyExplanationFormat(structured),
     },
   });
 

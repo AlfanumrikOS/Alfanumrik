@@ -34,12 +34,20 @@
 // NEVER selected. Generic 500 body; counts-only logging + response.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { isFeatureEnabled, DIGITAL_TWIN_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { predictRetention } from '@alfanumrik/lib/cognitive-engine';
 import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
+import { publishEvent } from '@alfanumrik/lib/state/events/publish';
+import {
+  detectTransferEvidence,
+  type TopicCorrectCount,
+  type TransferEdge,
+  type SourceMastery,
+} from '@alfanumrik/lib/learn/transfer-evidence';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -340,6 +348,237 @@ async function runBuild(admin: SupabaseClient, nowMs: number): Promise<BuildSumm
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// D12 TRANSFER-EVIDENCE STEP (Foxy North-Star Phase 3)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Gated on ff_prereq_gating_v1 (SEPARATE flag from the twin build above —
+// OFF → strict no-op). For yesterday's (previous UTC day) CORRECT quiz
+// responses:
+//   response → question_bank.topic_id (the topic the student succeeded on)
+//   → concept_edges rows with edge_type='transfer' landing on those topics
+//   → the PURE module detectTransferEvidence() keeps only (topic, fromTopic)
+//     pairs whose SOURCE mastery clears TRANSFER_SOURCE_MASTERY_MIN (0.7 —
+//     owned by the module, never re-defined here)
+//   → one record_transfer_evidence(p_student_id, p_topic_id, p_from_topic_id)
+//     RPC call per record (canonical write, migration 20260809000600) + one
+//     learner.transfer_evidence bus event (observability; idempotencyKey
+//     day-bucketed so a same-day re-run dedupes).
+//
+// P13: rows, events, and logs carry UUIDs + subject codes + numbers only.
+
+/** Bounded read of yesterday's correct responses (nightly volume guard). */
+const TRANSFER_MAX_RESPONSES = 2000;
+
+interface TransferSummary {
+  skipped?: 'flag_off';
+  candidates: number;
+  evidenceRecorded: number;
+  errors: number;
+}
+
+async function runTransferStep(admin: SupabaseClient, nowMs: number): Promise<TransferSummary> {
+  const summary: TransferSummary = { candidates: 0, evidenceRecorded: 0, errors: 0 };
+  const environment = process.env.VERCEL_ENV || process.env.NODE_ENV;
+
+  const enabled = await isFeatureEnabled('ff_prereq_gating_v1', { environment });
+  if (!enabled) return { ...summary, skipped: 'flag_off' };
+
+  // Previous UTC day window — a fixed bucket keeps same-day re-runs idempotent.
+  const todayStartMs = Math.floor(nowMs / MS_PER_DAY) * MS_PER_DAY;
+  const yStartIso = new Date(todayStartMs - MS_PER_DAY).toISOString();
+  const yEndIso = new Date(todayStartMs).toISOString();
+  const dayBucket = yStartIso.slice(0, 10);
+
+  // 1. Yesterday's correct responses (question-linked only).
+  const { data: respRows, error: respErr } = await admin
+    .from('quiz_responses')
+    .select('student_id, question_id, subject')
+    .eq('is_correct', true)
+    .not('question_id', 'is', null)
+    .gte('created_at', yStartIso)
+    .lt('created_at', yEndIso)
+    .limit(TRANSFER_MAX_RESPONSES);
+  if (respErr) {
+    logger.error('build_twin_snapshots: transfer response scan failed', { error: respErr.message });
+    summary.errors++;
+    return summary;
+  }
+  const responses = (respRows ?? []) as Array<{ student_id: string; question_id: string; subject: string | null }>;
+  if (responses.length === 0) return summary;
+
+  // 2. question_id → topic_id (target concept).
+  const questionIds = [...new Set(responses.map((r) => r.question_id))];
+  const { data: qRows, error: qErr } = await admin
+    .from('question_bank')
+    .select('id, topic_id')
+    .in('id', questionIds)
+    .not('topic_id', 'is', null);
+  if (qErr) {
+    logger.error('build_twin_snapshots: transfer question fetch failed', { error: qErr.message });
+    summary.errors++;
+    return summary;
+  }
+  const topicByQuestion = new Map<string, string>();
+  for (const q of (qRows ?? []) as Array<{ id: string; topic_id: string | null }>) {
+    if (q.topic_id) topicByQuestion.set(q.id, q.topic_id);
+  }
+
+  // Group correct counts per student per topic (the pure module's input
+  // shape), remembering a subject code per (student, topic) for the event.
+  const correctByStudent = new Map<string, Map<string, number>>();
+  const subjectByStudentTopic = new Map<string, string | null>();
+  for (const r of responses) {
+    const topicId = topicByQuestion.get(r.question_id);
+    if (!topicId) continue;
+    const perTopic = correctByStudent.get(r.student_id) ?? new Map<string, number>();
+    perTopic.set(topicId, (perTopic.get(topicId) ?? 0) + 1);
+    correctByStudent.set(r.student_id, perTopic);
+    const key = `${r.student_id}:${topicId}`;
+    if (!subjectByStudentTopic.has(key)) {
+      subjectByStudentTopic.set(key, r.subject ? String(r.subject).toLowerCase() : null);
+    }
+  }
+  if (correctByStudent.size === 0) return summary;
+
+  // 3. Transfer edges landing on the succeeded topics.
+  const targetTopicIds = [
+    ...new Set([...correctByStudent.values()].flatMap((m) => [...m.keys()])),
+  ];
+  const { data: edgeRows, error: edgeErr } = await admin
+    .from('concept_edges')
+    .select('from_topic_id, to_topic_id, edge_type')
+    .eq('edge_type', 'transfer')
+    .in('to_topic_id', targetTopicIds);
+  if (edgeErr) {
+    logger.error('build_twin_snapshots: transfer edge fetch failed', { error: edgeErr.message });
+    summary.errors++;
+    return summary;
+  }
+  const transferEdges: TransferEdge[] = (
+    (edgeRows ?? []) as Array<{ from_topic_id: string; to_topic_id: string; edge_type: string }>
+  ).map((e) => ({ fromTopicId: e.from_topic_id, toTopicId: e.to_topic_id, edgeType: e.edge_type }));
+  if (transferEdges.length === 0) return summary;
+
+  // 4. Source-side mastery for the involved (student, source-topic) pairs.
+  // detectTransferEvidence reads concept_mastery.mastery_probability (the
+  // module's documented input) — no fallback chain here.
+  const studentIds = [...correctByStudent.keys()];
+  const sourceTopicIds = [...new Set(transferEdges.map((e) => e.fromTopicId))];
+  const { data: cmRows, error: cmErr } = await admin
+    .from('concept_mastery')
+    .select('student_id, topic_id, mastery_probability')
+    .in('student_id', studentIds)
+    .in('topic_id', sourceTopicIds);
+  if (cmErr) {
+    logger.error('build_twin_snapshots: transfer mastery fetch failed', { error: cmErr.message });
+    summary.errors++;
+    return summary;
+  }
+  const masteryByStudent = new Map<string, SourceMastery[]>();
+  for (const r of (cmRows ?? []) as Array<{ student_id: string; topic_id: string | null; mastery_probability: number | null }>) {
+    if (!r.topic_id || typeof r.mastery_probability !== 'number') continue;
+    const arr = masteryByStudent.get(r.student_id) ?? [];
+    arr.push({ topicId: r.topic_id, masteryProbability: r.mastery_probability });
+    masteryByStudent.set(r.student_id, arr);
+  }
+
+  // 5. Pure detection per student — the module owns the 0.7 source threshold
+  //    (TRANSFER_SOURCE_MASTERY_MIN) and the edge_type re-filter.
+  const detected: Array<{ studentId: string; topicId: string; fromTopicId: string; sourceMastery: number }> = [];
+  for (const [studentId, perTopic] of correctByStudent) {
+    const correctByTopic: TopicCorrectCount[] = [...perTopic.entries()].map(
+      ([topicId, correctCount]) => ({ topicId, correctCount }),
+    );
+    const sourceMastery = masteryByStudent.get(studentId) ?? [];
+    const records = detectTransferEvidence({
+      studentId,
+      correctByTopic,
+      transferEdges,
+      sourceMastery,
+    });
+    for (const rec of records) {
+      const src = sourceMastery.find((m) => m.topicId === rec.fromTopicId);
+      detected.push({
+        studentId: rec.studentId,
+        topicId: rec.topicId,
+        fromTopicId: rec.fromTopicId,
+        sourceMastery: src ? Math.min(1, Math.max(0, src.masteryProbability)) : 0,
+      });
+    }
+  }
+  summary.candidates = detected.length;
+  if (detected.length === 0) return summary;
+
+  // Envelope lookups for the bus (auth uuid + tenant scope).
+  const evidencedStudentIds = [...new Set(detected.map((r) => r.studentId))];
+  const { data: studentRows } = await admin
+    .from('students')
+    .select('id, auth_user_id, school_id')
+    .in('id', evidencedStudentIds);
+  const studentById = new Map(
+    ((studentRows ?? []) as Array<{ id: string; auth_user_id: string | null; school_id: string | null }>).map(
+      (s) => [s.id, s],
+    ),
+  );
+
+  // 6. Canonical write (RPC per record — migration 20260809000600) +
+  //    observability event.
+  //
+  //    BINDING (assessment-mandated, Phase 3 item 4): the RPC increments
+  //    concept_mastery for the SOURCE topic (`p_topic_id`) — the already-solid
+  //    prerequisite whose mastery is being re-evidenced by correct work in the
+  //    dependent TARGET (`p_from_topic_id`). The migration's own comment reads
+  //    "mastery of p_topic_id evidenced indirectly from correct work in
+  //    dependent p_from_topic_id" (supabase/migrations/20260809000600, lines
+  //    115-122). detectTransferEvidence returns `fromTopicId` = SOURCE (the
+  //    solid prerequisite) and `topicId` = TARGET (today's success), so the
+  //    mapping is INVERTED relative to the module's field names — hence this
+  //    explicit binding comment. Getting this backwards double-credits the
+  //    target instead of the source.
+  for (const rec of detected) {
+    const { error: rpcErr } = await admin.rpc('record_transfer_evidence', {
+      p_student_id: rec.studentId,
+      p_topic_id: rec.fromTopicId,      // SOURCE — evidence lands here
+      p_from_topic_id: rec.topicId,     // TARGET — dependent topic where student succeeded
+    });
+    if (rpcErr) {
+      summary.errors++;
+      logger.warn('build_twin_snapshots: record_transfer_evidence failed', { error: rpcErr.message });
+      continue;
+    }
+    summary.evidenceRecorded++;
+
+    const student = studentById.get(rec.studentId);
+    if (!student?.auth_user_id) continue; // canonical row landed; bus is best-effort
+    try {
+      await publishEvent(admin, {
+        kind: 'learner.transfer_evidence',
+        eventId: randomUUID(),
+        occurredAt: new Date(nowMs).toISOString(),
+        actorAuthUserId: student.auth_user_id,
+        tenantId: student.school_id ?? null,
+        // Idempotency key uses source:target ordering to mirror the event
+        // payload's sourceTopicId/targetTopicId shape (assessment-mandated).
+        idempotencyKey: `transfer:${rec.studentId}:${rec.fromTopicId}:${rec.topicId}:${dayBucket}`,
+        payload: {
+          studentId: rec.studentId,
+          sourceTopicId: rec.fromTopicId, // already-solid prerequisite (SOURCE)
+          targetTopicId: rec.topicId,     // topic student succeeded on today (TARGET)
+          subjectCode: subjectByStudentTopic.get(`${rec.studentId}:${rec.topicId}`) ?? null,
+          sourceMastery: rec.sourceMastery,
+        },
+      });
+    } catch (err) {
+      logger.warn('build_twin_snapshots: transfer_evidence publish failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return summary;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // HANDLER
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -353,12 +592,29 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const summary = await runBuild(supabaseAdmin, startedAt);
 
+    // D12 transfer step — independently flagged (ff_prereq_gating_v1) and
+    // independently failing: a transfer-step blowup never voids the twin
+    // build that already landed above.
+    let transfer: TransferSummary = { candidates: 0, evidenceRecorded: 0, errors: 0 };
+    try {
+      transfer = await runTransferStep(supabaseAdmin, startedAt);
+    } catch (err) {
+      transfer.errors++;
+      logger.error('build_twin_snapshots: transfer step unhandled', {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // P13: counts only — never student/topic identifiers in logs.
     logger.info('build_twin_snapshots: run complete', {
       skipped: summary.skipped ?? null,
       scanned: summary.scanned,
       built: summary.built,
       errors: summary.errors,
+      transferSkipped: transfer.skipped ?? null,
+      transferCandidates: transfer.candidates,
+      transferRecorded: transfer.evidenceRecorded,
+      transferErrors: transfer.errors,
       durationMs: Date.now() - startedAt,
     });
 
@@ -369,6 +625,12 @@ export async function POST(req: NextRequest): Promise<Response> {
         scanned: summary.scanned,
         skipped: summary.skipped ?? null,
         errors: summary.errors,
+        transfer: {
+          skipped: transfer.skipped ?? null,
+          candidates: transfer.candidates,
+          evidenceRecorded: transfer.evidenceRecorded,
+          errors: transfer.errors,
+        },
       },
     });
   } catch (err) {

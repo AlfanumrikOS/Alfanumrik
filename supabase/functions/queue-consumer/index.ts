@@ -65,46 +65,12 @@ interface TopicSignal {
   interaction_type: string
 }
 
-// ─── BKT helper (Bayesian Knowledge Tracing) ──────────────────────────────
-
-/**
- * Single-parameter BKT update.
- * P(Know_t+1) = P(Know_t | evidence) * (1 - P_slip) + (1 - P(Know_t | evidence)) * P_learn
- */
-function bktUpdate(
-  pKnow: number,
-  isCorrect: boolean,
-  pLearn = 0.2,
-  pSlip = 0.1,
-  pGuess = 0.25,
-): number {
-  // Posterior given evidence
-  const pCorrectGivenKnow = 1 - pSlip
-  const pCorrectGivenNotKnow = pGuess
-
-  const pEvidence = isCorrect
-    ? pKnow * pCorrectGivenKnow + (1 - pKnow) * pCorrectGivenNotKnow
-    : pKnow * pSlip + (1 - pKnow) * (1 - pGuess)
-
-  const pKnowGivenEvidence = isCorrect
-    ? (pKnow * pCorrectGivenKnow) / pEvidence
-    : (pKnow * pSlip) / pEvidence
-
-  // Transition
-  const pKnowNext = pKnowGivenEvidence + (1 - pKnowGivenEvidence) * pLearn
-
-  return Math.min(1, Math.max(0, pKnowNext))
-}
-
-// ─── Spaced repetition helper ─────────────────────────────────────────────
-
-/** SM-2 inspired next-review interval (days). */
-function nextReviewInterval(currentInterval: number, easeFactor: number, isCorrect: boolean): number {
-  if (!isCorrect) return 1
-  if (currentInterval === 0) return 1
-  if (currentInterval === 1) return 6
-  return Math.round(currentInterval * easeFactor)
-}
+// ─── Algorithm consolidation note (tracker E1, 2026-08-05) ────────────────
+// The DEAD local `bktUpdate` + `nextReviewInterval` helpers that used to live
+// here were deleted — verified never called anywhere in this function. All
+// BKT/SM-2 math runs server-side in the `update_concept_mastery_bkt` /
+// `update_learner_state_post_quiz` SQL RPCs (Deno cannot import the
+// packages/lib learner-model facade, so deletion IS the consolidation here).
 
 // ─── Processor: quiz_processing ──────────────────────────────────────────
 

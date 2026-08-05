@@ -4,9 +4,11 @@
  * Pins the CEO-approved capability matrix (school-admin-auth.ts
  * SCHOOL_ADMIN_ROLE_CAPABILITIES + schoolAdminRoleAllows) cell-by-cell. This is
  * the PURE contract: every (role × matrix-code) pair must match the table the CEO
- * approved on 2026-06-08, including the negative carve-outs
- * (academic_coordinator ∌ institution.manage / billing / staff; vice_principal ∌
- * manage_billing / manage_staff). A non-matrix code defers (returns allowed) for
+ * approved on 2026-06-08 (extended 2026-08-05: safeguarding.review, A1
+ * safeguarding scope — owner roles only), including the negative carve-outs
+ * (academic_coordinator ∌ institution.manage / billing / staff /
+ * safeguarding.review; vice_principal ∌ manage_billing / manage_staff /
+ * safeguarding.review). A non-matrix code defers (returns allowed) for
  * every role — Wave C only ever NARROWS the RBAC superset, never grants beyond it.
  *
  * If a cell here ever disagrees with the source map, that is a blocking defect:
@@ -20,7 +22,12 @@ import {
   type SchoolAdminRole,
 } from '@alfanumrik/lib/school-admin-auth';
 
-// ── The 10 matrix-governed permission codes (the union across all four roles). ──
+// ── The 11 matrix-governed permission codes pinned by this grid. ──
+// (institution.use_principal_ai is also matrix-governed — principal-only,
+// pinned elsewhere.) 'safeguarding.review' added 2026-08-05: CEO full
+// approval 2026-08-05 covers this addition under the A1 safeguarding scope
+// (Foxy North-Star Phase 1, S5.6/U6) — owner roles only (principal +
+// institution_admin); academic_coordinator must NOT read disclosure excerpts.
 const MATRIX_CODES = [
   'institution.view_analytics',
   'report.view_class',
@@ -32,6 +39,7 @@ const MATRIX_CODES = [
   'institution.manage_billing',
   'institution.view_billing',
   'institution.manage_staff',
+  'safeguarding.review',
 ] as const;
 
 // ── The CEO-approved expected allow/deny per (role × code). ──────────────────
@@ -51,6 +59,7 @@ const EXPECTED: Record<SchoolAdminRole, Record<Code, boolean>> = {
     'institution.manage_billing': true,
     'institution.view_billing': true,
     'institution.manage_staff': true,
+    'safeguarding.review': true, // owner role (CEO 2026-08-05, A1)
   },
   vice_principal: {
     'institution.view_analytics': true,
@@ -63,6 +72,7 @@ const EXPECTED: Record<SchoolAdminRole, Record<Code, boolean>> = {
     'institution.manage_billing': false, // ✗ carve-out
     'institution.view_billing': true,
     'institution.manage_staff': false, // ✗ carve-out
+    'safeguarding.review': false, // ✗ owner roles only (CEO 2026-08-05, A1)
   },
   academic_coordinator: {
     'institution.view_analytics': true,
@@ -75,6 +85,7 @@ const EXPECTED: Record<SchoolAdminRole, Record<Code, boolean>> = {
     'institution.manage_billing': false, // ✗ carve-out
     'institution.view_billing': false, // ✗ carve-out
     'institution.manage_staff': false, // ✗ carve-out
+    'safeguarding.review': false, // ✗ MUST NOT read disclosure excerpts (CEO 2026-08-05, A1)
   },
   institution_admin: {
     'institution.view_analytics': true,
@@ -87,6 +98,7 @@ const EXPECTED: Record<SchoolAdminRole, Record<Code, boolean>> = {
     'institution.manage_billing': true,
     'institution.view_billing': true,
     'institution.manage_staff': true,
+    'safeguarding.review': true, // owner role (multi-school owner equivalent; CEO 2026-08-05, A1)
   },
 };
 
@@ -113,24 +125,25 @@ describe('schoolAdminRoleAllows — per-role coarse summary (count of allowed ma
     return MATRIX_CODES.filter((c) => schoolAdminRoleAllows(role, c)).length;
   }
 
-  it('principal allows ALL 10 matrix codes', () => {
-    expect(allowedCount('principal')).toBe(10);
+  it('principal allows ALL 11 matrix codes', () => {
+    expect(allowedCount('principal')).toBe(11);
   });
 
-  it('institution_admin allows ALL 10 matrix codes (full superset)', () => {
-    expect(allowedCount('institution_admin')).toBe(10);
+  it('institution_admin allows ALL 11 matrix codes (full superset)', () => {
+    expect(allowedCount('institution_admin')).toBe(11);
   });
 
-  it('vice_principal allows exactly 8 (denies manage_billing + manage_staff only)', () => {
+  it('vice_principal allows exactly 8 (denies manage_billing + manage_staff + safeguarding.review)', () => {
     expect(allowedCount('vice_principal')).toBe(8);
     expect(schoolAdminRoleAllows('vice_principal', 'institution.manage_billing')).toBe(false);
     expect(schoolAdminRoleAllows('vice_principal', 'institution.manage_staff')).toBe(false);
+    expect(schoolAdminRoleAllows('vice_principal', 'safeguarding.review')).toBe(false);
     // keeps view_billing + institution.manage (the two it is NOT carved out of)
     expect(schoolAdminRoleAllows('vice_principal', 'institution.view_billing')).toBe(true);
     expect(schoolAdminRoleAllows('vice_principal', 'institution.manage')).toBe(true);
   });
 
-  it('academic_coordinator allows exactly the 6 shared codes (no manage, no billing, no staff)', () => {
+  it('academic_coordinator allows exactly the 6 shared codes (no manage, no billing, no staff, no safeguarding)', () => {
     expect(allowedCount('academic_coordinator')).toBe(6);
     const shared = [
       'institution.view_analytics',
@@ -148,6 +161,11 @@ describe('schoolAdminRoleAllows — per-role coarse summary (count of allowed ma
       'institution.manage_billing',
       'institution.view_billing',
       'institution.manage_staff',
+      // Quality-gate blocker #2 fix: without the matrix row this code was
+      // non-governed and DEFERRED — academic_coordinator (who holds
+      // institution.view_analytics) would have passed the narrowing gate and
+      // read disclosure excerpts under ff_school_admin_rbac.
+      'safeguarding.review',
     ]) {
       expect(schoolAdminRoleAllows('academic_coordinator', denied)).toBe(false);
     }

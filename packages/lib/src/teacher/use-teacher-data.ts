@@ -197,11 +197,13 @@ export function useAlerts(classId?: string, enabled: boolean = true) {
 }
 
 /**
- * Class overview (`get_dashboard`, classes slice). Alias hook for surfaces that
- * only need the class list / switcher; shares the same Edge action + cache key
- * as useTeacherDashboard so there is no extra request.
+ * Class list / switcher alias — shares the same Edge action + cache key as
+ * useTeacherDashboard so there is no extra request. (Renamed from
+ * useClassOverview in Phase 5; the new useClassOverview below hits
+ * `get_class_overview` with fast_progress[]. Callers wanting the class list
+ * should read useTeacherDashboard().data.classes directly.)
  */
-export function useClassOverview() {
+export function useClassList() {
   return useTeacherDashboard();
 }
 
@@ -243,6 +245,128 @@ export function useStudentMasteryReport(studentId?: string) {
         student_id: studentId,
       }),
     TEACHER_SWR_CONFIG,
+  );
+}
+
+/* ── Phase 5 additions ─────────────────────────────────────────────────────
+ * K2 misconception clusters, K4 in-the-moment interventions, K6 fast-progress
+ * on the extended class-overview response. Fixed backend contracts (see the
+ * Phase 5 handoff). Presentation-only — server owns clustering, tiering and
+ * mastery math (P1/P2 untouched).
+ */
+
+export interface MisconceptionClusterResponseRow {
+  pattern_code: string;
+  concept_codes: string[];
+  student_count: number;
+  students: Array<{ id: string; name: string }>;
+  first_detected: string;
+  last_detected: string;
+  /** Present when include_examples:true was passed. */
+  examples?: Array<{
+    student_id?: string;
+    student_name?: string;
+    question_text: string;
+    student_answer: string;
+    correct_answer: string;
+    detected_at: string;
+  }>;
+}
+export interface MisconceptionClustersResponse {
+  rows: MisconceptionClusterResponseRow[];
+}
+
+export function useMisconceptionClusters(classId?: string, includeExamples = false) {
+  const { teacher } = useAuth();
+  const teacherId = teacher?.id || '';
+  return useSWR<MisconceptionClustersResponse>(
+    teacherId && classId
+      ? [
+          'teacher-dashboard',
+          'get_misconception_clusters',
+          teacherId,
+          classId,
+          includeExamples ? '1' : '0',
+        ]
+      : null,
+    () =>
+      teacherDashboardFetch<MisconceptionClustersResponse>('get_misconception_clusters', {
+        teacher_id: teacherId,
+        class_id: classId,
+        include_examples: includeExamples,
+      }),
+    CLASS_SCOPED_SWR_CONFIG,
+  );
+}
+
+export interface InterventionTierRow {
+  tier: 'tier1' | 'tier2' | 'tier3';
+  students: Array<{ id: string; name: string }>;
+  recommended_action: string;
+}
+export interface InTheMomentIntervention {
+  intervention_id: string;
+  concept_code?: string;
+  concept_title?: string;
+  recommended_tier: 'tier1' | 'tier2' | 'tier3';
+  tiers: InterventionTierRow[];
+}
+export interface InTheMomentAlertsResponse {
+  interventions: InTheMomentIntervention[];
+}
+
+export function useInTheMomentAlerts(classId?: string) {
+  const { teacher } = useAuth();
+  const teacherId = teacher?.id || '';
+  return useSWR<InTheMomentAlertsResponse>(
+    teacherId && classId
+      ? ['teacher-dashboard', 'get_in_the_moment_alerts', teacherId, classId]
+      : null,
+    () =>
+      teacherDashboardFetch<InTheMomentAlertsResponse>('get_in_the_moment_alerts', {
+        teacher_id: teacherId,
+        class_id: classId,
+      }),
+    CLASS_SCOPED_SWR_CONFIG,
+  );
+}
+
+export interface FastProgressStudent {
+  student_id: string;
+  name: string;
+  mastered_this_week: number;
+}
+export interface ClassOverviewResponse {
+  fast_progress?: FastProgressStudent[];
+  [k: string]: unknown;
+}
+export function useClassOverview(classId?: string) {
+  const { teacher } = useAuth();
+  const teacherId = teacher?.id || '';
+  return useSWR<ClassOverviewResponse>(
+    teacherId && classId
+      ? ['teacher-dashboard', 'get_class_overview', teacherId, classId]
+      : null,
+    () =>
+      teacherDashboardFetch<ClassOverviewResponse>('get_class_overview', {
+        teacher_id: teacherId,
+        class_id: classId,
+      }),
+    CLASS_SCOPED_SWR_CONFIG,
+  );
+}
+
+export interface InterventionDecisionInput {
+  intervention_id: string;
+  decision: 'approved' | 'overridden' | 'dismissed';
+  chosen_tier?: 'tier1' | 'tier2' | 'tier3';
+  reason_code: 'too_easy' | 'too_hard' | 'timing' | 'knows_student' | 'other';
+}
+
+export function recordInterventionDecision(input: InterventionDecisionInput) {
+  return teacherDashboardFetch<{ ok: boolean }>(
+    'record_intervention_decision',
+    input as unknown as Record<string, unknown>,
   );
 }
 

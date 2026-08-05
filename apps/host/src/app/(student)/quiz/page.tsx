@@ -15,7 +15,23 @@ import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import QuizSetup from '@alfanumrik/ui/quiz/QuizSetup';
+// Foxy North-Star Phase 3 (L5/E5) — 5-rung hint ladder + prereq warm-up card.
+// P10: dynamic-imported (ssr:false, null loading) — conditional-render surfaces
+// (HintLadder mounts only after a wrong answer; PrereqSuggestion mounts only
+// when the API returns a suggestion), so lazy load is behaviorally invisible.
+const HintLadder = dynamic(
+  () => import('@alfanumrik/ui/quiz/HintLadder').then((m) => m.default),
+  { ssr: false, loading: () => null },
+);
+const PrereqSuggestion = dynamic(
+  () => import('@alfanumrik/ui/quiz/PrereqSuggestion').then((m) => m.default),
+  { ssr: false, loading: () => null },
+);
 import FeedbackOverlay from '@alfanumrik/ui/quiz/FeedbackOverlay';
+// D6 (Foxy North-Star Phase 2) — sampled, non-blocking 1-tap confidence
+// prompt shown AFTER the answer is confirmed (P3 timing untouched).
+// Sampling is deterministic via shouldPromptConfidence (no Math.random).
+import ConfidencePrompt, { shouldPromptConfidence, type ConfidenceValue } from '@alfanumrik/ui/quiz/ConfidencePrompt';
 import WrittenAnswerInput from '@alfanumrik/ui/quiz/ncert/WrittenAnswerInput';
 // Canonical math renderer (P6/P12 fail-safe; P10: KaTeX loads lazily and
 // only when the text actually contains math — plain questions cost nothing).
@@ -26,6 +42,11 @@ const QuizResults = dynamic(() => import('@alfanumrik/ui/quiz/QuizResults'), {
   ssr: false,
   loading: () => <LoadingFoxy />,
 });
+
+// Phase 4 U1 — "Ask Foxy about a missed question" launcher on the results
+// screen. The launcher itself is a tiny module (button + useState); FoxyPanel
+// is dynamic-imported inside the launcher only when the student taps.
+import FoxyPanelLauncher from '@alfanumrik/ui/foxy-launcher/FoxyPanelLauncher';
 // Screen 08 "Result" (Wave B, `ff_quiz_result_v2`) — additive presentational
 // alternative to QuizResults. Flag OFF by default (architect seeds the row
 // separately); the legacy QuizResults path below is completely untouched
@@ -66,6 +87,15 @@ import {
   initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt, classifyError,
   type BloomLevel, type CognitiveLoadState, type ReflectionPrompt, type ErrorType,
 } from '@alfanumrik/lib/cognitive-engine';
+// Foxy North-Star Phase 0 (F2/F3/F4) — shared SRS due-card query/selection,
+// SM-2 quality mapping → EXISTING /api/learner/review/grade endpoint (which
+// owns the math), and the batched topic-mastery lookup for classifyError.
+import {
+  fetchSrsDueQuizCards,
+  selectSrsReviewSet,
+  gradeSrsCardsFireAndForget,
+  fetchTopicMasteryByQuestionId,
+} from '@alfanumrik/lib/learn/srs-quiz-review';
 
 type QuizMode = 'practice' | 'cognitive' | 'exam';
 type Screen = 'select' | 'quiz' | 'feedback' | 'results';
@@ -114,6 +144,21 @@ interface Response {
    * `question_bank.correct_answer_index`.
    */
   shuffle_map?: number[] | null;
+  /**
+   * F8 (Foxy North-Star Phase 0): hint depth (0-3) the student had revealed
+   * AT ANSWER TIME for this question. Field name is a fixed server contract
+   * (`hint_level`); architect is adding the column + RPC read in parallel.
+   * Optional so older stored/pending payloads stay valid.
+   */
+  hint_level?: number;
+  /**
+   * D6 (Foxy North-Star Phase 2): 1-tap self-reported confidence (1-5) from
+   * the sampled post-answer prompt. Fixed server contract: smallint 1-5,
+   * NULL when unanswered — so this stays `undefined` when the prompt was not
+   * sampled, auto-dismissed, or ignored. Captured AFTER answer confirm, so
+   * P3 timing semantics are unaffected.
+   */
+  confidence?: number;
   telemetry?: {
     latency_ms?: number;
     changed_answers_count?: number;
@@ -289,6 +334,10 @@ export default function QuizPage() {
   const [responses, setResponses] = useState<Response[]>([]);
   const [showExplanation, setShowExplanation] = useState(false);
   const [hintLevel, setHintLevel] = useState(0);
+  // D6: per-question confidence prompt state, keyed by question id.
+  // number = value tapped (1-5); 'dismissed' = auto-dismissed/ignored (never
+  // re-shown for that question). Absent key + sampled index → prompt renders.
+  const [confidenceByQid, setConfidenceByQid] = useState<Record<string, number | 'dismissed'>>({});
   const [timer, setTimer] = useState(0);
   const [questionTimer, setQuestionTimer] = useState(0);
   const [changedAnswersCount, setChangedAnswersCount] = useState(0);
@@ -345,6 +394,19 @@ export default function QuizPage() {
   // route owns the status flip; the quiz graded as a normal student quiz.
   const remediationResolvedRef = useRef(false);
 
+  // F4 (Foxy North-Star Phase 0): question_id → concept_mastery.mastery_probability
+  // for the CURRENT quiz's topics. Populated by ONE batched fire-and-forget
+  // fetch at quiz start (never blocks quiz load); read by classifyError with
+  // an explicit 0.5 fallback for topics with no concept_mastery row.
+  const masteryByQidRef = useRef<Record<string, number>>({});
+  // F2 (Foxy North-Star Phase 0): question_bank id → spaced_repetition_cards id
+  // for /quiz?mode=srs sessions. After a successful submit, each answered
+  // question's card is graded fire-and-forget via the EXISTING
+  // /api/learner/review/grade endpoint (which owns the SM-2 math). Cleared
+  // after grading fires (and on any non-SRS quiz start) so a card can never
+  // be graded twice for one session.
+  const srsCardIdByQidRef = useRef<Record<string, string>>({});
+
   // JEE/NEET tag mode — grades 11-12 only, persisted to localStorage
   const [jeeNeetMode, setJeeNeetMode] = useState(false);
   useEffect(() => {
@@ -369,6 +431,11 @@ export default function QuizPage() {
   const [initialMode, setInitialMode] = useState<QuizMode>('cognitive');
   const [initialCount, setInitialCount] = useState<number>(10);
   const [initialChapter, setInitialChapter] = useState<number | null>(null);
+  // E5: live (subject, chapter) from QuizSetup — feeds PrereqSuggestion above.
+  const [setupSelection, setSetupSelection] = useState<{ subject: string | null; chapter: number | null }>({
+    subject: null,
+    chapter: null,
+  });
   // Adaptive deep-links emitted by Daily Rhythm / adaptive surfaces:
   //   /quiz?qid=<question_bank id> → start a quiz with that question first
   //   /quiz?mode=srs               → review quiz sourced from due SRS cards
@@ -758,6 +825,20 @@ export default function QuizPage() {
         setServerSessionId(null);
       }
 
+      // F2: an SRS card map only survives into a pinnedOnly (SRS review)
+      // session — any other quiz start clears it so stale mappings from an
+      // abandoned SRS session can never grade cards against a normal quiz.
+      if (!pinnedOnly) srsCardIdByQidRef.current = {};
+
+      // F4: ONE batched fetch at quiz start — topics of the served questions
+      // → concept_mastery.mastery_probability. Fire-and-forget (quiz start
+      // latency unaffected); classifyError falls back to 0.5 until/unless it
+      // resolves, and permanently for topics with no mastery row.
+      masteryByQidRef.current = {};
+      void fetchTopicMasteryByQuestionId(supabase, student.id, qs.map((qq: Question) => qq.id))
+        .then((m) => { masteryByQidRef.current = m; })
+        .catch(() => { /* keep {} — classifyError uses the 0.5 fallback */ });
+
       setQuestions(displayQuestions);
       // shuffleMaps stays all-null in both Phase A paths; see comment at
       // state declaration.
@@ -843,34 +924,27 @@ export default function QuizPage() {
         }
 
         // kind === 'srs' — review quiz sourced from due SRS cards born from
-        // wrong quiz answers. Mirrors the get_review_cards / listDueCards due
-        // filter: own active cards, next_review_date <= today, with a
-        // question_bank source_id to resolve.
-        const todayIso = new Date().toISOString().slice(0, 10);
-        let cardsQuery = supabase
-          .from('spaced_repetition_cards')
-          .select('source_id, subject')
-          .eq('student_id', student.id)
-          .eq('is_active', true)
-          .eq('source', 'quiz_wrong_answer')
-          .not('source_id', 'is', null)
-          .lte('next_review_date', todayIso)
-          .order('next_review_date', { ascending: true })
-          .limit(50);
-        if (deepLink.subject) cardsQuery = cardsQuery.eq('subject', deepLink.subject);
-        const { data: cards } = await cardsQuery;
-        const dueCards = (cards ?? []) as Array<{ source_id: string | null; subject: string | null }>;
+        // wrong quiz answers. The due filter + subject/dedupe selection live
+        // in the SHARED helper (packages/lib/src/learn/srs-quiz-review.ts) so
+        // the dashboard lane COUNT and this quiz's CONTENT agree by
+        // construction (F3): own active cards, source quiz_wrong_answer,
+        // next_review_date <= today, with a question_bank source_id.
+        const dueCards = await fetchSrsDueQuizCards(supabase, student.id, {
+          subject: deepLink.subject,
+        });
         // A quiz session has a single subject — honor the URL filter when
         // present, else use the earliest-due card's subject.
-        const srsSubject = deepLink.subject ?? dueCards.find(c => c.subject)?.subject ?? null;
+        const reviewSet = selectSrsReviewSet(dueCards, {
+          subject: deepLink.subject,
+          cap: questionCount, // cap at page count default
+        });
+        const srsSubject = reviewSet.subject;
+        const dueIds = reviewSet.questionIds;
         if (!srsSubject) { setLoading(false); return; }
-        const dueIds: string[] = [];
-        for (const c of dueCards) {
-          if (c.subject !== srsSubject || !c.source_id) continue;
-          if (!dueIds.includes(c.source_id)) dueIds.push(c.source_id);
-          if (dueIds.length >= questionCount) break; // cap at page count default
-        }
         if (dueIds.length === 0) { setLoading(false); return; }
+        // F2: remember which card each served question came from so the
+        // post-submit grade loop can close (question → card → SM-2 grade).
+        srsCardIdByQidRef.current = reviewSet.cardIdByQuestionId;
         const { data: rows } = await supabase
           .from('question_bank')
           .select(QB_COLUMNS)
@@ -960,7 +1034,12 @@ export default function QuizPage() {
     const avgTime = responses.length > 0
       ? responses.reduce((a, r) => a + r.time_spent, 0) / responses.length
       : questionTimer;
-    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty, 0.5);
+    // F4: real per-topic mastery from the batched quiz-start fetch. Explicit
+    // 0.5 fallback ONLY when this question's topic has no concept_mastery row
+    // (or the fire-and-forget fetch hasn't resolved / failed) — the previous
+    // hardcoded 0.5 disabled classifyError's two mastery-dependent branches.
+    const studentMastery = masteryByQidRef.current[q.id] ?? 0.5;
+    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty, studentMastery);
 
     setResponses(prev => [...prev, {
       question_id: q.id,
@@ -972,6 +1051,8 @@ export default function QuizPage() {
       // this field; v1 RPC accepts null and treats selected_option as
       // already-original (correct fallback semantics).
       shuffle_map: null,
+      // F8: hint depth captured AT ANSWER TIME (0-3). Server contract field.
+      hint_level: Math.min(Math.max(hintLevel, 0), 5),
       telemetry: {
         latency_ms: questionTimer * 1000,
         changed_answers_count: changedAnswersCount,
@@ -1005,6 +1086,25 @@ export default function QuizPage() {
       const prompt = getReflectionPrompt(isCorrect, newCogLoad.consecutiveErrors, newCogLoad.consecutiveCorrect, bloom);
       setReflection(prompt);
     }
+  };
+
+  /**
+   * D6: student tapped a confidence level on the sampled post-answer prompt.
+   * Patches the already-pushed response row for that question (the response
+   * is pushed at confirm time; confidence arrives moments later). Clamped to
+   * the 1-5 server contract. Never touches time_spent / is_correct (P3/P1).
+   */
+  const handleConfidenceSelect = (questionId: string, value: ConfidenceValue) => {
+    const clamped = Math.min(Math.max(Math.round(value), 1), 5);
+    setConfidenceByQid(prev => ({ ...prev, [questionId]: clamped }));
+    setResponses(prev => prev.map(r =>
+      r.question_id === questionId ? { ...r, confidence: clamped } : r
+    ));
+  };
+
+  /** D6: prompt auto-dismissed or ignored — never re-show for this question. */
+  const handleConfidenceDismiss = (questionId: string) => {
+    setConfidenceByQid(prev => ({ ...prev, [questionId]: 'dismissed' }));
   };
 
   /**
@@ -1163,6 +1263,8 @@ export default function QuizPage() {
       // P1 server-side shuffle fix: written answers are not shuffled,
       // selected_option (-1) is already in original space.
       shuffle_map: null,
+      // F8: hint depth captured AT ANSWER TIME (0-3). Server contract field.
+      hint_level: Math.min(Math.max(hintLevel, 0), 5),
       telemetry: {
         latency_ms: timeSpent * 1000,
         changed_answers_count: 0,
@@ -1204,6 +1306,8 @@ export default function QuizPage() {
       rubric_feedback: 'Skipped',
       // P1 server-side shuffle fix: skipped written answers carry no shuffle.
       shuffle_map: null,
+      // F8: hint depth captured AT ANSWER (skip) TIME (0-3).
+      hint_level: Math.min(Math.max(hintLevel, 0), 5),
       telemetry: {
         latency_ms: 0,
         changed_answers_count: 0,
@@ -1256,6 +1360,8 @@ export default function QuizPage() {
               is_correct: lastIsCorrect,
               time_spent: questionTimer,
               shuffle_map: null,
+              // F8: hint depth captured at answer time (0-3).
+              hint_level: Math.min(Math.max(hintLevel, 0), 5),
               telemetry: {
                 latency_ms: questionTimer * 1000,
                 changed_answers_count: changedAnswersCount,
@@ -1347,6 +1453,20 @@ export default function QuizPage() {
             const review = reviewByQid.get(r.question_id);
             return review ? { ...r, is_correct: review.is_correct } : r;
           }));
+        }
+        // F2 (SRS grade loop close): for /quiz?mode=srs sessions, grade each
+        // served card via the EXISTING /api/learner/review/grade endpoint.
+        // Runs AFTER the server-truth is_correct sync above (in v2 mode the
+        // per-answer is_correct is provisional until the submit response), and
+        // fire-and-forget so submit latency is unaffected. The map is cleared
+        // first so a retry/double-render can never grade a card twice.
+        if (Object.keys(srsCardIdByQidRef.current).length > 0) {
+          const srsCardMap = srsCardIdByQidRef.current;
+          srsCardIdByQidRef.current = {};
+          gradeSrsCardsFireAndForget({
+            cardIdByQuestionId: srsCardMap,
+            responses: allResponses,
+          });
         }
         refreshSnapshot();
         // Invalidate SWR dashboard cache so DailyRhythmQueue reflects new unlock state
@@ -1453,6 +1573,8 @@ export default function QuizPage() {
               is_correct: lastIsCorrect,
               time_spent: questionTimer,
               shuffle_map: null,
+              // F8: hint depth captured at answer time (0-3).
+              hint_level: Math.min(Math.max(hintLevel, 0), 5),
             });
           }
         }
@@ -1509,6 +1631,21 @@ export default function QuizPage() {
           const review = reviewByQid.get(r.question_id);
           return review ? { ...r, is_correct: review.is_correct } : r;
         }));
+        // Keep the retry payload in sync with server truth (mirrors the F6
+        // in-place sync on the happy path) before the F2 grade loop reads it.
+        for (const r of allResponses) {
+          const review = reviewByQid.get(r.question_id);
+          if (review) r.is_correct = review.is_correct;
+        }
+      }
+      // F2 (SRS grade loop close) — retry path mirror of the happy-path call.
+      if (Object.keys(srsCardIdByQidRef.current).length > 0) {
+        const srsCardMap = srsCardIdByQidRef.current;
+        srsCardIdByQidRef.current = {};
+        gradeSrsCardsFireAndForget({
+          cardIdByQuestionId: srsCardMap,
+          responses: allResponses,
+        });
       }
       refreshSnapshot();
       // Invalidate SWR dashboard cache so DailyRhythmQueue reflects new unlock state
@@ -1603,17 +1740,43 @@ export default function QuizPage() {
   // ═══ SUBJECT SELECTION SCREEN ═══
   if (screen === 'select') {
     return (
-      <QuizSetup
-        isHi={isHi}
-        initialSubject={initialSubject}
-        initialMode={initialMode}
-        initialCount={initialCount}
-        initialChapter={initialChapter}
-        loading={loading}
-        studentGrade={student?.grade ?? ''}
-        onStart={startQuiz}
-        onGoBack={() => router.push(experienceV3 ? '/today' : '/dashboard')}
-      />
+      <div>
+        {/* Foxy North-Star Phase 3 (E5) — Prerequisite warm-up suggestion.
+            Fetches /api/learn/prereq-check; renders nothing when the flag is
+            off (route returns null) or when prereqs are met. Warm-up switches
+            the chapter and immediately starts the prereq quiz; dismiss lets
+            the student continue with the originally-picked chapter. */}
+        <PrereqSuggestion
+          isHi={isHi}
+          subject={setupSelection.subject}
+          grade={student?.grade ?? ''}
+          chapter={setupSelection.chapter}
+          onWarmUp={(prereqChapter, s) => {
+            setInitialChapter(prereqChapter);
+            void startQuiz({
+              subject: setupSelection.subject ?? initialSubject ?? undefined,
+              chapterNumber: prereqChapter,
+              quizMode,
+              questionCount,
+            });
+            // Analytics is safe to omit here — the destination click is the
+            // authoritative signal; the route redirects to /quiz already.
+            void s;
+          }}
+        />
+        <QuizSetup
+          isHi={isHi}
+          initialSubject={initialSubject}
+          initialMode={initialMode}
+          initialCount={initialCount}
+          initialChapter={initialChapter}
+          loading={loading}
+          studentGrade={student?.grade ?? ''}
+          onStart={startQuiz}
+          onGoBack={() => router.push(experienceV3 ? '/today' : '/dashboard')}
+          onSelectionChange={setSetupSelection}
+        />
+      </div>
     );
   }
 
@@ -1639,6 +1802,23 @@ export default function QuizPage() {
     // immediate AI-graded feedback via handleWrittenSubmit — no gap to fix
     // there). When the flag is off, this branch never runs and the legacy
     // return below is rendered byte-identical to today.
+    // D6: sampled, non-blocking confidence prompt. Renders only AFTER the
+    // answer is confirmed (isAnswered), only on deterministically sampled
+    // question indices (~every 3rd), and only until answered/dismissed once.
+    // Exam mode never sets showExplanation, so it never appears there.
+    const showConfidencePrompt =
+      isAnswered &&
+      shouldPromptConfidence(currentIdx) &&
+      confidenceByQid[q.id] === undefined;
+    const confidencePromptEl = showConfidencePrompt ? (
+      <ConfidencePrompt
+        key={q.id}
+        isHi={isHi}
+        onSelect={(v) => handleConfidenceSelect(q.id, v)}
+        onDismiss={() => handleConfidenceDismiss(q.id)}
+      />
+    ) : null;
+
     if (practiceV2On && quizMode === 'practice' && isQuestionMCQ(q)) {
       const check = answerChecks[q.id];
       const checkResultProp =
@@ -1653,7 +1833,15 @@ export default function QuizPage() {
                 explanationHi: check.explanation_hi,
               };
       return (
-        <PracticeRunner
+        <>
+          {/* D6: floating, non-blocking — PracticeRunner is untouched and the
+              student can always continue without interacting. */}
+          {confidencePromptEl && (
+            <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 w-[92vw] max-w-sm shadow-lg rounded-2xl">
+              {confidencePromptEl}
+            </div>
+          )}
+          <PracticeRunner
           isHi={isHi}
           question={{
             id: q.id,
@@ -1678,7 +1866,8 @@ export default function QuizPage() {
           onConfirm={confirmAnswerPracticeV2}
           onNext={nextQuestion}
           onRequestHint={() => setHintLevel(1)}
-        />
+          />
+        </>
       );
     }
 
@@ -1904,6 +2093,10 @@ export default function QuizPage() {
                 </div>
               )}
 
+              {/* D6: sampled 1-tap confidence — inline, after the explanation,
+                  never blocks the Next button below. */}
+              {confidencePromptEl}
+
               {/* Pedagogy v2 — Wave 1: distractor micro-explainer.
                   Mounts only on wrong MCQ (legacy path; v2 path defers feedback
                   to results screen). API is gated by ff_distractor_micro_explainer_v1
@@ -1947,36 +2140,45 @@ export default function QuizPage() {
                 </div>
               )}
 
-              {/* Progressive Hints */}
-              {!isAnswered && q.hint && (
-                <div className="space-y-2">
-                  {hintLevel >= 1 && (
-                    <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)', color: 'var(--text-2)' }}>
-                      💡 {q.hint}
-                    </div>
-                  )}
-                  {hintLevel >= 2 && (
-                    <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)', color: 'var(--text-2)' }}>
-                      🔍 {q.hint} {isHi ? 'अंतर्निहित अवधारणा और सूत्र के बारे में सोचो।' : 'Think about the underlying concept and formula.'}
-                    </div>
-                  )}
-                  {hintLevel >= 3 && (
-                    <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.15)', color: 'var(--text-2)' }}>
-                      🎯 {isHi ? 'उत्तर से संबंधित:' : 'The answer involves:'} {q.explanation?.split('.')[0] || (isHi ? 'व्याख्या उपलब्ध नहीं' : 'No explanation available')}
-                    </div>
-                  )}
-                </div>
+              {/* Foxy North-Star Phase 3 (L5) — 5-rung Hint Ladder.
+                  Replaces the legacy 3-tier padded hints (rung state machine
+                  + P3 lock live in @alfanumrik/lib/learn/hint-ladder.ts).
+                  Rungs 2-5 unlock only after a recorded wrong answer, which
+                  in legacy path is `isAnswered && !isV2Question && !isCorrect`
+                  with `originalPicked` as the distractor index. In v2 mode
+                  the client doesn't know correctness until session-end, so
+                  wrongAttempt stays null and only rung 1 is available. */}
+              {q.id && (
+                <HintLadder
+                  isHi={isHi}
+                  question={{
+                    id: q.id,
+                    hint: q.hint,
+                    explanation: q.explanation,
+                    explanation_hi: q.explanation_hi,
+                  }}
+                  wrongAttempt={
+                    isAnswered && !isV2Question && !isCorrect && originalPicked !== null
+                      ? { distractorIndex: originalPicked }
+                      : null
+                  }
+                  onHintLevelChange={(lvl) => setHintLevel(lvl)}
+                  onRequestEquivalent={() => {
+                    // "Equivalent question" — additive, non-blocking: advance
+                    // past the current question. The pinned/pool assembler
+                    // owns question replacement; a proper foxy_served_items
+                    // twin request is a follow-up (see report handoff).
+                    void nextQuestion();
+                  }}
+                />
               )}
 
               {/* Action Buttons */}
               <div className="flex gap-3 mt-auto pb-2">
                 {!isAnswered ? (
                   <>
-                    {q.hint && selectedOption === null && hintLevel < 3 && (
-                      <Button variant="ghost" onClick={() => setHintLevel(prev => Math.min(prev + 1, 3))} size="sm">
-                        {hintLevel === 0 ? (isHi ? '💡 संकेत' : '💡 Hint') : `💡 ${hintLevel}/3`}
-                      </Button>
-                    )}
+                    {/* Legacy inline hint button removed — HintLadder above
+                        owns the reveal UX end-to-end (rungs 1-5). */}
                     <Button
                       fullWidth
                       onClick={confirmAnswer}
@@ -2253,7 +2455,28 @@ export default function QuizPage() {
           isFirstQuiz={false}
           onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
           onGoHome={() => router.push(experienceV3 ? '/today' : '/dashboard')}
+          onAskFoxy={() => { /* Phase 4 U1: page mounts the tap-gated launcher below. */ }}
         />
+        {/* Phase 4 U1: tap-gated "Ask Foxy about this quiz" launcher. Panel is
+            dynamic-imported (ssr:false) inside the launcher only on tap. */}
+        <div className="max-w-2xl mx-auto px-4 mt-4">
+          <FoxyPanelLauncher
+            subject={selectedSubject || 'science'}
+            grade={student?.grade || '10'}
+            mode="doubt"
+            context="quiz-results"
+            initialPrompt={
+              isHi
+                ? 'मुझे इस क्विज़ में गलत हुए सवालों को समझने में मदद करो।'
+                : 'Help me understand the questions I got wrong on this quiz.'
+            }
+            isHi={isHi}
+            language={isHi ? 'hi' : 'en'}
+            studentId={student?.id}
+            studentName={student?.name}
+            ctaLabel={{ en: '🦊 Ask Foxy about this quiz', hi: '🦊 इस क्विज़ पर फॉक्सी से पूछो' }}
+          />
+        </div>
         {/* SLC-5: gentle, NON-accusatory note when the server flagged the attempt.
             The real score_percent is still shown by QuizResults above; this only
             explains why no XP was awarded. Bilingual per P7. Never punitive. */}

@@ -13,6 +13,14 @@
  *   - Happy path: returns escalation rows ordered newest-first with the
  *     expected shape (id, title, message, is_read, created_at, student_id,
  *     class_id).
+ *   - NOTIFICATION-TYPE CHAIN (quality blocker #4 residual): the list now
+ *     includes type='safeguarding_escalation' rows alongside
+ *     'teacher_escalation' (no other types), and every row carries additive
+ *     typeLabel/typeLabelHi/link fields — teacher rows keep the legacy shape
+ *     (link '/school-admin/escalations'), safeguarding rows deep-link to
+ *     '?tab=safeguarding'. Safeguarding rows expose NO transcript excerpts:
+ *     data payload is {escalation_id, category} only, so student_id/class_id
+ *     map to null.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -113,6 +121,16 @@ beforeEach(() => {
       title: 'Teacher escalation', message: 'Other school — must not leak', is_read: false,
       created_at: '2026-07-04T00:00:00.000Z', data: { student_id: 's4', class_id: 'c4' },
     },
+    {
+      id: 'n5', recipient_id: ADMIN_A1, recipient_type: 'school_admin', type: 'safeguarding_escalation',
+      title: 'Safeguarding alert', message: 'A safeguarding concern needs review', is_read: false,
+      created_at: '2026-07-05T00:00:00.000Z', data: { escalation_id: 'esc-1', category: 'self_harm' },
+    },
+    {
+      id: 'n6', recipient_id: ADMIN_A1, recipient_type: 'school_admin', type: 'rank_update',
+      title: 'Unrelated type', message: 'Must never appear in this list', is_read: false,
+      created_at: '2026-07-06T00:00:00.000Z', data: {},
+    },
   ];
 });
 
@@ -161,15 +179,16 @@ describe('GET /api/school-admin/escalations — school scope (P8)', () => {
 });
 
 describe('GET /api/school-admin/escalations — happy path', () => {
-  it('returns escalation rows with the expected shape, newest first', async () => {
+  it('returns teacher + safeguarding rows (and only those types), newest first', async () => {
     authOk(SCHOOL_A);
     const { GET } = await import('@/app/api/school-admin/escalations/route');
     const res = await GET(getReq());
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.success).toBe(true);
-    expect(json.data.map((r: { id: string }) => r.id)).toEqual(['n2', 'n1']);
-    expect(json.data[0]).toMatchObject({
+    // n6 (unrelated type) excluded; n5 (safeguarding) included, newest first.
+    expect(json.data.map((r: { id: string }) => r.id)).toEqual(['n5', 'n2', 'n1']);
+    expect(json.data[1]).toMatchObject({
       id: 'n2',
       title: 'Teacher escalation',
       message: 'Riya: concern 2',
@@ -177,5 +196,41 @@ describe('GET /api/school-admin/escalations — happy path', () => {
       student_id: 's2',
       class_id: 'c2',
     });
+  });
+
+  it('teacher rows carry additive typeLabel/typeLabelHi/link without changing the legacy shape', async () => {
+    authOk(SCHOOL_A);
+    const { GET } = await import('@/app/api/school-admin/escalations/route');
+    const res = await GET(getReq());
+    const json = await res.json();
+    const teacherRow = json.data.find((r: { id: string }) => r.id === 'n2');
+    expect(teacherRow).toMatchObject({
+      typeLabel: 'Teacher escalation',
+      typeLabelHi: 'शिक्षक एस्केलेशन',
+      link: '/school-admin/escalations',
+    });
+    // Legacy fields intact (the existing escalations tab must not break).
+    expect(Object.keys(teacherRow)).toEqual(
+      expect.arrayContaining(['id', 'title', 'message', 'is_read', 'created_at', 'student_id', 'class_id']),
+    );
+  });
+
+  it('safeguarding rows carry safeguarding labels + deep link, and no transcript excerpt fields', async () => {
+    authOk(SCHOOL_A);
+    const { GET } = await import('@/app/api/school-admin/escalations/route');
+    const res = await GET(getReq());
+    const json = await res.json();
+    const sgRow = json.data.find((r: { id: string }) => r.id === 'n5');
+    expect(sgRow).toMatchObject({
+      typeLabel: 'Safeguarding alert',
+      typeLabelHi: 'सुरक्षा सूचना',
+      link: '/school-admin/escalations?tab=safeguarding',
+      // data payload is {escalation_id, category} only -> these map to null.
+      student_id: null,
+      class_id: null,
+    });
+    // Never join in excerpts: no transcript/excerpt-shaped fields on the row.
+    const keys = Object.keys(sgRow).join(',');
+    expect(keys).not.toMatch(/excerpt|transcript|snippet/i);
   });
 });

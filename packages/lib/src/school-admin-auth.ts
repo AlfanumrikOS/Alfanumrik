@@ -76,6 +76,20 @@ export interface SchoolAdminAuthResult {
 //   institution.view_billing       |    ✓      |       ✓        |          ✗           |        ✓
 //   institution.manage_staff       |    ✓      |       ✗        |          ✗           |        ✓
 //   institution.use_principal_ai    |    ✓      |       ✗        |          ✗           |        ✗   (CEO-approved 2026-06-11; principal-only v1)
+//   safeguarding.review            |    ✓      |       ✗        |          ✗           |        ✓   (CEO-approved 2026-08-05 under A1 safeguarding scope)
+//
+// Safeguarding review (Foxy North-Star Phase 1, S5.6/U6 — CEO full approval
+// 2026-08-05, A1 safeguarding scope): 'safeguarding.review' gates the
+// school-admin safeguarding review lane over safeguarding_escalations, which
+// carries disclosure_excerpt (student disclosure text, P13-sensitive). It is
+// therefore matrix-governed and granted ONLY to the school OWNER roles:
+// principal (single-school head) + institution_admin (multi-school owner
+// equivalent). academic_coordinator MUST NOT hold it — without this row the
+// code would be non-matrix and DEFER, letting every school_admins role
+// (including academic_coordinator, who holds institution.view_analytics)
+// through the narrowing gate under ff_school_admin_rbac. vice_principal is
+// also excluded in v1 (fail-closed; extending the review lane to VPs is a
+// follow-up CEO decision, not a default).
 //
 // Track 2 "Principal AI Assistant" v1: 'institution.use_principal_ai' is granted
 // to the PRINCIPAL role ONLY (NOT vice_principal / academic_coordinator) per the
@@ -102,6 +116,8 @@ const SCHOOL_ADMIN_ROLE_CAPABILITIES: Readonly<Record<SchoolAdminRole, ReadonlyS
     'institution.manage_staff',
     // Track 2 Principal AI Assistant v1 — principal-only (CEO-approved 2026-06-11).
     'institution.use_principal_ai',
+    // Safeguarding review lane — owner roles only (CEO-approved 2026-08-05, A1).
+    'safeguarding.review',
   ]),
   vice_principal: new Set<string>([
     'institution.view_analytics',
@@ -114,6 +130,7 @@ const SCHOOL_ADMIN_ROLE_CAPABILITIES: Readonly<Record<SchoolAdminRole, ReadonlyS
     // manage_billing ✗
     'institution.view_billing',
     // manage_staff ✗
+    // safeguarding.review ✗ (owner roles only — CEO 2026-08-05, A1)
   ]),
   academic_coordinator: new Set<string>([
     'institution.view_analytics',
@@ -126,6 +143,8 @@ const SCHOOL_ADMIN_ROLE_CAPABILITIES: Readonly<Record<SchoolAdminRole, ReadonlyS
     // manage_billing ✗
     // view_billing ✗
     // manage_staff ✗
+    // safeguarding.review ✗ (owner roles only — an academic_coordinator must
+    // never read disclosure excerpts; CEO 2026-08-05, A1)
   ]),
   institution_admin: new Set<string>([
     'institution.view_analytics',
@@ -138,6 +157,8 @@ const SCHOOL_ADMIN_ROLE_CAPABILITIES: Readonly<Record<SchoolAdminRole, ReadonlyS
     'institution.manage_billing',
     'institution.view_billing',
     'institution.manage_staff',
+    // Safeguarding review lane — owner roles only (CEO-approved 2026-08-05, A1).
+    'safeguarding.review',
   ]),
 };
 

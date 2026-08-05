@@ -16,7 +16,7 @@ import {
   type DiagnosticCandidate,
 } from '@alfanumrik/lib/diagnostic/blueprint';
 import { validateQuestion } from '@alfanumrik/lib/quiz-assembler';
-import { irtProbCorrect, BLOOM_LEVELS } from '@alfanumrik/lib/cognitive-engine';
+import { BLOOM_LEVELS } from '@alfanumrik/lib/cognitive-engine';
 
 /**
  * Cold-start diagnostic form selector — pure-module oracles.
@@ -169,20 +169,31 @@ describe('diagnostic blueprint — §8.1 form shape', () => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Reference SE(θ) implementation, built on the platform's OWN `irtProbCorrect`
- * (3PL, D=1.7, a=1.0, c=0.25) — not a re-derivation.
+ * Reference SE(θ) implementation (3PL, D=1.7, a=1.0, c=0.25).
+ *
+ * 2026-08-05 (tracker E1): cognitive-engine's dead `irtProbCorrect` export
+ * was deleted, so the exact same 3PL formula is inlined here VERBATIM as the
+ * test-local oracle (this file is its only remaining consumer; the live IRT
+ * primitives are the 2PL twins in packages/lib/src/irt/fisher-info.ts).
  *
  * b = (difficulty − 2) × 1.5 → easy −1.5, medium 0.0, hard +1.5, matching the
  * spec §1.2 table and the `irt_difficulty` proxy seed.
  *
+ *   P = c + (1−c)/(1+e^(−D·a·(θ−b)))
  *   I(θ) = D²a²·((P−c)²/(1−c)²)·((1−P)/P)      SE(θ) = 1/√ΣI(θ)
  */
 const D = 1.7;
 const A = 1.0;
 const C = 0.25;
 
+/** Verbatim copy of the deleted cognitive-engine irtProbCorrect (3PL). */
+function irtProbCorrect3pl(theta: number, difficulty: number, discrimination = 1.0, guessing = 0.25): number {
+  const b = (difficulty - 2) * 1.5;
+  return guessing + (1 - guessing) / (1 + Math.exp(-1.7 * discrimination * (theta - b)));
+}
+
 function itemInformation(theta: number, difficultyBand: number): number {
-  const p = irtProbCorrect(theta, difficultyBand, A, C);
+  const p = irtProbCorrect3pl(theta, difficultyBand, A, C);
   if (p <= C || p >= 1) return 0;
   return D * D * A * A * (((p - C) ** 2) / ((1 - C) ** 2)) * ((1 - p) / p);
 }

@@ -168,6 +168,22 @@ export interface QuizResponse {
    * Optional — omitted payloads are treated as null server-side.
    */
   shuffle_map?: number[] | null;
+  /**
+   * Foxy North-Star F8 (2026-08-05): highest hint tier the student used on
+   * this question (0 = none, 1-3 = progressive hints). Optional/additive —
+   * undefined is serialized as SQL NULL by the submit RPC. Persisted to
+   * quiz_responses.hint_level (telemetry only; no scoring/XP/anti-cheat
+   * input). Field name is a fixed cross-agent contract — do not rename.
+   */
+  hint_level?: number;
+  /**
+   * Foxy North-Star Phase 2 wave 2b (tracker E, 2026-08-05): additive
+   * evidence-capture companions (columns added by migration 20260807000200).
+   * Optional/additive — undefined serializes to SQL NULL. Telemetry only:
+   * never scoring/XP/anti-cheat input. Fixed cross-agent contract names.
+   */
+  confidence?: number;
+  answer_method?: string;
 }
 
 /* ── Mastery ── */

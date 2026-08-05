@@ -25,8 +25,12 @@
     "test:integration": "npm run test:integration --workspaces --if-present",
     "supabase:gen-types": "npm run supabase:gen-types --workspaces --if-present",
     "supabase:check-types": "npm run supabase:check-types --workspaces --if-present",
+    "foxy:analyze": "node scripts/foxy-alignment/analyze.mjs",
+    "gen:mol-matrix": "node scripts/gen-mol-matrix.mjs",
+    "gen:mol-matrix:check": "node scripts/gen-mol-matrix.mjs --check",
     "gen:openapi": "node scripts/gen-openapi.mjs",
     "gen:openapi:check": "node scripts/gen-openapi.mjs --check",
-    "eval:teacher:harness": "npm run eval:teacher:harness -w apps/host --"
+    "eval:teacher:harness": "npm run eval:teacher:harness -w apps/host --",
+    "eval:irt:harness": "npx tsx eval/irt/harness/cli.ts"
   }
 }

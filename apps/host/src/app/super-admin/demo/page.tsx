@@ -37,7 +37,11 @@ const ROLE_LABELS: Record<DemoRole, string> = {
 };
 
 const PERSONA_LABELS: Record<DemoPersona, string> = {
-  weak_student: 'Weak Student',
+  // Foxy North-Star policy PR1 (prohibited-inferences copy audit): the
+  // persona CODE stays `weak_student` (DB/API contract, see
+  // packages/lib/src/demo/personas.ts) but the human-visible label follows
+  // the growth-mindset vocabulary (mastery-band-labels) — never "Weak".
+  weak_student: 'Foundation Builder',
   average: 'Average',
   high_performer: 'High Performer',
 };

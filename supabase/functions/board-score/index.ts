@@ -7,9 +7,9 @@ import { checkBearerToken } from '../_shared/auth.ts'
  * board-score Edge Function  (BoardScore™ v1)
  *
  * Actions:
- *   compute — Fetch a student's CME states for one subject, apply CBSE chapter
- *             weights, compute predicted board exam score, persist to
- *             board_score_predictions. Called by the nightly cron.
+ *   compute — Fetch a student's concept_mastery rows for one subject, apply
+ *             CBSE chapter weights, compute predicted board exam score,
+ *             persist to board_score_predictions. Called by the nightly cron.
  *
  *   get     — Return the latest board_score_predictions row(s) for the
  *             authenticated student, optionally filtered by subject.
@@ -21,7 +21,7 @@ import { checkBearerToken } from '../_shared/auth.ts'
  *
  * Scoring formula:
  *   effective_mastery(chapter) = mean of (mastery_mean × retention_factor)
- *                                over all cme_concept_states in that chapter
+ *                                over all concept_mastery rows in that chapter
  *   predicted_marks(chapter)   = effective_mastery × marks_allocated
  *   predicted_score            = Σ predicted_marks(all chapters)
  *   predicted_pct              = predicted_score / total_marks × 100
@@ -166,19 +166,26 @@ async function computeBoardScore(
   const totalMarks = (weights[0] as ChapterWeight).total_marks
   const totalChapters = weights.length
 
-  // 2. Load CME concept states for this student, and curriculum_topics for
+  // 2. Load concept mastery for this student, and curriculum_topics for
   // this subject/grade, as two flat fetches — then join in application code.
   //
-  // NOTE: this deliberately does NOT use a PostgREST nested embed
-  // (`curriculum_topics!inner(...)`) because there is no declared foreign
-  // key from cme_concept_state.concept_id to curriculum_topics.id (only a
-  // PK + UNIQUE(student_id, concept_id) — see baseline migration around
-  // line 15132). A nested embed on an undeclared relationship fails
-  // PostgREST relationship resolution on every call. This mirrors the
-  // flat-fetch + Map-join pattern already used for this exact
-  // concept_id <-> curriculum_topics relationship in
-  // supabase/functions/cme-engine/index.ts (get_next_action,
-  // get_revision_due, get_exam_readiness).
+  // F6 (Foxy North-Star Phase 0): this read was re-pointed from the retired
+  // CME state table (a verified orphan — no writer anywhere) to
+  // concept_mastery, the canonical mastery store. Field mapping:
+  //   mastery_mean          → concept_mastery.mastery_probability
+  //   last_practiced_at     → concept_mastery.last_attempted_at
+  //   concept_id            → concept_mastery.topic_id (FKs curriculum_topics)
+  //   retention_half_life   → NO equivalent column; fixed 48h default (the
+  //                           same fallback the old read applied via `?? 48`)
+  // Rows with mastery_level = 'not_started' are excluded: the old table only
+  // ever held practiced concepts, whereas concept_mastery seeds rows at
+  // default probability 0.1 before any attempt — counting those would
+  // inflate coverage_pct with phantom data.
+  //
+  // NOTE: we keep the deliberate flat-fetch + in-memory Map-join pattern
+  // (no PostgREST nested embed) — it mirrors the pattern used in
+  // supabase/functions/cme-engine/index.ts and stays robust regardless of
+  // declared-FK relationship resolution.
 
   // 2a. First resolve the subject's internal id from its code.
   const { data: subjectRowForJoin, error: subjErr } = await supabase
@@ -211,12 +218,13 @@ async function computeBoardScore(
     topicChapterMap.set(t.id, t.chapter_number)
   }
 
-  // 2c. Load CME concept states for this student, flat (no embed).
+  // 2c. Load canonical concept mastery for this student, flat (no embed).
   const { data: states, error: sErr } = await supabase
-    .from('cme_concept_state')
-    .select('student_id, concept_id, mastery_mean, retention_half_life, last_practiced_at')
+    .from('concept_mastery')
+    .select('student_id, topic_id, mastery_probability, last_attempted_at, mastery_level')
     .eq('student_id', student_id)
-    .not('mastery_mean', 'is', null)
+    .not('mastery_probability', 'is', null)
+    .neq('mastery_level', 'not_started')
 
   if (sErr) {
     console.error(`[board-score][${correlationId}] concept states load failed: ${sErr.message}`)
@@ -225,16 +233,21 @@ async function computeBoardScore(
 
   const snapshotAt = new Date().toISOString()
 
-  // 2d. Join in application code: keep only concept states whose concept_id
+  // 2d. Join in application code: keep only mastery rows whose topic_id
   // is a curriculum_topics.id for this grade/subject, attaching chapter_number.
+  // Internal ConceptState field names are unchanged so the scoring formula
+  // below is byte-for-byte identical (P1-adjacent guard); only the data
+  // source mapping changed (see the F6 mapping table above). concept_mastery
+  // carries no retention half-life, so every row takes the documented 48h
+  // default — the exact fallback the old read used for null values.
   const flatStates: ConceptState[] = (states ?? [])
-    .filter((row: any) => topicChapterMap.has(row.concept_id))
+    .filter((row: any) => topicChapterMap.has(row.topic_id))
     .map((row: any) => ({
-      concept_id: row.concept_id,
-      chapter_number: topicChapterMap.get(row.concept_id) ?? null,
-      mastery_mean: row.mastery_mean ?? 0,
-      retention_half_life: row.retention_half_life ?? 48,
-      last_practiced_at: row.last_practiced_at ?? null,
+      concept_id: row.topic_id,
+      chapter_number: topicChapterMap.get(row.topic_id) ?? null,
+      mastery_mean: row.mastery_probability ?? 0,
+      retention_half_life: 48,
+      last_practiced_at: row.last_attempted_at ?? null,
     }))
 
   // Group concept states by chapter_number

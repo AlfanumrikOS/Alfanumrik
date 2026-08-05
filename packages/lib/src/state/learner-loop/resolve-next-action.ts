@@ -32,6 +32,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../../logger';
+import { getDueCount } from '../../learn/srs-source';
 import type { StudentState } from '../student-state';
 import { weakestChapter } from '../student-state';
 import {
@@ -374,22 +375,19 @@ export async function buildLoopAugmentation(
       : Promise.resolve(null);
 
   // Run the reads in parallel — they are independent.
-  const [dueCardsRes, todayQuizRes, inProgressRes, pendingTeacherRemediation, unstartedRes] = await Promise.all([
-    // Due-review count — reads the LIVE SM-2 flashcard table (the deck the
-    // `review_due_cards` branch's `/review` CTA lands on, via the permanent
-    // `/review` → `/refresh?tab=flashcards` redirect). Filter mirrors the
-    // `get_review_cards` RPC byte-for-byte in intent: student's own active
-    // cards with `next_review_date <= CURRENT_DATE` (UTC date — the RPC's
-    // CURRENT_DATE on a UTC-tz Postgres). NOTE: the historical `review_cards`
+  const [dueCountRes, todayQuizRes, inProgressRes, pendingTeacherRemediation, unstartedRes] = await Promise.all([
+    // Due-review count — via the E4 SRS single read adapter (srs-source →
+    // domains/practice), which owns the ONE due predicate: student's own
+    // ACTIVE cards with `next_review_date <= CURRENT_DATE` (UTC date — the
+    // `get_review_cards` RPC's CURRENT_DATE on a UTC-tz Postgres). The
+    // inline `spaced_repetition_cards` count that used to live here is
+    // retired so the predicate can never drift per-reader again (the
+    // srs-source parity test pins RPC ⇄ adapter equality). A failed read
+    // resolves ok=false → dueReviewCount 0 (the resolver degrades to the
+    // next branch, same as before). NOTE: the historical `review_cards`
     // table never existed; counting it always errored → 0 and permanently
     // dead-lettered the review branch.
-    sb
-      .from('spaced_repetition_cards')
-      .select('id', { count: 'exact', head: true })
-      .eq('student_id', studentId)
-      .eq('is_active', true)
-      .lte('next_review_date', new Date(now).toISOString().slice(0, 10))
-      .limit(1),
+    getDueCount(studentId),
     sb
       .from('quiz_sessions')
       .select('id', { count: 'exact', head: true })
@@ -416,7 +414,7 @@ export async function buildLoopAugmentation(
   }));
 
   return {
-    dueReviewCount: dueCardsRes.count ?? 0,
+    dueReviewCount: dueCountRes.ok ? dueCountRes.data.total : 0,
     attemptedQuizToday: (todayQuizRes.count ?? 0) > 0,
     inProgressLessons,
     pendingTeacherRemediation,

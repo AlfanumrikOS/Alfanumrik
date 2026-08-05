@@ -2,6 +2,7 @@
 
 import type { TaskType, StudentContext } from './types.ts'
 import { determineUseCase, USE_CASES } from './use-cases.ts'
+import { GENERATED_BASE_MATRIX, MODEL_IDS } from './generated-matrix.ts'
 
 export type ProviderId = 'openai' | 'anthropic'
 
@@ -33,92 +34,18 @@ export interface RouterOptions {
   use_cases_routing_enabled?: boolean
 }
 
-const HAIKU = 'claude-haiku-4-5-20251001'
-// Aligned to the id already pinned by config-model-name-identity.test.ts,
-// packages/lib/src/ai/gateway/registry.ts (ANTHROPIC_SONNET_ID), and
-// packages/lib/src/foxy/quality-eval.ts (JUDGE_MODEL) — this environment has
-// no ANTHROPIC_API_KEY, so this was NOT confirmed against a live Anthropic
-// model-catalog check; get a final live confirmation at the next review.
-const SONNET = 'claude-sonnet-4-20250514'
-const GPT_MINI = 'gpt-4o-mini'
-const GPT_FULL = 'gpt-4o'
+// R3 consolidation (Foxy North-Star Phase 4, 2026-08-05):
+// BASE_MATRIX is now GENERATED from packages/lib/src/ai/gateway/registry.ts
+// via scripts/gen-mol-matrix.mjs. Rename a model id in the registry and this
+// chain stays in lockstep automatically. The remaining router logic below
+// (hybrid toggle, openai_default flip, per-task weight, use-cases override)
+// is CALL-SITE POLICY that stays hand-authored here.
+const HAIKU = MODEL_IDS.ANTHROPIC_HAIKU_ID
+const SONNET = MODEL_IDS.ANTHROPIC_SONNET_ID
+const GPT_MINI = MODEL_IDS.OPENAI_MINI_ID
+const GPT_FULL = MODEL_IDS.OPENAI_FULL_ID
 
-const BASE_MATRIX: Record<TaskType, Pass[]> = {
-  explanation: [{
-    role: 'single',
-    chain: [
-      { provider: 'openai', model: GPT_MINI },
-      { provider: 'anthropic', model: HAIKU },
-    ],
-  }],
-  concept_explanation: [{
-    role: 'single',
-    chain: [
-      { provider: 'openai', model: GPT_MINI },
-      { provider: 'anthropic', model: HAIKU },
-    ],
-  }],
-  step_by_step: [{
-    role: 'single',
-    chain: [
-      { provider: 'openai', model: GPT_MINI },
-      { provider: 'anthropic', model: HAIKU },
-    ],
-  }],
-  reasoning: [{
-    role: 'single',
-    chain: [
-      { provider: 'openai', model: GPT_FULL },
-      { provider: 'anthropic', model: SONNET },
-      { provider: 'anthropic', model: HAIKU },
-    ],
-  }],
-  quiz_generation: [{
-    role: 'single',
-    chain: [
-      { provider: 'openai', model: GPT_MINI },
-      { provider: 'anthropic', model: HAIKU },
-    ],
-  }],
-  evaluation: [{
-    role: 'single',
-    chain: [
-      { provider: 'openai', model: GPT_MINI },
-      { provider: 'anthropic', model: HAIKU },
-    ],
-  }],
-  doubt_solving: [
-    {
-      role: 'reason',
-      chain: [
-        { provider: 'openai', model: GPT_FULL },
-        { provider: 'anthropic', model: SONNET },
-        { provider: 'anthropic', model: HAIKU },
-      ],
-    },
-    {
-      role: 'simplify',
-      chain: [
-        { provider: 'openai', model: GPT_MINI },
-        { provider: 'anthropic', model: HAIKU },
-      ],
-    },
-  ],
-  ocr_extraction: [{
-    role: 'vision',
-    chain: [
-      { provider: 'openai', model: GPT_FULL },
-      { provider: 'anthropic', model: SONNET },
-    ],
-  }],
-  grounding_check: [{
-    role: 'single',
-    chain: [
-      { provider: 'openai', model: GPT_MINI },
-      { provider: 'anthropic', model: HAIKU },
-    ],
-  }],
-}
+const BASE_MATRIX = GENERATED_BASE_MATRIX
 
 const MAX_TOKENS: Record<TaskType, number> = {
   explanation: 1024,

@@ -38,7 +38,14 @@ const SRC: string = Deno.readTextFileSync(INDEX_PATH);
 // a false negative/positive if some OTHER handler (grade book, submissions,
 // etc.) legitimately touches `assignments` / `assignment_submissions`.
 const FN_START = SRC.indexOf('async function handleDeployIntervention(');
-const FN_END = SRC.indexOf('\n// ─── JWT Binding', FN_START);
+// Scope to handler body: end at the NEXT '// ─── ' section header after FN_START
+// (documented intent: 'scope all checks to the handler body only'). The previous
+// slicer hardcoded 'JWT Binding' as the boundary; inserting new handlers between
+// handleDeployIntervention and JWT Binding silently expanded HANDLER_BODY.
+const NEXT_SECTION_RE = new RegExp('\n// ─── ', 'g');
+NEXT_SECTION_RE.lastIndex = FN_START + 1;
+const _nextSection = NEXT_SECTION_RE.exec(SRC);
+const FN_END = _nextSection ? _nextSection.index : SRC.indexOf('\n// ─── JWT Binding', FN_START);
 assert(FN_START > 0, 'expected to find handleDeployIntervention in index.ts');
 assert(FN_END > FN_START, 'expected to find the next section marker after handleDeployIntervention');
 const HANDLER_BODY = SRC.slice(FN_START, FN_END);

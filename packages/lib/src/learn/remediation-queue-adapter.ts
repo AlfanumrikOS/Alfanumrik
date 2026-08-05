@@ -69,7 +69,8 @@
  *
  * • chapter_cooldown_days = 3 — RATIFIED. After a TERMINAL intervention on the
  *   same (subject, chapter), wait 3 days before re-injecting. SM-2's first two
- *   intervals after a reset are 1 and 6 days (cognitive-engine `sm2Update`);
+ *   intervals after a reset are 1 and 6 days (the live SM-2 scheduler in the
+ *   `update_learner_state_post_quiz` SQL RPC, migration 20260623000100);
  *   3 days sits between them — long enough for at least one natural SRS review
  *   of that chapter to come due and produce a FRESH mastery observation (so we
  *   never re-flag off stale post-cliff data), short enough that a genuinely

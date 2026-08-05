@@ -151,7 +151,7 @@ export const LearnerLearningActionSchema = EventBaseSchema.extend({
     messageId: uuidLike(),
     sessionId: uuidLike(),
     conceptId: uuidLike().nullable().optional(),
-    actionType: z.enum(['got_it', 'explain_simpler', 'show_example', 'quiz_me', 'save']),
+    actionType: z.enum(['got_it', 'explain_simpler', 'show_example', 'quiz_me', 'save', 'give_hint', 'let_me_try']),
     subjectCode: z.string().nullable(),
     chapterNumber: z.number().int().nonnegative().nullable(),
   }),
@@ -242,6 +242,21 @@ export const LearnerNextActionResolvedSchema = EventBaseSchema.extend({
     actionPayload: z.record(z.string(), z.unknown()),
     generatedAt:  isoDatetime(),
     expiresAt:    isoDatetime(),
+  }),
+})
+
+// D12 transfer evidence (Foxy North-Star Phase 3) — produced by the
+// build-twin-snapshots transfer step (gated ff_prereq_gating_v1).
+// Observability-only; canonical write is the record_transfer_evidence RPC.
+// P13: UUIDs + a subject code + a bounded number only.
+export const LearnerTransferEvidenceSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.transfer_evidence'),
+  payload: z.object({
+    studentId: uuidLike(),
+    sourceTopicId: uuidLike(),
+    targetTopicId: uuidLike(),
+    subjectCode: z.string().max(64).nullable(),
+    sourceMastery: z.number().min(0).max(1),
   }),
 })
 
@@ -449,6 +464,28 @@ export const TeacherGradeEntrySetSchema = EventBaseSchema.extend({
     score:    z.number().min(0).max(1000),
     maxScore: z.number().positive().max(1000),
     hasNotes: z.boolean(),
+  }),
+})
+
+// Phase 5 (Foxy North-Star, lane K4) — teacher's authoritative decision on an
+// autonomous system-injected intervention. Deno mirror of the Node
+// TeacherOverrideSchema; keep byte-equivalent in the pure zod shape.
+export const TeacherOverrideSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.override'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    classId:        uuidLike(),
+    studentId:      uuidLike(),
+    decision:       z.enum(['approved', 'overridden', 'dismissed']),
+    originalTier:   z.string().min(1).max(64),
+    chosenTier:     z.string().min(1).max(64).nullable(),
+    reasonCode:     z.enum([
+      'too_easy',
+      'too_hard',
+      'timing',
+      'knows_student',
+      'other',
+    ]),
   }),
 })
 
@@ -666,6 +703,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   LearnerStruggleObservedSchema,
   LearnerTurnClassifiedSchema,
   LearnerNextActionResolvedSchema,
+  LearnerTransferEvidenceSchema,
   FoxySessionStartedSchema,
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
@@ -684,6 +722,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   TeacherProfileUpdatedSchema,
   TeacherSubmissionReviewedSchema,
   TeacherGradeEntrySetSchema,
+  TeacherOverrideSchema,
   TeacherParentMessageSentSchema,
   ParentTeacherMessageSentSchema,
   SchoolModuleToggledSchema,
@@ -718,6 +757,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'learner.struggle_observed',
   'learner.turn_classified',
   'learner.next_action_resolved',
+  'learner.transfer_evidence',
   'ai.foxy_session_started',
   'ai.foxy_session_completed',
   'parent.linked_to_learner',
@@ -736,6 +776,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'teacher.profile_updated',
   'teacher.submission_reviewed',
   'teacher.grade_entry_set',
+  'teacher.override',
   'teacher.parent_message_sent',
   'parent.teacher_message_sent',
   'school.module_toggled',

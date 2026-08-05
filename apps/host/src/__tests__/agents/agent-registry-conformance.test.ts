@@ -177,13 +177,14 @@ describe('GenAI Phase 3 — Agent Registry conformance (spec §3 a–f)', () => 
     }
   });
 
-  // Structural pin: the forbidden set is the 9 canonical mastery/progression tables.
-  it('FORBIDDEN_MASTERY_WRITE_TABLES is the 9 canonical mastery/progression tables', () => {
+  // Structural pin: the forbidden set is the 8 canonical mastery/progression
+  // tables. (cme_concept_state removed 2026-08-05, tracker E1 — table RETIRED,
+  // COMMENT-tombstoned in migration 20260808000100, no writer platform-wide.)
+  it('FORBIDDEN_MASTERY_WRITE_TABLES is the 8 canonical mastery/progression tables', () => {
     expect([...FORBIDDEN_MASTERY_WRITE_TABLES].sort()).toEqual(
       [
         'adaptive_mastery',
         'bloom_progression',
-        'cme_concept_state',
         'cme_error_log',
         'concept_mastery',
         'knowledge_gaps',

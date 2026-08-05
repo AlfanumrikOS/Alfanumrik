@@ -24,7 +24,7 @@
   "buildId": "MAWnkeNl-EeIt_ptzWCBa",
   "buildEnvironment": "github-actions-ci (PR #1407 Production Build job)",
   "localFallbackBuildId": "IGkdSpqTXOceCe2UMKyW9",
-  "pageCount": 204,
+  "pageCount": 203,
   "pages": {
     "/": 117.5,
     "/_global-error": 117.5,
@@ -92,7 +92,6 @@
     "/parent/notifications": 154.6,
     "/parent/plan": 151.8,
     "/parent/profile": 153.8,
-    "/parent/progress": 151.8,
     "/parent/reports": 307.9,
     "/parent/settings": 151.8,
     "/parent/support": 160.3,

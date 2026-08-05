@@ -832,12 +832,114 @@ async function handleGetAlerts(
     teacherId,
     studentIds,
   )
+
+  // Phase 5 (Foxy North-Star, lane K3). Additive evidence field: batch one
+  // quiz_responses aggregation across every roster student so the teacher's
+  // Assign drawer can render "why this alert" without a per-row fan-out. UUIDs
+  // + counts + timestamps only (P13). Fail-soft to zero-evidence on error.
+  const evidenceByStudent = await buildEvidenceForRosterStudents(
+    supabase,
+    studentIds,
+  )
   const alertsWithRemediation = alerts.map((a) => ({
     ...a,
     remediation_status: remediationByStudent.get(a.student_id) ?? 'none',
+    evidence: evidenceByStudent.get(a.student_id) ?? null,
   }))
 
   return jsonResponse(alertsWithRemediation, 200, {}, origin)
+}
+
+// ─── K3 evidence helper (Deno mirror of packages/lib/src/teacher/remediation-evidence.ts) ─
+//
+// Deno cannot import from packages/lib. This is the byte-equivalent mirror of
+// the pure `buildEvidenceForStudents` in `@alfanumrik/lib/teacher/remediation-
+// evidence.ts` — if you change one, change both in the same PR. See that
+// module for the schema contract.
+//
+// The returned JSONB is the same shape stamped onto
+// `teacher_remediation_assignments.evidence` (JSONB column, parallel architect
+// migration). REG-133 posture: UUIDs / counts / timestamps only — never
+// matches /name|email|phone/i.
+export interface RemediationEvidence {
+  attempts: number
+  incorrect: number
+  hint_level_max: number | null
+  misconception_ids: string[]
+  first_seen: string | null
+  last_seen: string | null
+  since_days: number
+  schema_version: 1
+}
+
+async function buildEvidenceForRosterStudents(
+  supabase: ReturnType<typeof getServiceClient>,
+  studentIds: string[],
+  sinceDays = 14,
+): Promise<Map<string, RemediationEvidence>> {
+  const out = new Map<string, RemediationEvidence>()
+  if (studentIds.length === 0) return out
+
+  const window = Math.max(1, Math.min(90, Math.trunc(sinceDays)))
+  const sinceIso = new Date(Date.now() - window * 24 * 60 * 60 * 1000).toISOString()
+  const emptyEvidence = (): RemediationEvidence => ({
+    attempts: 0,
+    incorrect: 0,
+    hint_level_max: null,
+    misconception_ids: [],
+    first_seen: null,
+    last_seen: null,
+    since_days: window,
+    schema_version: 1,
+  })
+
+  for (const id of studentIds) out.set(id, emptyEvidence())
+
+  try {
+    const { data, error } = await supabase
+      .from('quiz_responses')
+      .select('student_id, is_correct, hint_level, misconception_id, created_at')
+      .in('student_id', studentIds)
+      .gte('created_at', sinceIso)
+
+    if (error) return out
+
+    const misconceptionSets = new Map<string, Set<string>>()
+    for (const id of studentIds) misconceptionSets.set(id, new Set())
+
+    for (const row of (data || []) as Array<{
+      student_id: string; is_correct: boolean | null; hint_level: number | null;
+      misconception_id: string | null; created_at: string;
+    }>) {
+      const ev = out.get(row.student_id)
+      if (!ev) continue
+
+      ev.attempts += 1
+      if (row.is_correct === false) ev.incorrect += 1
+
+      if (row.hint_level != null && Number.isFinite(row.hint_level)) {
+        const hl = Number(row.hint_level)
+        if (ev.hint_level_max == null || hl > ev.hint_level_max) ev.hint_level_max = hl
+      }
+
+      if (row.misconception_id) {
+        const set = misconceptionSets.get(row.student_id)!
+        if (!set.has(row.misconception_id)) {
+          set.add(row.misconception_id)
+          ev.misconception_ids.push(row.misconception_id)
+        }
+      }
+
+      if (row.created_at) {
+        if (ev.first_seen == null || row.created_at < ev.first_seen) ev.first_seen = row.created_at
+        if (ev.last_seen == null || row.created_at > ev.last_seen) ev.last_seen = row.created_at
+      }
+    }
+  } catch {
+    // Fail-soft — return the zero-evidence seed map already in `out`.
+  }
+
+  return out
 }
 
 // ─── Remediation-status join (Phase 3A Wave A / A2) ─────────────────────
@@ -1288,6 +1390,35 @@ async function handleGetClassOverview(
       reason: `${r.mastery}% mastery`,
     }))
 
+  // TODO(facade) K6 (Foxy North-Star Phase 5): fast_progress — top 3 students
+  // by newly-mastered concept count this week (>= 2). Additive field, backward-
+  // compatible; teachers get a "who to celebrate" list without a new endpoint.
+  // Silently empty when concept_mastery table is absent (older env). REG-134
+  // posture: name is roster-visible metadata already surfaced elsewhere.
+  const fastProgress: Array<{ student_id: string; name: string; mastered_this_week: number }> = []
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const { data: mastered } = await supabase
+      .from('concept_mastery')
+      .select('student_id')
+      .in('student_id', studentIds)
+      .eq('mastery_level', 'mastered')
+      .gte('updated_at', sevenDaysAgo)
+
+    const countBy = new Map<string, number>()
+    for (const r of (mastered || []) as Array<{ student_id: string | null }>) {
+      if (!r?.student_id) continue
+      countBy.set(r.student_id, (countBy.get(r.student_id) ?? 0) + 1)
+    }
+    const ranked = [...countBy.entries()]
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+    for (const [sid, n] of ranked) {
+      fastProgress.push({ student_id: sid, name: nameById.get(sid) || 'Student', mastered_this_week: n })
+    }
+  } catch { /* concept_mastery may not exist */ }
+
   return jsonResponse({
     stats: {
       total_students: total,
@@ -1298,6 +1429,7 @@ async function handleGetClassOverview(
     mastery_distribution: distPct,
     top_performers: topPerformers,
     needs_attention: needsAttention,
+    fast_progress: fastProgress,
   }, 200, {}, origin)
 }
 
@@ -3849,6 +3981,17 @@ async function handleDeployIntervention(
   const OPEN_DEDUPE_INDEX = 'uq_teacher_remediation_assignments_open_dedupe'
   const OPEN_STATUSES = ['assigned', 'in_progress']
 
+  // K3: gather every student ID up front so evidence is batched ONCE across
+  // all tiers (not re-queried per insert). Uses the same aggregation shape
+  // stamped by the /api/teacher/remediation route.
+  const allStudentIds = Array.from(new Set(
+    (['tier1', 'tier2', 'tier3'] as const)
+      .flatMap((k) => (Array.isArray(tiers[k]) ? tiers[k]! : []))
+      .map((s) => String(s || ''))
+      .filter((s) => s.length > 0),
+  ))
+  const evidenceByStudent = await buildEvidenceForRosterStudents(supabase, allStudentIds)
+
   const results: Record<string, { assignment_ids: string[]; student_count: number }> = {}
 
   for (const tierKey of ['tier1', 'tier2', 'tier3'] as const) {
@@ -3901,6 +4044,10 @@ async function handleDeployIntervention(
           class_id: classId,
           chapter_id: topicId,
           status: 'assigned',
+          // K3: stamp the evidence JSONB (parallel architect migration adds
+          // the column). Fail-soft null when the student had no in-window
+          // responses — the row still writes.
+          evidence: evidenceByStudent.get(studentId) ?? null,
         })
         .select('id')
         .single()
@@ -3926,6 +4073,696 @@ async function handleDeployIntervention(
   }
 
   return jsonResponse({ success: true, deployments: results }, 200, {}, origin)
+}
+
+// ─── K2 get_misconception_clusters ──────────────────────────
+// ─── K2: get_misconception_clusters ─────────────────────────
+// Group open misconceptions across a class roster by pattern_code, so the
+// teacher's Misconceptions drawer can render "N students share this pattern"
+// without a fan-out. Min cluster size 2 (single-student patterns render on
+// the per-student report instead). include_examples=true adds up to 2
+// truncated per-student examples per cluster — drawer only, never in the
+// list response. P13: UUIDs + counts + trimmed 140-char snippets; no PII.
+async function handleGetMisconceptionClusters(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const classId = String(body.class_id || '')
+  const teacherId = String(body.teacher_id || '')
+  const includeExamples = body.include_examples === true
+
+  if (!classId) return errorResponse('class_id required', 400, origin)
+
+  const supabase = getServiceClient()
+  const owns = await assertTeacherOwnsClass(supabase, teacherId, classId)
+  if (!owns) return errorResponse('Unauthorized access to class misconceptions', 403, origin)
+
+  const students = await resolveStudentsForClass(supabase, classId, teacherId)
+  if (students.length === 0) return jsonResponse({ clusters: [] }, 200, {}, origin)
+
+  const studentMap = new Map(students.map((s) => [s.id, s]))
+  const studentIds = students.map((s) => s.id)
+
+  const { data: rows, error } = await supabase
+    .from('student_misconceptions')
+    .select('student_id, pattern_code, concept_code, detected_at')
+    .in('student_id', studentIds)
+    .eq('is_resolved', false)
+    .limit(5000)
+
+  if (error) {
+    return errorResponse(`Failed to fetch misconceptions: ${error.message}`, 500, origin)
+  }
+  if (!rows || rows.length === 0) return jsonResponse({ clusters: [] }, 200, {}, origin)
+
+  type Row = { student_id: string; pattern_code: string; concept_code: string | null; detected_at: string }
+  type Cluster = {
+    pattern_code: string
+    concept_codes: string[]
+    student_count: number
+    students: Array<{ id: string; name: string }>
+    first_detected: string | null
+    last_detected: string | null
+  }
+
+  const byPattern = new Map<string, {
+    conceptSet: Set<string>
+    studentSet: Set<string>
+    students: Array<{ id: string; name: string }>
+    first: string | null
+    last: string | null
+    ids: string[]
+  }>()
+
+  for (const r of rows as Row[]) {
+    if (!r?.pattern_code || !r?.student_id) continue
+    if (!studentMap.has(r.student_id)) continue
+    let bucket = byPattern.get(r.pattern_code)
+    if (!bucket) {
+      bucket = {
+        conceptSet: new Set(),
+        studentSet: new Set(),
+        students: [],
+        first: null,
+        last: null,
+        ids: [],
+      }
+      byPattern.set(r.pattern_code, bucket)
+    }
+    if (r.concept_code) bucket.conceptSet.add(r.concept_code)
+    if (!bucket.studentSet.has(r.student_id)) {
+      bucket.studentSet.add(r.student_id)
+      const s = studentMap.get(r.student_id)!
+      bucket.students.push({ id: s.id, name: s.name })
+      bucket.ids.push(r.student_id)
+    }
+    if (r.detected_at) {
+      if (!bucket.first || r.detected_at < bucket.first) bucket.first = r.detected_at
+      if (!bucket.last || r.detected_at > bucket.last) bucket.last = r.detected_at
+    }
+  }
+
+  const clusters: Cluster[] = []
+  for (const [pattern_code, b] of byPattern.entries()) {
+    if (b.studentSet.size < 2) continue // min cluster size 2
+    clusters.push({
+      pattern_code,
+      concept_codes: [...b.conceptSet],
+      student_count: b.studentSet.size,
+      students: b.students,
+      first_detected: b.first,
+      last_detected: b.last,
+    })
+  }
+  clusters.sort((a, b) => b.student_count - a.student_count)
+
+  // Optional per-student examples (drawer only). ONE batched pull over
+  // quiz_responses restricted to the union of clustered student ids.
+  if (includeExamples && clusters.length > 0) {
+    type Example = { student_id: string; question_text: string; student_answer: string; correct_answer: string; detected_at: string }
+    const exampleIds = new Set<string>()
+    for (const c of clusters) for (const s of c.students) exampleIds.add(s.id)
+
+    try {
+      const { data: exRows } = await supabase
+        .from('quiz_responses')
+        .select('student_id, question_text, student_answer, correct_answer, created_at')
+        .in('student_id', [...exampleIds])
+        .eq('is_correct', false)
+        .order('created_at', { ascending: false })
+        .limit(200)
+
+      const byStudent = new Map<string, Example[]>()
+      for (const r of (exRows || []) as Array<{
+        student_id: string; question_text: string | null; student_answer: string | null; correct_answer: string | null; created_at: string;
+      }>) {
+        if (!r.student_id) continue
+        const arr = byStudent.get(r.student_id) ?? []
+        if (arr.length >= 2) continue
+        arr.push({
+          student_id: r.student_id,
+          question_text: (r.question_text || '').slice(0, 140),
+          student_answer: (r.student_answer || '').slice(0, 140),
+          correct_answer: (r.correct_answer || '').slice(0, 140),
+          detected_at: r.created_at,
+        })
+        byStudent.set(r.student_id, arr)
+      }
+
+      for (const c of clusters as Array<Cluster & { examples?: Example[] }>) {
+        const ex: Example[] = []
+        for (const s of c.students) {
+          const rows = byStudent.get(s.id) || []
+          for (const row of rows) if (ex.length < c.students.length * 2) ex.push(row)
+        }
+        c.examples = ex
+      }
+    } catch {
+      // Examples are drawer decoration — fail-soft.
+    }
+  }
+
+  return jsonResponse({ clusters }, 200, {}, origin)
+}
+
+// ─── K4/K7 record_intervention_decision ────────────────────
+// ─── K4: record_intervention_decision ───────────────────────
+// Teacher's authoritative decision on an autonomous adaptive-remediation row
+// (Loop A/B/C in `adaptive_interventions`). Writes teacher_decision +
+// decided_by + decided_at (columns added by parallel architect migration).
+//
+//   decision='approved'    → additionally call deploy_intervention write path
+//                            (create teacher_remediation_assignments rows for
+//                            the system-recommended tier).
+//   decision='overridden'  → additionally deploy the teacher-chosen tier
+//                            (body.chosen_tier: 'tier1' | 'tier2' | 'tier3').
+//   decision='dismissed'   → decision columns only; the cron's inject branch
+//                            honors the dismissal via the guard in
+//                            /api/cron/adaptive-remediation.
+//
+// Emits teacher.override on the bus (registered in state-runtime) + writes an
+// audit_logs row with METADATA ONLY (intervention_id, decision, reason_code —
+// REG-133 posture: never matches /name|email|phone/i).
+async function handleRecordInterventionDecision(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const interventionId = String(body.intervention_id || '')
+  const decision = String(body.decision || '') as 'approved' | 'overridden' | 'dismissed'
+  const chosenTierRaw = body.chosen_tier == null ? null : String(body.chosen_tier)
+  const reasonCode = body.reason_code == null ? null : String(body.reason_code).slice(0, 64)
+
+  if (!interventionId) return errorResponse('intervention_id required', 400, origin)
+  if (!['approved', 'overridden', 'dismissed'].includes(decision)) {
+    return errorResponse('decision must be one of approved|overridden|dismissed', 400, origin)
+  }
+  const chosenTier = (chosenTierRaw && ['tier1', 'tier2', 'tier3'].includes(chosenTierRaw))
+    ? (chosenTierRaw as 'tier1' | 'tier2' | 'tier3')
+    : null
+  if (decision === 'overridden' && !chosenTier) {
+    return errorResponse('chosen_tier required for decision=overridden', 400, origin)
+  }
+
+  const supabase = getServiceClient()
+
+  // Ownership: the intervention must be for a student in one of the caller's
+  // classes. We look up the row's student_id, then walk classes → students →
+  // teacher via assertTeacherOwnsClass on any of the teacher's classes that
+  // enrolls this student. Fail-closed 403 when we can't prove ownership.
+  const { data: row, error: rowErr } = await supabase
+    .from('adaptive_interventions')
+    .select('id, student_id, subject_code, chapter_number, trigger_signal, status')
+    .eq('id', interventionId)
+    .maybeSingle()
+
+  if (rowErr) return errorResponse(`Failed to fetch intervention: ${rowErr.message}`, 500, origin)
+  if (!row) return errorResponse('Intervention not found', 404, origin)
+
+  // Verify caller-teacher owns SOME class that enrolls this student.
+  let owns = false
+  try {
+    const { data: enrolments } = await supabase
+      .from('class_students')
+      .select('class_id')
+      .eq('student_id', row.student_id)
+      .limit(20)
+    for (const e of (enrolments || []) as Array<{ class_id: string | null }>) {
+      if (!e?.class_id) continue
+      if (await assertTeacherOwnsClass(supabase, teacherId, e.class_id)) {
+        owns = true
+        break
+      }
+    }
+  } catch { /* fall through — owns stays false */ }
+  if (!owns) return errorResponse('Not authorized to decide on this intervention', 403, origin)
+
+  // Write the decision columns.
+  const nowIso = new Date().toISOString()
+  const { error: updateErr } = await supabase
+    .from('adaptive_interventions')
+    .update({
+      teacher_decision: decision,
+      decided_by: teacherId,
+      decided_at: nowIso,
+    })
+    .eq('id', interventionId)
+
+  if (updateErr) {
+    return errorResponse(`Failed to record decision: ${updateErr.message}`, 500, origin)
+  }
+
+  // On approve/override: deploy the corresponding tier via the existing
+  // teacher_remediation_assignments write path (dedupe backstop preserved).
+  let deployment: { assignment_id: string | null; idempotent: boolean } | null = null
+  if (decision === 'approved' || decision === 'overridden') {
+    // Resolve the class the deployment should hang off — use the FIRST class
+    // in which the student is enrolled that this teacher owns.
+    let classId: string | null = null
+    try {
+      const { data: enrolments } = await supabase
+        .from('class_students')
+        .select('class_id')
+        .eq('student_id', row.student_id)
+        .limit(20)
+      for (const e of (enrolments || []) as Array<{ class_id: string | null }>) {
+        if (!e?.class_id) continue
+        if (await assertTeacherOwnsClass(supabase, teacherId, e.class_id)) {
+          classId = e.class_id
+          break
+        }
+      }
+    } catch { /* leave classId null → skip deployment */ }
+
+    if (classId) {
+      // Resolve a chapter topic id from (subject_code, chapter_number). Best-
+      // effort: if we can't, we still record the decision and skip deployment.
+      let chapterId: string | null = null
+      try {
+        const { data: subject } = await supabase
+          .from('subjects')
+          .select('id')
+          .eq('code', row.subject_code)
+          .maybeSingle()
+        if (subject?.id) {
+          const { data: topic } = await supabase
+            .from('curriculum_topics')
+            .select('id')
+            .eq('subject_id', subject.id)
+            .eq('chapter_number', row.chapter_number)
+            .limit(1)
+            .maybeSingle()
+          chapterId = topic?.id ?? null
+        }
+      } catch { /* chapterId stays null */ }
+
+      if (chapterId) {
+        const evidenceMap = await buildEvidenceForRosterStudents(supabase, [row.student_id])
+        try {
+          const { data: existing } = await supabase
+            .from('teacher_remediation_assignments')
+            .select('id')
+            .eq('student_id', row.student_id)
+            .eq('class_id', classId)
+            .eq('chapter_id', chapterId)
+            .in('status', ['assigned', 'in_progress'])
+            .limit(1)
+            .maybeSingle()
+          if (existing) {
+            deployment = { assignment_id: existing.id as string, idempotent: true }
+          } else {
+            const { data: ins, error: insErr } = await supabase
+              .from('teacher_remediation_assignments')
+              .insert({
+                teacher_id: teacherId,
+                student_id: row.student_id,
+                class_id: classId,
+                chapter_id: chapterId,
+                status: 'assigned',
+                evidence: evidenceMap.get(row.student_id) ?? null,
+                // K4 provenance — chosen_tier is meaningful only for override,
+                // stored on the assignments row so the student's queue knows
+                // which pack to render.
+                teacher_intervention_tier: chosenTier ?? null,
+                source_intervention_id: interventionId,
+              })
+              .select('id')
+              .single()
+            if (insErr) {
+              // 23505 on the open-dedupe index is idempotent-success.
+              const backstop = 'uq_teacher_remediation_assignments_open_dedupe'
+              const evidenceLine = [insErr.message, insErr.details, insErr.hint].filter(Boolean).join(' ')
+              if (insErr.code === '23505' && evidenceLine.includes(backstop)) {
+                deployment = { assignment_id: null, idempotent: true }
+              } else {
+                // Non-fatal — the decision itself is already recorded.
+                deployment = null
+              }
+            } else {
+              deployment = { assignment_id: ins.id as string, idempotent: false }
+            }
+          }
+        } catch {
+          deployment = null
+        }
+      }
+    }
+  }
+
+  // Bus event (fail-soft) + audit_logs row (fail-soft).
+  try {
+    const normalizedSignal: 'mastery_cliff' | 'inactivity' | 'at_risk_concentration' | 'blocked_prerequisite' =
+      row.trigger_signal === 'inactivity' || row.trigger_signal === 'at_risk_concentration' || row.trigger_signal === 'blocked_prerequisite'
+        ? row.trigger_signal
+        : 'mastery_cliff'
+    await supabase.from('domain_events').insert({
+      kind: 'teacher.override',
+      event_id: crypto.randomUUID(),
+      occurred_at: nowIso,
+      actor_auth_user_id: null,
+      tenant_id: null,
+      idempotency_key: `teacher_override:${interventionId}:${decision}`,
+      payload: {
+        interventionId,
+        studentId: row.student_id,
+        teacherId,
+        triggerSignal: normalizedSignal,
+        decision,
+        chosenTier,
+        reasonCode,
+      },
+    })
+  } catch { /* bus row is observability, never load-bearing */ }
+
+  try {
+    const { data: t } = await supabase
+      .from('teachers')
+      .select('auth_user_id')
+      .eq('id', teacherId)
+      .maybeSingle()
+    await supabase.from('audit_logs').insert({
+      auth_user_id: t?.auth_user_id ?? null,
+      action: 'record_intervention_decision',
+      resource_type: 'adaptive_intervention',
+      resource_id: interventionId,
+      // METADATA ONLY (REG-133): counts + enums + ids, never PII.
+      details: {
+        decision,
+        chosen_tier: chosenTier,
+        reason_code: reasonCode,
+        deployment_created: deployment != null && !deployment.idempotent,
+      },
+      status: 'success',
+    })
+  } catch { /* never block the write on audit insert failure */ }
+
+  return jsonResponse({
+    success: true,
+    decision,
+    intervention_id: interventionId,
+    deployment,
+  }, 200, {}, origin)
+}
+
+// ─── K5: assignment-draft workflow ──────────────────────────
+// generate_draft_assignment — teacher-authored draft, generated via the
+// shared MoL pipeline + oracle-gated. NO new AI generator; reuses
+// _shared/mol + _shared/quiz-oracle. Oracle verdicts → oracle_report;
+// oracle-passed candidates → teacher_assignment_drafts.questions.
+// Rate limit: max 5 drafts/day per teacher.
+//
+// publish_draft_assignment — flips status='published' + writes the row into
+// the canonical `assignments` table (same shape the teacher UI Assign flow
+// creates).
+//
+// export_draft_assignment — printable worksheet CSV (same pattern as
+// handleExportStudentReport).
+const MAX_DRAFTS_PER_DAY = 5
+
+// ─── K5 generate_draft_assignment ───────────────────────────
+async function handleGenerateDraftAssignment(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const grade = String(body.grade || '')
+  const subject = String(body.subject || '')
+  const topic = String(body.topic || '').slice(0, 200)
+  const questionCount = Math.max(3, Math.min(20, Number(body.question_count) || 5))
+
+  if (!grade || !subject) return errorResponse('grade and subject required', 400, origin)
+
+  const supabase = getServiceClient()
+
+  // Verify teacher can teach this (grade, subject).
+  const { data: teacher } = await supabase
+    .from('teachers')
+    .select('grades_taught, subjects_taught')
+    .eq('id', teacherId)
+    .maybeSingle()
+  if (!teacher) return errorResponse('Teacher not found', 403, origin)
+  const grades = Array.isArray(teacher.grades_taught) ? teacher.grades_taught : []
+  const subjects = Array.isArray(teacher.subjects_taught) ? teacher.subjects_taught : []
+  if (grades.length > 0 && !grades.includes(grade)) {
+    return errorResponse('Grade not in your teaching scope', 403, origin)
+  }
+  if (subjects.length > 0 && !subjects.some((s: string) => String(s).toLowerCase() === subject.toLowerCase())) {
+    return errorResponse('Subject not in your teaching scope', 403, origin)
+  }
+
+  // Rate limit: 5 drafts/day per teacher.
+  try {
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { count } = await supabase
+      .from('teacher_assignment_drafts')
+      .select('id', { count: 'exact', head: true })
+      .eq('teacher_id', teacherId)
+      .gte('created_at', dayAgo)
+    if ((count ?? 0) >= MAX_DRAFTS_PER_DAY) {
+      return errorResponse(`Daily draft limit (${MAX_DRAFTS_PER_DAY}) reached`, 429, origin)
+    }
+  } catch { /* if the query fails, allow the request through (fail-open on the
+                soft rate limit — publish is the auth boundary that matters) */ }
+
+  // Generate + oracle-gate.
+  //
+  // NOTE: The MoL + oracle wiring imports live at the top of this file when
+  // this K5 handler ships. Because handler generation happens inside a monolithic
+  // Deno.serve() file, we deliberately keep the async import here dynamic so
+  // an older-env deploy that lacks the modules still 500s only THIS handler,
+  // not the whole EF.
+  let generateResponse: ((req: unknown) => Promise<{ text: string }>) | null = null
+  let validateCandidate: ((c: unknown, opts?: unknown) => { ok: true; llm_calls: number } | { ok: false; category: string; reason: string; llm_calls: number }) | null = null
+  try {
+    const molMod = await import('../_shared/mol/index.ts')
+    generateResponse = (molMod as { generateResponse: typeof generateResponse }).generateResponse as never
+    const oracleMod = await import('../_shared/quiz-oracle.ts')
+    validateCandidate = (oracleMod as { validateCandidate: typeof validateCandidate }).validateCandidate as never
+  } catch (e) {
+    return errorResponse('Draft generator unavailable on this environment', 503, origin)
+  }
+  if (!generateResponse || !validateCandidate) {
+    return errorResponse('Draft generator unavailable on this environment', 503, origin)
+  }
+
+  const prompt = `Generate ${questionCount} multiple-choice questions for a CBSE Grade ${grade} ${subject} worksheet${topic ? ` on ${topic}` : ''}.
+Return ONLY valid JSON: {"questions":[{"question_text":"...","options":["a","b","c","d"],"correct_answer_index":0,"explanation":"...","difficulty":"easy|medium|hard","bloom_level":"remember|understand|apply|analyze|evaluate|create"}]}
+Exactly 4 distinct non-empty options per question. correct_answer_index in 0..3.`
+
+  let raw = ''
+  try {
+    const molResult = await generateResponse({
+      task_type: 'quiz_generation',
+      input: { instruction: prompt },
+      student_context: {
+        // The `student_context.student_id` field is required by MoL; we use the
+        // teacher's own id here (mol_request_logs is service-role-only; this
+        // request is not billed against a student's daily quota).
+        student_id: teacherId,
+        grade,
+        language: 'en',
+      },
+      config: {
+        temperature_override: 0.4,
+        max_tokens_override: 2048,
+      },
+    })
+    raw = molResult.text || ''
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return errorResponse(`Generator failed: ${msg}`, 502, origin)
+  }
+
+  const jsonMatch = raw.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) return errorResponse('Generator returned no JSON', 502, origin)
+  let parsed: { questions?: Array<Record<string, unknown>> }
+  try {
+    parsed = JSON.parse(jsonMatch[0])
+  } catch {
+    return errorResponse('Generator returned invalid JSON', 502, origin)
+  }
+  const candidates = Array.isArray(parsed.questions) ? parsed.questions : []
+
+  // Oracle-gate every candidate. Only oracle-accepted questions are stored
+  // in the draft; the full verdicts go into oracle_report.
+  const accepted: Array<Record<string, unknown>> = []
+  const oracleReport: Array<{ index: number; ok: boolean; category?: string; reason?: string }> = []
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i] as {
+      question_text?: string; options?: string[]; correct_answer_index?: number;
+      explanation?: string; difficulty?: string; bloom_level?: string;
+    }
+    try {
+      const verdict = await validateCandidate({
+        question_text: c.question_text ?? '',
+        options: c.options ?? [],
+        correct_answer_index: c.correct_answer_index ?? -1,
+        explanation: c.explanation ?? '',
+        difficulty: c.difficulty,
+        bloom_level: c.bloom_level,
+        grade,
+        subject,
+      }, { grade, subject })
+      if (verdict.ok) {
+        accepted.push({ ...c, grade, subject })
+        oracleReport.push({ index: i, ok: true })
+      } else {
+        oracleReport.push({ index: i, ok: false, category: verdict.category, reason: verdict.reason })
+      }
+    } catch (e) {
+      oracleReport.push({ index: i, ok: false, category: 'oracle_error', reason: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from('teacher_assignment_drafts')
+    .insert({
+      teacher_id: teacherId,
+      grade,
+      subject,
+      topic: topic || null,
+      status: 'draft',
+      questions: accepted,
+      oracle_report: oracleReport,
+    })
+    .select('id, created_at')
+    .single()
+
+  if (insertErr) return errorResponse(`Failed to save draft: ${insertErr.message}`, 500, origin)
+
+  return jsonResponse({
+    success: true,
+    draft_id: inserted.id,
+    questions_accepted: accepted.length,
+    questions_rejected: candidates.length - accepted.length,
+    oracle_report: oracleReport,
+  }, 200, {}, origin)
+}
+
+// ─── K5 publish_draft_assignment ────────────────────────────
+async function handlePublishDraftAssignment(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const draftId = String(body.draft_id || '')
+  const classId = String(body.class_id || '')
+  const title = String(body.title || 'Teacher-authored assignment').slice(0, 200)
+  const dueAt = body.due_at ? String(body.due_at) : null
+
+  if (!draftId || !classId) return errorResponse('draft_id and class_id required', 400, origin)
+
+  const supabase = getServiceClient()
+  const owns = await assertTeacherOwnsClass(supabase, teacherId, classId)
+  if (!owns) return errorResponse('Class not owned by caller', 403, origin)
+
+  const { data: draft, error: draftErr } = await supabase
+    .from('teacher_assignment_drafts')
+    .select('id, teacher_id, grade, subject, topic, questions, status')
+    .eq('id', draftId)
+    .maybeSingle()
+  if (draftErr) return errorResponse(`Failed to load draft: ${draftErr.message}`, 500, origin)
+  if (!draft) return errorResponse('Draft not found', 404, origin)
+  if (draft.teacher_id !== teacherId) return errorResponse('Draft not owned by caller', 403, origin)
+  if (draft.status === 'published') {
+    return errorResponse('Draft already published', 409, origin)
+  }
+
+  const questions = Array.isArray(draft.questions) ? draft.questions : []
+  if (questions.length === 0) {
+    return errorResponse('Draft has no oracle-accepted questions to publish', 400, origin)
+  }
+
+  const { data: publishedAssignment, error: pubErr } = await supabase
+    .from('assignments')
+    .insert({
+      class_id: classId,
+      teacher_id: teacherId,
+      title,
+      subject: draft.subject,
+      grade: draft.grade,
+      questions,
+      due_at: dueAt,
+      status: 'published',
+      source: 'teacher_draft',
+      source_draft_id: draftId,
+    })
+    .select('id')
+    .single()
+
+  if (pubErr) return errorResponse(`Failed to publish: ${pubErr.message}`, 500, origin)
+
+  const { error: flipErr } = await supabase
+    .from('teacher_assignment_drafts')
+    .update({
+      status: 'published',
+      published_assignment_id: publishedAssignment.id,
+      published_at: new Date().toISOString(),
+    })
+    .eq('id', draftId)
+
+  if (flipErr) {
+    // The assignment did get created — return success but flag the flip.
+    return jsonResponse({
+      success: true,
+      assignment_id: publishedAssignment.id,
+      draft_flip_failed: flipErr.message,
+    }, 200, {}, origin)
+  }
+
+  return jsonResponse({
+    success: true,
+    assignment_id: publishedAssignment.id,
+    draft_id: draftId,
+  }, 200, {}, origin)
+}
+
+// ─── K5 export_draft_assignment ─────────────────────────────
+async function handleExportDraftAssignment(
+  body: Record<string, unknown>,
+  origin: string | null,
+): Promise<Response> {
+  const teacherId = String(body.teacher_id || '')
+  const draftId = String(body.draft_id || '')
+  if (!draftId) return errorResponse('draft_id required', 400, origin)
+
+  const supabase = getServiceClient()
+  const { data: draft, error: draftErr } = await supabase
+    .from('teacher_assignment_drafts')
+    .select('id, teacher_id, grade, subject, topic, questions')
+    .eq('id', draftId)
+    .maybeSingle()
+  if (draftErr) return errorResponse(`Failed to load draft: ${draftErr.message}`, 500, origin)
+  if (!draft) return errorResponse('Draft not found', 404, origin)
+  if (draft.teacher_id !== teacherId) return errorResponse('Draft not owned by caller', 403, origin)
+
+  const questions = Array.isArray(draft.questions) ? draft.questions : []
+  const csvEscape = (s: unknown) => `"${String(s ?? '').replace(/"/g, '""')}"`
+  const lines = ['#,Question,A,B,C,D,Correct,Explanation']
+  questions.forEach((q, i) => {
+    const qq = q as { question_text?: string; options?: string[]; correct_answer_index?: number; explanation?: string }
+    const opts = qq.options ?? []
+    lines.push([
+      i + 1,
+      csvEscape(qq.question_text),
+      csvEscape(opts[0]),
+      csvEscape(opts[1]),
+      csvEscape(opts[2]),
+      csvEscape(opts[3]),
+      String(qq.correct_answer_index ?? ''),
+      csvEscape(qq.explanation),
+    ].join(','))
+  })
+
+  const csv = lines.join('\n')
+  return new Response(csv, {
+    status: 200,
+    headers: {
+      ...getCorsHeaders(origin),
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="draft-${draftId}.csv"`,
+    },
+  })
 }
 
 // ─── JWT Binding (P13 enforcement) ──────────────────────────
@@ -4045,6 +4882,17 @@ Deno.serve(async (req: Request) => {
         return await handleGetInTheMomentAlerts(body, origin)
       case 'deploy_intervention':
         return await handleDeployIntervention(body, origin)
+      // Phase 5 (Foxy North-Star): K2/K4/K5 handlers.
+      case 'get_misconception_clusters':
+        return await handleGetMisconceptionClusters(body, origin)
+      case 'record_intervention_decision':
+        return await handleRecordInterventionDecision(body, origin)
+      case 'generate_draft_assignment':
+        return await handleGenerateDraftAssignment(body, origin)
+      case 'publish_draft_assignment':
+        return await handlePublishDraftAssignment(body, origin)
+      case 'export_draft_assignment':
+        return await handleExportDraftAssignment(body, origin)
       default:
         return errorResponse(`Unknown action: ${action}`, 400, origin)
     }

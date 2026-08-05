@@ -74,7 +74,24 @@ describe('REG-57 — L2/L3 client-side fallback must not trust client is_correct
     if (hits.length === 1) {
       // Pin the line number range so a refactor that moves it elsewhere
       // forces a re-review.
-      expect(hits[0]).toMatch(/^L(4[6-9]|5[2-5])\d:/);
+      //
+      // 2026-08-05 (Foxy North-Star Phase 0, F8): range widened to include
+      // L56x. supabase.ts gained 8 additive doc/comment lines ABOVE the
+      // fallback (QuizResponseV2.hint_level JSDoc + the _mapV2 hint_level
+      // pass-through comment), shifting the pre-existing single violation
+      // from L559 to L567. The L3 fallback branch itself is byte-identical
+      // vs main — still exactly ONE violation, same branch, no new
+      // client-trust call site. (The F2 SRS grade loop is NOT a violation:
+      // it grades via /api/learner/review/grade AFTER the quiz page syncs
+      // server-truth is_correct from the v2 submit response.)
+      //
+      // 2026-08-05 (Phase 2 wave 2b, tracker E1/E): range widened again to
+      // L52x-L58x. Additive confidence/answer_method JSDoc + _mapV2 pass-
+      // through comments above the fallback (and the contract-comment
+      // rewrite after processAdaptiveLearning's deletion) shifted the same
+      // single violation from L567 to L573. Fallback branch still byte-
+      // identical — one violation, same branch, no new client-trust site.
+      expect(hits[0]).toMatch(/^L(4[6-9]|5[2-8])\d:/);
     }
   });
 

@@ -47,6 +47,10 @@ import RevisionRail from '@alfanumrik/ui/dashboard/os/RevisionRail';
 import SubjectRoadmaps from '@alfanumrik/ui/dashboard/os/SubjectRoadmaps';
 import BoardScoreWidget from '@alfanumrik/ui/dashboard/os/BoardScoreWidget';
 import PendingLinkApproval, { type PendingLink } from '@alfanumrik/ui/dashboard/PendingLinkApproval';
+// Phase 4 U1: tap-gated "Ask Foxy" embed. The launcher renders a compact CTA
+// button on first paint; the FoxyPanel module is dynamic-imported (ssr:false)
+// only when the student taps. First-load JS delta ≈ 0.
+import FoxyPanelLauncher from '@alfanumrik/ui/foxy-launcher/FoxyPanelLauncher';
 
 export default function StudentOSDashboard() {
   const router = useRouter();
@@ -298,6 +302,22 @@ export default function StudentOSDashboard() {
           subjectCode={subjectCode}
           todaysTopic={todaysTopic}
         />
+
+        {/* Phase 4 U1: "Ask Foxy" tap-gated launcher next to the hero.
+            The panel module is dynamic-imported on first tap only. */}
+        <div className="my-3 flex justify-start">
+          <FoxyPanelLauncher
+            subject={subjectCode || 'science'}
+            grade={student.grade}
+            chapter={todaysTopic?.title ?? null}
+            mode="doubt"
+            context="today"
+            isHi={isHi}
+            language={isHi ? 'hi' : 'en'}
+            studentId={student.id}
+            studentName={student.name}
+          />
+        </div>
 
         {/* 2. Mastery snapshot — repeated in the content column on mobile
             (the rail is hidden below tablet), hidden on tablet+ where the rail

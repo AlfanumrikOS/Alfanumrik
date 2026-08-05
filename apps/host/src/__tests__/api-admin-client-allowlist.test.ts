@@ -249,7 +249,24 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // through the RLS-scoped createSupabaseServerClient (teacher RPC set: migration
 // 20260803130000, symmetric with the parent set). Their ledger entries are
 // pruned in the SAME change so the guard ratchets DOWN, not drifts.
-const EXPECTED_COUNT = 265;
+// Foxy North-Star Phase 1 Safety & Trust (2026-08-05): 265 -> 268.
+// Three NEW routes legitimately use the admin client (REG-348..REG-350):
+// src/app/api/learner/memory/route.ts (memory.view_own/memory.erase_own-gated
+// self-access; reads via getStudentMemory + writes scoped
+// data_erasure_requests), src/app/api/school-admin/safeguarding/route.ts and
+// src/app/api/super-admin/safeguarding/route.ts (the safeguarding review
+// lane — safeguarding_escalations is DELIBERATELY service-role-only at the
+// RLS layer, so these routes are the ONLY sanctioned read path; school-admin
+// hard-scopes every query to the caller's school_id). Ledger entries added
+// in the same change.
+// Foxy North-Star Phase 5 lane U10 (2026-08-05): 268 -> 269. The new
+// caller's-own leaderboard band route src/app/api/v1/leaderboard/me/route.ts
+// legitimately uses the admin client: service-role read of the
+// get_leaderboard_percentile RPC scoped to the SESSION-derived studentId
+// (auth.uid()-resolved; a client-supplied ?student_id is ignored) after
+// authorizeRequest('leaderboard.view'). Ledger entry added in the same change;
+// ratchet-down path recorded in scripts/admin-client-allowlist.json.
+const EXPECTED_COUNT = 269;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

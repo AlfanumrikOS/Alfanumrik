@@ -88,6 +88,10 @@ const DEPTH_FROM_PREFERENCE: Record<string, LessonDepth> = {
   short: 'brief',
   brief: 'brief',
   concise: 'brief',
+  // 'quick' is a preference token some writers emit for the low-depth bucket;
+  // assessment-mandated (Phase 2 review, 2026-08-05): map it alongside
+  // 'short'/'concise' to 'brief'.
+  quick: 'brief',
   medium: 'standard',
   standard: 'standard',
   balanced: 'standard',
@@ -96,6 +100,11 @@ const DEPTH_FROM_PREFERENCE: Record<string, LessonDepth> = {
   long: 'deep',
 };
 
+// Includes every value of the D9 learning_style contract enum
+// ('visual' | 'verbal' | 'example-first' | 'balanced' — the PATCH
+// /api/learner/preferences enum written by the implicit preference
+// aggregator, packages/lib/src/learner-model/preference-aggregation.ts),
+// so no D9-written style ever silently falls to the 'balanced' default.
 const STYLE_TO_TONE: Record<string, PersonaTone> = {
   visual: 'visual',
   balanced: 'balanced',
@@ -104,6 +113,9 @@ const STYLE_TO_TONE: Record<string, PersonaTone> = {
   auditory: 'narrative',
   kinesthetic: 'concrete',
   concrete: 'concrete',
+  // D9 'example-first' → 'concrete': worked-example-led presentation is the
+  // closest existing tone; assessment-specified (Phase 2 review, 2026-08-05).
+  'example-first': 'concrete',
 };
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────

@@ -25,8 +25,14 @@ const ALL_PRINCIPAL_DESTINATIONS = [
   '/school-admin/content',
   '/school-admin/reports',
   '/school-admin/reports-depth',
+  // P10 fold-in (2026-08-05): the K9 leadership dashboard is a tab of the
+  // grandfathered /school-admin/reports page (a standalone route exceeded the
+  // 260 kB per-page cap — school-admin shell alone exceeds it).
+  '/school-admin/reports?tab=leadership',
   '/school-admin/announcements',
   '/school-admin/escalations',
+  // P10 fold-in (2026-08-05): safeguarding is a tab of the escalations page.
+  '/school-admin/escalations?tab=safeguarding',
   '/school-admin/billing',
   '/school-admin/branding',
   '/school-admin/modules',

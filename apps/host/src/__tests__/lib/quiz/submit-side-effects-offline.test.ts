@@ -44,7 +44,8 @@ vi.mock('@alfanumrik/lib/state/quiz-orchestrator-bridge', () => ({
   maybeDispatchQuizCompletion: (...a: unknown[]) => maybeDispatchMock(...a),
 }));
 
-// bktUpdate is a pure helper used by computeMasteryDeltas — leave it real.
+// bktPosterior (learner-model facade) is the pure helper used by
+// computeMasteryDeltas — leave it real (tracker E1/E3 consolidation).
 
 import {
   runQuizSubmitSideEffects,

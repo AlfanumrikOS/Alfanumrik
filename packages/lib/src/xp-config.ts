@@ -64,6 +64,24 @@ export const XP_RULES = {
   // Study plan — structured commitment
   study_task_complete: 8,    // Completing a study plan task
   study_plan_week: 40,       // Completing a full week of study plan
+
+  // ── Foxy North-Star Phase 3 — retention/recovery/independence/curiosity ──
+  // CEO approval A2, 2026-08-05 (full approval, no conditions). P2 invariant:
+  // these constants exist ONLY here; award paths reference XP_RULES.*.
+  //
+  // Economy sizing: the whole package caps at
+  //   20 (review) + 16 (remediation) + 30 (unhinted) + 5 (questions) = 71 XP/day
+  // vs the 200 XP/day quiz cap — retention and recovery are ACCENTS on the
+  // mastery economy, not a parallel economy. Values stay mastery-linked
+  // (U9: no XP for raw screen time; foxy_chat stays 0).
+  review_graded_xp: 2,               // Per SRS review graded (quality >= 3 path; award logic in grade flow)
+  review_graded_daily_cap: 20,       // = 10 rewarded reviews/day
+  remediation_recovered_xp: 8,       // Misconception recovered (remediation then correct on re-test)
+  remediation_recovered_daily_cap: 16, // = 2 recoveries/day
+  unhinted_mastery_bonus: 2,         // Correct with hint_level === 0 (independent work, D5/P8)
+  unhinted_mastery_daily_cap: 30,    // = 15 unhinted corrects/day
+  thoughtful_question_xp: 5,         // Server-classified thoughtful question to Foxy (NOT per message — U9)
+  thoughtful_question_daily_cap: 5,  // = 1/day; curiosity accent, un-grindable
 } as const;
 
 // ─── Level Calculation ────────────────────────────────────

@@ -292,6 +292,7 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
     case 'teacher.submission_reviewed':
     case 'teacher.grade_entry_set':
     case 'teacher.parent_message_sent':
+    case 'teacher.override':
       // Teacher-side admin events — not surfaced on learner-facing journey
       // (they describe teacher actions on classroom/student, not learner state
       // changes). Audit/notification subscribers consume these instead.
@@ -406,6 +407,14 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
       // learner milestone: the resolved action is surfaced as the live "what
       // next?" CTA, never as a timeline card. Mapping to `null` keeps the
       // resolver's high-frequency output off the journey.
+      return null;
+    case 'learner.transfer_evidence':
+      // D12 transfer evidence (Foxy North-Star Phase 3) — OBSERVABILITY-ONLY
+      // twin/graph signal produced by the build-twin-snapshots transfer step.
+      // Per the binding contract on the registry schema it MUST NOT feed any
+      // mastery surface and is not (yet) a learner-facing milestone; the
+      // canonical row is written by the record_transfer_evidence RPC. Mapping
+      // to `null` keeps it off the journey timeline.
       return null;
     default: {
       // Exhaustiveness check — the compiler errors here if a new event

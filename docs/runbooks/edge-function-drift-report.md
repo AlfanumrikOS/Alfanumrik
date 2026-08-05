@@ -293,3 +293,29 @@ predates its removal from the working tree). Permanent
 `supabase functions delete foxy-tutor` is deferred to the same 30-day clean
 observation window as the rest of the sweep — watch edge logs for
 `[foxy-tutor:tombstone]` hits before scheduling it.
+
+## Execution log — 2026-08-05 (cme-engine retirement, Foxy North-Star Phase 2 wave 2b)
+
+`cme-engine` was **tombstoned ON DISK** (structured
+`410 { error: 'gone', code: 'cme_engine_retired', replacement: '/api + learner-model facade' }`),
+following the quiz-generator-v2 precedent above.
+
+Pre-tombstone verification: fresh repo grep for `functions/v1/cme-engine` +
+`invoke('cme-engine')` across apps/, packages/, mobile/, supabase/functions/,
+vercel.json — the only two invokers were `processAdaptiveLearning()` and
+`getCmeNextAction()` in `packages/lib/src/supabase.ts`, both verified dead
+(the quiz page stopped calling processAdaptiveLearning when CME mastery moved
+server-side; getCmeNextAction had zero callers) and DELETED in the same PR.
+The write target `cme_concept_state` is COMMENT-tombstoned RETIRED (migration
+`20260808000100`); canonical state is `concept_mastery` via the
+`update_learner_state_post_quiz` RPC + `@alfanumrik/lib/learner-model` facade.
+
+**PENDING live steps (ops actions, post-merge — the tombstone is only on disk
+until these run):**
+1. `supabase functions deploy cme-engine` — ship the tombstone.
+2. `supabase functions list` — verify the deployed version bumped (never
+   assert deployed state from the filesystem — this runbook's core lesson).
+3. 30-day invocation-log watch: any 410 hit means an unknown caller; triage
+   before deletion.
+4. `supabase functions delete cme-engine --project-ref shktyoxqhundlvkiwguu`
+   only after a clean window.

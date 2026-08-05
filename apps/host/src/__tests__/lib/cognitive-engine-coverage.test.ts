@@ -1,13 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  // SM-2
-  sm2Update,
-  responseToQuality,
-  // IRT 3PL
-  estimateTheta,
-  irtProbCorrect,
-  // BKT (adaptive parameter branches)
-  bktUpdate,
   // Error classification
   classifyError,
   // Knowledge gap branches
@@ -24,9 +16,7 @@ import {
   classifyImageText,
   // Monthly report aggregator
   computeMonthlyReportMetrics,
-  type SM2Card,
   type BloomMastery,
-  type BKTParams,
   type ExamChapter,
   type TopicWeight,
   type CognitiveLoadState,
@@ -39,11 +29,16 @@ import {
  * src/lib/cognitive-engine.ts coverage from 65 → 80 across all 4 metrics.
  *
  * Targets the branches identified in vitest.config.ts TODO at line 83:
- *   - IRT 3PL Newton-Raphson convergence + max-iter + clamping
- *   - SM-2 schedule decay (n-th review path), EF floor, quality<3 reset
  *   - Error classification (slip vs guess) threshold edges
- *   - Adaptive BKT parameter branches
  *   - Quiz generator board/practice mode paths
+ *
+ * 2026-08-05 (tracker E1): the SM-2 / IRT 3PL / BKT describe blocks were
+ * deleted along with their cognitive-engine exports (sm2Update,
+ * responseToQuality, estimateTheta, irtProbCorrect, bktUpdate). The live
+ * algorithms are the update_learner_state_post_quiz SQL RPC (BKT + SM-2,
+ * mirrored by @alfanumrik/lib/learner-model) and
+ * packages/lib/src/irt/fisher-info.ts (IRT). The per-file coverage floor in
+ * vitest.config.ts was re-pinned against the post-deletion file.
  *   - Exam study plan + score prediction (1057-1265)
  *   - Image OCR classification heuristics (1294-1326)
  *   - Monthly report aggregator (1364-1397)
@@ -53,210 +48,6 @@ import {
  */
 
 // ─── IRT 3PL Newton-Raphson MLE ─────────────────────────────────
-
-describe('estimateTheta — Newton-Raphson convergence + clamping', () => {
-  it('converges within 10 iterations and clamps theta to [-4, 4] for all-correct on hard items', () => {
-    // 20 perfect responses on max difficulty should saturate theta near +4
-    const responses = Array(20).fill(null).map(() => ({
-      isCorrect: true,
-      difficulty: 5,
-    }));
-    const theta = estimateTheta(responses);
-    expect(theta).toBeLessThanOrEqual(4);
-    expect(theta).toBeGreaterThan(2); // should push high
-  });
-
-  it('clamps theta floor at -4 for all-incorrect on easy items (low-info path)', () => {
-    const responses = Array(20).fill(null).map(() => ({
-      isCorrect: false,
-      difficulty: 1,
-    }));
-    const theta = estimateTheta(responses);
-    expect(theta).toBeGreaterThanOrEqual(-4);
-    expect(theta).toBeLessThan(0);
-  });
-
-  it('honors custom discrimination parameter (a > 1.0)', () => {
-    const responses = [
-      { isCorrect: true, difficulty: 3, discrimination: 2.0 },
-      { isCorrect: true, difficulty: 4, discrimination: 2.0 },
-      { isCorrect: false, difficulty: 5, discrimination: 2.0 },
-    ];
-    const theta = estimateTheta(responses);
-    expect(theta).toBeGreaterThanOrEqual(-4);
-    expect(theta).toBeLessThanOrEqual(4);
-    expect(Number.isFinite(theta)).toBe(true);
-  });
-
-  it('honors custom guessing parameter (c > 0.25 raises floor on hard items)', () => {
-    const responsesHighGuess = [
-      { isCorrect: true, difficulty: 5, guessing: 0.5 },
-      { isCorrect: true, difficulty: 5, guessing: 0.5 },
-    ];
-    const theta = estimateTheta(responsesHighGuess);
-    expect(Number.isFinite(theta)).toBe(true);
-  });
-
-  it('handles empty response array without throwing', () => {
-    const theta = estimateTheta([]);
-    // With no responses infoSum is 0, the update branch is skipped
-    expect(theta).toBe(0);
-  });
-
-  it('handles single response gracefully (low-information path)', () => {
-    const theta = estimateTheta([{ isCorrect: true, difficulty: 3 }]);
-    expect(Number.isFinite(theta)).toBe(true);
-    expect(theta).toBeGreaterThanOrEqual(-4);
-    expect(theta).toBeLessThanOrEqual(4);
-  });
-
-  it('skips update step when info sum is below 0.001 threshold', () => {
-    // All items at extreme difficulty with theta drifting away → info collapses,
-    // exercising the `if (infoSum > 0.001)` false branch
-    const responses = Array(5).fill(null).map(() => ({
-      isCorrect: false,
-      difficulty: 1,
-      discrimination: 0.001, // tiny discrimination → info → 0
-    }));
-    const theta = estimateTheta(responses);
-    expect(Number.isFinite(theta)).toBe(true);
-  });
-});
-
-describe('irtProbCorrect — boundary behaviour', () => {
-  it('asymptotes to ~1 as theta → +∞', () => {
-    expect(irtProbCorrect(10, 1)).toBeGreaterThan(0.99);
-  });
-
-  it('asymptotes to the guessing parameter as theta → -∞', () => {
-    expect(irtProbCorrect(-10, 5, 1.0, 0.25)).toBeCloseTo(0.25, 2);
-  });
-
-  it('returns ~0.5 + (1-c)/2 ≈ 0.625 at b with default c=0.25', () => {
-    // At theta = b, the logistic returns 0.5, so p = c + (1-c)*0.5
-    // For difficulty=2 the mapped b = (2-2)*1.5 = 0, so theta=0 hits the inflection.
-    const p = irtProbCorrect(0, 2);
-    expect(p).toBeCloseTo(0.625, 2);
-  });
-});
-
-// ─── SM-2 Spaced Repetition — decay + edge cases ───────────────
-
-describe('sm2Update — schedule decay + reset paths', () => {
-  it('n-th review (repetitions ≥ 2) computes interval = round(prev * easeFactor)', () => {
-    // Drive a card to repetitions=2 then re-review to exercise the decay branch (line 174)
-    const fresh: SM2Card = { easeFactor: 2.5, interval: 0, repetitions: 0 };
-    const r1 = sm2Update(fresh, 5);   // interval 1, reps 1
-    const r2 = sm2Update(r1, 5);      // interval 6, reps 2
-    const r3 = sm2Update(r2, 4);      // interval = round(6 * EF) — exercises line 174
-
-    expect(r3.repetitions).toBe(3);
-    expect(r3.interval).toBe(Math.round(6 * r2.easeFactor));
-    expect(r3.interval).toBeGreaterThan(6);
-  });
-
-  it('quality < 3 resets interval to 1 and repetitions to 0 even after long history', () => {
-    const fresh: SM2Card = { easeFactor: 2.5, interval: 0, repetitions: 0 };
-    let card = fresh;
-    for (let i = 0; i < 5; i++) card = sm2Update(card, 5);
-    expect(card.repetitions).toBe(5);
-    expect(card.interval).toBeGreaterThan(6);
-
-    const failed = sm2Update(card, 2); // quality<3 reset path (lines 178-181)
-    expect(failed.repetitions).toBe(0);
-    expect(failed.interval).toBe(1);
-  });
-
-  it('quality=3 (hesitant correct) is treated as correct (interval=1 for fresh card)', () => {
-    const fresh: SM2Card = { easeFactor: 2.5, interval: 0, repetitions: 0 };
-    const r = sm2Update(fresh, 3);
-    expect(r.repetitions).toBe(1);
-    expect(r.interval).toBe(1);
-  });
-
-  it('EF floor of 1.3 is enforced regardless of starting EF', () => {
-    const lowEF: SM2Card = { easeFactor: 1.31, interval: 5, repetitions: 3 };
-    const failed = sm2Update(lowEF, 0);
-    expect(failed.easeFactor).toBeGreaterThanOrEqual(1.3);
-  });
-
-  it('EF rises after a perfect quality=5 (no ceiling enforced)', () => {
-    const card: SM2Card = { easeFactor: 2.5, interval: 6, repetitions: 2 };
-    const r = sm2Update(card, 5);
-    // EF' = 2.5 + 0.1 = 2.6 for q=5
-    expect(r.easeFactor).toBeCloseTo(2.6, 5);
-  });
-
-  it('rounded quality input means non-integer values are normalized', () => {
-    const fresh: SM2Card = { easeFactor: 2.5, interval: 0, repetitions: 0 };
-    const r1 = sm2Update(fresh, 4.4); // rounds to 4
-    const r2 = sm2Update(fresh, 4);
-    expect(r1.easeFactor).toBeCloseTo(r2.easeFactor, 6);
-  });
-});
-
-describe('responseToQuality — slow-but-correct branch', () => {
-  it('returns 3 for very slow correct (>1.5x avg) — slow branch (line 201)', () => {
-    expect(responseToQuality(true, 50, 20)).toBe(3);
-  });
-});
-
-// ─── BKT — adaptive parameter branches ─────────────────────────
-
-describe('bktUpdate — adaptive parameter branches', () => {
-  it('boosts pLearn when correct on already-known concept (pKnow > 0.7)', () => {
-    const params: BKTParams = { pKnow: 0.85, pLearn: 0.1, pGuess: 0.2, pSlip: 0.1 };
-    const result = bktUpdate(params, true);
-    // Hits line 892: pLearn += 0.01 (capped at 0.4)
-    expect(result.params.pLearn).toBeGreaterThan(0.1);
-    expect(result.params.pLearn).toBeLessThanOrEqual(0.4);
-  });
-
-  it('caps pLearn at 0.4 ceiling', () => {
-    const params: BKTParams = { pKnow: 0.85, pLearn: 0.4, pGuess: 0.2, pSlip: 0.1 };
-    const result = bktUpdate(params, true);
-    expect(result.params.pLearn).toBeLessThanOrEqual(0.4);
-  });
-
-  it('shrinks pLearn when incorrect on unknown concept (pKnow < 0.3)', () => {
-    const params: BKTParams = { pKnow: 0.2, pLearn: 0.1, pGuess: 0.2, pSlip: 0.1 };
-    const result = bktUpdate(params, false);
-    // Hits line 893: pLearn -= 0.01 (floored at 0.05)
-    expect(result.params.pLearn).toBeLessThan(0.1);
-    expect(result.params.pLearn).toBeGreaterThanOrEqual(0.05);
-  });
-
-  it('floors pLearn at 0.05', () => {
-    const params: BKTParams = { pKnow: 0.2, pLearn: 0.05, pGuess: 0.2, pSlip: 0.1 };
-    const result = bktUpdate(params, false);
-    expect(result.params.pLearn).toBeGreaterThanOrEqual(0.05);
-  });
-
-  it('raises pSlip when incorrect on highly-known concept (pKnow > 0.8)', () => {
-    const params: BKTParams = { pKnow: 0.9, pLearn: 0.1, pGuess: 0.2, pSlip: 0.1 };
-    const result = bktUpdate(params, false);
-    // Hits line 894: pSlip += 0.02 (capped at 0.3)
-    expect(result.params.pSlip).toBeGreaterThan(0.1);
-    expect(result.params.pSlip).toBeLessThanOrEqual(0.3);
-  });
-
-  it('caps pSlip at 0.3 ceiling', () => {
-    const params: BKTParams = { pKnow: 0.9, pLearn: 0.1, pGuess: 0.2, pSlip: 0.3 };
-    const result = bktUpdate(params, false);
-    expect(result.params.pSlip).toBeLessThanOrEqual(0.3);
-  });
-
-  it('floors pSlip at 0.02 on consecutive correct answers', () => {
-    let params: BKTParams = { pKnow: 0.5, pLearn: 0.1, pGuess: 0.2, pSlip: 0.02 };
-    for (let i = 0; i < 10; i++) {
-      const result = bktUpdate(params, true);
-      params = result.params;
-    }
-    expect(params.pSlip).toBeGreaterThanOrEqual(0.02);
-  });
-});
-
-// ─── Error Classification — slip / guess / threshold edges ─────
 
 describe('classifyError — threshold edge cases', () => {
   it('responseTime exactly 3 seconds counts as careless (boundary inclusive)', () => {

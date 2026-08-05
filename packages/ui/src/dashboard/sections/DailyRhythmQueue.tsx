@@ -31,6 +31,16 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { trackDashboardCta } from '@alfanumrik/lib/posthog/dashboard-cta';
+// F3 (Foxy North-Star Phase 0): the SRS lane links to /quiz?mode=srs, which
+// serves due spaced_repetition_cards. The RAW due-cards read now comes from
+// /api/learner/srs/due (RLS-scoped, applies the shared SRS-due predicate in
+// packages/lib/src/learn/srs-predicate.ts — same predicate the quiz page
+// uses via fetchSrsDueQuizCards, so lane count and quiz content agree by
+// construction). The single-subject/dedupe selection stays client-side via
+// selectSrsReviewSet so this component and the quiz page use IDENTICAL
+// selection logic. Full store unification is Phase 3. This component no
+// longer imports the supabase browser client — enforced by construction.
+import { selectSrsReviewSet, type SrsDueCard } from '@alfanumrik/lib/learn/srs-quiz-review';
 
 interface RhythmItem {
   kind: 'srs_review' | 'zpd_problem' | 'reflection' | 'remediation_review' | 'blocked_prerequisite';
@@ -60,10 +70,54 @@ interface RhythmQueue {
 }
 
 export default function DailyRhythmQueue() {
-  const { isHi } = useAuth();
+  const { isHi, student } = useAuth() as {
+    isHi: boolean;
+    student?: { id: string } | null;
+  };
   const [queue, setQueue] = useState<RhythmQueue | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // F3: due spaced_repetition_cards count for the SRS lane. null = not
+  // loaded / failed → the lane falls back to the legacy srs.length count.
+  const [srsDueCount, setSrsDueCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!student?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        // /api/learner/srs/due is auth-gated (progress.view_own,
+        // requireStudentId) and applies the shared SRS-due predicate over
+        // the RLS server client. `?withItems=1` returns the earliest-due
+        // rows so we can apply selectSrsReviewSet (single subject, deduped
+        // question ids, capped at 5) — the SAME selection the /quiz?mode=srs
+        // deep link uses. Only the resulting count is displayed.
+        const res = await fetch('/api/learner/srs/due?withItems=1', { credentials: 'same-origin' });
+        if (!res.ok) {
+          if (!cancelled) setSrsDueCount(null); // fail-soft → legacy count
+          return;
+        }
+        const body = (await res.json()) as {
+          success?: boolean;
+          count?: number;
+          items?: Array<{ id: string; sourceId: string | null; subject: string | null }>;
+        };
+        // Map API shape (camelCase sourceId) → SrsDueCard shape (snake_case
+        // source_id) so selectSrsReviewSet reads the same fields it reads
+        // from the shared client-side fetcher.
+        const cards: SrsDueCard[] = (body.items ?? []).map((r) => ({
+          id: r.id,
+          source_id: r.sourceId,
+          subject: r.subject,
+        }));
+        const reviewSet = selectSrsReviewSet(cards, { cap: 5 });
+        if (!cancelled) setSrsDueCount(reviewSet.questionIds.length);
+      } catch {
+        if (!cancelled) setSrsDueCount(null); // fail-soft → legacy count
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [student?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +192,7 @@ export default function DailyRhythmQueue() {
     <RhythmQueueBody
       isHi={isHi}
       srs={srs}
+      srsDueCount={srsDueCount}
       zpd={zpd}
       remediation={remediation}
       blockedPrerequisite={blockedPrerequisite}
@@ -150,6 +205,8 @@ export default function DailyRhythmQueue() {
 interface RhythmQueueBodyProps {
   isHi: boolean;
   srs: RhythmItem[];
+  /** F3: due spaced_repetition_cards count (0-5); null → fall back to srs.length. */
+  srsDueCount: number | null;
   zpd: RhythmItem | undefined;
   remediation: RhythmItem[];
   blockedPrerequisite: RhythmItem[];
@@ -167,7 +224,7 @@ interface SynthesisStateLite {
   daysSinceCreated: number;
 }
 
-function RhythmQueueBody({ isHi, srs, zpd, remediation, blockedPrerequisite, reflection, reflectionText }: RhythmQueueBodyProps) {
+function RhythmQueueBody({ isHi, srs, srsDueCount, zpd, remediation, blockedPrerequisite, reflection, reflectionText }: RhythmQueueBodyProps) {
   const [diveState, setDiveState] = useState<DiveStateLite | null>(null);
   const [synthesisState, setSynthesisState] = useState<SynthesisStateLite | null>(null);
   const [reflOpen, setReflOpen] = useState(false);
@@ -256,7 +313,13 @@ function RhythmQueueBody({ isHi, srs, zpd, remediation, blockedPrerequisite, ref
           <span className="flex-1 text-sm font-semibold text-purple-900">
             {isHi ? 'स्पेस्ड रिव्यू' : 'Spaced reviews'}
             {' · '}
-            <span className="font-bold">{srs.length}/5</span>
+            {/* F3: count from the SAME due-cards store the /quiz?mode=srs
+                link serves (spaced_repetition_cards), not concept_mastery.
+                Falls back to the legacy queue-item count while loading or
+                on failure. */}
+            <span className="font-bold" data-testid="rhythm-srs-count">
+              {Math.min(srsDueCount ?? srs.length, 5)}/5
+            </span>
           </span>
           <Link
             href="/quiz?mode=srs"

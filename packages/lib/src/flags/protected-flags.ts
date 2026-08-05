@@ -136,10 +136,16 @@ const STAGED_ROLLOUT: FlagProtection = {
 
 const IRT_DORMANT: FlagProtection = {
   tier: 'staged_rollout',
+  // F9 correction (2026-08-05, Foxy North-Star Phase 0): the old text said
+  // "Do not enable until calibration data exists" — self-contradictory,
+  // because the nightly /api/cron/irt-calibrate cron (02:50 UTC, REG-44) HAS
+  // been writing question_bank.irt_a/irt_b. The real gate is the Phase-3
+  // shadow evaluation, not data existence. DB row updated in lockstep by
+  // migration 20260805100300_update_ff_irt_protected_reason.sql.
   reason:
-    'Dormant by design ("off until IRT calibration accumulates" — Foxy moat plan / constitution). Do not enable until calibration data exists.',
+    'Calibration runs nightly (irt-calibrate cron). Enable only after the Phase-3 shadow evaluation gate passes (see docs/superpowers/specs/2026-08-05-foxy-north-star-alignment-design.md, E2) — cohort rollout with kill switch.',
   reasonHi:
-    'डिज़ाइन से निष्क्रिय ("IRT कैलिब्रेशन जमा होने तक OFF" — Foxy moat plan)। कैलिब्रेशन डेटा बनने तक सक्षम न करें।',
+    'कैलिब्रेशन हर रात चलता है (irt-calibrate cron)। केवल Phase-3 shadow evaluation gate पास होने के बाद ही सक्षम करें (देखें docs/superpowers/specs/2026-08-05-foxy-north-star-alignment-design.md, E2) — kill switch के साथ cohort rollout।',
 };
 
 const PYTHON_ENVELOPE: FlagProtection = {

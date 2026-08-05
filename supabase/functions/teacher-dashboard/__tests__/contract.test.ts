@@ -174,7 +174,10 @@ Deno.test('teacher-dashboard contract 3: unknown/empty action → 400 (not silen
 Deno.test('teacher-dashboard action module exposes auth, tenant, audit and metric labels for every public action', async () => {
   const { teacherDashboardActionNames, teacherDashboardActions } = await import('../actions.ts');
   const switchActions = [...HANDLER.matchAll(/case '([^']+)'/g)].map((match) => match[1]);
-  assertEquals(teacherDashboardActionNames, switchActions);
+  // Cast to a mutable string[] view — the runtime deep-equal is what pins the
+  // contract; Deno's stricter tuple type would otherwise refuse a plain
+  // string[] on the RHS.
+  assertEquals([...teacherDashboardActionNames], switchActions);
   for (const name of teacherDashboardActionNames) {
     const action = teacherDashboardActions[name];
     assertEquals(action.name, name);

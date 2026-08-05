@@ -1,6 +1,24 @@
 'use client';
 
+/**
+ * /school-admin/reports — Academic Reports page.
+ *
+ * TABS: School Overview · Class Performance · Student Detail · Subject Gaps ·
+ *       Leadership (Foxy North-Star K9)
+ *
+ * P10 FOLD-IN (2026-08-05, quality-gate blocker): the leadership dashboard was
+ * originally a standalone route at /school-admin/leadership; new routes under
+ * the school-admin shell cannot fit the 260 kB per-page cap (the shell alone
+ * exceeds it). Following the Phase 1 safeguarding-queue precedent, the
+ * dashboard was folded into this grandfathered `reports` page as a 5th tab,
+ * dynamic-imported so it stays out of the host page's first-load chunk set.
+ * The standalone route dir was deleted. Deep-link: ?tab=leadership.
+ * See ./LeadershipTab.tsx and the escalations/page.tsx header for the same
+ * pattern applied to safeguarding.
+ */
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
@@ -28,6 +46,19 @@ import {
 } from '@alfanumrik/ui/admin-ui';
 import { LineChart, BarChart, type ChartSeries } from '@alfanumrik/ui/admin-ui/charts';
 
+/* Dynamic-imported so the Leadership content stays out of this route's
+   first-load chunk set (P10 fold-in — see the header comment). */
+const LeadershipTab = dynamic(() => import('./LeadershipTab'), {
+  ssr: false,
+  loading: () => (
+    <div
+      className="h-32 rounded-2xl animate-pulse"
+      style={{ background: 'var(--surface-2)' }}
+      aria-hidden="true"
+    />
+  ),
+});
+
 /* ─────────────────────────────────────────────────────────────
    BILINGUAL HELPER (P7)
 ───────────────────────────────────────────────────────────── */
@@ -38,7 +69,12 @@ function t(isHi: boolean, en: string, hi: string): string {
 /* ─────────────────────────────────────────────────────────────
    TYPES
 ───────────────────────────────────────────────────────────── */
-type ReportTab = 'school_overview' | 'class_performance' | 'student_detail' | 'subject_gaps';
+type ReportTab =
+  | 'school_overview'
+  | 'class_performance'
+  | 'student_detail'
+  | 'subject_gaps'
+  | 'leadership';
 
 interface SubjectPerformance {
   subject: string;
@@ -141,6 +177,9 @@ const TABS: { key: ReportTab; labelEn: string; labelHi: string }[] = [
   { key: 'class_performance', labelEn: 'Class Performance', labelHi: 'कक्षा प्रदर्शन' },
   { key: 'student_detail', labelEn: 'Student Detail', labelHi: 'छात्र विवरण' },
   { key: 'subject_gaps', labelEn: 'Subject Gaps', labelHi: 'विषय अंतर' },
+  // P10 fold-in (2026-08-05): the K9 leadership dashboard lives here as a
+  // dynamic-imported tab (see LeadershipTab.tsx). Deep-link: ?tab=leadership.
+  { key: 'leadership', labelEn: 'Leadership', labelHi: 'नेतृत्व' },
 ];
 
 const GRADE_VALUES = ['6', '7', '8', '9', '10', '11', '12'] as const;
@@ -213,6 +252,23 @@ export default function SchoolAdminReportsPage() {
 
   /* ── Tab state ── */
   const [activeTab, setActiveTab] = useState<ReportTab>('school_overview');
+
+  /* Deep-link: ?tab=<key> (used by the Leadership nav entry and any future
+     entry). Read once on mount — window is client-only, and reading it in an
+     effect avoids a useSearchParams() Suspense boundary. Mirrors the pattern
+     used by the folded safeguarding tab on /school-admin/escalations. */
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (
+      t === 'school_overview' ||
+      t === 'class_performance' ||
+      t === 'student_detail' ||
+      t === 'subject_gaps' ||
+      t === 'leadership'
+    ) {
+      setActiveTab(t);
+    }
+  }, []);
 
   /* ── Data state for each tab ── */
   const [overviewData, setOverviewData] = useState<SchoolOverviewData | null>(null);
@@ -1225,6 +1281,7 @@ export default function SchoolAdminReportsPage() {
         {activeTab === 'class_performance' && renderClassPerformance()}
         {activeTab === 'student_detail' && renderStudentDetail()}
         {activeTab === 'subject_gaps' && renderSubjectGaps()}
+        {activeTab === 'leadership' && <LeadershipTab />}
       </div>
     </>
   );
