@@ -16,8 +16,17 @@ import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import QuizSetup from '@alfanumrik/ui/quiz/QuizSetup';
 // Foxy North-Star Phase 3 (L5/E5) — 5-rung hint ladder + prereq warm-up card.
-import HintLadder from '@alfanumrik/ui/quiz/HintLadder';
-import PrereqSuggestion from '@alfanumrik/ui/quiz/PrereqSuggestion';
+// P10: dynamic-imported (ssr:false, null loading) — conditional-render surfaces
+// (HintLadder mounts only after a wrong answer; PrereqSuggestion mounts only
+// when the API returns a suggestion), so lazy load is behaviorally invisible.
+const HintLadder = dynamic(
+  () => import('@alfanumrik/ui/quiz/HintLadder').then((m) => m.default),
+  { ssr: false, loading: () => null },
+);
+const PrereqSuggestion = dynamic(
+  () => import('@alfanumrik/ui/quiz/PrereqSuggestion').then((m) => m.default),
+  { ssr: false, loading: () => null },
+);
 import FeedbackOverlay from '@alfanumrik/ui/quiz/FeedbackOverlay';
 // D6 (Foxy North-Star Phase 2) — sampled, non-blocking 1-tap confidence
 // prompt shown AFTER the answer is confirmed (P3 timing untouched).

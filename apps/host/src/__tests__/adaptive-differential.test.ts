@@ -803,18 +803,44 @@ describe('Section 5c — quiz page adaptive deep links (?qid= / ?mode=srs): fire
     // 2026-08-05 (Foxy North-Star Phase 0, F3): the raw due-card query moved
     // OUT of the page into the SHARED helper
     // packages/lib/src/learn/srs-quiz-review.ts so the dashboard lane COUNT
-    // and this quiz's CONTENT agree by construction. The pin now asserts
-    // (a) the page goes through the helper, and (b) the helper keeps the
-    // exact due-card predicates the old inline query enforced.
+    // and this quiz's CONTENT agree by construction.
+    //
+    // Phase 3 E4 (REG-358, SRS single predicate): the SQL predicate then moved
+    // one layer deeper into packages/lib/src/learn/srs-predicate.ts
+    // (buildSrsDueQuery) so the browser client, RLS server, and cron paths
+    // cannot drift apart. srs-quiz-review.ts now delegates to buildSrsDueQuery
+    // and does not itself carry the `.eq/.not/.lte` chain — the raw query
+    // shape is enforced ONE level below. The pin therefore asserts:
+    //   (a) the page goes through the shared helpers (fetchSrsDueQuizCards +
+    //       selectSrsReviewSet), and
+    //   (b) srs-quiz-review.ts either still carries the predicate chain OR
+    //       imports the buildSrsDueQuery helper (Phase 3 E4 shape), and
+    //   (c) the predicate itself (in whichever module owns it) keeps the exact
+    //       due-card `.eq/.not/.lte` predicates the old inline query enforced.
     expect(code).toMatch(/fetchSrsDueQuizCards\(/);
     expect(code).toMatch(/selectSrsReviewSet\(/);
-    const helperCode = codeOnly(
+    const reviewCode = codeOnly(
       readSource('../../packages/lib/src/learn/srs-quiz-review.ts'),
     );
-    expect(helperCode).toMatch(/\.eq\('source', 'quiz_wrong_answer'\)/);
-    expect(helperCode).toMatch(/\.not\('source_id', 'is', null\)/);
-    expect(helperCode).toMatch(/\.eq\('is_active', true\)/);
-    expect(helperCode).toMatch(/\.lte\('next_review_date',/);
+    // Either the helper carries the raw chain, or it imports Phase 3 E4's
+    // single predicate source. Same-file assertion (importing OR inlining).
+    const reviewImportsBuilder = /from '\.\/srs-predicate'/.test(reviewCode) &&
+      /buildSrsDueQuery|fetchSrsDueQuizCards|selectSrsReviewSet/.test(reviewCode);
+    const reviewHasChain =
+      /\.eq\('source', 'quiz_wrong_answer'\)/.test(reviewCode) &&
+      /\.not\('source_id', 'is', null\)/.test(reviewCode) &&
+      /\.eq\('is_active', true\)/.test(reviewCode) &&
+      /\.lte\('next_review_date',/.test(reviewCode);
+    expect(reviewImportsBuilder || reviewHasChain).toBe(true);
+    // Whichever module owns the predicate, the raw `.eq/.not/.lte` chain must
+    // be present there — pins the actual query shape a client sends.
+    const predicateSrc = reviewImportsBuilder
+      ? codeOnly(readSource('../../packages/lib/src/learn/srs-predicate.ts'))
+      : reviewCode;
+    expect(predicateSrc).toMatch(/\.eq\('source', 'quiz_wrong_answer'\)/);
+    expect(predicateSrc).toMatch(/\.not\('source_id', 'is', null\)/);
+    expect(predicateSrc).toMatch(/\.eq\('is_active', true\)/);
+    expect(predicateSrc).toMatch(/\.lte\('next_review_date',/);
   });
 });
 
@@ -865,10 +891,31 @@ describe('Section 5d — ghost-column repoint: concept_mastery due reads use nex
 describe('Section 5e — learner-loop due count reads the LIVE spaced_repetition_cards table', () => {
   it('buildLoopAugmentation counts spaced_repetition_cards (is_active), never the nonexistent review_cards', () => {
     const code = codeOnly(readSource('../../packages/lib/src/state/learner-loop/resolve-next-action.ts'));
-    expect(code).toMatch(/\.from\('spaced_repetition_cards'\)/);
-    expect(code).toMatch(/\.eq\('is_active', true\)/);
+    // REG-358 (Phase 3 E4, SRS single read adapter): the inline
+    // spaced_repetition_cards count moved OUT of buildLoopAugmentation and
+    // into the ONE srs-source adapter (packages/lib/src/learn/srs-source.ts →
+    // domains/practice.ts) so the predicate cannot drift per-reader again.
+    // resolve-next-action.ts now delegates via `getDueCount(studentId)`.
+    // The pin therefore accepts EITHER the historical direct read shape OR
+    // the imported adapter helper (same-file assertion), and asserts the
+    // spaced_repetition_cards + is_active=true predicate wherever it lives.
+    const usesAdapter = /getDueCount\(/.test(code) &&
+      /from '\.\.\/\.\.\/learn\/srs-source'/.test(code);
+    const hasDirectRead =
+      /\.from\('spaced_repetition_cards'\)/.test(code) &&
+      /\.eq\('is_active', true\)/.test(code);
+    expect(usesAdapter || hasDirectRead).toBe(true);
     // The ghost table (never existed — its read always errored → dueCount 0 →
     // the review branch was permanently dead) must not come back.
     expect(code).not.toMatch(/from\('review_cards'\)/);
+    // When delegating, the adapter's chain must carry the exact predicate.
+    if (usesAdapter) {
+      const practiceCode = codeOnly(
+        readSource('../../packages/lib/src/domains/practice.ts'),
+      );
+      expect(practiceCode).toMatch(/\.from\('spaced_repetition_cards'\)/);
+      expect(practiceCode).toMatch(/\.eq\('is_active', true\)/);
+      expect(practiceCode).not.toMatch(/from\('review_cards'\)/);
+    }
   });
 });

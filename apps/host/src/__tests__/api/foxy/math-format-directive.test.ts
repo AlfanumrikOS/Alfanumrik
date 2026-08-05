@@ -486,8 +486,12 @@ describe('MATH_FORMAT_DIRECTIVE lives OUTSIDE the parity-locked prompt + safety 
 describe('quality-eval rubric v2 — scaffold_fidelity gains the 3 math-format criteria, JSON contract unchanged', () => {
   const judgePrompt = buildJudgeSystemPrompt();
 
-  it("RUBRIC_VERSION is 'v2'", () => {
-    expect(RUBRIC_VERSION).toBe('v2');
+  it("RUBRIC_VERSION is 'v3'", () => {
+    // REG-357 (Phase 3 quality-eval v3, 2026-08-05): v2 -> v3 bump. The judge
+    // gained a 5th dimension `question_depth` that scores the STUDENT's question
+    // and is excluded from overallScore (gates the thoughtful_question XP signal
+    // for the North-Star question-depth metric). Composite weights unchanged.
+    expect(RUBRIC_VERSION).toBe('v3');
   });
 
   it('(a) display blocks: derivations + tall/stacked math must be standalone display equations, not prose', () => {
@@ -528,22 +532,32 @@ describe('quality-eval rubric v2 — scaffold_fidelity gains the 3 math-format c
     expect(ageIdx).toBeGreaterThan(mathIdx);
   });
 
-  it('the judge JSON output contract is UNCHANGED — exactly the 4 score keys + notes', () => {
-    expect(judgePrompt).toContain('FOUR dimensions');
+  it('the judge JSON output contract carries the 5 rubric v3 score keys + notes', () => {
+    // REG-357 (Phase 3 quality-eval v3): the prompt now instructs the judge to
+    // "Score FIVE dimensions" — 4 that score Foxy + question_depth that scores
+    // the student. question_depth is emitted alongside the other 4 keys but is
+    // EXCLUDED from overallScore (composite weights unchanged).
+    expect(judgePrompt).toContain('Score FIVE');
     expect(judgePrompt).toContain('"accuracy": <int 0-100>');
     expect(judgePrompt).toContain('"scaffold_fidelity": <int 0-100>');
     expect(judgePrompt).toContain('"age_appropriateness": <int 0-100>');
     expect(judgePrompt).toContain('"cbse_scope": <int 0-100>');
+    expect(judgePrompt).toContain('"question_depth": <int 0-100>');
     expect(judgePrompt).toContain('"notes"');
   });
 
-  it('parseJudgeJson still accepts the 4-key contract and rejects a missing dimension', () => {
+  it('parseJudgeJson accepts the v3 5-key contract and rejects a missing dimension', () => {
+    // REG-357 (Phase 3 quality-eval v3): all 5 dims (accuracy, scaffold_fidelity,
+    // age_appropriateness, cbse_scope, question_depth) are required. Dropping any
+    // one voids the contract (null — the caller treats it as "couldn't score",
+    // never fake values). question_depth is stored but excluded from overallScore.
     const parsed = parseJudgeJson(
       JSON.stringify({
         accuracy: 92,
         scaffold_fidelity: 81,
         age_appropriateness: 88,
         cbse_scope: 75,
+        question_depth: 60,
         notes: 'scaffold: inline soup in step 2',
       }),
     );
@@ -552,17 +566,27 @@ describe('quality-eval rubric v2 — scaffold_fidelity gains the 3 math-format c
       scaffold_fidelity: 81,
       age_appropriateness: 88,
       cbse_scope: 75,
+      question_depth: 60,
       notes: 'scaffold: inline soup in step 2',
     });
-    // Dropping any one of the 4 score keys voids the contract (null — the
-    // caller treats it as "couldn't score", never fake values).
-    const { cbse_scope: _dropped, ...threeKeys } = {
+    // Dropping any one of the 5 score keys voids the contract.
+    const { cbse_scope: _dropped, ...fourKeys } = {
       accuracy: 92,
       scaffold_fidelity: 81,
       age_appropriateness: 88,
       cbse_scope: 75,
+      question_depth: 60,
     };
-    expect(parseJudgeJson(JSON.stringify(threeKeys))).toBeNull();
+    expect(parseJudgeJson(JSON.stringify(fourKeys))).toBeNull();
+    // Also proves the NEW required key is enforced (dropping question_depth alone).
+    const { question_depth: _qd, ...fourWithoutDepth } = {
+      accuracy: 92,
+      scaffold_fidelity: 81,
+      age_appropriateness: 88,
+      cbse_scope: 75,
+      question_depth: 60,
+    };
+    expect(parseJudgeJson(JSON.stringify(fourWithoutDepth))).toBeNull();
   });
 });
 

@@ -20,7 +20,10 @@ describe('API ownership routing guardrails', () => {
   });
 
   it('keeps Foxy frontend chat on the canonical tutor path', () => {
-    const hook = source('src/app/foxy/_hooks/useFoxyChat.ts');
+    // Phase 4 U1: the hook moved to packages/ui/src/foxy-panel/useFoxyChat.ts;
+    // apps/host/src/app/foxy/_hooks/useFoxyChat.ts is a 2-line re-export stub.
+    // Pin the canonical file location so the assertion follows the source of truth.
+    const hook = source('../../packages/ui/src/foxy-panel/useFoxyChat.ts');
     const legacy = /functions\/v1\/(grounded-answer|alfabot-answer)/;
 
     expect(hook).toContain("fetch('/api/foxy'");

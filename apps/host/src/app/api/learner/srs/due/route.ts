@@ -7,7 +7,7 @@
  * so client components can obtain the count without importing the browser
  * supabase client into their module graph AND without ever reaching for
  * service-role code (P8). The srs-source adapter is server-only because it
- * delegates to domains/practice → supabaseAdmin; this route is its
+ * delegates to domains/practice → the service-role client; this route is its
  * client-consumer sibling for the specific quiz-wrong-answer lane.
  *
  * Contract:

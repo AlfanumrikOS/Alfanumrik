@@ -206,6 +206,15 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'teacher_remediation_assignments::teacher_remediation_assignments_teacher_insert',
   'teacher_remediation_assignments::teacher_remediation_assignments_teacher_select',
   'teacher_remediation_assignments::teacher_remediation_assignments_teacher_update',
+  // REG-363 (K5 draft quarantine, migration 20260813000004_teacher_assignment_drafts.sql):
+  // teacher_assignment_drafts_teacher_own_all is a single-teacher-own-rows FOR ALL policy
+  // whose USING/WITH CHECK inline `teacher_id IN (SELECT id FROM public.teachers
+  // WHERE auth_user_id = auth.uid())`. This is the same reviewed same-table ownership
+  // subquery pattern already grandfathered on teacher_remediation_assignments and matches
+  // the Phase 1 safeguarding template — teachers is a parent boundary table that does NOT
+  // read teacher_assignment_drafts back, so no live recursion cycle can form. Frozen here
+  // as defensive debt. Ledger: 222 -> 223.
+  'teacher_assignment_drafts::teacher_assignment_drafts_teacher_own_all',
   // ── original quoted-name baseline (214) ──
   'academic_terms::academic_terms_authenticated_select',
   'academic_terms::academic_terms_school_admin_insert',
@@ -719,8 +728,14 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // is_active guard) — the same reviewed, accepted pattern, not a new risk
     // class: 221 → 222. This pins the number so any drift (up = new
     // violation, down = un-pruned ledger) trips a guard above.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(222);
-    expect(detectedRiskKeys().length).toBe(222);
+    // REG-363 (K5 draft quarantine, 2026-08-13): the new
+    // teacher_assignment_drafts_teacher_own_all policy inlines the same reviewed
+    // same-table teacher-ownership subquery pattern as the already-grandfathered
+    // teacher_remediation_assignments_teacher_* policies (see the ledger comment
+    // above). Not a new risk class, and structurally non-recursive (teachers does
+    // not read teacher_assignment_drafts back). Ledger: 222 -> 223.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(223);
+    expect(detectedRiskKeys().length).toBe(223);
   });
 });
 

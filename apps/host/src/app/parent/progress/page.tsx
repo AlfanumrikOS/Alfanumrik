@@ -20,14 +20,21 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { useParentChildScope } from '@alfanumrik/lib/parent/use-parent-child-scope';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
-import { ConversationPromptsCard } from '@alfanumrik/ui/parent/ConversationPromptsCard';
 import {
   readParentChildId,
 } from '../_components/parent-child-scope';
 
+// P10: dynamic-imported (ssr:false, null loading) — both cards are conditional
+// (ConversationPromptsCard mounts only when the weekly report carries prompts;
+// ParentShareCard mounts only when a monthly synthesis exists), so lazy load
+// is behaviorally invisible.
+const ConversationPromptsCard = dynamic(
+  () => import('@alfanumrik/ui/parent/ConversationPromptsCard').then((m) => m.ConversationPromptsCard),
+  { ssr: false, loading: () => null },
+);
 const ParentShareCard = dynamic(
   () => import('@alfanumrik/ui/synthesis/ParentShareCard').then((m) => m.default ?? m),
-  { ssr: false },
+  { ssr: false, loading: () => null },
 );
 
 const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
