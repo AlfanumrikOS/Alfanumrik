@@ -319,11 +319,14 @@ export default function StudentOSDashboard() {
           />
         </div>
 
-        {/* 2. Mastery snapshot — repeated in the content column on mobile
-            (the rail is hidden below tablet), hidden on tablet+ where the rail
-            shows it. CSS handles the visibility so there's no duplicate render
-            cost beyond markup. */}
-        <div className="student-os-snapshot-inline lg:hidden">
+        {/* 2. Mastery snapshot — repeated in the content column on mobile,
+            hidden from tablet up where AppShell's rail shows it instead.
+            The rail appears at `min-width: 768px` (globals.css), so this must
+            hide at Tailwind `md`, NOT `lg`. It previously hid at `lg:hidden`
+            (1024px), which rendered MasterySnapshot TWICE at 768-1023px.
+            Note: `student-os-snapshot-inline` has no CSS rule anywhere — it
+            is a markup hook only, so the Tailwind class is the sole control. */}
+        <div className="student-os-snapshot-inline md:hidden">
           <MasterySnapshot isHi={isHi} studentId={student.id} />
         </div>
 
@@ -331,8 +334,12 @@ export default function StudentOSDashboard() {
              a 'Coming Soon' teaser when flag is OFF, full prediction when ON). */}
         <BoardScoreWidget isHi={isHi} studentId={student.id} />
 
-        {/* 4. Revision rail — inline on mobile/tablet, in the aside on desktop. */}
-        <div className="student-os-revision-inline xl:hidden">
+        {/* 4. Revision rail — inline on mobile/tablet, in the aside on desktop.
+            AppShell's aside appears at `min-width: 1024px` (globals.css), so
+            this must hide at Tailwind `lg`, NOT `xl`. It previously hid at
+            `xl:hidden` (1280px), which rendered RevisionRail TWICE at
+            1024-1279px. */}
+        <div className="student-os-revision-inline lg:hidden">
           <RevisionRail isHi={isHi} studentId={student.id} />
         </div>
 

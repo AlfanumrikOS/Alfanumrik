@@ -76,13 +76,17 @@ describe('parent calendar live events', () => {
   it('uses the linked URL child and renders live school events without an expired board countdown', async () => {
     render(<ParentCalendarPage />);
 
-    expect(await screen.findByText(/Final Assessment/)).toBeInTheDocument();
+    // Generous timeout, not the 1000 ms default: this render awaits TWO chained
+    // fetches (children list -> calendar), and under full-suite CPU contention
+    // that chain has exceeded 1 s and failed here while passing in isolation.
+    // The assertion itself is unchanged — only the wait budget.
+    expect(await screen.findByText(/Final Assessment/, undefined, { timeout: 8000 })).toBeInTheDocument();
     expect(screen.queryByText(/CBSE Board Exam/i)).not.toBeInTheDocument();
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
         expect.stringContaining('student_id=student-2'),
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
-    });
+    }, { timeout: 8000 });
   });
 });
