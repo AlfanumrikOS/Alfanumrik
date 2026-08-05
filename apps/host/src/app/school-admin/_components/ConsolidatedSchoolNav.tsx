@@ -193,6 +193,14 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
         subtitle: 'Printable summary for the board',
         subtitleHi: 'बोर्ड के लिए प्रिंट योग्य सारांश',
       },
+      // P10 fold-in (2026-08-05): the K9 leadership dashboard lives as a tab of
+      // the grandfathered /school-admin/reports page (a standalone route
+      // exceeded the 260 kB per-page cap — the school-admin shell alone
+      // exceeds it). Same pattern as the Safeguarding tab below. NOTE:
+      // activeHref matching is pathname-based, so this query-string item never
+      // highlights on its own; the Academic Reports item highlights for both
+      // tabs.
+      { href: '/school-admin/reports?tab=leadership', label: 'Leadership', labelHi: 'नेतृत्व', icon: '⊕' },
       { href: '/school-admin/announcements', label: 'Announcements', labelHi: 'घोषणाएँ', icon: '⊜', moduleKey: 'communication' },
       // T13 — teacher-> school-admin escalation visibility (RCA follow-up).
       // Read-only list; ungated (no module/rbac restriction) so every admin

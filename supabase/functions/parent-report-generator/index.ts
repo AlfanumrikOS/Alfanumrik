@@ -136,6 +136,14 @@ interface WeeklyReport {
   highlights: string[]
   concerns: string[]
   suggestion: string
+  /**
+   * K8 (Foxy North-Star Phase 5): 0..3 short questions the parent can ask
+   * their child, phrased for a PARENT (not a teacher), referring to actual
+   * topics from the week. Optional so an older-EF response still parses.
+   * The parent renderer validates against the zod schema in
+   * `packages/lib/src/parent/weekly-report-schema.ts` before rendering.
+   */
+  conversation_prompts?: string[]
   stats: {
     quizzes_completed: number
     avg_score: number
@@ -428,11 +436,40 @@ function buildFallbackReport(stats: WeeklyStats, language: string, studentName: 
           ? 'शानदार प्रगति! बच्चे की मेहनत की सराहना करें'
           : 'Great progress! Appreciate your child\'s effort and consistency')
 
+  // K8 (Foxy North-Star Phase 5): deterministic 2-prompt template — pulls
+  // from real per-week data (topics mastered / subjects studied) so the
+  // parent has grounded questions even on the fallback path.
+  const conversationPrompts: string[] = []
+  if (stats.mastery_gained.length > 0) {
+    const topic = stats.mastery_gained[0]
+    conversationPrompts.push(
+      isHi
+        ? `${topic} पर इस हफ्ते जो सीखा, वो अपनी भाषा में बताओगे?`
+        : `Can you tell me in your own words what you learned about ${topic} this week?`,
+    )
+  }
+  if (stats.subjects.length > 0) {
+    const subject = stats.subjects[0]
+    conversationPrompts.push(
+      isHi
+        ? `${subject} में इस हफ्ते सबसे कठिन क्या लगा?`
+        : `What was the trickiest part of ${subject} for you this week?`,
+    )
+  }
+  if (conversationPrompts.length === 0) {
+    conversationPrompts.push(
+      isHi
+        ? `इस हफ्ते Alfanumrik पर क्या पढ़ाई की — कुछ नया सीखा?`
+        : `What did you work on in Alfanumrik this week — anything new you enjoyed?`,
+    )
+  }
+
   return {
     period,
     highlights: highlights.slice(0, 4),
     concerns: concerns.slice(0, 2),
     suggestion,
+    conversation_prompts: conversationPrompts.slice(0, 3),
     stats: {
       quizzes_completed: stats.quizzes_completed,
       avg_score: stats.avg_score,
@@ -481,12 +518,18 @@ INSTRUCTIONS:
 4. Tone: warm, encouraging, no educational jargon
 5. Keep each point to 1 sentence
 6. If the child had no activity, be gentle and encouraging, not critical
+7. Generate 2-3 conversation_prompts — specific questions the parent can ask,
+   referring to ACTUAL topics/subjects from the week (from the data above),
+   phrased for a PARENT talking to their child (not a teacher). Short, warm,
+   open-ended. Example shape: "How did you find the fractions chapter today?
+   Was anything tricky?"
 
 Return ONLY valid JSON with this exact structure:
 {
   "highlights": ["string", "string", "string"],
   "concerns": ["string"],
-  "suggestion": "string"
+  "suggestion": "string",
+  "conversation_prompts": ["string", "string"]
 }`
 
   try {
@@ -516,6 +559,12 @@ Return ONLY valid JSON with this exact structure:
       highlights: parsed.highlights.slice(0, 4),
       concerns: Array.isArray(parsed.concerns) ? parsed.concerns.slice(0, 2) : [],
       suggestion: parsed.suggestion,
+      // K8 (Foxy North-Star Phase 5): fail-soft accept-and-clamp on the new
+      // conversation_prompts field. Older EF versions omit it (absent → []);
+      // a malformed value (non-array) also degrades to [] rather than 500.
+      conversation_prompts: Array.isArray(parsed.conversation_prompts)
+        ? parsed.conversation_prompts.filter((s: unknown): s is string => typeof s === 'string' && s.length > 0).slice(0, 3)
+        : [],
       stats: {
         quizzes_completed: stats.quizzes_completed,
         avg_score: stats.avg_score,

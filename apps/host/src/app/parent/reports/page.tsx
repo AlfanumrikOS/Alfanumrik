@@ -10,6 +10,7 @@ import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@alfanumrik/lib/constants';
 import { getQuizScoreColor } from '@alfanumrik/lib/score-colors';
 import ParentLabReportWidget from '@alfanumrik/ui/parent/ParentLabReportWidget';
+import { ConversationPromptsCard } from '@alfanumrik/ui/parent/ConversationPromptsCard';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 import { StatCard } from '@alfanumrik/ui/admin-ui';
@@ -119,6 +120,8 @@ interface ReportData {
   insights?: Array<string | InsightItem>;
   parentTips?: Array<string | TipItem>;
   tips?: Array<string | TipItem>;
+  /** K8 — up to 3 bilingual conversation-starters authored server-side. */
+  conversation_prompts?: string[];
 }
 
 interface MonthlyReportData {
@@ -1861,6 +1864,11 @@ function ParentReportsPage() {
           </div>
         )}
 
+        {viewMode === 'weekly' && !loading && !error && report?.conversation_prompts && report.conversation_prompts.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <ConversationPromptsCard prompts={report.conversation_prompts} isHi={isHi} />
+          </div>
+        )}
         {viewMode === 'weekly' && !loading && !error && (
           <>
             {/* ── 1. PERFORMANCE SUMMARY CARDS ── */}

@@ -584,7 +584,13 @@ async function runInjectPhase(
   const [activeRes, terminalRes] = await Promise.all([
     admin
       .from('adaptive_interventions')
-      .select('student_id, subject_code, chapter_number, trigger_signal')
+      // K5 (Foxy North-Star Phase 5): read `teacher_decision` too so the guard
+      // below can skip inject for any (student × subject × chapter) whose
+      // active row has been dismissed by the teacher. Additive column shipped
+      // by the parallel architect migration; select is fail-soft when the
+      // column is absent (the row still returns without it and `.filter`
+      // below treats absent as null / not dismissed).
+      .select('student_id, subject_code, chapter_number, trigger_signal, teacher_decision')
       .in('student_id', studentIds)
       .eq('status', 'active'),
     admin
@@ -609,8 +615,20 @@ async function runInjectPhase(
       ? s
       : 'mastery_cliff';
   const activesByStudent = new Map<string, ActiveInterventionRef[]>();
+  // K5 (Foxy North-Star Phase 5): a set of (student × subject × chapter) keys
+  // whose currently-active intervention has been dismissed by the teacher.
+  // The arbiter already blocks a duplicate insert via the one-active-max
+  // partial unique index, but this guard makes the intent explicit: no NEW
+  // candidate is proposed for a target the teacher has already dismissed
+  // (facade input honors the human override).
+  const dismissedByStudent = new Map<string, Set<string>>();
+  const dismissKey = (subject: string, chapter: number) => `${subject.toLowerCase()}:${chapter}`;
   for (const r of (activeRes.data ?? []) as Array<{
-    student_id: string; subject_code: string; chapter_number: number; trigger_signal: string | null;
+    student_id: string;
+    subject_code: string;
+    chapter_number: number;
+    trigger_signal: string | null;
+    teacher_decision?: string | null;
   }>) {
     const arr = activesByStudent.get(r.student_id) ?? [];
     arr.push({
@@ -619,6 +637,11 @@ async function runInjectPhase(
       chapterNumber: r.chapter_number,
     });
     activesByStudent.set(r.student_id, arr);
+    if (r.teacher_decision === 'dismissed') {
+      const set = dismissedByStudent.get(r.student_id) ?? new Set<string>();
+      set.add(dismissKey(r.subject_code, r.chapter_number));
+      dismissedByStudent.set(r.student_id, set);
+    }
   }
   const terminalsByStudent = new Map<string, TerminalInterventionRef[]>();
   for (const r of (terminalRes.data ?? []) as Array<{
@@ -886,8 +909,23 @@ async function runInjectPhase(
     // The SAME single arbiter call decides across A/B/C/D, so the anti-storm
     // ceiling (≤1 new intervention/student/night) and the precedence are
     // enforced centrally — Loop D never bypasses it.
-    if (candidates.length === 0) continue;
-    const arb = arbitrateInterventions(candidates, false);
+    // K5 (Foxy North-Star Phase 5): drop any candidate whose target is
+    // already the subject of a teacher-dismissed active row for this
+    // student. Loop B's inactivity sentinel (subject '_inactivity',
+    // chapter 0) is exempt because it does NOT map to a topic the
+    // teacher would dismiss on the review UI.
+    const dismissedForStudent = dismissedByStudent.get(student.id);
+    const guardedCandidates = dismissedForStudent && dismissedForStudent.size > 0
+      ? candidates.filter((c) => {
+          if (c.loop === 'B') return true; // sentinel triple — never dismissed
+          return !dismissedForStudent.has(dismissKey(c.subjectCode, c.chapterNumber));
+        })
+      : candidates;
+    if (guardedCandidates.length !== candidates.length) {
+      summary.blocked += candidates.length - guardedCandidates.length;
+    }
+    if (guardedCandidates.length === 0) continue;
+    const arb = arbitrateInterventions(guardedCandidates, false);
     if (!arb.selected) continue;
     const winner = arb.selected;
 

@@ -313,6 +313,17 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     bodyLength: 18,
     isNewThread: false,
   },
+  // Phase 5 K4/K7 (Foxy North-Star) — teacher override on an autonomous
+  // adaptive_interventions row. IDs + enums only; reasonCode is bounded (P13).
+  'teacher.override': {
+    interventionId: FIXTURE_UUID_C,
+    classId:        FIXTURE_UUID_A,
+    studentId:      FIXTURE_UUID_B,
+    decision:       'overridden',
+    originalTier:   'auto_remediation',
+    chosenTier:     'escalate_teacher',
+    reasonCode:     'knows_student',
+  },
   'school.module_toggled': {
     moduleKey: 'ai_tutor',
     isEnabled: true,

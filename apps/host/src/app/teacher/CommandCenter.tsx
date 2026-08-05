@@ -56,9 +56,22 @@ import {
   useGradingQueue,
   useStudentMasteryReport,
   useClassLeaderboard,
+  useMisconceptionClusters,
+  useInTheMomentAlerts,
+  useClassOverview,
+  recordInterventionDecision,
   type TeacherHeatmapData,
   type TeacherHeatmapRow,
+  type MisconceptionClusterResponseRow,
+  type InTheMomentIntervention,
+  type InterventionDecisionInput,
 } from '@alfanumrik/lib/teacher/use-teacher-data';
+import { MisconceptionClusterCard } from '@alfanumrik/ui/teacher/MisconceptionClusterCard';
+import {
+  EvidenceDrawer,
+  type EvidencePayload,
+} from '@alfanumrik/ui/teacher/EvidenceDrawer';
+import { InterventionApprovalCard } from '@alfanumrik/ui/teacher/InterventionApprovalCard';
 import { useClassPulse } from '@alfanumrik/lib/pulse/use-pulse';
 import {
   reconcileAlerts,
@@ -244,6 +257,7 @@ function AlertRow({
   onTellParent,
   parentNotifyBusy,
   parentNotifyDone,
+  onViewEvidence,
 }: {
   alert: RiskAlert;
   isHi: boolean;
@@ -253,6 +267,7 @@ function AlertRow({
   onTellParent: (alert: RiskAlert) => void;
   parentNotifyBusy: boolean;
   parentNotifyDone: boolean;
+  onViewEvidence?: (alert: RiskAlert) => void;
 }) {
   const variant = SEV_VARIANT[alert.severity] || 'warning';
   const accent = SEV_ACCENT[alert.severity] || SEV_ACCENT.medium;
@@ -273,6 +288,21 @@ function AlertRow({
           <span className="ml-2 font-bold text-sm" style={{ color: 'var(--text-1)' }}>
             {alert.title}
           </span>
+          {onViewEvidence && (
+            <button
+              type="button"
+              onClick={() => onViewEvidence(alert)}
+              data-testid="alert-evidence-btn"
+              className="ml-2 py-0.5 px-1.5 rounded-md text-[10px] font-semibold cursor-pointer"
+              style={{
+                background: 'transparent',
+                color: 'var(--purple)',
+                border: '1px solid color-mix(in srgb, var(--purple) 35%, transparent)',
+              }}
+            >
+              {tt(isHi, 'Evidence', 'सबूत')}
+            </button>
+          )}
         </div>
         {/* Remediation control — server owns the state; the button only POSTs. */}
         <div className="shrink-0 flex items-center gap-2">
@@ -526,6 +556,104 @@ export default function CommandCenter() {
     error: reportError,
     mutate: mutateReport,
   } = useStudentMasteryReport(reportStudent?.id);
+
+  // Phase 5 — K2 misconception clusters + K4 in-the-moment interventions +
+  // K6 fast-progress (via extended get_class_overview). All class-scoped.
+  const { data: clustersRes } = useMisconceptionClusters(effectiveClassId, false);
+  const clusters: MisconceptionClusterResponseRow[] = clustersRes?.rows ?? [];
+  const { data: interventionsRes, mutate: mutateInterventions } =
+    useInTheMomentAlerts(effectiveClassId);
+  const interventions: InTheMomentIntervention[] = interventionsRes?.interventions ?? [];
+  const { data: classOverviewRes } = useClassOverview(effectiveClassId);
+  const fastProgress = classOverviewRes?.fast_progress ?? [];
+
+  const [interventionBusy, setInterventionBusy] = useState<Record<string, boolean>>({});
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [evidencePayload, setEvidencePayload] = useState<EvidencePayload | null>(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+
+  const openClusterEvidence = useCallback(
+    async (cluster: MisconceptionClusterResponseRow) => {
+      setEvidenceOpen(true);
+      setEvidencePayload({
+        title: cluster.pattern_code.replace(/_/g, ' '),
+        subtitle: `${cluster.student_count} ${tt(isHi, 'students', 'छात्र')}`,
+        attempts: cluster.students.slice(0, 8).map((s) => ({
+          student_id: s.id,
+          student_name: s.name,
+          attempts: 0,
+          hints: 0,
+        })),
+        examples: cluster.examples ?? [],
+      });
+      // Fetch include_examples variant on demand.
+      if (!cluster.examples && effectiveClassId) {
+        setEvidenceLoading(true);
+        try {
+          const { teacherDashboardFetch } = await import(
+            '@alfanumrik/lib/teacher/use-teacher-data'
+          );
+          const res = await teacherDashboardFetch<{
+            rows: MisconceptionClusterResponseRow[];
+          }>('get_misconception_clusters', {
+            teacher_id: teacher?.id || '',
+            class_id: effectiveClassId,
+            include_examples: true,
+            pattern_code: cluster.pattern_code,
+          });
+          const enriched = res.rows?.find((r) => r.pattern_code === cluster.pattern_code);
+          setEvidencePayload((prev) =>
+            prev ? { ...prev, examples: enriched?.examples ?? [] } : prev,
+          );
+        } catch {
+          /* P13: no PII in logs. Drawer already open; showing what we have. */
+        } finally {
+          setEvidenceLoading(false);
+        }
+      }
+    },
+    [effectiveClassId, isHi, teacher?.id],
+  );
+
+  const openAlertEvidence = useCallback(
+    (alert: RiskAlert) => {
+      const ev = (alert as RiskAlert & { evidence?: EvidencePayload }).evidence;
+      setEvidenceOpen(true);
+      setEvidencePayload(
+        ev ?? {
+          title: alert.title,
+          subtitle: alert.student_name,
+          attempts: [],
+          examples: [],
+        },
+      );
+    },
+    [],
+  );
+
+  const submitInterventionDecision = useCallback(
+    async (input: InterventionDecisionInput) => {
+      if (interventionBusy[input.intervention_id]) return;
+      setInterventionBusy((m) => ({ ...m, [input.intervention_id]: true }));
+      try {
+        await recordInterventionDecision(input);
+        await mutateInterventions();
+        showToast(tt(isHi, 'Decision recorded', 'निर्णय दर्ज हुआ'), 'success');
+      } catch {
+        showToast(
+          tt(isHi, "Couldn't record — please retry", 'दर्ज नहीं हुआ — पुनः प्रयास करें'),
+          'error',
+        );
+      } finally {
+        setInterventionBusy((m) => {
+          const n = { ...m };
+          delete n[input.intervention_id];
+          return n;
+        });
+      }
+    },
+    [interventionBusy, mutateInterventions, isHi, showToast],
+  );
 
   // get_alerts returns the array directly (A2 shape: each alert carries
   // remediation_status). Tolerate the legacy {alerts:[...]} envelope too.
@@ -1029,6 +1157,34 @@ export default function CommandCenter() {
           value={stats?.active_assignments != null ? stats.active_assignments : '\u2014'}
           accentColor="var(--success, #16A34A)"
         />
+        {fastProgress.length > 0 && (
+          <div
+            data-testid="fast-progress-strip"
+            className="rounded-xl py-3 px-4 col-span-full sm:col-span-2 lg:col-span-1"
+            style={{
+              background:
+                'color-mix(in srgb, var(--success, #16A34A) 12%, transparent)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            <p
+              className="text-[11px] m-0 uppercase tracking-wide font-semibold"
+              style={{ color: 'var(--text-3)' }}
+            >
+              {tt(isHi, 'On a roll \u{1F680}', '\u0936\u093e\u0928\u0926\u093e\u0930 \u092a\u094d\u0930\u0917\u0924\u093f \u{1F680}')}
+            </p>
+            <p
+              className="text-[13px] mt-1 font-semibold truncate"
+              style={{ color: 'var(--text-1)' }}
+            >
+              {fastProgress
+                .slice(0, 3)
+                .map((s) => `${s.name} +${s.mastered_this_week}`)
+                .join(' \u00b7 ')}
+            </p>
+          </div>
+        )}
 
         {gradingQueueEnabled && (
           <button
@@ -1200,6 +1356,31 @@ export default function CommandCenter() {
         </Panel>
         </SectionErrorBoundary>
 
+        <div className="flex flex-col gap-4">
+        {/* K4/K7 — Suggested interventions (server-tiered; teacher approves/overrides). */}
+        {interventions.length > 0 && (
+          <SectionErrorBoundary section="Suggested Interventions">
+            <Panel>
+              <PanelHead
+                title={tt(isHi, 'Suggested interventions', 'सुझाए गए हस्तक्षेप')}
+                badge={String(interventions.length)}
+                badgeVariant="info"
+              />
+              <div className="mt-3 flex flex-col gap-2.5">
+                {interventions.map((iv) => (
+                  <InterventionApprovalCard
+                    key={iv.intervention_id}
+                    suggestion={iv}
+                    isHi={isHi}
+                    busy={!!interventionBusy[iv.intervention_id]}
+                    onDecision={submitInterventionDecision}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </SectionErrorBoundary>
+        )}
+
         {/* At-risk alerts rail */}
         <SectionErrorBoundary section="At-Risk Alerts">
         <Panel>
@@ -1267,13 +1448,47 @@ export default function CommandCenter() {
                   onTellParent={tellParentFromAlert}
                   parentNotifyBusy={!!parentNotifyBusy[a.student_id]}
                   parentNotifyDone={!!parentNotifyDone[a.student_id]}
+                  onViewEvidence={openAlertEvidence}
                 />
               ))
             )}
           </div>
         </Panel>
         </SectionErrorBoundary>
+
+        {/* K2 — Misconception clusters */}
+        {clusters.length > 0 && (
+          <SectionErrorBoundary section="Misconception Clusters">
+            <Panel>
+              <PanelHead
+                title={tt(isHi, 'Misconception clusters', 'भ्रांति समूह')}
+                badge={String(clusters.length)}
+                badgeVariant="warning"
+              />
+              <div className="mt-3 flex flex-col gap-2.5">
+                {clusters.map((c) => (
+                  <MisconceptionClusterCard
+                    key={c.pattern_code}
+                    cluster={c}
+                    isHi={isHi}
+                    onViewEvidence={openClusterEvidence}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </SectionErrorBoundary>
+        )}
+        </div>
       </div>
+
+      {/* K3 — Evidence drawer (shared by clusters + alerts) */}
+      <EvidenceDrawer
+        open={evidenceOpen}
+        payload={evidencePayload}
+        loading={evidenceLoading}
+        isHi={isHi}
+        onClose={() => setEvidenceOpen(false)}
+      />
 
       {/* Class Rankings */}
       {effectiveClassId && (

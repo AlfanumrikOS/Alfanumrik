@@ -292,6 +292,7 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
     case 'teacher.submission_reviewed':
     case 'teacher.grade_entry_set':
     case 'teacher.parent_message_sent':
+    case 'teacher.override':
       // Teacher-side admin events — not surfaced on learner-facing journey
       // (they describe teacher actions on classroom/student, not learner state
       // changes). Audit/notification subscribers consume these instead.

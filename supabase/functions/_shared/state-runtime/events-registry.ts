@@ -467,6 +467,28 @@ export const TeacherGradeEntrySetSchema = EventBaseSchema.extend({
   }),
 })
 
+// Phase 5 (Foxy North-Star, lane K4) — teacher's authoritative decision on an
+// autonomous system-injected intervention. Deno mirror of the Node
+// TeacherOverrideSchema; keep byte-equivalent in the pure zod shape.
+export const TeacherOverrideSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.override'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    classId:        uuidLike(),
+    studentId:      uuidLike(),
+    decision:       z.enum(['approved', 'overridden', 'dismissed']),
+    originalTier:   z.string().min(1).max(64),
+    chosenTier:     z.string().min(1).max(64).nullable(),
+    reasonCode:     z.enum([
+      'too_easy',
+      'too_hard',
+      'timing',
+      'knows_student',
+      'other',
+    ]),
+  }),
+})
+
 // Phase C.3 (ADR-005) — teacher↔parent messaging.
 export const TeacherParentMessageSentSchema = EventBaseSchema.extend({
   kind: z.literal('teacher.parent_message_sent'),
@@ -700,6 +722,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   TeacherProfileUpdatedSchema,
   TeacherSubmissionReviewedSchema,
   TeacherGradeEntrySetSchema,
+  TeacherOverrideSchema,
   TeacherParentMessageSentSchema,
   ParentTeacherMessageSentSchema,
   SchoolModuleToggledSchema,
@@ -753,6 +776,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'teacher.profile_updated',
   'teacher.submission_reviewed',
   'teacher.grade_entry_set',
+  'teacher.override',
   'teacher.parent_message_sent',
   'parent.teacher_message_sent',
   'school.module_toggled',

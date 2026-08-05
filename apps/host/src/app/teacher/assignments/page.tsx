@@ -9,6 +9,12 @@ import { useTeacherAllowedSubjects } from '@alfanumrik/lib/useTeacherAllowedSubj
 import { VALID_GRADES } from '@alfanumrik/lib/identity';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
+import dynamic from 'next/dynamic';
+
+const DraftWithAiSection = dynamic(
+  () => import('@alfanumrik/ui/teacher/DraftWithAiSection').then((m) => m.default ?? m),
+  { ssr: false },
+);
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -292,6 +298,18 @@ function AssignmentsPageContent() {
           </button>
         </div>
       </div>
+
+      {/* K5 — Draft with AI */}
+      {teacherId && (
+        <DraftWithAiSection
+          isHi={isHi}
+          teacherId={teacherId}
+          classId={formClass || undefined}
+          subject={selectedClassData?.subject}
+          grade={selectedClassData?.grade}
+          onPublished={() => loadData()}
+        />
+      )}
 
       {/* Error */}
       {error && (

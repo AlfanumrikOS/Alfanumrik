@@ -6,8 +6,59 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 360 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-359..REG-360 (2026-08-05, Foxy North-Star Phase 4 wave 4a/4b
+**Total catalog: 366 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-366 (2026-08-05, K9 leadership standalone-route fold-in — the
+`/school-admin/leadership` standalone route is retired; the nav Leadership
+entry now deep-links to `/school-admin/reports?tab=leadership` and the
+LeadershipTab loads inside the existing school-admin reports tab strip
+behind `ff_school_pulse_v1` staged (5%→25%→100%), mirroring the Phase 1
+safeguarding fold-in precedent (P10 bundle boundary). Pinned by
+`apps/host/src/__tests__/school-admin/reports-leadership-tab.test.tsx` +
+`apps/host/src/__tests__/school-admin/consolidated-nav-mobile.test.tsx`; see
+`07-teacher-school.md`.
+Prior: REG-361..REG-365 (2026-08-05, Foxy North-Star Phase 5 Stakeholders +
+Play batch — five pins across three shards covering the ~50-file uncommitted
+Phase 5 change set on branch `Alfanumrik/foxy-system-spec-22f565`.
+REG-361 U10 leaderboard percentile-band contract [E]: `/api/v1/leaderboard/me`
+returns a percentile band descriptor ONLY (`top_10` / `top_25` / `top_50` /
+`keep_going`), NEVER an absolute rank or a `(You)`-tagged position;
+`PercentileBandCard` renders bands only; top-N leaderboard tiles unchanged;
+`/me` responses are private-cached; pinned by
+`apps/host/src/__tests__/api/v1/leaderboard/me.test.ts` +
+`packages/ui/src/leaderboard/PercentileBandCard.tsx` + migration
+`20260813000006_leaderboard_percentile_rpc.sql`; see `03-quiz-integrity.md`.
+REG-362 K3/S1.8/R5 evidence P13 boundary [E]: the teacher-facing evidence
+payload attached to remediation alerts carries only bounded fact records
+(attempts, incorrect count, hint_level_max, misconception_ids, timestamps,
+UUIDs) — never `name`/`email`/`phone`/free-text answer content or transcripts;
+pinned by `packages/lib/src/__tests__/teacher/remediation-evidence.test.ts` +
+migration `20260813000002_remediation_evidence_column.sql`; see
+`03-quiz-integrity.md`.
+REG-363 K5 draft quarantine [E]: `teacher_assignment_drafts` has EXACTLY
+TWO policies (teacher_own_all + service_role_all) — deliberately NO
+student, parent, or authenticated read path until the publish action stamps
+`published_assignment_id`; pinned by
+`apps/host/src/__tests__/security/teacher-assignment-drafts-rls.test.ts`
+(NEW — 6 tests structural pin) + migration
+`20260813000004_teacher_assignment_drafts.sql`; see `10-rbac-rls.md`.
+REG-364 K4 teacher.override event kind [E]: the six new teacher.decision /
+teacher.override event kinds are declared with a bounded payload enum only
+(no free-text `reason`/`comment`); both event registries (Next
+`packages/lib/src/state/events/registry.ts` + Deno
+`supabase/functions/_shared/state-runtime/events-registry.ts`) agree on the
+exact shape; pinned by `apps/host/src/__tests__/state/events-registry.test.ts`
++ migration `20260813000003_adaptive_interventions_teacher_decision.sql`;
+see `12-observability.md`.
+REG-365 K9 leadership read-model P13 contract [E]: the two SECURITY DEFINER
+RPCs added by migration `20260813000005_leadership_readmodels.sql`
+(`get_school_safeguarding_counts`, `get_school_competency_summary`) return
+ONLY counts and averages — the SQL bodies never SELECT `student_id`,
+`disclosure_excerpt`, `email`, `phone`, or `full_name`; each is guarded by
+an active-school-admin scope guard before any read, both revoke PUBLIC/anon
+and grant EXECUTE only to authenticated; pinned by
+`apps/host/src/__tests__/migrations/leadership-readmodels-p13.test.ts`
+(NEW — 6 tests structural pin, integration lane); see `10-rbac-rls.md`.
+Prior: REG-359..REG-360 (2026-08-05, Foxy North-Star Phase 4 wave 4a/4b
 batch — REG-359 promotes the Foxy route CHARACTERIZATION FIXTURES suite
 (11 seeded + 5 pending, 20-flag OFF-identity sweep) into
 `02-foxy-ai.md` as the R3 pipeline-decomposition tripwire (runbook
@@ -242,7 +293,9 @@ REG-345..REG-347 on 2026-08-05, and the same-day Phase 1 Safety & Trust
 batch then took REG-348..REG-350, then Phase 2 Canonical Learner Model took
 REG-351..REG-353, Phase 3 Adaptive + Check took REG-354..REG-358, and the
 Phase 4 wave 4a/4b promotion + FoxyPanel guard took REG-359..REG-360, so
-**REG-361 is now the next free id.**
+**REG-367 is now the next free id.** (REG-361..REG-365 taken by the Phase 5
+Stakeholders + Play batch above; REG-366 taken by the same-day K9 leadership
+standalone-route fold-in pinned at the top of this file.)
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

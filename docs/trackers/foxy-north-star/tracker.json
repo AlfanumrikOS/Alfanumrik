@@ -189,7 +189,7 @@
       "title": "Foxy Companion — CASEL mapping module, mood-to-routing (feeds U6/S5.6), anti-dependency guardrails codified in packages/lib/src/companion/",
       "specSection": "§1.1",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -203,7 +203,9 @@
       },
       "owner": "assessment",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/companion/"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -212,17 +214,26 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "ai-engineer",
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/companion/"
+      ]
     },
     {
       "reqId": "S1.6",
       "title": "Play Engine — mission framework (missions/mysteries/teach-Foxy-back/student-vs-Foxy) on the dive/challenge substrate; no new engine, no XP paths outside xp-config",
       "specSection": "§1.1",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -237,7 +248,9 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/play/"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -246,10 +259,21 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "frontend",
+          "testing",
+          "mobile",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/play/",
+        "apps/host/src/app/(student)/missions/",
+        "packages/ui/src/play/"
+      ]
     },
     {
       "reqId": "S1.7",
@@ -329,7 +353,7 @@
       "title": "Evidence Engine — student-facing Close (via L7) + teacher evidence citations (via K3) + parent evidence completion",
       "specSection": "§1.1",
       "phase": "4",
-      "status": "in_progress",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [],
@@ -339,8 +363,12 @@
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/remediation-evidence.test.ts"
+      ],
+      "regressionIds": [
+        "REG-362"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -348,11 +376,16 @@
           "testing"
         ],
         "completed": [
-          "ops"
+          "ops",
+          "assessment",
+          "testing",
+          "quality"
         ]
       },
-      "lastVerified": null,
-      "evidence": [],
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/remediation-evidence.ts"
+      ],
       "notes": [
         "S1.8 lives entirely on top of L7 (student Close), K3 (teacher evidence citations) and parent completion — Phase-5 evidence-citations territory. No code moves this wave; graduates once L7 close-stage lands with R3-B/C and K3 lands independently."
       ]
@@ -2590,7 +2623,7 @@
       "title": "SEL per CASEL — companion module CASEL mapping (5 competencies → behaviors); reuse getReflectionPrompt; copy audit",
       "specSection": "§1.5",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -2602,7 +2635,9 @@
       },
       "owner": "assessment",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/parent/"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -2611,10 +2646,21 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "ai-engineer",
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/parent/use-parent-child-scope.ts",
+        "packages/lib/src/parent/weekly-report-schema.ts",
+        "packages/ui/src/parent/ConversationPromptsCard.tsx"
+      ]
     },
     {
       "reqId": "U6",
@@ -2702,7 +2748,7 @@
       "title": "Engagement from curiosity + visible progress, not addictive mechanics — mission framework on existing substrate (S1.6); Close stage (L7) supplies visible progress",
       "specSection": "§1.5",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [],
@@ -2712,7 +2758,9 @@
       },
       "owner": "assessment",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/play/"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -2720,10 +2768,19 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/play/",
+        "apps/host/src/app/(student)/missions/"
+      ]
     },
     {
       "reqId": "U8",
@@ -2833,18 +2890,28 @@
       "title": "No leaderboards exposing weaker students — personal absolute rank + (You) tags replaced by percentile bands; keep top-N; no bottom lists. Approval A7 granted",
       "specSection": "§1.5",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
-        "backend": [],
+        "db": [
+          "supabase/migrations/20260813000006_leaderboard_percentile_rpc.sql"
+        ],
+        "backend": [
+          "apps/host/src/app/api/v1/leaderboard/me/"
+        ],
         "middleware": "inherit",
-        "frontend": [],
+        "frontend": [
+          "packages/ui/src/leaderboard/PercentileBandCard.tsx"
+        ],
         "mobile": []
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "apps/host/src/__tests__/api/v1/leaderboard/me.test.ts"
+      ],
+      "regressionIds": [
+        "REG-361"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -2852,10 +2919,21 @@
           "testing",
           "mobile"
         ],
-        "completed": []
+        "completed": [
+          "frontend",
+          "testing",
+          "mobile",
+          "assessment",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "apps/host/src/app/api/v1/leaderboard/me/",
+        "packages/ui/src/leaderboard/PercentileBandCard.tsx",
+        "supabase/migrations/20260813000006_leaderboard_percentile_rpc.sql"
+      ]
     },
     {
       "reqId": "U11",
@@ -2892,7 +2970,7 @@
       "title": "Students needing attention today — unify needs_attention / at-risk alerts / Student Pulse into one lane WITH evidence payload (K3); enable ff_school_pulse_v1 staged",
       "specSection": "§1.6",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -2905,7 +2983,9 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/"
+      ],
       "regressionIds": [],
       "flags": [
         {
@@ -2919,17 +2999,25 @@
           "ops",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "frontend",
+          "ops",
+          "testing",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/use-teacher-data.ts",
+        "apps/host/src/app/teacher/CommandCenter.tsx"
+      ]
     },
     {
       "reqId": "K2",
       "title": "Class-level misconception clusters — teacher-dashboard action get_misconception_clusters over student_misconceptions (post-D7 writer) grouped by misconception_code; CommandCenter cluster panel",
       "specSection": "§1.6",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -2943,7 +3031,9 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -2952,21 +3042,33 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "frontend",
+          "testing",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/heat-scale.ts"
+      ]
     },
     {
       "reqId": "K3",
       "title": "Evidence behind recommendations — event citations (attempts, hints, timestamps) attached to alerts + interventions from enriched quiz_responses/state_events; UUIDs only (P13)",
       "specSection": "§1.6",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260813000002_remediation_evidence_column.sql"
+        ],
         "backend": [
-          "supabase/functions/teacher-dashboard/index.ts"
+          "supabase/functions/teacher-dashboard/index.ts",
+          "apps/host/src/app/api/teacher/remediation/route.ts",
+          "packages/lib/src/teacher/remediation-evidence.ts"
         ],
         "middleware": [],
         "frontend": [],
@@ -2974,8 +3076,12 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/remediation-evidence.test.ts"
+      ],
+      "regressionIds": [
+        "REG-362"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -2983,21 +3089,36 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "architect",
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/remediation-evidence.ts",
+        "apps/host/src/app/api/teacher/remediation/route.ts",
+        "supabase/migrations/20260813000002_remediation_evidence_column.sql"
+      ]
     },
     {
       "reqId": "K4",
       "title": "Suggested small-group interventions — approval lane in CommandCenter wiring the EXISTING deploy_intervention action; groups derived from K2 clusters",
       "specSection": "§1.6",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260813000003_adaptive_interventions_teacher_decision.sql"
+        ],
         "backend": [
-          "supabase/functions/teacher-dashboard/index.ts"
+          "supabase/functions/teacher-dashboard/index.ts",
+          "packages/lib/src/state/events/registry.ts",
+          "supabase/functions/_shared/state-runtime/events-registry.ts"
         ],
         "middleware": [],
         "frontend": [
@@ -3007,30 +3128,46 @@
       },
       "owner": "frontend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "apps/host/src/__tests__/state/events-registry.test.ts"
+      ],
+      "regressionIds": [
+        "REG-364"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
           "backend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "backend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/state/events/registry.ts",
+        "supabase/functions/_shared/state-runtime/events-registry.ts",
+        "supabase/migrations/20260813000003_adaptive_interventions_teacher_decision.sql"
+      ]
     },
     {
       "reqId": "K5",
       "title": "Draft assignments / worksheets — teacher draft flow reusing bulk-question-gen + export-report EFs (no new generator); oracle-gated output (REG-54 pattern)",
       "specSection": "§1.6",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260813000004_teacher_assignment_drafts.sql"
+        ],
         "backend": [
           "supabase/functions/bulk-question-gen/",
-          "supabase/functions/export-report/"
+          "packages/lib/src/teacher/draft-question-validator.ts"
         ],
         "middleware": [],
         "frontend": [
@@ -3040,8 +3177,13 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "apps/host/src/__tests__/security/teacher-assignment-drafts-rls.test.ts",
+        "packages/lib/src/__tests__/teacher/draft-question-validator.test.ts"
+      ],
+      "regressionIds": [
+        "REG-363"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -3050,17 +3192,27 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "ai-engineer",
+          "assessment",
+          "frontend",
+          "testing",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260813000004_teacher_assignment_drafts.sql",
+        "packages/lib/src/teacher/draft-question-validator.ts"
+      ]
     },
     {
       "reqId": "K6",
       "title": "Fast-progressing student highlights — small addition to get_class_overview (positive deltas from facade)",
       "specSection": "§1.6",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -3072,7 +3224,9 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "supabase/functions/teacher-dashboard/__tests__/contract.test.ts"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -3080,17 +3234,25 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "frontend",
+          "testing",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/functions/teacher-dashboard/",
+        "apps/host/src/app/teacher/assignments/page.tsx"
+      ]
     },
     {
       "reqId": "K7",
       "title": "Teacher approve/override Foxy — approve/override on interventions (K4 lane); teacher.override event kind; override feeds planner tier 2 (D11); autonomy tiers documented per loop",
       "specSection": "§1.6",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -3103,7 +3265,9 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -3112,17 +3276,26 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "frontend",
+          "testing",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/",
+        "apps/host/src/app/teacher/"
+      ]
     },
     {
       "reqId": "K8",
       "title": "Parents — ADD conversation_prompts[] to weekly report JSON (dinner prompts); surface reports in-app replacing the /parent/progress stub; NO transcript exposure (stays)",
       "specSection": "§1.6",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -3136,7 +3309,9 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "supabase/functions/teacher-dashboard/__tests__/contract.test.ts"
+      ],
       "regressionIds": [],
       "flags": [],
       "reviewChain": {
@@ -3145,32 +3320,51 @@
           "testing",
           "mobile"
         ],
-        "completed": []
+        "completed": [
+          "frontend",
+          "testing",
+          "mobile",
+          "assessment",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/functions/teacher-dashboard/actions.ts"
+      ]
     },
     {
       "reqId": "K9",
       "title": "Leadership — dashboard assembling facade aggregates (growth/retention), syllabus coverage views (exist), safety-incident counts from safeguarding_escalations (counts only); PARAKH-style; reuses school-admin surface",
       "specSection": "§1.6",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260813000005_leadership_readmodels.sql"
+        ],
         "backend": [
-          "packages/lib/src/learner-model/"
+          "packages/lib/src/learner-model/",
+          "apps/host/src/app/api/school-admin/leadership/"
         ],
         "middleware": [],
         "frontend": [
-          "apps/host/src/app/school-admin/"
+          "apps/host/src/app/school-admin/",
+          "apps/host/src/app/school-admin/reports/LeadershipTab.tsx",
+          "packages/ui/src/leadership/"
         ],
         "mobile": "n/a"
       },
       "owner": "frontend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "apps/host/src/__tests__/migrations/leadership-readmodels-p13.test.ts"
+      ],
+      "regressionIds": [
+        "REG-365",
+        "REG-366"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -3179,10 +3373,21 @@
           "ops",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "backend",
+          "architect",
+          "ops",
+          "testing",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260813000005_leadership_readmodels.sql",
+        "apps/host/src/app/api/school-admin/leadership/",
+        "apps/host/src/app/school-admin/reports/LeadershipTab.tsx",
+        "packages/ui/src/leadership/"
+      ]
     },
     {
       "reqId": "R1",
@@ -3369,11 +3574,13 @@
       "title": "Evidence validator + teacher escalation — teacher escalation lane from safeguarding + K4 approval flow (oracle gates + foxy_served_items + anti-fake-quiz-claim already live)",
       "specSection": "§1.7",
       "phase": "5",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
-          "supabase/functions/teacher-dashboard/index.ts"
+          "supabase/functions/teacher-dashboard/index.ts",
+          "apps/host/src/app/api/teacher/remediation/route.ts",
+          "packages/lib/src/teacher/remediation-evidence.ts"
         ],
         "middleware": [],
         "frontend": [],
@@ -3381,8 +3588,12 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "packages/lib/src/__tests__/teacher/remediation-evidence.test.ts"
+      ],
+      "regressionIds": [
+        "REG-362"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -3390,10 +3601,20 @@
           "frontend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "ai-engineer",
+          "frontend",
+          "testing",
+          "assessment",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/teacher/remediation-evidence.ts",
+        "apps/host/src/app/api/teacher/remediation/route.ts"
+      ]
     },
     {
       "reqId": "R6",

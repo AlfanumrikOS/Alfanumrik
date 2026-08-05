@@ -1462,3 +1462,47 @@ parity pin — see `05-xp-scoring.md`). The 2026-08-03 P0+P1 batch adds REG-338
 
 ---
 
+## K9 leadership standalone-route fold-in (2026-08-05, Phase 5 Stakeholders) — REG-366
+
+Source: Foxy North-Star Phase 5 Stakeholders K9 fold-in. Prior to this pass
+the leadership dashboard shipped as a standalone route `/school-admin/leadership`
+alongside the school-admin `reports` page — a dual-surface footprint that
+duplicated navigation, doubled the first-paint payload on the school-admin
+shell (P10), and let the leadership read-model surface reach any authenticated
+school-admin regardless of whether they had opened the reports page. This
+fold-in retires the standalone route and re-hosts the LeadershipTab inside the
+existing `/school-admin/reports` tab strip behind
+`ff_school_pulse_v1`, mirroring the Phase 1 safeguarding fold-in precedent
+(consolidate school-admin operator surfaces into one tab-strip host to
+shrink the shell, keep a single RBAC gate, and let staged flags ramp cleanly).
+The nav Leadership entry now deep-links to `/school-admin/reports?tab=leadership`;
+the standalone route MUST NOT return a page — a request for it either 404s or
+redirects to the reports tab.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-366 | `k9_leadership_folded_into_reports_tab` | (a) **Standalone route retired.** `/school-admin/leadership` has NO surviving `page.tsx` under `apps/host/src/app/school-admin/leadership/`; a request either 404s (Next.js default) or is redirected to `/school-admin/reports?tab=leadership` — it MUST NOT render a leadership dashboard on its own. (b) **Reports tab hosts the surface.** `/school-admin/reports?tab=leadership` deep-link loads with the `LeadershipTab` component mounted as the active tab (the same component previously mounted by the standalone route); the tab strip on `/school-admin/reports/page.tsx` exposes a Leadership tab entry alongside the existing tabs; navigating there via the sidebar or via the deep-link URL both land on the same tab-active state. (c) **Nav Leadership entry deep-links only.** The consolidated school-admin nav (mobile + desktop) exposes exactly ONE Leadership entry, and its href resolves to `/school-admin/reports?tab=leadership` — never `/school-admin/leadership`. (d) **P10 boundary.** No route under `apps/host/src/app/school-admin/**/page.tsx` outside `reports/` statically imports `LeadershipTab` or the `packages/ui/src/leadership/**` bundle, so the tab-content chunk is loaded only when a school-admin actually opens the Reports page (mirrors the Phase 1 safeguarding fold-in precedent). (e) **RBAC + flag gate unchanged.** The two SECURITY DEFINER read-model RPCs pinned by REG-365 (`get_school_safeguarding_counts`, `get_school_competency_summary`) remain the only leadership data source; the `ff_school_pulse_v1` flag continues to gate whether the LeadershipTab renders its content or a coming-soon placeholder, so a staged 5%→25%→100% ramp can be executed on the folded surface without a code change. | `apps/host/src/__tests__/school-admin/reports-leadership-tab.test.tsx` (deep-link loads LeadershipTab as the active tab; nav Leadership entry href) + `apps/host/src/__tests__/school-admin/consolidated-nav-mobile.test.tsx` (single Leadership entry in the consolidated nav resolves to `/school-admin/reports?tab=leadership`) | E |
+
+### Invariants covered by this section
+
+- P10 (bundle boundary) — LeadershipTab and the `packages/ui/src/leadership/`
+  chunk load only from the reports tab-host, so the school-admin shell first
+  paint no longer carries the leadership bundle on unrelated pages. Same
+  boundary shape as the Phase 1 safeguarding fold-in.
+- Nav single-source — the consolidated school-admin nav exposes exactly one
+  Leadership entry, resolving to the tabbed deep-link. No dual surface can
+  drift out of sync with the reports host.
+- Rollout hygiene — the ff_school_pulse_v1 staged ramp (5%→25%→100%) operates
+  on the tab content only; retiring the standalone route removes an entire
+  code surface from the flag's blast radius.
+
+### Catalog total
+
+Pre-REG-366: 365 entries (through REG-365, the K9 leadership read-model P13
+contract pin — see `10-rbac-rls.md`). The 2026-08-05 K9 leadership standalone-
+route fold-in adds REG-366 (leadership dashboard folded into
+`/school-admin/reports?tab=leadership`, standalone route retired).
+**Total catalog: 366 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

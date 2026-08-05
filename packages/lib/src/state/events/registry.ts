@@ -694,6 +694,42 @@ export const TeacherGradeEntrySetSchema = EventBaseSchema.extend({
   }),
 });
 
+// Phase 5 K4/K7 (Foxy North-Star). Teacher decision on an autonomous
+// adaptive_interventions row surfaced through the review lane. Canonical
+// state is written to adaptive_interventions.teacher_decision / decided_by /
+// decided_at by the review-lane API (migration 20260813000003); this event is
+// the immutable bus twin so subscribers (notifications, analytics, audit
+// pipeline) can react without re-querying the row.
+//
+// P13: payload is IDs + enums ONLY — reasonCode is a BOUNDED enum, never free
+// text. If a richer explanation is needed, capture it in the review-lane note
+// surface (guarded by its own RLS/PII rules), not here.
+export const TeacherOverrideSchema = EventBaseSchema.extend({
+  kind: z.literal('teacher.override'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    classId:        uuidLike(),
+    studentId:      uuidLike(),
+    // Mirrors adaptive_interventions.teacher_decision CHECK.
+    decision:       z.enum(['approved', 'overridden', 'dismissed']),
+    // The autonomous suggestion's original tier (short SYSTEM-assigned code,
+    // e.g. 'auto_remediation'). Bounded string — not an enum here so new
+    // autonomous tiers can ship without a registry change.
+    originalTier:   z.string().min(1).max(64),
+    // The tier the teacher chose. null when dismissed without a replacement.
+    chosenTier:     z.string().min(1).max(64).nullable(),
+    // Bounded enum ONLY — no free text (P13). Extend the union here (and the
+    // test fixture) when a new reason code is added.
+    reasonCode:     z.enum([
+      'too_easy',
+      'too_hard',
+      'timing',
+      'knows_student',
+      'other',
+    ]),
+  }),
+});
+
 // ── School / tenant events ───────────────────────────────────────────
 
 export const SchoolModuleToggledSchema = EventBaseSchema.extend({
@@ -961,6 +997,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   TeacherGradeEntrySetSchema,
   TeacherParentMessageSentSchema,
   ParentTeacherMessageSentSchema,
+  TeacherOverrideSchema,
   SchoolModuleToggledSchema,
   BillingInvoicePaidSchema,
   SystemRemediationInjectedSchema,
@@ -1020,6 +1057,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'teacher.grade_entry_set',
   'teacher.parent_message_sent',
   'parent.teacher_message_sent',
+  'teacher.override',
   'school.module_toggled',
   'billing.invoice_paid',
   'system.remediation_injected',
