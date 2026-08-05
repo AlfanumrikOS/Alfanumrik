@@ -6,8 +6,18 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 358 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-354..REG-358 (2026-08-05, Foxy North-Star Phase 3 Adaptive +
+**Total catalog: 360 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-359..REG-360 (2026-08-05, Foxy North-Star Phase 4 wave 4a/4b
+batch — REG-359 promotes the Foxy route CHARACTERIZATION FIXTURES suite
+(11 seeded + 5 pending, 20-flag OFF-identity sweep) into
+`02-foxy-ai.md` as the R3 pipeline-decomposition tripwire (runbook
+`docs/runbooks/foxy-r3-decomposition-plan.md`); REG-360 pins the FoxyPanel
+embed static-import guard (P10 bundle boundary) — no
+`apps/host/src/app/**/page.tsx` may statically import
+`@alfanumrik/ui/foxy-panel/*`, only the sanctioned tap-gated launcher
+`@alfanumrik/ui/foxy-launcher/*` — runbook
+`docs/runbooks/foxy-panel-embed-rollout.md`.
+Prior: REG-354..REG-358 (2026-08-05, Foxy North-Star Phase 3 Adaptive +
 Check loop batch — five pins across `03-quiz-integrity.md` (REG-354, 355,
 356, 358) and `02-foxy-ai.md` (REG-357) covering the ~50-file uncommitted
 Phase 3 change set on branch `Alfanumrik/foxy-system-spec-22f565`.
@@ -229,7 +239,10 @@ test files were re-run green in ONE vitest pass from apps/host — 191/191.)
 superseded above — the P2-2 API response-envelope wrapper regression took
 REG-344 on 2026-08-04, then the Foxy North-Star Phase 0 gate batch took
 REG-345..REG-347 on 2026-08-05, and the same-day Phase 1 Safety & Trust
-batch then took REG-348..REG-350, so **REG-351 is now the next free id.**
+batch then took REG-348..REG-350, then Phase 2 Canonical Learner Model took
+REG-351..REG-353, Phase 3 Adaptive + Check took REG-354..REG-358, and the
+Phase 4 wave 4a/4b promotion + FoxyPanel guard took REG-359..REG-360, so
+**REG-361 is now the next free id.**
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

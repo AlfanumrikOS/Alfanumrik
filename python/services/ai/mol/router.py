@@ -4,6 +4,22 @@ The BASE_MATRIX is hand-mirrored from the TS source. Any change to the TS
 matrix MUST land here in the same PR — assessment owns the routing rules and
 the two files MUST agree byte-for-byte at the chain level so shadow rows
 written by either runtime remain comparable.
+
+R3 CONSOLIDATION DRIFT RISK (Foxy North-Star Phase 4, 2026-08-05):
+   The Deno-side twin (supabase/functions/_shared/mol/router.ts) is now
+   GENERATED from packages/lib/src/ai/gateway/registry.ts via
+   scripts/gen-mol-matrix.mjs. This Python copy remains HAND-MIRRORED
+   because Python cannot import a TS ESM module, and deleting it would
+   silently regress any live Python-side consumer (perception classifier
+   at /v1/classify, and the shadow-generation path used by
+   grounded-answer/foxy-python-generation.ts when flag-gated live).
+
+   Phase-5 follow-up TODO: replace this hand-authored copy with a
+   generator that reads the SAME registry.ts and emits a Python module
+   (a second target of scripts/gen-mol-matrix.mjs, or a companion
+   scripts/gen-mol-matrix-py.mjs). Until then: if you rename a model id
+   in registry.ts, remember to touch THIS FILE too. The Deno half moves
+   automatically; the Python half will not.
 """
 
 from __future__ import annotations

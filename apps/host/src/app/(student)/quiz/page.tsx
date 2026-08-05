@@ -33,6 +33,11 @@ const QuizResults = dynamic(() => import('@alfanumrik/ui/quiz/QuizResults'), {
   ssr: false,
   loading: () => <LoadingFoxy />,
 });
+
+// Phase 4 U1 — "Ask Foxy about a missed question" launcher on the results
+// screen. The launcher itself is a tiny module (button + useState); FoxyPanel
+// is dynamic-imported inside the launcher only when the student taps.
+import FoxyPanelLauncher from '@alfanumrik/ui/foxy-launcher/FoxyPanelLauncher';
 // Screen 08 "Result" (Wave B, `ff_quiz_result_v2`) — additive presentational
 // alternative to QuizResults. Flag OFF by default (architect seeds the row
 // separately); the legacy QuizResults path below is completely untouched
@@ -2441,7 +2446,28 @@ export default function QuizPage() {
           isFirstQuiz={false}
           onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
           onGoHome={() => router.push(experienceV3 ? '/today' : '/dashboard')}
+          onAskFoxy={() => { /* Phase 4 U1: page mounts the tap-gated launcher below. */ }}
         />
+        {/* Phase 4 U1: tap-gated "Ask Foxy about this quiz" launcher. Panel is
+            dynamic-imported (ssr:false) inside the launcher only on tap. */}
+        <div className="max-w-2xl mx-auto px-4 mt-4">
+          <FoxyPanelLauncher
+            subject={selectedSubject || 'science'}
+            grade={student?.grade || '10'}
+            mode="doubt"
+            context="quiz-results"
+            initialPrompt={
+              isHi
+                ? 'मुझे इस क्विज़ में गलत हुए सवालों को समझने में मदद करो।'
+                : 'Help me understand the questions I got wrong on this quiz.'
+            }
+            isHi={isHi}
+            language={isHi ? 'hi' : 'en'}
+            studentId={student?.id}
+            studentName={student?.name}
+            ctaLabel={{ en: '🦊 Ask Foxy about this quiz', hi: '🦊 इस क्विज़ पर फॉक्सी से पूछो' }}
+          />
+        </div>
         {/* SLC-5: gentle, NON-accusatory note when the server flagged the attempt.
             The real score_percent is still shown by QuizResults above; this only
             explains why no XP was awarded. Bilingual per P7. Never punitive. */}

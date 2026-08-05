@@ -1,0 +1,29 @@
+{
+  "turn": "009-grade-spoof-403",
+  "description": "onboarded student, enrolled grade \"8\", claimed grade \"10\" → 403 GRADE_MISMATCH",
+  "input": {
+    "message": "Explain photosynthesis",
+    "subject": "science",
+    "grade": "10"
+  },
+  "status": 403,
+  "groundedRequest": null,
+  "wireJson": {
+    "success": false,
+    "error": "Request grade does not match enrollment",
+    "error_hi": "Aapki request ka grade aapke profile se match nahi karta.",
+    "code": "GRADE_MISMATCH"
+  },
+  "wireJsonKeyOrder": [
+    "success",
+    "error",
+    "error_hi",
+    "code"
+  ],
+  "dbOps": [
+    {
+      "table": "students",
+      "op": "select"
+    }
+  ]
+}

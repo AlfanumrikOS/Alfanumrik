@@ -90,9 +90,24 @@ export const RETEACH_CONCEPTUAL_ERROR_MIN = 3;
 
 // ─── Foxy cognitive-context masteryLevel cuts ────────────────────────────────
 
-/** avgMastery < 0.4 → masteryLevel 'low' (Foxy prompt rails). */
+/**
+ * avgMastery < 0.4 → masteryLevel 'low' (Foxy prompt rails).
+ *
+ * Single source of truth — mirror of the pedagogy-tree literals in the
+ * grounded-answer inline prompt: `supabase/functions/grounded-answer/prompts/
+ * inline.ts` sections at lines 61-110 (FOXY_TUTOR_V1) and 296-345
+ * (FOXY_TUTOR_TEACH_V1) — see the PREREQUISITE_CHECK / SOCRATIC /
+ * STRETCH decision-tree numerics.
+ *
+ * `packages/lib/src/__tests__/foxy/teaching-director-config-drift.test.ts`
+ * asserts these constants appear verbatim in that inline prompt file so
+ * drift is caught at build time.
+ */
 export const FOXY_MASTERY_LOW = 0.4;
-/** avgMastery < 0.7 → 'medium'; >= 0.7 → 'high'. */
+/**
+ * avgMastery < 0.7 → 'medium'; >= 0.7 → 'high'.
+ * Same mirror-drift contract as FOXY_MASTERY_LOW above.
+ */
 export const FOXY_MASTERY_HIGH = 0.7;
 
 // ─── Foxy weak-areas intent-chip cuts (assessment mandate, 2026-08-05) ───────

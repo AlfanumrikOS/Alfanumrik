@@ -1,0 +1,40 @@
+{
+  "turn": "010-quota-429",
+  "description": "RPC reports allowed=false → 429, no LLM call, no persistence",
+  "input": {
+    "message": "Explain photosynthesis",
+    "subject": "science",
+    "grade": "8"
+  },
+  "status": 429,
+  "groundedRequest": null,
+  "wireJson": {
+    "success": false,
+    "error": "Daily Foxy chat limit reached. Upgrade your plan or try again tomorrow.",
+    "error_hi": "Aaj ke Foxy chats khatam ho gaye. Kal dobara try karein ya plan upgrade karein.",
+    "quotaRemaining": 0
+  },
+  "wireJsonKeyOrder": [
+    "success",
+    "error",
+    "error_hi",
+    "quotaRemaining"
+  ],
+  "dbOps": [
+    {
+      "table": "students",
+      "op": "select"
+    },
+    {
+      "table": "system_metrics",
+      "op": "insert",
+      "patchKeys": [
+        "metric_name",
+        "recorded_at",
+        "route",
+        "tags",
+        "value"
+      ]
+    }
+  ]
+}

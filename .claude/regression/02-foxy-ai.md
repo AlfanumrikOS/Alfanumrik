@@ -2532,3 +2532,87 @@ serving-order + telemetry P13). REG-358 (SRS single predicate) is also in
 
 ---
 
+## REG-359 — Foxy route CHARACTERIZATION FIXTURES (R3 decomposition tripwire) (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 4 wave 4a). Promoted into the shard by
+ops as part of Phase 4 wave 4b so the R3 pipeline-decomposition wave has a
+sanctioned catalog entry to point at (see also
+`docs/runbooks/foxy-r3-decomposition-plan.md`).
+
+Byte-for-byte characterization of the CURRENT
+`apps/host/src/app/api/foxy/route.ts` (post Phases 0-3) so the R3
+decomposition PR series — which extracts named pipeline stages out of
+`handleFoxyPost` into `apps/host/src/app/api/foxy/_pipeline/{observe,gate,
+diagnose,decide,teach,check,update,close}.ts` — can prove behavior
+preservation by re-running this suite unchanged.
+
+Per pinned turn, THREE artifacts:
+1. `groundedRequest` — the full `GroundedRequest` handed to the mocked
+   `callGroundedAnswer`; fingerprints prompt-assembly output (every template
+   variable, scope, generation config, retrieval config). `null` for turns
+   that never reach the grounded call (kill-switch OFF, quota 429, grade
+   spoof, math terminal, safeguarding terminal, curriculum-scope fail,
+   out-of-scope terminal).
+2. `wireJson` — the parsed HTTP response body. Deep-equaled against the
+   fixture; top-level key insertion order also pinned via `wireJsonKeyOrder`
+   (V8 preserves insertion order, and the mobile parser depends on it —
+   see R3 risk register #2).
+3. `dbOps` — ordered sequence of `.from(<table>)` calls observed against
+   the fake supabaseAdmin, tagged with the writing op
+   (insert/update/upsert/delete/select) and top-level PATCH keys where
+   present. Fingerprints persistence side-effect ordering.
+
+Flag-sweep contract: every flag the route reads is exercised in the flag-
+sweep block: one ON run and one OFF run against the baseline "learn
+cold-start" fixture (itself captured with every flag OFF). Every OFF run
+MUST deep-equal the baseline; this pins the "OFF is byte-identical" claim
+the route documents inline for each flag. Current OFF sweep covers 20
+flag-OFF paths.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-359a | `foxy_route_characterization_fixtures` | 11 seeded fixtures deep-equal the pinned `groundedRequest` + `wireJson` (with `wireJsonKeyOrder`) + `dbOps` triple for the current route: `001-learn-cold-start`, `002-learn-full-cognitive-context`, `003-quiz-me-intent`, `004-real-practice-flag-on`, `005-abstain-upstream-error-refund-legacy`, `006-abstain-low-similarity-no-refund`, `007-abstain-chapter-not-ready-refund`, `008-legacy-kill-switch`, `009-grade-spoof-403`, `010-quota-429`, `011-streaming-requested-flag-off`. Fixture update mechanism is `FIXTURE_UPDATE=1 npx vitest run …` and re-running WITHOUT that env var MUST be byte-identical. | `apps/host/src/__tests__/api/foxy/foxy-route-characterization.test.ts`; `apps/host/src/__tests__/fixtures/foxy-golden-turns/001-011*.json` | P (11 of 16 pinned; 5 turns declared `pending:true` — math-solve mock, curriculum-scope T3, safeguarding two-tier chain, `foxy_messages` roster, `chapter_concepts` snapshot — seeded by R3-A per `docs/runbooks/foxy-r3-decomposition-plan.md` §2) | P12 (behavior-preservation of the AI-facing route), P13 (fixtures redact PII), P6 (question-quality path preserved) |
+| REG-359b | `foxy_route_flag_off_byte_identity` | Every OFF run in the flag sweep deep-equals the baseline `001-learn-cold-start` fixture. Enforces the OFF-identity contract each flag documents inline in `route.ts`. | same file | E | P14 (flag-OFF byte identity is a review-chain contract) |
+
+Post-R3-B/R3-C extension: after each stage extraction, re-running this suite
+unchanged is the go/no-go gate; a fixture diff means the extraction was NOT
+byte-identical and the PR is blocked. R3-A seeds the remaining 5 pending
+fixtures so R3-B has full coverage before extraction begins.
+
+---
+
+## REG-360 — FoxyPanel embed static-import guard (P10 bundle boundary) (2026-08-05)
+
+Added 2026-08-05 (Phase 4 wave 4b — U1 rollout). See runbook
+`docs/runbooks/foxy-panel-embed-rollout.md`.
+
+The Phase 4 U1 rollout extracted the Foxy chat panel to
+`packages/ui/src/foxy-panel/` and gave it a sanctioned tap-gated entry-point
+`packages/ui/src/foxy-launcher/FoxyPanelLauncher.tsx` that dynamic-imports
+the panel module via `next/dynamic({ ssr:false })` ONLY on tap. Three live
+embed points (dashboard, learn chapter, quiz results) use the launcher; the
+panel's ~200+ kB combined chat+streaming+markdown+KaTeX chunk therefore
+never contributes to those pages' first-load JS. This regression pins that
+boundary: if any `apps/host/src/app/**/page.tsx` ever statically imports
+`@alfanumrik/ui/foxy-panel/*`, first-load JS for that page balloons and
+breaks the P10 budget for the embed hosts.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-360 | `foxy_panel_no_static_embed` | Walks every `apps/host/src/app/**/page.tsx` and asserts NO file contains a static import matching `/from\s+['"]@alfanumrik\/ui\/foxy-panel(\/[^'"]+)?['"]/`. The launcher path (`@alfanumrik/ui/foxy-launcher/*`) is intentionally out of scope — it IS the sanctioned static entry-point. The `/foxy` page's own `apps/host/src/app/foxy/_...` re-export stubs are transitive and do not appear as literal `@alfanumrik/ui/foxy-panel` strings in the page's own source, so the walk cleanly ignores them (preserves pre-Phase-4 /foxy behavior). | `apps/host/src/__tests__/regressions/foxy-panel-no-static-embed.test.ts` | E | P10 (bundle budget for embed hosts), P14 (frontend->ops review-chain contract on embed changes) |
+
+Adjacent evidence: `packages/ui/src/foxy-panel/` (FoxyPanel + MessageInput +
+MessageList + useFoxyChat + foxy-types + foxy-constants),
+`packages/ui/src/foxy-launcher/FoxyPanelLauncher.tsx`, first-load JS
+baselines unchanged for the three embed pages (dashboard 124.5, learn 167.4,
+quiz 177.0 kB).
+
+### Catalog total (updated)
+
+Pre-REG-359: 358 entries. Adds REG-359 (Foxy characterization fixtures,
+Phase 4 wave 4a promoted this wave) and REG-360 (FoxyPanel static-import
+guard, Phase 4 wave 4b).
+**Total catalog: 360 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

@@ -205,6 +205,27 @@ const DUP_SIGNATURES = [
       'packages/lib/src/ai/index.ts',                            // [canonical] re-export
     ],
   },
+  {
+    // R3 consolidation, 2026-08-05: the Deno-side BASE_MATRIX is now
+    // GENERATED from packages/lib/src/ai/gateway/registry.ts via
+    // scripts/gen-mol-matrix.mjs. The `selectProviderChain` / `BASE_MATRIX`
+    // symbols may only appear at:
+    //   - packages/lib/src/ai/gateway/**            (the canonical gateway)
+    //   - supabase/functions/_shared/mol/generated-matrix.ts (generated)
+    //   - supabase/functions/_shared/mol/router.ts  (import + call-site policy)
+    // A new hand-authored copy anywhere else re-introduces the drift R3
+    // consolidation was created to close — refuse it here.
+    name: 'MOL BASE_MATRIX (Deno)',
+    re: /BASE_MATRIX\s*[:=]|selectProviderChain/,
+    // Note: the gateway's own router uses `selectModelChain` (already
+    // covered by the previous signature above), NOT selectProviderChain
+    // — so the gateway files intentionally do NOT appear here.
+    allow: [
+      'supabase/functions/_shared/mol/generated-matrix.ts', // [canonical] the generated Deno matrix
+      'supabase/functions/_shared/mol/router.ts',           // [canonical] the router that imports it
+      'supabase/functions/_shared/mol/index.ts',            // [caller] MOL orchestrator entry
+    ],
+  },
 ];
 
 // ── Check 7 constants — NO-DUPLICATE SCHEMA ─────────────────────────────────

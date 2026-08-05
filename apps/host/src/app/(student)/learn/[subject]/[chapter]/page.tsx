@@ -55,6 +55,11 @@ const ChapterReadinessCard = dynamic(
   { ssr: false, loading: () => null },
 );
 
+// Phase 4 U1 — tap-gated "Ask Foxy" embed. The launcher renders a compact
+// CTA button on first paint; FoxyPanel is dynamic-imported (ssr:false)
+// only when the student taps. First-load JS delta ≈ 0.
+import FoxyPanelLauncher from '@alfanumrik/ui/foxy-launcher/FoxyPanelLauncher';
+
 // Screen 06 "Topic" (Wave B, ff_learn_topic_v2). Additive presentation layer
 // — code-split so its bundle cost is zero for the (today: 100%) flag-off
 // population. See packages/ui/src/learn/v2/TopicPage.tsx for the full
@@ -1509,6 +1514,22 @@ function ChapterConceptPageContent() {
                   onReviewWeakConcept={handleReviewWeakConcept}
                 />
               )}
+
+              {/* Phase 4 U1: "Ask Foxy about this chapter" tap-gated launcher.
+                  Panel bundle is deferred via dynamic-import (see launcher). */}
+              <div className="flex justify-start">
+                <FoxyPanelLauncher
+                  subject={subject}
+                  grade={student?.grade || '10'}
+                  chapter={String(chapterNum)}
+                  mode="explain"
+                  context="learn"
+                  isHi={isHi}
+                  language={isHi ? 'hi' : 'en'}
+                  studentId={student?.id}
+                  studentName={student?.name}
+                />
+              </div>
 
               {/* Concept label */}
               <div className="flex items-center gap-2">

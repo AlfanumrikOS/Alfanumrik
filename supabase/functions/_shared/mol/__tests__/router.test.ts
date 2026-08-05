@@ -2,6 +2,44 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { selectProviderChain, getMaxTokens } from '../router.ts'
+import { GENERATED_BASE_MATRIX, MODEL_IDS } from '../generated-matrix.ts'
+import type { TaskType } from '../types.ts'
+
+// R3 consolidation parity — the generated Deno matrix must resolve, for every
+// TaskType, to the same primary target as the gateway's LEGACY_FALLBACK_ORDER
+// intent (auto/haiku/sonnet policy tokens). We DUPLICATE the mapping here on
+// purpose — this test is the intent registry pin that catches drift between
+// scripts/gen-mol-matrix.mjs's task-type -> chain mapping and the router's
+// declared behaviour. A drift in either surface fails this test.
+const EXPECTED_PRIMARY: Record<TaskType, { provider: 'openai' | 'anthropic'; model: string }> = {
+  explanation: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
+  concept_explanation: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
+  step_by_step: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
+  reasoning: { provider: 'openai', model: MODEL_IDS.OPENAI_FULL_ID },
+  quiz_generation: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
+  evaluation: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
+  doubt_solving: { provider: 'openai', model: MODEL_IDS.OPENAI_FULL_ID },
+  ocr_extraction: { provider: 'openai', model: MODEL_IDS.OPENAI_FULL_ID },
+  grounding_check: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
+}
+
+describe('generated-matrix parity (R3 consolidation)', () => {
+  it('every TaskType has an entry in GENERATED_BASE_MATRIX', () => {
+    const declared = Object.keys(EXPECTED_PRIMARY) as TaskType[]
+    for (const t of declared) {
+      expect(GENERATED_BASE_MATRIX[t], `missing task_type in matrix: ${t}`).toBeDefined()
+      expect(GENERATED_BASE_MATRIX[t].length, `empty passes for ${t}`).toBeGreaterThan(0)
+    }
+  })
+
+  it('primary of each generated chain matches expected gateway intent', () => {
+    for (const [task, want] of Object.entries(EXPECTED_PRIMARY) as [TaskType, typeof EXPECTED_PRIMARY[TaskType]][]) {
+      const primary = GENERATED_BASE_MATRIX[task][0].chain[0]
+      expect(primary, `no primary for ${task}`).toEqual(want)
+    }
+  })
+})
+
 
 describe('selectProviderChain', () => {
   beforeEach(() => {

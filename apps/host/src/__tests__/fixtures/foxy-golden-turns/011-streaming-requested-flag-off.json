@@ -1,0 +1,23 @@
+{
+  "turn": "011-streaming-requested-flag-off",
+  "description": "client sends {stream:true} but ff_foxy_streaming OFF → falls through to non-streaming grounded path",
+  "input": {
+    "message": "Explain photosynthesis",
+    "subject": "science",
+    "grade": "8",
+    "stream": true
+  },
+  "status": 503,
+  "groundedRequest": null,
+  "wireJson": {
+    "success": false,
+    "error": "Foxy is temporarily unavailable. Please try again in a minute.",
+    "error_hi": "Foxy abhi available nahi hai. Kripya thodi der baad try karein."
+  },
+  "wireJsonKeyOrder": [
+    "success",
+    "error",
+    "error_hi"
+  ],
+  "dbOps": []
+}

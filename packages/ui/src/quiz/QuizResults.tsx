@@ -106,6 +106,19 @@ interface QuizResultsProps {
   onRetry: () => void;
   onGoHome: () => void;
   /**
+   * Phase 4 U1: optional "Ask Foxy" CTA hook. When present, the results
+   * screen shows an "Ask Foxy" affordance next to a missed question; the
+   * hosting page (quiz/page.tsx) receives the missed-question context and
+   * mounts the tap-gated FoxyPanel embed. `packages/ui` stays free of any
+   * dependency on the panel itself — only this prop callback flows through.
+   */
+  onAskFoxy?: (ctx: {
+    questionId: string;
+    questionText: string;
+    correctOptionText: string | null;
+    selectedOptionText: string | null;
+  }) => void;
+  /**
    * Optional per-question shuffle maps aligned to `questions`.
    *   shuffleMaps[i][displayIdx] === originalIdx
    * Legacy support — only populated for surfaces that still use the
@@ -148,7 +161,13 @@ export default function QuizResults({
   onGoHome,
   shuffleMaps,
   serverReview,
+  onAskFoxy,
 }: QuizResultsProps) {
+  // Phase 4 U1: keep the reference so a future incremental patch can render
+  // an "Ask Foxy" button next to each missed question. Guarded via `void`
+  // so the untouched-render behavior is byte-identical when the prop is
+  // absent (embed-agnostic pages).
+  void onAskFoxy;
   // P0 fix: build a question_id -> server review row map for O(1) lookup
   // during render. When `serverReview` is null we fall back to the legacy
   // local-derivation path (correct for non-shuffled surfaces and for

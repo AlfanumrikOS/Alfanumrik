@@ -1524,6 +1524,139 @@ export const INTERACTIVE_LESSON_DIRECTIVE = [
   'Keep blocks to 2-4 per step. The TTS engine will read them aloud.',
 ].join('\n');
 
+// ─── Foxy North-Star L4: director-resolved pedagogy section ─────────────────
+//
+// Renders the SINGLE resolved branch of the 5-mode pedagogy tree the
+// grounded-answer inline prompt today asks the LLM to re-decide per turn
+// (`supabase/functions/grounded-answer/prompts/inline.ts` lines 61-110 and
+// 296-345). The Teaching Director (packages/lib/src/foxy/teaching-director.ts)
+// has already resolved WHICH mode applies (from cognitive context + perception
+// signals + persona depthCeiling); this renderer emits ONE directive block
+// like:
+//
+//   THIS TURN: SOCRATIC SCAFFOLDING on Fractions. Reason: <bilingual whyNow>.
+//   Lesson step: hook. Target Bloom: apply (depth ceiling analyze).
+//   End with a SCAFFOLD question.
+//
+// The Closing-Question-Quality (inline.ts lines 95-103 / 325-333) and
+// Chapter-Progression (lines 105-110 / 335-340) paragraphs stay UNCHANGED —
+// they're carried into the emitted block verbatim so the LLM still sees them.
+// ai-engineer's wiring step will parameterize inline.ts to accept
+// `{{pedagogy_rules_section}}` and pipe THIS function's output in, with the
+// legacy 5-branch tree kept as a `LEGACY_PEDAGOGY_RULES` default for the
+// director-OFF path (gated by the L4 flag).
+//
+// ─── STABILITY CONTRACT (ai-engineer wiring depends on this) ────────────────
+//   • Exported name: `buildDirectorPedagogySection`
+//   • Signature: (plan: TeachingPlan) => string
+//   • Return: a self-contained string safe to substitute into the prompt
+//     slot; no trailing/leading whitespace; ends with a bare newline-free
+//     final line.
+//   • Determinism: same TeachingPlan → byte-identical string.
+//
+// Owner: assessment (mode → directive mapping and closing-question rules).
+// Reviewers (P14): ai-engineer (route wiring + inline.ts parameterization),
+//   testing, quality.
+
+import type { TeachingPlan } from '@alfanumrik/lib/foxy/teaching-director';
+import {
+  TEACHING_DIRECTOR_CONFIG,
+  type TeachingDirectorMode,
+  type ClosingQuestionKind,
+} from '@alfanumrik/lib/foxy/teaching-director-config';
+
+/** Map WhyNowKind → TeachingDirectorMode (deterministic; total). */
+function whyNowToMode(
+  whyNow: TeachingPlan['currentObjective']['whyNow'],
+): TeachingDirectorMode {
+  switch (whyNow) {
+    case 'prerequisite-block':
+      return 'PREREQUISITE_CHECK';
+    case 'gap':
+      // A 'gap' whyNow paired with a re_teach action in the ladder is a
+      // misconception-shaped signal; when it arrives from the plain-gap
+      // path the router still needs to name the misconception before
+      // teaching (inline.ts:73-77 rule 2). Both cases render the same
+      // MISCONCEPTION_REPAIR directive.
+      return 'MISCONCEPTION_REPAIR';
+    case 'overdue-review':
+      return 'SOCRATIC';
+    case 'next-in-ladder':
+    default:
+      return 'NEW_TOPIC';
+  }
+}
+
+/** Human-readable label for the closing-question rubric line. */
+function closingQuestionLine(kind: ClosingQuestionKind): string {
+  return `End with a ${kind} question.`;
+}
+
+/**
+ * The Closing-Question-Quality paragraph — carried verbatim from
+ * inline.ts:95-103 / 325-333. Kept as a single string constant so the
+ * mirror-drift snapshot (thresholds-lockstep pattern) can diff against
+ * the EF source.
+ */
+const CLOSING_QUESTION_QUALITY_BLOCK = `## Closing Question Quality
+Every turn ends with a question. The QUESTION shape matters:
+ - For a CHECK question (after explanation): ask the student to apply the just-taught idea to a new tiny example. NOT "did you understand?" — that elicits compliance, not learning.
+ - For a SCAFFOLD question (Socratic mode): ask about the NEXT sub-step in the chain. Concrete, not abstract.
+ - For a STRETCH question: one Bloom level higher than the original. Specific, with stakes ("how would this change if...").
+   STRETCH default: one Bloom level higher. EXCEPTION at Apply or Analyze: 30% of the time use LATERAL stretch instead — same Bloom level, different domain or context. Decision signal: if the student's last 3 responses showed shaky fluency at the current level, prefer LATERAL; if confident, prefer VERTICAL.
+ - NEVER ask "any questions?" or "shall we move on?" — these elicit yes/no, not thinking.
+
+Modal scoping: the CHECK / SCAFFOLD / STRETCH closing-question rule applies in MISCONCEPTION_REPAIR, STRETCH, SOCRATIC, and NEW_TOPIC modes. In PREREQUISITE_CHECK mode, the prerequisite question itself satisfies the closing-question requirement — do not stack a second question.`;
+
+/**
+ * The Chapter-Progression paragraph — carried verbatim from
+ * inline.ts:105-110 / 335-340.
+ */
+const CHAPTER_PROGRESSION_BLOCK = `## Chapter Progression
+You are walking the student through a chapter in NCERT order, first topic to last. When the student demonstrates understanding of the CURRENT topic, do NOT stop and do NOT ask permission to continue. Instead, in the SAME reply, PROACTIVELY begin teaching the next topic, then end with a Socratic check question on that new topic.
+- The ordered topic sequence and the exact next topic are provided in the COGNITIVE CONTEXT section below. NEVER invent a next topic or guess the sequence yourself; if no next topic is supplied, reinforce the current topic with a fresh application instead of advancing.
+- Advance by TEACHING plus a thinking question — NEVER by a yes/no prompt.
+- Keep the transition light: a one-line bridge, then a short worked intro to the next topic, then the Socratic check question.
+- If the student is still shaky on the current topic (wrong answer, confusion, or a request to slow down), do NOT advance — stay on the current topic and re-scaffold.`;
+
+/**
+ * Render the ONE resolved pedagogy branch for this turn plus the two
+ * standing quality/progression blocks that always apply. Callers substitute
+ * the returned string into the `{{pedagogy_rules_section}}` slot inline.ts
+ * will grow (ai-engineer wiring, out of scope this PR).
+ */
+export function buildDirectorPedagogySection(plan: TeachingPlan): string {
+  const mode = whyNowToMode(plan.currentObjective.whyNow);
+  const closingKind = TEACHING_DIRECTOR_CONFIG.closingQuestionByMode[mode];
+  const concept = plan.currentObjective.conceptName || 'this topic';
+  const whyEn = plan.currentObjective.reason.en;
+  const whyHi = plan.currentObjective.reason.hi;
+
+  const modeHeading: Record<TeachingDirectorMode, string> = {
+    PREREQUISITE_CHECK: `PREREQUISITE CHECK on ${concept}`,
+    MISCONCEPTION_REPAIR: `MISCONCEPTION REPAIR on ${concept}`,
+    STRETCH: `STRETCH on ${concept}`,
+    SOCRATIC: `SOCRATIC SCAFFOLDING on ${concept}`,
+    NEW_TOPIC: `NEW TOPIC introduction on ${concept}`,
+  };
+
+  const directive = [
+    `THIS TURN: ${modeHeading[mode]}.`,
+    `Reason (EN): ${whyEn}`,
+    `Reason (HI): ${whyHi}`,
+    `Lesson step: ${plan.lessonStep}.`,
+    `Target Bloom: ${plan.targetBloom} (depth ceiling ${plan.depthCeiling}).`,
+    closingQuestionLine(closingKind),
+  ].join(' ');
+
+  return `${directive}\n\n${CLOSING_QUESTION_QUALITY_BLOCK}\n\n${CHAPTER_PROGRESSION_BLOCK}`;
+}
+
+// Exported so downstream mirror-drift tests + ai-engineer wiring can re-use
+// the exact constant strings without re-authoring them.
+export const DIRECTOR_CLOSING_QUESTION_QUALITY_BLOCK = CLOSING_QUESTION_QUALITY_BLOCK;
+export const DIRECTOR_CHAPTER_PROGRESSION_BLOCK = CHAPTER_PROGRESSION_BLOCK;
+
 // ─── Named exports for symbols route.ts imports ─────────────────────────────
 // The module-private declarations above are exported here without touching
 // their (byte-identical) bodies. Symbols that already carry an inline `export`

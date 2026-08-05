@@ -103,11 +103,12 @@
       "title": "Adaptive Planner — add top 2 spec tiers (safety hold, teacher-assigned work) to deriveNextAction; expose via facade only",
       "specSection": "§1.1",
       "phase": "4",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
           "apps/host/src/app/api/foxy/_lib/cognitive-context.ts",
+          "packages/lib/src/learner-model/next-action.ts",
           "packages/lib/src/learner-model/"
         ],
         "middleware": [],
@@ -116,18 +117,41 @@
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/learner-model/next-action-order.test.ts",
+        "packages/lib/src/__tests__/learner-model/next-action.test.ts"
+      ],
       "regressionIds": [],
-      "flags": [],
+      "flags": [
+        {
+          "name": "ff_foxy_decide_ladder_v1",
+          "requiredState": "off"
+        }
+      ],
       "reviewChain": {
         "required": [
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "ai-engineer",
+          "testing",
+          "ops",
+          "architect",
+          "backend",
+          "frontend",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/next-action.ts — deriveNextAction planner now carries all 7 tiers via facade extension (S1.3 covered by same code path as L3)"
+      ],
+      "notes": [
+        "Same code as L3 — S1.3 is the S-layer view of the planner extension, L3 is the L-layer decide-loop view. Both flip together behind ff_foxy_decide_ladder_v1."
+      ]
     },
     {
       "reqId": "S1.4",
@@ -305,7 +329,7 @@
       "title": "Evidence Engine — student-facing Close (via L7) + teacher evidence citations (via K3) + parent evidence completion",
       "specSection": "§1.1",
       "phase": "4",
-      "status": "planned",
+      "status": "in_progress",
       "layers": {
         "db": [],
         "backend": [],
@@ -323,10 +347,15 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "ops"
+        ]
       },
       "lastVerified": null,
-      "evidence": []
+      "evidence": [],
+      "notes": [
+        "S1.8 lives entirely on top of L7 (student Close), K3 (teacher evidence citations) and parent completion — Phase-5 evidence-citations territory. No code moves this wave; graduates once L7 close-stage lands with R3-B/C and K3 lands independently."
+      ]
     },
     {
       "reqId": "D1",
@@ -2060,10 +2089,11 @@
       "title": "Observe — add school-assignment context read (assignment_submissions) + due-review read via facade to loadCognitiveContext",
       "specSection": "§1.4",
       "phase": "4",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
+          "apps/host/src/app/api/foxy/_lib/assignments.ts",
           "apps/host/src/app/api/foxy/_lib/cognitive-context.ts",
           "packages/lib/src/learner-model/"
         ],
@@ -2081,10 +2111,22 @@
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "ai-engineer",
+          "ops",
+          "testing",
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "apps/host/src/app/api/foxy/_lib/assignments.ts — L1 open-assignments reader (per approved design §4.3); reads through supabaseAdmin bound to server-derived studentId only; earliest-due-first, cap 3; covered by idx_assignments_class_active_due"
+      ]
     },
     {
       "reqId": "L2",
@@ -2122,11 +2164,14 @@
       "title": "Decide — full priority ladder (add tier 1 safety hold from S5.6 signal + tier 2 assigned work from D11); exact spec ordering; facade getNextAction; unit-pinned order test",
       "specSection": "§1.4",
       "phase": "4",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260811000000_seed_ff_foxy_decide_ladder_v1.sql"
+        ],
         "backend": [
           "apps/host/src/app/api/foxy/_lib/cognitive-context.ts",
+          "packages/lib/src/learner-model/next-action.ts",
           "packages/lib/src/learner-model/"
         ],
         "middleware": [],
@@ -2135,29 +2180,54 @@
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/learner-model/next-action-order.test.ts",
+        "packages/lib/src/__tests__/learner-model/next-action.test.ts"
+      ],
       "regressionIds": [],
-      "flags": [],
+      "flags": [
+        {
+          "name": "ff_foxy_decide_ladder_v1",
+          "requiredState": "off"
+        }
+      ],
       "reviewChain": {
         "required": [
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "ai-engineer",
+          "ops",
+          "testing",
+          "architect",
+          "backend",
+          "frontend",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learner-model/next-action.ts — 7-tier decide ladder (adds safety_hold + assigned_work tiers behind ff_foxy_decide_ladder_v1); order pinned by next-action-order.test.ts",
+        "supabase/migrations/20260811000000_seed_ff_foxy_decide_ladder_v1.sql — flag seeded OFF/0% (rollback = flip flag off, byte-identical to pre-ladder ordering)"
+      ]
     },
     {
       "reqId": "L4",
       "title": "Teach — promote teaching-director (code twin) over prompt text; ADD teach-back activity type (S1.6); strategy choice logged (D8)",
       "specSection": "§1.4",
       "phase": "4",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260811000002_seed_ff_foxy_director_prompt_v1.sql"
+        ],
         "backend": [
-          "packages/lib/src/foxy/teaching-director.ts"
+          "packages/lib/src/foxy/teaching-director.ts",
+          "packages/lib/src/foxy/teaching-director-config.ts",
+          "packages/lib/src/foxy/prompt-sections.ts"
         ],
         "middleware": [],
         "frontend": [],
@@ -2165,18 +2235,39 @@
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/foxy/teaching-director-section.test.ts"
+      ],
       "regressionIds": [],
-      "flags": [],
+      "flags": [
+        {
+          "name": "ff_foxy_director_prompt_v1",
+          "requiredState": "off"
+        }
+      ],
       "reviewChain": {
         "required": [
           "assessment",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "ai-engineer",
+          "ops",
+          "testing",
+          "architect",
+          "backend",
+          "frontend",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/foxy/teaching-director-config.ts — director config (code twin over prompt text) with threshold mirror-drift snapshot",
+        "packages/lib/src/foxy/teaching-director.ts — section renderer",
+        "supabase/migrations/20260811000002_seed_ff_foxy_director_prompt_v1.sql — flag seeded OFF/0%; inline.ts slot swap deferred to R3-B extraction (see docs/runbooks/foxy-r3-decomposition-plan.md §2 R3-B)"
+      ]
     },
     {
       "reqId": "L5",
@@ -2325,21 +2416,29 @@
       "title": "Foxy contextual inside Today/Learn/Practice — slim FoxyPanel (packages/ui/src/foxy-panel/) reusing useFoxyChat; /foxy becomes thin shell on the SAME panel; no duplicate chat code; dynamic import within bundle budget",
       "specSection": "§1.5",
       "phase": "4",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [],
         "middleware": "inherit",
         "frontend": [
           "packages/ui/src/foxy-panel/",
-          "apps/host/src/app/foxy/page.tsx"
+          "packages/ui/src/foxy-launcher/FoxyPanelLauncher.tsx",
+          "apps/host/src/app/foxy/page.tsx",
+          "apps/host/src/app/(student)/dashboard/page.tsx",
+          "apps/host/src/app/(student)/learn/page.tsx",
+          "packages/ui/src/quiz/QuizResults.tsx"
         ],
         "mobile": []
       },
       "owner": "frontend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "apps/host/src/__tests__/regressions/foxy-panel-no-static-embed.test.ts"
+      ],
+      "regressionIds": [
+        "REG-360"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -2347,10 +2446,24 @@
           "testing",
           "mobile"
         ],
-        "completed": []
+        "completed": [
+          "frontend",
+          "ops",
+          "testing",
+          "assessment",
+          "architect",
+          "backend",
+          "mobile",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/ui/src/foxy-panel/ — 6 modules: FoxyPanel.tsx, MessageList.tsx, MessageInput.tsx, useFoxyChat.ts, foxy-types.ts, foxy-constants.ts",
+        "packages/ui/src/foxy-launcher/FoxyPanelLauncher.tsx — sanctioned tap-gated entry-point (next/dynamic ssr:false), the ONLY static path any host page.tsx may take",
+        "apps/host/src/__tests__/regressions/foxy-panel-no-static-embed.test.ts",
+        "docs/runbooks/foxy-panel-embed-rollout.md"
+      ]
     },
     {
       "reqId": "U2",
@@ -3152,11 +3265,21 @@
       "title": "Pedagogical orchestrator + model router — decompose handleFoxyPost into named typed stages (= spec loop L1-L7); director ON; consolidate routing to ONE gateway (retire 2 duplicates). Approval A5 granted",
       "specSection": "§1.7",
       "phase": "4",
-      "status": "planned",
+      "status": "in_progress",
       "layers": {
         "db": [],
         "backend": [
           "apps/host/src/app/api/foxy/route.ts",
+          "apps/host/src/app/api/foxy/_pipeline/compose.ts",
+          "apps/host/src/app/api/foxy/_pipeline/types.ts",
+          "apps/host/src/app/api/foxy/_pipeline/observe.ts",
+          "apps/host/src/app/api/foxy/_pipeline/gate.ts",
+          "apps/host/src/app/api/foxy/_pipeline/diagnose.ts",
+          "apps/host/src/app/api/foxy/_pipeline/decide.ts",
+          "apps/host/src/app/api/foxy/_pipeline/teach.ts",
+          "apps/host/src/app/api/foxy/_pipeline/check.ts",
+          "apps/host/src/app/api/foxy/_pipeline/update.ts",
+          "apps/host/src/app/api/foxy/_pipeline/close.ts",
           "packages/lib/src/ai/gateway/"
         ],
         "middleware": [],
@@ -3165,21 +3288,46 @@
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
-      "flags": [],
+      "tests": [
+        "apps/host/src/__tests__/api/foxy/foxy-route-characterization.test.ts"
+      ],
+      "regressionIds": [
+        "REG-359"
+      ],
+      "flags": [
+        {
+          "name": "ff_foxy_decide_ladder_v1",
+          "requiredState": "off"
+        },
+        {
+          "name": "ff_foxy_director_prompt_v1",
+          "requiredState": "off"
+        },
+        {
+          "name": "ff_foxy_close_stage_v1",
+          "requiredState": "off"
+        }
+      ],
       "reviewChain": {
         "required": [
           "assessment",
           "backend",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "ops"
+        ]
       },
       "lastVerified": null,
-      "evidence": [],
+      "evidence": [
+        "apps/host/src/app/api/foxy/_pipeline/compose.ts — runPipeline runner (timing ledger + terminal short-circuit + publish-once at close, never-throws-from-instrumentation); scaffolding, NOT yet wired into route.ts",
+        "apps/host/src/app/api/foxy/_pipeline/{observe,gate,diagnose,decide,teach,check,update,close}.ts — 8 empty stage stubs, each with R3 header note",
+        "apps/host/src/__tests__/api/foxy/foxy-route-characterization.test.ts — REG-359 characterization suite: 11 seeded fixtures + 5 pending + 20-flag OFF-identity sweep against the current route",
+        "docs/runbooks/foxy-r3-decomposition-plan.md — sub-wave plan (R3-A seeds remaining 5 fixtures; R3-B extracts 8 stages byte-identical; R3-C wires runPipeline)"
+      ],
       "notes": [
-        "BINDING SEQUENCING RULES (Phase 4 design review): (1) characterization golden fixtures captured against post-Phase-0-3 merged route BEFORE decomposition; (2) L3 tier-order swap + L4 tree replacement behind OFF-default flags ff_foxy_decide_ladder_v1/ff_foxy_director_prompt_v1; (3) route.ts single-writer lock per step — no parallel PRs into route.ts/_lib until R3 merges."
+        "BINDING SEQUENCING RULES (Phase 4 design review): (1) characterization golden fixtures captured against post-Phase-0-3 merged route BEFORE decomposition; (2) L3 tier-order swap + L4 tree replacement behind OFF-default flags ff_foxy_decide_ladder_v1/ff_foxy_director_prompt_v1; (3) route.ts single-writer lock per step — no parallel PRs into route.ts/_lib until R3 merges.",
+        "R3 correctly deferred by ai-engineer this wave (Phase 4 wave 4b): scaffolding + fixtures + Group B router consolidation are done; the byte-identical extraction is a multi-PR wave of its own. Sub-waves: R3-A (seed the 5 pending characterization fixtures: math-solve, curriculum-scope T3, safeguarding two-tier chain, foxy_messages roster, chapter_concepts snapshot), R3-B (extract handleFoxyPost sections into the 8 pipeline stage modules in canonical order, byte-identical, re-run REG-359 after each stage), R3-C (wire runPipeline into route.ts; shrink handleFoxyPost to `return runPipeline(ctx, stages)`; verify REG-359 + all 20 flag-OFF sweeps still deep-equal). Rollback = git revert (no runtime dual-path flag per design report). See docs/runbooks/foxy-r3-decomposition-plan.md for the full plan."
       ]
     },
     {
