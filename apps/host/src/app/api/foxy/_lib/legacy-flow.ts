@@ -30,6 +30,12 @@ import { logger } from '@alfanumrik/lib/logger';
 import { classifyIntent, routeIntent } from '@alfanumrik/lib/ai';
 import { screenStudentFacingText } from '@alfanumrik/lib/ai/validation/output-screen';
 import { stripFakeQuizClaim } from '@alfanumrik/lib/foxy/anti-fake-quiz-claim';
+// P12 unconditional "never raw JSON to a student" guard. The legacy
+// intent-router path carries NO `structured` payload on the wire, so its
+// `response` string is the ONLY thing web and mobile clients render. A
+// JSON-shaped model reply here reached the student verbatim (FOXY-RAWJSON,
+// 2026-08-05). Byte-identical no-op on non-JSON-shaped text.
+import { coerceStudentFacingText } from '@alfanumrik/lib/foxy/recover-from-text';
 import type { RagSource, DiagramRef, ChatMessage } from './constants';
 import { refundQuota, resolveTenantAiOverrides } from './quota';
 
@@ -123,7 +129,24 @@ export async function persistLegacyFoxyResponse(params: {
   // claim NOT backed by real rendered questions, we replace the ENTIRE turn with
   // the graceful bilingual fallback — a claim-with-no-questions can never ship.
   // A turn that carries real rendered questions (AC1) passes through untouched.
-  const antiFake = stripFakeQuizClaim(params.legacy.response);
+  // ── P12 raw-JSON backstop (FOXY-RAWJSON, 2026-08-05) ──────────────────────
+  // Runs BEFORE the anti-fake strip and the output screen so every downstream
+  // consumer (screen, persistence, wire, mobile) sees student-readable prose.
+  // The legacy path never emits `structured`, so without this a JSON-shaped
+  // reply is rendered verbatim as a markdown code block. No-op (byte-identical)
+  // whenever the reply is normal prose, which is every healthy turn.
+  const jsonGuarded = coerceStudentFacingText(params.legacy.response);
+  if (jsonGuarded !== params.legacy.response) {
+    logger.warn('foxy.legacy.raw_json_coerced', {
+      // P13: scope + flow only — never the answer text or studentId.
+      subject: params.subject,
+      grade: params.grade,
+      mode: params.mode,
+      traceId: params.legacy.traceId,
+      flow: 'legacy-intent-router',
+    });
+  }
+  const antiFake = stripFakeQuizClaim(jsonGuarded);
   const responseText = antiFake.text;
   if (antiFake.claimOnly) {
     logger.warn('foxy.legacy.fake_quiz_claim_stripped', {

@@ -627,12 +627,36 @@ const MODE_DIRECTIVES: Record<string, string> = {
 // is pedagogically closer to those (open-ended prose) than to practice's
 // fixed-shape 5-mcq block, and needs at least as much headroom for the
 // artifact-draft bookkeeping this mode's directive asks for every turn.
+// BUG FIX (2026-08-05, FOXY-RAWJSON — the SAME class of defect as the 2026-07-21
+// explorer fix above, which explicitly noted "several other modes also hit the
+// 1024 default (out of scope for this fix)"). 'doubt' and 'homework' had NO entry,
+// so the call site gave the two highest-volume "just answer my question" modes a
+// 1024-token budget while every sibling teaching mode had 3000. 1024 tokens does
+// not fit the structured-output JSON envelope (keys, brackets, doubled LaTeX
+// escapes) for a multi-block worked solution, so these turns truncated mid-JSON —
+// the observed trigger for the production incident where a Grade-6 student asking
+// `9x+5` received the raw JSON envelope in a code block.
+//
+// Set to 2500 (practice's budget) rather than 3000: doubt/homework answers are
+// deliberately more focused than a full lesson, and 2500 × the grounded-answer
+// pipeline's 1.6x Foxy boost (~4000 effective) comfortably fits a complete worked
+// solution with several math blocks.
+//
+// ⚠️ ASSESSMENT REVIEW REQUIRED: this raises the answer-length ceiling for two
+// live student-facing modes (pedagogy + per-turn cost impact). It does NOT change
+// any prompt text, persona, or scope rail.
+//
+// The `?? 1024` fallback at the call site (apps/host/src/app/api/foxy/route.ts)
+// is now unreachable for the seven Foxy modes; it remains only for 'olympiad' /
+// 'lesson', which are in VALID_MODES but have no Foxy prompt path today.
 const MODE_MAX_TOKENS: Record<string, number> = {
   practice: 2500,
   learn: 3000,
   explain: 3000,
   revise: 3000,
   explorer: 3000,
+  doubt: 2500,
+  homework: 2500,
 };
 
 // ─── Post-answer re-teach + Quiz-me directives (Phase 1 learning actions) ────
