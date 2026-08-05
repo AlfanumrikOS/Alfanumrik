@@ -8,7 +8,7 @@
 // Why: the last two callers — packages/lib/src/supabase.ts's
 // processAdaptiveLearning() (record_response fan-out) and getCmeNextAction()
 // (get_next_action) — were verified dead and deleted in the same PR. The
-// function's write target, cme_concept_state, is COMMENT-tombstoned as
+// function's write target, the retired cme table, is COMMENT-tombstoned as
 // RETIRED (migration 20260808000100); canonical learner state is
 // concept_mastery, written solely by the update_learner_state_post_quiz SQL
 // RPC inside the atomic submit chain, and read via the

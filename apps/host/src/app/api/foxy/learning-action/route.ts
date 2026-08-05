@@ -12,7 +12,7 @@
  * ⚠️ BINDING learner-state contract (assessment-issued, non-negotiable):
  *   - This event + route are NON-EVIDENTIAL telemetry. They MUST NOT write
  *     (directly or via any subscriber) to ANY mastery surface: concept_mastery,
- *     cme_concept_state (retired/orphaned — no remaining writer platform-wide;
+ *     the retired cme table (orphaned — no remaining writer platform-wide;
  *     verified 2026-08-05, this route has never written it),
  *     student_skill_state, knowledge_gaps (mastery/resolution),
  *     learner_mastery, cme_error_log, quiz_sessions, student_learning_profiles,

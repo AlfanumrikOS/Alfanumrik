@@ -4075,6 +4075,7 @@ async function handleDeployIntervention(
   return jsonResponse({ success: true, deployments: results }, 200, {}, origin)
 }
 
+// ─── K2 get_misconception_clusters ──────────────────────────
 // ─── K2: get_misconception_clusters ─────────────────────────
 // Group open misconceptions across a class roster by pattern_code, so the
 // teacher's Misconceptions drawer can render "N students share this pattern"
@@ -4224,6 +4225,7 @@ async function handleGetMisconceptionClusters(
   return jsonResponse({ clusters }, 200, {}, origin)
 }
 
+// ─── K4/K7 record_intervention_decision ────────────────────
 // ─── K4: record_intervention_decision ───────────────────────
 // Teacher's authoritative decision on an autonomous adaptive-remediation row
 // (Loop A/B/C in `adaptive_interventions`). Writes teacher_decision +
@@ -4477,6 +4479,7 @@ async function handleRecordInterventionDecision(
 // handleExportStudentReport).
 const MAX_DRAFTS_PER_DAY = 5
 
+// ─── K5 generate_draft_assignment ───────────────────────────
 async function handleGenerateDraftAssignment(
   body: Record<string, unknown>,
   origin: string | null,
@@ -4636,6 +4639,7 @@ Exactly 4 distinct non-empty options per question. correct_answer_index in 0..3.
   }, 200, {}, origin)
 }
 
+// ─── K5 publish_draft_assignment ────────────────────────────
 async function handlePublishDraftAssignment(
   body: Record<string, unknown>,
   origin: string | null,
@@ -4713,6 +4717,7 @@ async function handlePublishDraftAssignment(
   }, 200, {}, origin)
 }
 
+// ─── K5 export_draft_assignment ─────────────────────────────
 async function handleExportDraftAssignment(
   body: Record<string, unknown>,
   origin: string | null,

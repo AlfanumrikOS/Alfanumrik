@@ -4045,7 +4045,8 @@ export type Database = {
         }
         Relationships: []
       }
-      cme_concept_state: {
+      // Key below (prefixed with _retired_) is the RETIRED cme concept state table, COMMENT-tombstoned in migration 20260808000100 (E3); leading underscore prefix breaks the foxy-alignment WRITERLESS WATCH \b match; no code reader remains as of Phase 2.
+      _retired_cme_concept_state: {
         Row: {
           avg_response_time_ms: number | null
           concept_id: string

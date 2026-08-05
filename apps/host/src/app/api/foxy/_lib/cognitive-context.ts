@@ -427,7 +427,7 @@ export async function loadCognitiveContext(
     // CME next-action — derived locally from the signals loaded above (see
     // deriveNextAction). No network call: the old cme-engine `get_next_action`
     // fetch 401'd on every request (service-role key vs user-JWT auth) and read
-    // the writer-less cme_concept_state table. Fail-soft: any error leaves
+    // the writer-less retired cme table. Fail-soft: any error leaves
     // nextAction null and Foxy works without a recommendation.
     let nextAction: CognitiveContext['nextAction'] = null;
     try {

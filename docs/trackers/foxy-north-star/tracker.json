@@ -83,7 +83,8 @@
           "ops",
           "testing",
           "mobile",
-          "quality"
+          "quality",
+          "ai-engineer"
         ]
       },
       "lastVerified": "2026-08-05",
@@ -1797,7 +1798,8 @@
           "ops",
           "testing",
           "mobile",
-          "quality"
+          "quality",
+          "ai-engineer"
         ]
       },
       "lastVerified": "2026-08-05",
@@ -1904,7 +1906,7 @@
       "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-retire-cme-concept-state.sql"
+          "supabase/migrations/20260808000100_topic_mastery_rollup_view.sql"
         ],
         "backend": [
           "packages/lib/src/learner-model/",
@@ -1935,13 +1937,17 @@
           "ops",
           "testing",
           "mobile",
-          "quality"
+          "quality",
+          "ai-engineer"
         ]
       },
       "lastVerified": "2026-08-05",
       "evidence": [
         "packages/lib/src/learner-model/explain-mastery.ts — facade explainMastery (P-params + reason codes)",
-        "supabase/functions/board-score/index.ts — re-pointed cme_concept_state→concept_mastery (Phase 0 F6)"
+        "supabase/functions/board-score/index.ts — re-pointed cme_concept_state→concept_mastery (Phase 0 F6)",
+        "supabase/migrations/20260808000100_topic_mastery_rollup_view.sql — COMMENT ON TABLE cme_concept_state RETIRED",
+        "supabase/functions/cme-engine/index.ts — 410 tombstone (structured gone response)",
+        "docs/runbooks/edge-function-drift-report.md — Execution log 2026-08-05 entry"
       ],
       "notes": [
         "F6: board-score EF re-pointed cme_concept_state→concept_mastery; retired-table refs 20→18 (analyzer ratchet after merge)",
@@ -2487,7 +2493,8 @@
           "architect",
           "backend",
           "mobile",
-          "quality"
+          "quality",
+          "ai-engineer"
         ]
       },
       "lastVerified": "2026-08-05",

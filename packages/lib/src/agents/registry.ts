@@ -263,7 +263,7 @@ export function liveAgents(): AgentDescriptor[] {
  * `packages/lib/src/state/subscribers/`. No agent is on that allowlist.
  *
  * All 8 confirmed real in the current schema (§2.1); none is a phantom.
- * (`cme_concept_state` was removed 2026-08-05, tracker E1: the table is
+ * (the retired cme table was removed 2026-08-05, tracker E1: the table is
  * RETIRED — COMMENT-tombstoned in migration 20260808000100 with no writer
  * platform-wide after the processAdaptiveLearning/cme-engine retirement.)
  */

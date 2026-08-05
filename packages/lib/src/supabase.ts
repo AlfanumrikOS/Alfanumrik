@@ -353,7 +353,7 @@ async function validateQuestions(questions: QuestionRecord[]): Promise<QuestionR
  * HISTORY (Foxy North-Star Phase 2 wave 2b, tracker E1, 2026-08-05):
  *   The former client-side "Layer 2 backup" — processAdaptiveLearning()
  *   fanning out to the cme-engine Edge Function's record_response, writing
- *   the parallel cme_concept_state store — was DELETED. It had zero live
+ *   the parallel retired cme store — was DELETED. It had zero live
  *   callers (the quiz page stopped calling it when CME mastery moved
  *   server-side; see adaptive-pipeline.test.ts) and its target table is
  *   COMMENT-tombstoned as RETIRED (migration 20260808000100).
