@@ -73,7 +73,8 @@ type Mechanism =
   | 'internal-cron'
   | 'admin-key'
   | 'jwt-user'
-  | 'shared-secret';
+  | 'shared-secret'
+  | 'tombstone';
 
 const MECHANISM_SIGNATURES: ReadonlyArray<readonly [Mechanism, RegExp]> = [
   ['ai-admission', /admitAiRoute\s*\(/],
@@ -83,6 +84,51 @@ const MECHANISM_SIGNATURES: ReadonlyArray<readonly [Mechanism, RegExp]> = [
   ['jwt-user', /\.auth\.getUser\s*\(|resolveTeacherFromJwt|Authorization/],
   ['shared-secret', /CRON_SECRET|INTERNAL_FN_SECRET|INTERNAL_SECRET|x-internal-secret|SEND_EMAIL_HOOK_SECRET|verifyRequestSignature\s*\(/],
 ] as const;
+
+/**
+ * TOMBSTONE EXEMPTION (P2-4a, 2026-08-04) — the ONLY way a function may be
+ * unguarded and still pass this sweep.
+ *
+ * A retired function whose entire body is a structured HTTP 410 response
+ * (e.g. `foxy-tutor`, replaced by the Next.js route `/api/foxy`) has no auth
+ * requirement because it never touches data, secrets, or Supabase — old
+ * clients (installed APKs still pinned to the retired endpoint) must reach
+ * the 410 WITHOUT a token, by design (see the function's own header comment
+ * and `docs/runbooks/edge-function-drift-report.md`).
+ *
+ * This exemption is intentionally narrow and mechanical, not a name-based
+ * allowlist: a function only qualifies if its index.ts source proves ALL of
+ * the following simultaneously —
+ *   1. it returns an HTTP 410 status literal, AND
+ *   2. it returns the tombstone's `code: 'GONE'` marker, AND
+ *   3. it never calls createClient( — no Supabase client, so no data access, AND
+ *   4. it never calls Deno.env.get( — no secret/config reads at all.
+ * If ANY condition fails — e.g. a future edit reintroduces a Supabase client
+ * or an env read — `isProvableTombstone` returns false and the function
+ * falls back to being judged as a normal (unguarded) function by the sweep,
+ * exactly as before this exemption existed. This is what keeps the
+ * exemption from silently widening into a way to hide a real unguarded
+ * endpoint: the safety conditions are checked, not just the mechanism label.
+ */
+const TOMBSTONE_SAFE_SIGNATURES = {
+  gone410Status: /status:\s*410\b/,
+  goneCodeMarker: /code:\s*['"]GONE['"]/,
+} as const;
+
+const TOMBSTONE_UNSAFE_SIGNATURES: readonly RegExp[] = [
+  /createClient\s*\(/,
+  /Deno\.env\.get\s*\(/,
+];
+
+function isProvableTombstone(fn: string): boolean {
+  const idx = resolve(FUNCTIONS_ABS!, fn, 'index.ts');
+  if (!existsSync(idx)) return false;
+  const src = readFileSync(idx, 'utf8');
+  const hasGoneStatus = TOMBSTONE_SAFE_SIGNATURES.gone410Status.test(src);
+  const hasGoneCode = TOMBSTONE_SAFE_SIGNATURES.goneCodeMarker.test(src);
+  const hasUnsafeAccess = TOMBSTONE_UNSAFE_SIGNATURES.some((re) => re.test(src));
+  return hasGoneStatus && hasGoneCode && !hasUnsafeAccess;
+}
 
 /**
  * PINNED LEDGER — detected auth mechanism(s) per function as of 2026-07-13.
@@ -129,6 +175,14 @@ const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   'embed-questions': ['ai-admission', 'admin-key'],
   'extract-diagrams': ['ai-admission', 'admin-key'],
   'extract-ncert-questions': ['ai-admission', 'admin-key'],
+  // Retired 2026-07-01, re-added 2026-08-04 as a P2-4a 410 tombstone (see
+  // docs/runbooks/edge-function-drift-report.md). No auth by design: the
+  // whole function returns a structured 410 GONE pointing at the canonical
+  // `/api/foxy` route, for every method, unauthenticated — old APKs still
+  // pinned to the retired edge endpoint must reach the 410 without a token.
+  // Zero attack surface (no createClient, no Deno.env.get, no data access);
+  // see isProvableTombstone() above, which this pin depends on staying true.
+  'foxy-tutor': ['tombstone'],
   'generate-answers': ['ai-admission', 'admin-key'],
   'generate-concepts': ['ai-admission', 'admin-key'],
   'generate-embeddings': ['admin-key'],
@@ -207,11 +261,14 @@ describe('Edge Function auth-guard sweep (P9)', () => {
   });
 
   it('every function matches at least one known auth-guard signature (no unguarded functions)', () => {
-    const unguarded = listFunctionDirs().filter((fn) => detectMechanisms(fn).length === 0);
+    const unguarded = listFunctionDirs().filter(
+      (fn) => detectMechanisms(fn).length === 0 && !isProvableTombstone(fn),
+    );
     expect(
       unguarded,
       `UNGUARDED Edge Functions (deployed with --no-verify-jwt, so this is an open endpoint): ${unguarded.join(', ')}. ` +
-        `Add an auth guard (see _shared/security/) and a ledger entry in this file.`,
+        `Add an auth guard (see _shared/security/) and a ledger entry in this file, or — if the function is a ` +
+        `retired pure-410 tombstone — make it pass isProvableTombstone().`,
     ).toEqual([]);
   });
 
@@ -238,6 +295,23 @@ describe('Edge Function auth-guard sweep (P9)', () => {
     for (const fn of listFunctionDirs()) {
       const expected = AUTH_GUARD_LEDGER[fn];
       if (!expected) continue; // reported by the unpinned test above
+
+      // Tombstone-pinned functions are verified against isProvableTombstone(),
+      // not MECHANISM_SIGNATURES — they carry no auth mechanism by design.
+      // If a future edit adds a Supabase client, an env/secret read, or drops
+      // the 410/GONE markers, isProvableTombstone() flips to false and THIS
+      // assertion fails — the real safety condition, not a label comparison.
+      if (expected.length === 1 && expected[0] === 'tombstone') {
+        if (!isProvableTombstone(fn)) {
+          drift.push(
+            `${fn}: pinned as ['tombstone'] but no longer proves a pure-410 tombstone ` +
+              `(missing 410/GONE markers, or gained createClient()/Deno.env.get() access) ` +
+              `— this is a SECURITY REGRESSION: the function is unguarded and no longer exempt.`,
+          );
+        }
+        continue;
+      }
+
       const actual = detectMechanisms(fn);
       const exp = [...expected].sort().join(',');
       const act = [...actual].sort().join(',');

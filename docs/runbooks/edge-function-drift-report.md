@@ -265,6 +265,35 @@ Permanent deletion (`supabase functions delete`) remains available per the
 command list above after a clean observation window (suggest 30 days —
 tombstone hits show up as 410s in edge logs if anything unknown calls one).
 
+## Execution log — 2026-08-04 (foxy-tutor tombstone, P2-4a)
+
+`foxy-tutor` — deliberately excluded from the 2026-07-13 sweep above pending
+mobile repoint — was **tombstoned** with the same structured-410 pattern:
+`supabase/functions/foxy-tutor/index.ts` now serves
+`410 { code: 'GONE', canonical: '/api/foxy' }` for every method (no auth
+check, so old APKs that can't send valid auth still get the 410) and logs a
+PII-free `method` + truncated user-agent line per hit for the observation
+window.
+
+Precondition verified before tombstoning: the 2026-07-13 blocker
+("`foxy-tutor` — NOT an orphan: still invoked by the live Flutter app") is
+superseded — `mobile/lib/core/constants/api_constants.dart:99-106` defaults
+`FOXY_ENDPOINT` to `'api'`, so the Flutter app already POSTs to `/api/foxy`
+by default; the `_sendViaEdge` branch in
+`mobile/lib/data/repositories/chat_repository.dart` is documented dead code
+retained only so any already-installed APK still pinned to `'edge'` fails
+predictably rather than silently. Web has invoked `/api/foxy`
+(`apps/host/src/app/api/foxy/route.ts`) exclusively since the 2026-07-01
+retirement. Net: zero live web/server invocations of `foxy-tutor` remain —
+only old installed APKs pinned to `'edge'` can still reach it, and they now
+get a structured 410 instead of a silent 200/failure.
+
+Reversible via redeploy (source history: `git log -- supabase/functions/foxy-tutor/`
+predates its removal from the working tree). Permanent
+`supabase functions delete foxy-tutor` is deferred to the same 30-day clean
+observation window as the rest of the sweep — watch edge logs for
+`[foxy-tutor:tombstone]` hits before scheduling it.
+
 ## Execution log — 2026-08-05 (cme-engine retirement, Foxy North-Star Phase 2 wave 2b)
 
 `cme-engine` was **tombstoned ON DISK** (structured
