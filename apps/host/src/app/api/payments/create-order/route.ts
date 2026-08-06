@@ -38,7 +38,11 @@ async function gstChargingEnabled(): Promise<boolean> {
 
 export async function POST(request: NextRequest) {
   try {
-    // Get authenticated user
+    // RBAC permission gate (P11): authorize first, then get user for metadata.
+    const auth = await authorizeRequest(request, 'payments.subscribe');
+    if (!auth.authorized) return auth.errorResponse!;
+
+    // Get user email for Razorpay metadata (auth.userId already available).
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
@@ -50,10 +54,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Try cookie-based auth first, fall back to Bearer token
     let user = (await supabase.auth.getUser()).data.user;
     if (!user) {
-      // Fallback: use Authorization header (client passes access token directly)
       const authHeader = request.headers.get('Authorization');
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.substring(7);
@@ -63,15 +65,6 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    // Gap 2 defense-in-depth (P11): RBAC permission gate on top of getUser().
-    // authorizeRequest() resolves identity from the SAME Bearer header / Supabase
-    // session cookie sources used above, so a legitimately logged-in student with
-    // the 'payments.subscribe' grant passes; super_admin/admin bypass automatically.
-    // The getUser() block above is retained — it supplies order metadata (user.id,
-    // user.email). This guard is ADDED before any Razorpay order creation.
-    const auth = await authorizeRequest(request, 'payments.subscribe');
-    if (!auth.authorized) return auth.errorResponse!;
 
     let rawBody: unknown;
     try {

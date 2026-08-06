@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { logger } from '@alfanumrik/lib/logger';
 import { resolveIdentity } from '@alfanumrik/lib/identity/onboarding';
 
 export async function GET() {
@@ -47,7 +48,7 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error('[OnboardingStatus] Error:', error);
+    logger.error('[OnboardingStatus] Error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }

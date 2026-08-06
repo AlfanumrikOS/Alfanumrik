@@ -76,6 +76,7 @@ export async function POST(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ password: newPassword }),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!updateRes.ok) {

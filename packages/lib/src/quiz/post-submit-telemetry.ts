@@ -5,8 +5,9 @@
  * SERVER-ONLY. Uses the service-role Supabase client (`admin`) passed by the
  * caller for every read/write. Fire-and-forget by design — every public entry
  * point is wrapped so it NEVER throws into the submit response and NEVER blocks
- * it. The whole feature is gated behind `ff_quiz_telemetry_v1` (default OFF /
- * unseeded → dormant), evaluated by the caller before any of this runs.
+ * it. Always-on (P0): the quiz submit route always calls prepareQuizTelemetry
+ * unconditionally; the `ff_quiz_telemetry_v1` flag is superseded by this
+ * architectural requirement for closed-loop learning evidence.
  *
  * ─── DUAL-ID CONTRACT (critical) ─────────────────────────────────────────────
  *   WRITES → learning_events.student_id, intervention_alerts.student_id MUST use

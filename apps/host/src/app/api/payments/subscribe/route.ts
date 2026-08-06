@@ -69,7 +69,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payment system not configured' }, { status: 503 });
     }
 
-    // Auth
+    // RBAC permission gate (P11): authorize first, then get user for metadata.
+    const auth = await authorizeRequest(request, 'payments.subscribe');
+    if (!auth.authorized) return auth.errorResponse!;
+
+    // Get user email for Razorpay metadata (auth.userId already available).
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
         getAll() { return request.cookies.getAll().map(c => ({ name: c.name, value: c.value })); },
@@ -88,19 +92,6 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    // PAY-1 / Gap 2 defense-in-depth (P9/P11): RBAC permission gate on top of
-    // getUser(). `subscribe` is the LIVE order/subscription creator (its siblings
-    // create-order + verify already carry this gate); add the same one here so a
-    // non-student authenticated principal cannot reach the Razorpay creation path.
-    // authorizeRequest() resolves identity from the SAME Bearer header / Supabase
-    // session cookie sources used above; a legitimately logged-in student with the
-    // 'payments.subscribe' grant passes, super_admin/admin bypass automatically.
-    // This DENIES (403) BEFORE any Razorpay object is created and removes none of
-    // the downstream checks. The getUser() block is retained — it supplies the
-    // user.id / user.email metadata used below.
-    const auth = await authorizeRequest(request, 'payments.subscribe');
-    if (!auth.authorized) return auth.errorResponse!;
 
     const rawBody = await request.json();
     const validation = validateBody(paymentSubscribeSchema, rawBody);

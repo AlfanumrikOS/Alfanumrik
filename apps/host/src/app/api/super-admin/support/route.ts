@@ -263,6 +263,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email }),
+        signal: AbortSignal.timeout(15_000),
       });
 
       if (!res.ok) {

@@ -27,6 +27,7 @@ import type { StartQuizAction } from '@alfanumrik/lib/state/learner-loop/types';
 import type { DomainEvent } from '@alfanumrik/lib/state/events/registry';
 import { scheduledActionsWriter } from '@alfanumrik/lib/state/subscribers/scheduled-actions-writer';
 import type { SubscriberContext } from '@alfanumrik/lib/state/subscribers/subscriber';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 
 // ── Fixtures ─────────────────────────────────────────────────────────
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -69,6 +70,11 @@ vi.mock('@alfanumrik/lib/feature-flags', () => ({
     if (flag === 'ff_scheduled_actions_v1') return scheduledFlagOn;
     return false;
   }),
+}));
+
+vi.mock('@alfanumrik/lib/rbac', () => ({
+  authorizeRequest: vi.fn().mockResolvedValue({ authorized: true, userId: 'user-1' }),
+  logAudit: vi.fn(),
 }));
 
 // State builder: returns a minimal StudentState with the two fields the route

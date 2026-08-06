@@ -248,6 +248,7 @@ async function sendWa(input: {
         ...(signHeaders ?? {}),
       },
       body: payload,
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
       logger.warn('whatsapp_daily6: whatsapp-send non-200', {

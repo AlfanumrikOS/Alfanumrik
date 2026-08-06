@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
         email_confirm: true,
         user_metadata: { name, role, is_test_account: true },
       }),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!createUserRes.ok) {
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
       await fetch(`${url}/auth/v1/admin/users/${authUserId}`, {
         method: 'DELETE',
         headers: { 'apikey': key, 'Authorization': `Bearer ${key}` },
+        signal: AbortSignal.timeout(15_000),
       });
       return NextResponse.json({ error: err.message || 'Failed to create profile' }, { status: 400 });
     }

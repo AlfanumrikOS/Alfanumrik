@@ -29,6 +29,7 @@
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { createStudentStateBuilder } from '@alfanumrik/lib/state/student-state-builder';
 import {
@@ -51,11 +52,11 @@ export interface WeakTopicsResponse {
 export async function GET(_request: Request) {
   const supabase = await createSupabaseServerClient();
 
-  const { data: userResult, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userResult?.user) {
-    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+  const auth = await authorizeRequest(_request, 'study_plan.view', { requireStudentId: true });
+  if (!auth.authorized || !auth.userId) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
-  const userId = userResult.user.id;
+  const userId = auth.userId;
 
   const flagOn = await isFeatureEnabled(FLAG_NAME, {
     userId, role: 'student',

@@ -269,11 +269,11 @@ describe('GET /api/synthesis/state', () => {
   });
 
   it('returns 401 when not authenticated', async () => {
-    holders.mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    holders.mockAuthorizeRequest.mockResolvedValueOnce({ authorized: false });
     const res = await GET(makeGetRequest());
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe('unauthenticated');
+    expect(body.error).toBe('unauthorized');
   });
 
   it('returns 404 when feature flag is off', async () => {
@@ -599,15 +599,6 @@ describe('POST /api/synthesis/parent-share', () => {
     const body = await res.json();
     expect(body.error).toBe('Unauthorized');
     expect(body.code).toBe('AUTH_REQUIRED');
-  });
-
-  it('returns 401 with the route-own shape when authorizeRequest passes but supabase getUser still reports no session (defense-in-depth, theoretical)', async () => {
-    holders.mockAuthorizeRequest.mockResolvedValue({ authorized: true, userId: USER_ID });
-    holders.mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
-    const res = await POST(makePostRequest({ synthesisRunId: ROW_ID }));
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error).toBe('unauthenticated');
   });
 
   it('returns 404 when feature flag is off', async () => {

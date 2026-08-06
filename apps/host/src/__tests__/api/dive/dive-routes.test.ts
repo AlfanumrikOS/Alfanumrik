@@ -32,6 +32,11 @@ vi.mock('@alfanumrik/lib/feature-flags', () => ({
   },
 }));
 
+vi.mock('@alfanumrik/lib/rbac', () => ({
+  authorizeRequest: vi.fn().mockResolvedValue({ authorized: true, userId: 'user-1' }),
+  logAudit: vi.fn(),
+}));
+
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
@@ -75,6 +80,7 @@ import { GET as stateGET } from '@/app/api/dive/state/route';
 import { GET as historyGET } from '@/app/api/dive/history/route';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 
 // ── Shared mock helpers ────────────────────────────────────────────────────
 
@@ -175,16 +181,17 @@ describe('POST /api/dive/start', () => {
   }
 
   it('returns 401 when unauthenticated', async () => {
-    (createSupabaseServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      buildUnauthMock(),
-    );
+    vi.mocked(authorizeRequest).mockResolvedValueOnce({ authorized: false });
     const res = await startPOST(req({ pickerOption: 'own_topic', ownTopic: 'Gravity' }));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe('unauthenticated');
+    expect(body.error).toBe('unauthorized');
   });
 
   it('returns 404 when feature flag is off', async () => {
+    (createSupabaseServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      buildSupabaseMock(() => makeChain({ data: null, error: null })),
+    );
     (isFeatureEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false);
     const res = await startPOST(req({ pickerOption: 'own_topic', ownTopic: 'Gravity' }));
     expect(res.status).toBe(404);
@@ -321,13 +328,11 @@ describe('POST /api/dive/artifact', () => {
   }
 
   it('returns 401 when unauthenticated', async () => {
-    (createSupabaseServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      buildUnauthMock(),
-    );
+    vi.mocked(authorizeRequest).mockResolvedValueOnce({ authorized: false });
     const res = await artifactPOST(req(VALID_BODY));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe('unauthenticated');
+    expect(body.error).toBe('unauthorized');
   });
 
   it('returns 404 when feature flag is off', async () => {
@@ -461,13 +466,11 @@ describe('GET /api/dive/state', () => {
   }
 
   it('returns 401 when unauthenticated', async () => {
-    (createSupabaseServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      buildUnauthMock(),
-    );
+    vi.mocked(authorizeRequest).mockResolvedValueOnce({ authorized: false });
     const res = await stateGET(req());
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe('unauthenticated');
+    expect(body.error).toBe('unauthorized');
   });
 
   it('returns 404 when feature flag is off', async () => {
@@ -583,13 +586,11 @@ describe('GET /api/dive/history', () => {
   }
 
   it('returns 401 when unauthenticated', async () => {
-    (createSupabaseServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      buildUnauthMock(),
-    );
+    vi.mocked(authorizeRequest).mockResolvedValueOnce({ authorized: false });
     const res = await historyGET(req());
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe('unauthenticated');
+    expect(body.error).toBe('unauthorized');
   });
 
   it('returns 404 when feature flag is off', async () => {
@@ -711,9 +712,7 @@ describe('GET /api/dive/history', () => {
   });
 
   it('P13: unauthenticated denial response contains no PII keys', async () => {
-    (createSupabaseServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      buildUnauthMock(),
-    );
+    vi.mocked(authorizeRequest).mockResolvedValueOnce({ authorized: false });
     const res = await historyGET(req());
     expect(res.status).toBe(401);
     const body = await res.json();

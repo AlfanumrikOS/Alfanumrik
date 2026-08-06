@@ -53,16 +53,9 @@ export async function POST(request: Request) {
   // pre-existing inline ownership check below (row.students.auth_user_id
   // !== userId) is kept as defense-in-depth -- this gate runs first so an
   // unauthorized caller is rejected before any DB access.
-  const rbacAuth = await authorizeRequest(request, 'report.download_own');
+  const rbacAuth = await authorizeRequest(request, 'child.view_progress');
   if (!rbacAuth.authorized) return rbacAuth.errorResponse!;
-
-  const supabase = await createSupabaseServerClient();
-
-  const { data: userResult, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userResult?.user) {
-    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
-  }
-  const userId = userResult.user.id;
+  const userId = rbacAuth.userId!;
 
   const flagOn = await isFeatureEnabled(PEDAGOGY_V2_FLAGS.MONTHLY_SYNTHESIS, {
     userId, role: 'student',

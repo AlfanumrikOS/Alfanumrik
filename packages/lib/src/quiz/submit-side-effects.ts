@@ -96,9 +96,9 @@ export interface QuizSubmitSideEffectInput {
   offlineMeta?: QuizSubmitOfflineMeta;
   /**
    * Post-submit learning-telemetry pre-snapshot (SPEC-1..5), captured by the
-   * route BEFORE the submit RPC (topic_id resolution + pre-mastery read) when
-   * `ff_quiz_telemetry_v1` is enabled. Absent when the flag is OFF/unseeded →
-   * the telemetry step below is a no-op. Best-effort; never blocks the response.
+   * route BEFORE the submit RPC (topic_id resolution + pre-mastery read).
+   * Always-on (P0): the route unconditionally prepares this snapshot. Best-effort;
+   * never blocks the response.
    */
   telemetryPre?: QuizTelemetryPre;
 }
@@ -141,9 +141,8 @@ export function runQuizSubmitSideEffects(
 
   // POST-SUBMIT LEARNING TELEMETRY (SPEC-1..5). Best-effort, fire-and-forget,
   // never throws into / blocks the response. Runs ONLY on a fresh grade (the
-  // idempotent-replay guard above already returned for replays — SPEC-5) AND
-  // ONLY when the route captured the pre-RPC snapshot, which it does only when
-  // `ff_quiz_telemetry_v1` is enabled. Absent snapshot → no-op (flag OFF).
+  // idempotent-replay guard above already returned for replays — SPEC-5).
+  // Always-on (P0): the route unconditionally captures the pre-RPC snapshot.
   //
   // DUAL-ID: WRITES use authUserId (auth.uid) for learning_events /
   // intervention_alerts; READS use input.studentId (students.id) for
