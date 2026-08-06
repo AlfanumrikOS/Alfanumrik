@@ -426,6 +426,56 @@ describe('Phase 3b — BoardScoreWidget ProgressRing gauge value mapping', () =>
     expect(styles).toContain('var(--green'); // CBSE badge soft tint
     expect(stripVarFallbacks(styles)).not.toMatch(SIX_DIGIT_HEX);
   });
+
+  it('declutters: chapter breakdown + recovery plan collapse behind ONE disclosure (2026-08-06)', async () => {
+    // Full detail payload: 2 chapters + 1 recovery item. The dashboard's first
+    // paint must NOT show them — gauge + marks + coverage + the disclosure row
+    // only — and they appear after the student taps the disclosure.
+    mockFetchOnce({
+      code: 'ok',
+      data: [prediction({
+        chapter_scores: {
+          '1': {
+            chapter_name: 'Matter in Our Surroundings', unit_name: 'U1',
+            marks_allocated: 12, max_marks: 20, mastery_mean: 0.6,
+            retention_factor: 0.9, effective_mastery: 0.54,
+            predicted_marks: 7, status: 'weak',
+          },
+          '2': {
+            chapter_name: 'Is Matter Around Us Pure', unit_name: 'U1',
+            marks_allocated: 10, max_marks: 20, mastery_mean: 0.8,
+            retention_factor: 0.9, effective_mastery: 0.72,
+            predicted_marks: 9, status: 'strong',
+          },
+        },
+        recovery_plan: [{
+          chapter_number: 1, chapter_name: 'Matter in Our Surroundings',
+          marks_allocated: 12, current_predicted_marks: 7, recoverable_marks: 5,
+          status: 'weak', action_label: 'Revise concepts & attempt 5 questions',
+        }],
+      })],
+    });
+    await renderBoardScore(false);
+
+    await screen.findByRole('img', { name: '75%' });
+
+    // Collapsed by default: the disclosure row is present and closed, and the
+    // chapter / recovery detail is NOT in the render tree.
+    const toggle = screen.getByRole('button', { name: /View analysis/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-controls', 'board-score-details');
+    expect(screen.queryByText('Matter in Our Surroundings')).not.toBeInTheDocument();
+    expect(screen.queryByText('Score Recovery Plan')).not.toBeInTheDocument();
+
+    // One tap reveals both sections under a single id (aria-controls target).
+    // "Matter in Our Surroundings" appears in BOTH the chapter breakdown and
+    // the recovery plan rows — getAllByText asserts both rendered.
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: /Hide analysis/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getAllByText('Matter in Our Surroundings').length).toBeGreaterThan(0);
+    expect(screen.getByText('Score Recovery Plan')).toBeInTheDocument();
+    expect(document.getElementById('board-score-details')).not.toBeNull();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
