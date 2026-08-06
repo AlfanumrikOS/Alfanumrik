@@ -9,7 +9,6 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { XP_RULES } from './xp-config';
-import { calculateScorePercent, calculateQuizXP } from './scoring';
 import {
   ADAPTIVE_LIVE_SELECTION_FLAGS,
   IRT_SELECTION_FLAGS,
@@ -464,140 +463,31 @@ function _mapV2(responses: import('./types').QuizResponse[]) {
 }
 
 /**
- * ARCHITECTURAL CONTRACT (post-PR #447) -- DO NOT MODIFY WITHOUT REVIEW
+ * ARCHITECTURAL CONTRACT (post-audit-2026-08-06) -- DO NOT MODIFY WITHOUT REVIEW
  *
- * submitQuizResults dispatches across two layers:
- *   Layer 1: v2 RPC submit_quiz_results_v2 when sessionId is provided
- *            (server-shuffle authority via start_quiz_session snapshot).
- *   Layer 2: v1 RPC submit_quiz_results as fallback / legacy path
- *            (no sessionId -- mobile + in-flight web clients).
- *   Fallback: atomic_quiz_profile_update if both RPCs fail.
- *
- * The v1 RPC `submit_quiz_results` MUST remain callable until mobile cuts
- * over to v2. adaptive-pipeline.test.ts enforces this canary.
+ * submitQuizResults uses the single canonical v2 RPC path.
+ * P0-1/P0-2 remediation: v1 L2 fallback and L3 client-side scoring removed.
+ * The v1 RPC submit_quiz_results returns a deprecation error when
+ * ff_v1_quiz_rpc_blocked is ON. Server routes are the canonical entry points.
  */
 export async function submitQuizResults(studentId: string, subject: string, grade: string, topic: string, chapter: number, responses: import('./types').QuizResponse[], time: number, sessionId?: string | null) {
   const _k = `${studentId}:${subject}:${topic}:${responses.length}:${time}`;
   if (_quizDedup.has(_k)) return { duplicate: true };
   _quizDedup.add(_k); setTimeout(() => _quizDedup.delete(_k), 300_000);
   try {
-    if (sessionId) { // L1: v2 (server-shuffle)
-      try {
-        const v2 = await supabase.rpc('submit_quiz_results_v2', { p_session_id: sessionId, p_student_id: studentId, p_subject: subject, p_grade: grade, p_topic: topic, p_chapter: chapter, p_responses: _mapV2(responses), p_time: time });
-        if (!v2.error && v2.data) return v2.data;
-      } catch { /* fall through */ }
-    }
-    try { // L2: v1 RPC (legacy)
-      const { data, error } = await supabase.rpc('submit_quiz_results', {
-        p_student_id: studentId, p_subject: subject, p_grade: grade,
-        p_topic: topic, p_chapter: chapter, p_responses: responses, p_time: time,
-      });
-      if (!error && data) return data;
-      console.warn('submit_quiz_results RPC failed, using fallback:', error?.message);
-    } catch (e) {
-      console.warn('submit_quiz_results RPC error, using fallback:', e);
-    }
-
-    // ── Robust client-side fallback ──
-    // Uses atomic RPC for XP/profile updates to prevent race conditions
-    // when multiple quiz submissions happen concurrently.
-    //
-    // NOTE (Marking-Authenticity Phase 2.6): this fallback is scheduled for
-    // deprecation in Phase 2.7 — once /api/quiz/submit is the only legal
-    // path the entire client-side scoring branch can be deleted. Until then
-    // we surface effective_xp + xp_capped from the atomic RPC's JSONB return
-    // so the UI can correctly show the daily-cap state on legacy paths.
-    const total = responses.length;
-    const correct = responses.filter(r => r.is_correct).length;
-    const scorePct = calculateScorePercent(correct, total);
-    const xpEarnedUncapped = calculateQuizXP(correct, scorePct);
-
-    // 1. Insert quiz session (columns must match DB schema exactly)
-    const { data: session, error: sessErr } = await supabase.from('quiz_sessions').insert({
-      student_id: studentId, subject, grade, total_questions: total,
-      correct_answers: correct, wrong_answers: total - correct,
-      score_percent: scorePct, score: xpEarnedUncapped,
-      time_taken_seconds: time, total_answered: total,
-      is_completed: true, completed_at: new Date().toISOString(),
-    }).select('id').single();
-    if (sessErr) console.error('Fallback: quiz_sessions insert failed:', sessErr.message);
-
-    // 2. Atomically update learning profile + student XP via the CANONICAL,
-    // ledger-based, IST-boundary, idempotent, CAPPED writer — the 7-param
-    // void overload of atomic_quiz_profile_update (the SAME writer the primary
-    // v2 path uses). Passing p_session_id routes the fallback through the
-    // single source of truth for the P2 200 XP/day cap: SUM(amount) from
-    // xp_transactions WHERE daily_category='quiz' over the Asia/Kolkata day
-    // boundary, with reference_id='quiz_<session>' giving ON CONFLICT idempotency.
-    //
-    // SLC-4 fix: this previously called the 6-param JSONB overload, whose cap
-    // read SUM(quiz_sessions.xp_earned) — a column that does NOT exist (XP is in
-    // `score`) — raising Postgres 42703 at runtime. The catch below then silently
-    // degraded to an UNCAPPED student_learning_profiles upsert, so the fallback
-    // path enforced NO cap and could award a second 200 XP/day on top of the
-    // primary path (P2 violation). The 7-param overload reads the ledger and
-    // never hits that error, so the cap is now enforced on this path too. The
-    // 200 cap VALUE is unchanged — this is alignment only.
-    let effectiveXp = xpEarnedUncapped;
-    let xpCapped = false;
-    try {
-      const { error: rpcErr } = await supabase.rpc('atomic_quiz_profile_update', {
-        p_student_id: studentId,
-        p_subject: subject,
-        p_xp: xpEarnedUncapped,
-        p_total: total,
-        p_correct: correct,
-        p_time_seconds: time,
-        p_session_id: session?.id ?? null,
-      });
-      if (rpcErr) throw rpcErr;
-
-      // The void overload returns no JSONB, so re-derive the over-cap display
-      // state from the AUTHORITATIVE ledger row this submission just wrote
-      // (single source — never a client recompute). reference_id is unique; an
-      // ON CONFLICT re-submission still leaves the original row to read back.
-      // P1 is untouched here: only the XP-cap display is derived, not the score.
-      if (session?.id) {
-        const { data: ledgerRow } = await supabase
-          .from('xp_transactions')
-          .select('amount')
-          .eq('reference_id', `quiz_${session.id}`)
-          .maybeSingle();
-        if (ledgerRow && typeof ledgerRow.amount === 'number') {
-          effectiveXp = ledgerRow.amount;
-          xpCapped = effectiveXp < xpEarnedUncapped;
-        }
-      }
-    } catch (atomicErr) {
-      console.warn('atomic_quiz_profile_update failed, using non-atomic fallback:', atomicErr);
-      // DEGRADED LAST-RESORT — reached only on a GENUINE RPC failure (RPC missing
-      // or transport error), NOT the now-fixed 42703 missing-column path. This
-      // upsert does NOT write the xp_transactions ledger and does NOT touch
-      // students.xp_total, so it CANNOT enforce the 200/day cap. It exists solely
-      // to avoid losing session counters during a hard RPC outage (P15/availability).
-      // Do NOT expand its use — the capped ledger writer above is the only correct path.
-      await supabase.from('student_learning_profiles').upsert({
-        student_id: studentId, subject, xp: xpEarnedUncapped,
-        total_sessions: 1, total_questions_asked: total,
-        total_questions_answered_correctly: correct,
-        total_time_minutes: Math.max(1, Math.round(time / 60)),
-        last_session_at: new Date().toISOString(),
-        streak_days: 1, level: 1, current_level: 'beginner',
-      }, { onConflict: 'student_id,subject' });
-    }
-
-    return {
-      session_id: session?.id ?? '',
-      total, correct, score_percent: scorePct,
-      // Authoritative XP after daily-cap clamp (RPC's effective_xp).
-      xp_earned: effectiveXp,
-      // Surface daily-cap state so the UI can show the over-cap notice.
-      xp_capped: xpCapped,
-      // Original computed XP before clamp — UI shows "would have earned X".
-      xp_uncapped: xpEarnedUncapped,
-    };
+    const v2 = await supabase.rpc('submit_quiz_results_v2', {
+      p_session_id: sessionId,
+      p_student_id: studentId,
+      p_subject: subject,
+      p_grade: grade,
+      p_topic: topic,
+      p_chapter: chapter,
+      p_responses: _mapV2(responses),
+      p_time: time,
+    });
+    if (!v2.error && v2.data) return v2.data;
+    throw new Error(v2.error?.message || 'Quiz submission failed.');
   } catch (err) {
-    // Release dedup lock so a genuine retry can proceed
     _quizDedup.delete(_k);
     throw err;
   }
