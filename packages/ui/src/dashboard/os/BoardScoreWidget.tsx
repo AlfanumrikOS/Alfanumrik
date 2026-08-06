@@ -10,9 +10,11 @@
  *     single denominator), powered by <StatRing>
  *   - Subject tabs (when multiple subjects exist)
  *   - Coverage progress bar
- *   - Chapter breakdown with status icons + mastery bars (WCAG 1.4.1 — icon+label,
- *     not colour alone)
- *   - Score Recovery Plan (top 5 chapters by recoverable marks)
+ *   - A single "View analysis" disclosure (collapsed by default, 2026-08-06
+ *     declutter) that reveals:
+ *       - Chapter breakdown with status icons + mastery bars (WCAG 1.4.1 —
+ *         icon+label, not colour alone)
+ *       - Score Recovery Plan (top 5 chapters by recoverable marks)
  *   (An AnswerChecker™ CTA used to close the widget; removed because it linked
  *    to a /answer-checker route that was never built.)
  *
@@ -150,12 +152,16 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
   const disabled = data?.kind === 'disabled';
   const predictions = data?.kind === 'data' ? data.data : [];
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const [showAllChapters, setShowAllChapters] = useState(false);
+  // 2026-08-06 declutter: the chapter breakdown + recovery plan (up to 10 rows
+  // combined) now live behind ONE disclosure, collapsed by default. The dashboard
+  // is a glance surface — the gauge + marks + coverage bar are the first-paint
+  // readout; the deep analysis is opt-in.
+  const [showDetails, setShowDetails] = useState(false);
 
   // Reset per-subject UI when data changes
   useEffect(() => {
     setSelectedIdx(0);
-    setShowAllChapters(false);
+    setShowDetails(false);
   }, [predictions.length]);
 
   // ── Labels ──────────────────────────────────────────────────────────────────
@@ -169,8 +175,8 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
     chapters:      isHi ? 'अध्याय'                     : 'chapters',
     chapterBd:     isHi ? 'अध्याय-वार विश्लेषण'        : 'Chapter Breakdown',
     recovery:      isHi ? 'अंक वापसी योजना'             : 'Score Recovery Plan',
-    showAll:       isHi ? 'सभी देखें'                   : 'See all',
-    showLess:      isHi ? 'कम करें'                     : 'Show less',
+    viewAnalysis:  isHi ? 'विश्लेषण देखें'              : 'View analysis',
+    hideAnalysis:  isHi ? 'विश्लेषण छिपाएँ'             : 'Hide analysis',
     selectSubject: isHi ? 'विषय चुनें'                  : 'Select subject',
     lowCoverage:   isHi ? '⚠ अधिक Quiz खेलें — सटीकता बढ़ेगी' : '⚠ Practice more to improve accuracy',
     noData:        isHi ? 'अभी कोई डेटा नहीं'           : 'No Data Yet',
@@ -322,7 +328,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
   // Chapter list — sorted by chapter_number (keys are stringified numbers)
   const chapterEntries = Object.entries(sel.chapter_scores ?? {})
     .sort(([a], [b]) => Number(a) - Number(b));
-  const visibleChapters = showAllChapters ? chapterEntries : chapterEntries.slice(0, 5);
+  const hasDetails = chapterEntries.length > 0 || (sel.recovery_plan?.length ?? 0) > 0;
 
   return (
     <section
@@ -417,7 +423,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
                 aria-selected={active}
                 onClick={() => {
                   setSelectedIdx(i);
-                  setShowAllChapters(false);
+                  setShowDetails(false);
                 }}
                 className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                 style={{
@@ -462,145 +468,189 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
         </div>
       </div>
 
-      {/* ── Chapter breakdown ────────────────────────────────────────────────── */}
-      {chapterEntries.length > 0 && (
-        <div className="mb-4">
-          <h3
-            className="text-xs font-bold uppercase tracking-wider mb-2"
-            style={{ color: 'var(--text-3)' }}
+      {/* ── Detail disclosure — chapter breakdown + recovery plan ──────────────
+          Collapsed by default (2026-08-06 declutter). The dashboard's first
+          paint carries the gauge + marks + coverage; the chapter-by-chapter
+          analysis and the recovery plan (up to 10 rows combined) are opt-in.
+          One disclosure, not two nested ones — the old 5-cap "See all" toggle
+          is gone because the whole section is now behind the user's own tap. */}
+      {hasDetails && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowDetails((v) => !v)}
+            aria-expanded={showDetails}
+            aria-controls="board-score-details"
+            data-testid="board-score-details-toggle"
+            className="w-full flex items-center justify-between rounded-2xl px-4 py-3 text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              minHeight: 48,
+            }}
           >
-            {T.chapterBd}
-          </h3>
-          <div className="space-y-2" role="list" aria-label={T.chapterBd}>
-            {visibleChapters.map(([chNum, ch]) => {
-              const cfg = STATUS_CFG[ch.status];
-              const pctWidth = Math.round(ch.effective_mastery * 100);
-              return (
-                <div
-                  key={chNum}
-                  className="rounded-2xl px-3 py-2.5"
+            <span className="text-sm font-bold" style={{ color: 'var(--text-2)' }}>
+              {showDetails ? T.hideAnalysis : T.viewAnalysis}
+            </span>
+            <span className="flex items-center gap-2">
+              {chapterEntries.length > 0 && (
+                <span
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                   style={{
-                    background: 'var(--surface-2)',
-                    borderLeft: `3px solid ${cfg.color}`,
+                    background: 'rgb(var(--accent-warm-rgb) / 0.10)',
+                    color: WARM,
+                    fontVariantNumeric: 'tabular-nums',
                   }}
-                  role="listitem"
                 >
-                  {/* Row: icon + name + marks + badge */}
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span
-                      className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold flex-shrink-0"
-                      style={{ background: tint(cfg.color, 14), color: cfg.color }}
-                      aria-hidden="true"
-                    >
-                      {cfg.icon}
-                    </span>
-                    <span
-                      className="text-xs font-semibold flex-1 truncate"
-                      style={{ color: 'var(--text-1)' }}
-                    >
-                      {ch.chapter_name}
-                    </span>
-                    <span
-                      className="text-xs font-bold flex-shrink-0"
-                      style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}
-                    >
-                      {Math.round(ch.predicted_marks)}/{ch.marks_allocated}m
-                    </span>
-                    <span
-                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
-                      style={{ background: tint(cfg.color, 13), color: cfg.color }}
-                    >
-                      {isHi ? cfg.hi : cfg.en}
-                    </span>
-                  </div>
-                  {/* Mastery bar */}
-                  <div
-                    className="w-full rounded-full overflow-hidden"
-                    style={{ height: 4, background: 'var(--surface-1)' }}
-                    role="progressbar"
-                    aria-valuenow={pctWidth}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label={`${ch.chapter_name}: ${pctWidth}%`}
+                  {chapterEntries.length} {T.chapters}
+                </span>
+              )}
+              <span
+                aria-hidden="true"
+                style={{
+                  color: 'var(--text-3)',
+                  display: 'inline-block',
+                  transform: showDetails ? 'rotate(180deg)' : 'none',
+                  transition: 'transform 160ms ease',
+                }}
+              >
+                ▾
+              </span>
+            </span>
+          </button>
+
+          {showDetails && (
+            <div id="board-score-details" className="mt-2 space-y-4">
+              {/* ── Chapter breakdown ── */}
+              {chapterEntries.length > 0 && (
+                <div>
+                  <h3
+                    className="text-xs font-bold uppercase tracking-wider mb-2"
+                    style={{ color: 'var(--text-3)' }}
                   >
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${pctWidth}%`, background: cfg.color, transition: 'width 0.8s ease' }}
-                    />
+                    {T.chapterBd}
+                  </h3>
+                  <div className="space-y-2" role="list" aria-label={T.chapterBd}>
+                    {chapterEntries.map(([chNum, ch]) => {
+                      const cfg = STATUS_CFG[ch.status];
+                      const pctWidth = Math.round(ch.effective_mastery * 100);
+                      return (
+                        <div
+                          key={chNum}
+                          className="rounded-2xl px-3 py-2.5"
+                          style={{
+                            background: 'var(--surface-2)',
+                            borderLeft: `3px solid ${cfg.color}`,
+                          }}
+                          role="listitem"
+                        >
+                          {/* Row: icon + name + marks + badge */}
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span
+                              className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold flex-shrink-0"
+                              style={{ background: tint(cfg.color, 14), color: cfg.color }}
+                              aria-hidden="true"
+                            >
+                              {cfg.icon}
+                            </span>
+                            <span
+                              className="text-xs font-semibold flex-1 truncate"
+                              style={{ color: 'var(--text-1)' }}
+                            >
+                              {ch.chapter_name}
+                            </span>
+                            <span
+                              className="text-xs font-bold flex-shrink-0"
+                              style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}
+                            >
+                              {Math.round(ch.predicted_marks)}/{ch.marks_allocated}m
+                            </span>
+                            <span
+                              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                              style={{ background: tint(cfg.color, 13), color: cfg.color }}
+                            >
+                              {isHi ? cfg.hi : cfg.en}
+                            </span>
+                          </div>
+                          {/* Mastery bar */}
+                          <div
+                            className="w-full rounded-full overflow-hidden"
+                            style={{ height: 4, background: 'var(--surface-1)' }}
+                            role="progressbar"
+                            aria-valuenow={pctWidth}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`${ch.chapter_name}: ${pctWidth}%`}
+                          >
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${pctWidth}%`, background: cfg.color, transition: 'width 0.8s ease' }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              )}
 
-          {chapterEntries.length > 5 && (
-            <button
-              type="button"
-              onClick={() => setShowAllChapters((v) => !v)}
-              className="mt-2 text-xs font-bold w-full text-center py-1.5 rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-              style={{ color: WARM, background: 'rgb(var(--accent-warm-rgb) / 0.06)' }}
-            >
-              {showAllChapters
-                ? T.showLess
-                : `${T.showAll} (${chapterEntries.length})`}
-            </button>
+              {/* ── Score Recovery Plan ── */}
+              {sel.recovery_plan && sel.recovery_plan.length > 0 && (
+                <div>
+                  <h3
+                    className="text-xs font-bold uppercase tracking-wider mb-2"
+                    style={{ color: 'var(--text-3)' }}
+                  >
+                    {T.recovery}
+                  </h3>
+                  <div className="space-y-2" role="list" aria-label={T.recovery}>
+                    {sel.recovery_plan.slice(0, 5).map((item, i) => {
+                      const cfg = STATUS_CFG[item.status];
+                      return (
+                        <div
+                          key={item.chapter_number}
+                          className="rounded-2xl px-3 py-2.5 flex items-start gap-2.5"
+                          style={{
+                            background: 'var(--surface-2)',
+                            border: '1px solid var(--border)',
+                            boxShadow: 'var(--shadow-sm)',
+                          }}
+                          role="listitem"
+                        >
+                          <span
+                            className="flex-shrink-0 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center"
+                            style={{
+                              background: `linear-gradient(135deg, ${WARM}, ${WARM_STRONG})`,
+                              color: '#fff',
+                            }}
+                            aria-hidden="true"
+                          >
+                            {i + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold leading-snug" style={{ color: 'var(--text-1)' }}>
+                              {item.chapter_name}
+                            </p>
+                            <p className="text-xs mt-0.5 leading-snug" style={{ color: 'var(--text-3)' }}>
+                              {item.action_label}
+                            </p>
+                          </div>
+                          <span
+                            className="flex-shrink-0 text-xs font-bold"
+                            style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}
+                            aria-label={`${Math.round(item.recoverable_marks)} recoverable marks`}
+                          >
+                            +{Math.round(item.recoverable_marks)}m
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
-        </div>
-      )}
-
-      {/* ── Score Recovery Plan ─────────────────────────────────────────────── */}
-      {sel.recovery_plan && sel.recovery_plan.length > 0 && (
-        <div className="mb-4">
-          <h3
-            className="text-xs font-bold uppercase tracking-wider mb-2"
-            style={{ color: 'var(--text-3)' }}
-          >
-            {T.recovery}
-          </h3>
-          <div className="space-y-2" role="list" aria-label={T.recovery}>
-            {sel.recovery_plan.slice(0, 5).map((item, i) => {
-              const cfg = STATUS_CFG[item.status];
-              return (
-                <div
-                  key={item.chapter_number}
-                  className="rounded-2xl px-3 py-2.5 flex items-start gap-2.5"
-                  style={{
-                    background: 'var(--surface-2)',
-                    border: '1px solid var(--border)',
-                    boxShadow: 'var(--shadow-sm)',
-                  }}
-                  role="listitem"
-                >
-                  <span
-                    className="flex-shrink-0 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center"
-                    style={{
-                      background: `linear-gradient(135deg, ${WARM}, ${WARM_STRONG})`,
-                      color: '#fff',
-                    }}
-                    aria-hidden="true"
-                  >
-                    {i + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold leading-snug" style={{ color: 'var(--text-1)' }}>
-                      {item.chapter_name}
-                    </p>
-                    <p className="text-xs mt-0.5 leading-snug" style={{ color: 'var(--text-3)' }}>
-                      {item.action_label}
-                    </p>
-                  </div>
-                  <span
-                    className="flex-shrink-0 text-xs font-bold"
-                    style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}
-                    aria-label={`${Math.round(item.recoverable_marks)} recoverable marks`}
-                  >
-                    +{Math.round(item.recoverable_marks)}m
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        </>
       )}
 
       {/* The AnswerChecker™ CTA that used to render here was removed: it linked

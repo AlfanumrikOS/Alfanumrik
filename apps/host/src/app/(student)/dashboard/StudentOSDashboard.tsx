@@ -17,6 +17,9 @@
  *                              parallel getNextTopics client chain (RCA W1).
  *   3. <MasterySnapshot>     — Mastered / Learning / Needs-Revision buckets.
  *   4. <BoardScoreWidget>    — BoardScore™ predictive board-exam marks (ff_board_score_v1).
+ *                              Gauge + coverage in first paint; chapter breakdown
+ *                              and recovery plan collapsed behind one disclosure
+ *                              (2026-08-06 declutter).
  *   5. <RevisionRail>        — secondary spaced-repetition surface (reuses
  *                              ReviewsDueCard + useReviewCards).
  *   6. <SubjectRoadmaps>     — per-subject skill trees (SkillTree primitive).
@@ -250,7 +253,7 @@ export default function StudentOSDashboard() {
         onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}
         aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
         className="text-xs font-bold px-2.5 py-1 rounded-full transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-        style={{ background: 'var(--surface-2)', color: 'var(--text-2)', minHeight: 32 }}
+        style={{ background: 'var(--surface-2)', color: 'var(--text-2)', minHeight: 44 }}
       >
         {isHi ? 'EN' : 'हि'}
       </button>
@@ -292,8 +295,10 @@ export default function StudentOSDashboard() {
         />
 
         {/* Phase 4 U1: "Ask Foxy" tap-gated launcher next to the hero.
-            The panel module is dynamic-imported on first tap only. */}
-        <div className="my-3 flex justify-start">
+            The panel module is dynamic-imported on first tap only.
+            2026-08-06 declutter: wrapper margins tightened so the pill sits
+            flush under the hero instead of floating in its own row. */}
+        <div className="mt-1 mb-1 flex justify-start">
           <FoxyPanelLauncher
             subject={subjectCode || 'science'}
             grade={student.grade}
@@ -304,6 +309,11 @@ export default function StudentOSDashboard() {
             language={isHi ? 'hi' : 'en'}
             studentId={student.id}
             studentName={student.name}
+            style={{
+              background: 'rgb(var(--accent-warm-rgb) / 0.08)',
+              color: 'var(--accent-warm, #E8581C)',
+              border: '1px solid rgb(var(--accent-warm-rgb) / 0.18)',
+            }}
           />
         </div>
 

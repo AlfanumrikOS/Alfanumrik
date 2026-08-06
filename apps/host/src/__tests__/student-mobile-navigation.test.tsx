@@ -73,13 +73,40 @@ describe('live student mobile navigation', () => {
     expect(routerPush).toHaveBeenCalledWith('/teacher');
   });
 
+  it('groups the More sheet overflow into Practice / Study / Account headers (2026-08-06 declutter)', () => {
+    render(<MobileBottomNav />);
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'More navigation options' });
+
+    // Ungrouped "Home" stays first; the flat 19-item list is now three sections
+    // mirroring the desktop sidebar (IA law — same mental model both projections).
+    expect(within(dialog).getByRole('button', { name: 'Home' })).toBeInTheDocument();
+    expect(within(dialog).getByText('Practice')).toBeInTheDocument();
+    expect(within(dialog).getByText('Study')).toBeInTheDocument();
+    expect(within(dialog).getByText('Account')).toBeInTheDocument();
+
+    // Section membership is preserved — items render inside their group, not lost.
+    expect(within(dialog).getByRole('button', { name: 'STEM Lab' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Profile' })).toBeInTheDocument();
+  });
+
+  it('keeps the More sheet overflow scrollable so every item stays reachable on short viewports', () => {
+    render(<MobileBottomNav />);
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'More navigation options' });
+    const content = dialog.querySelector('[class*="max-h-"]');
+    expect(content).not.toBeNull();
+    expect(content?.className).toContain('overflow-y-auto');
+  });
+
   it('routes the live quiz destination to the working quiz experience', () => {
     render(<MobileBottomNav />);
     fireEvent.click(screen.getByRole('button', { name: 'More options' }));
 
     const dialog = screen.getByRole('dialog', { name: 'More navigation options' });
     expect(within(dialog).queryByRole('button', { name: 'Practice' })).not.toBeInTheDocument();
-
     // The sidebar entry for the live quiz engine used to be labelled
     // "Practice" — identical to its own section title and a near-twin of
     // "Practice Center" (/practice) directly above it. It was renamed to

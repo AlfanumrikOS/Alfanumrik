@@ -18,7 +18,7 @@
  * `next/dynamic` call defers those until the panel mounts.
  */
 
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import dynamic from 'next/dynamic';
 import type { FoxyPanelProps } from '@alfanumrik/ui/foxy-panel/FoxyPanel';
 
@@ -35,12 +35,15 @@ export interface FoxyPanelLauncherProps extends FoxyPanelProps {
   ctaTestId?: string;
   /** Optional className for the CTA button wrapper. */
   className?: string;
+  /** Optional inline style for the CTA button (surface tinting, etc.). */
+  style?: CSSProperties;
 }
 
 export default function FoxyPanelLauncher({
   ctaLabel,
   ctaTestId = 'foxy-panel-cta',
   className,
+  style,
   ...panelProps
 }: FoxyPanelLauncherProps) {
   const [open, setOpen] = useState(false);
@@ -60,6 +63,7 @@ export default function FoxyPanelLauncher({
           background: 'var(--surface-1)',
           color: 'var(--text-1)',
           border: '1px solid var(--border)',
+          ...style,
         }}
       >
         {panelProps.isHi ? label.hi : label.en}

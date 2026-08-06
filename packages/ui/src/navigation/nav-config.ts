@@ -21,25 +21,28 @@ export const MORE_ITEMS = [
   // (same icon). Found by the cross-projection guard added alongside the
   // /progress fix; unified to the sidebar's "Home", which is what the route is
   // to a student. Destination unchanged.
+  // 2026-08-06 declutter: items carry a `group` so the More sheet can render
+  // section headers instead of one flat 19-item list. `group` is a sheet-only
+  // projection concern — SIDEBAR_SECTIONS already groups by section.
   { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
-  { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट' },
-  { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
+  { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट', group: 'practice' },
+  { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब', group: 'practice' },
   // Alfa OS Practice Center — flag-gated (ff_practice_os_v1). A v2 practice hub
   // over the existing /quiz engine; only appears once its launch flag is ON.
-  { href: '/practice', icon: '⚡', label: 'Practice Center', labelHi: 'अभ्यास केंद्र', flagName: 'ff_practice_os_v1' },
-  { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
-  { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
+  { href: '/practice', icon: '⚡', label: 'Practice Center', labelHi: 'अभ्यास केंद्र', flagName: 'ff_practice_os_v1', group: 'practice' },
+  { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9, group: 'practice' },
+  { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9, group: 'practice' },
   // Alfa OS pre-test briefing hub — flag-gated (ff_test_os_v1). The single
   // "Start an exam" front door; hands off to the existing exam runtime.
-  { href: '/exam-briefing', icon: '🧭', label: 'Exam Briefing', labelHi: 'परीक्षा ब्रीफ़िंग', flagName: 'ff_test_os_v1' },
-  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
-  { href: '/library', icon: '📚', label: 'Library', labelHi: 'अध्ययन सामग्री' },
-  { href: '/refresh', icon: '🔁', label: 'Refresh', labelHi: 'ताज़ा करो' },
+  { href: '/exam-briefing', icon: '🧭', label: 'Exam Briefing', labelHi: 'परीक्षा ब्रीफ़िंग', flagName: 'ff_test_os_v1', group: 'practice' },
+  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', group: 'study' },
+  { href: '/library', icon: '📚', label: 'Library', labelHi: 'अध्ययन सामग्री', group: 'study' },
+  { href: '/refresh', icon: '🔁', label: 'Refresh', labelHi: 'ताज़ा करो', group: 'study' },
   // Alfa OS Revision Center — flag-gated (ff_revision_os_v1). A v2 spaced-
   // repetition revision hub; only appears once its launch flag is ON.
-  { href: '/revision', icon: '🧠', label: 'Revision Center', labelHi: 'दोहराव केंद्र', flagName: 'ff_revision_os_v1' },
-  { href: '/exam-prep', icon: '🎯', label: 'Exam Sprint', labelHi: 'परीक्षा की तैयारी', requiresUpcomingExam: true },
-  { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
+  { href: '/revision', icon: '🧠', label: 'Revision Center', labelHi: 'दोहराव केंद्र', flagName: 'ff_revision_os_v1', group: 'study' },
+  { href: '/exam-prep', icon: '🎯', label: 'Exam Sprint', labelHi: 'परीक्षा की तैयारी', requiresUpcomingExam: true, group: 'practice' },
+  { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल', group: 'account' },
   // Wave B gap screen 16 "Me" — flag-gated (ff_me_v2). Additive presentation
   // layer over /profile (apps/host/src/app/me/page.tsx); only appears once
   // the launch flag is ON, same convention as Practice Center / Revision
@@ -48,12 +51,22 @@ export const MORE_ITEMS = [
   // UI, and one of the THREE things called "Me" (the others were the /progress
   // tab and /profile). With /progress renamed to "Progress", plain "Me" is now
   // unambiguous and is the screen's real name.
-  { href: '/me', icon: '⚙️', label: 'Me', labelHi: 'मैं', flagName: 'ff_me_v2' },
+  { href: '/me', icon: '⚙️', label: 'Me', labelHi: 'मैं', flagName: 'ff_me_v2', group: 'account' },
   // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
-  { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है' },
-  { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
-  { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
-  { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
+  { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है', group: 'account' },
+  { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ', group: 'account' },
+  { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट', group: 'account' },
+  { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट', group: 'account' },
+];
+
+/** More-sheet section headers (mobile overflow projection only). `group` on a
+ *  MORE_ITEMS entry references these. Ungrouped items render at the top, then
+ *  groups in this order. Mirrors SIDEBAR_SECTIONS' Practice/Study/Account
+ *  grouping so both projections share the same mental model (IA law). */
+export const MORE_SHEET_GROUPS: { key: string; en: string; hi: string }[] = [
+  { key: 'practice', en: 'Practice', hi: 'अभ्यास' },
+  { key: 'study', en: 'Study', hi: 'पढ़ाई' },
+  { key: 'account', en: 'Account', hi: 'खाता' },
 ];
 
 export const SIDEBAR_SECTIONS = [

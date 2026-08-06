@@ -77,7 +77,7 @@ export function DashboardSkeleton() {
           </div>
 
           {/* 1b. "Ask Foxy" tap-gated launcher — small left-aligned pill. */}
-          <div className="my-3 flex justify-start">
+          <div className="mt-1 mb-1 flex justify-start">
             <Bone width={132} height={40} radius={20} />
           </div>
 
@@ -104,7 +104,10 @@ export function DashboardSkeleton() {
             </div>
           </div>
 
-          {/* 3. BoardScore widget — gauge + breakdown rows. */}
+          {/* 3. BoardScore widget — gauge + coverage + detail disclosure
+                 (chapter breakdown + recovery collapsed by default, so the
+                 skeleton carries only the first-paint readout + one disclosure
+                 bone — matches the post-2026-08-06-declutter layout). */}
           <div
             className="rounded-3xl p-5 space-y-4"
             style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
@@ -125,11 +128,7 @@ export function DashboardSkeleton() {
               </div>
             </div>
             <Bone height={6} radius={3} />
-            <div className="space-y-2">
-              {[0, 1, 2].map((i) => (
-                <Bone key={i} height={56} radius={16} />
-              ))}
-            </div>
+            <Bone height={48} radius={16} />
           </div>
 
           {/* 4. Revision rail — compact secondary card (inline on mobile/tablet). */}

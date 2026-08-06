@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
-import { getCoreTabs, getMoreItems, getItemLockForGrade, isItemVisibleForFlags, isNavItemActive, type NavFlagGatedItem } from './nav-config';
+import { getCoreTabs, getMoreItems, getItemLockForGrade, isItemVisibleForFlags, isNavItemActive, MORE_SHEET_GROUPS, type NavFlagGatedItem } from './nav-config';
 import { useHasUpcomingExam } from './use-has-upcoming-exam';
 
 export function MobileBottomNav() {
@@ -78,6 +78,21 @@ export function MobileBottomNav() {
     .filter(item => isItemVisibleForFlags(item as NavFlagGatedItem, navFlags))
     .filter(passesExamGate);
 
+  // 2026-08-06 declutter: the More sheet is grouped instead of one flat list.
+  // Ungrouped items (Home) render first, then the MORE_SHEET_GROUPS in order,
+  // mirroring the desktop sidebar's Practice / Study / Account sections (IA law
+  // "one destination one name" — same mental model on both projections).
+  const groupOf = (item: (typeof moreItems)[number]): string | undefined =>
+    (item as { group?: string } | undefined)?.group;
+
+  const groupedMoreItems: { header?: { en: string; hi: string }; items: typeof moreItems }[] = [];
+  const ungrouped = moreItems.filter(item => !groupOf(item));
+  if (ungrouped.length) groupedMoreItems.push({ items: ungrouped });
+  for (const group of MORE_SHEET_GROUPS) {
+    const items = moreItems.filter(item => groupOf(item) === group.key);
+    if (items.length) groupedMoreItems.push({ header: { en: group.en, hi: group.hi }, items });
+  }
+
   const streakCount: number = (auth as any)?.snapshot?.current_streak ?? 0;
 
   const isActive = (href: string) => isNavItemActive(pathname ?? '', href);
@@ -99,7 +114,7 @@ export function MobileBottomNav() {
       {showMore && (
         <>
           <div
-            className="fixed inset-0 z-[60]"
+            className="fixed inset-0 z-[60] animate-fade-in"
             style={{ background: 'rgba(0,0,0,0.3)' }}
             onClick={() => setShowMore(false)}
             role="presentation"
@@ -109,7 +124,7 @@ export function MobileBottomNav() {
             ref={moreSheetRef}
             role="dialog"
             aria-label="More navigation options"
-            className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl"
+            className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl animate-slide-up"
             style={{
               background: 'var(--surface-1)',
               paddingBottom: 'env(safe-area-inset-bottom, 16px)',
@@ -119,58 +134,72 @@ export function MobileBottomNav() {
             <div className="flex justify-center pt-3 pb-2">
               <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border-mid, #ccc)' }} />
             </div>
-            <div className="px-5 pb-4 space-y-1">
-              {moreItems.map(item => {
-                const lock = getItemLock(item);
-                const active = !lock.locked && isActive(item.href);
-                const gradeChipLabel = lock.locked
-                  ? (isHi ? `कक्षा ${lock.gradeMin}+` : `Grade ${lock.gradeMin}+`)
-                  : null;
-                return (
-                  <button
-                    key={item.href}
-                    type="button"
-                    onClick={lock.locked
-                      ? undefined
-                      : () => { setShowMore(false); router.push(item.href); }}
-                    aria-disabled={lock.locked || undefined}
-                    aria-label={lock.locked
-                      ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
-                      : undefined}
-                    className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
-                    style={{
-                      background: active ? 'rgb(var(--orange-rgb) / 0.08)' : 'transparent',
-                      color: lock.locked ? 'var(--text-3)' : (active ? 'var(--orange)' : 'var(--text-2)'),
-                      opacity: lock.locked ? 0.75 : 1,
-                      cursor: lock.locked ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
-                    <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
-                    {lock.locked ? (
-                      <span
-                        className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
-                        style={{
-                          background: 'var(--surface-3)',
-                          color: 'var(--text-3)',
-                          border: '1px solid var(--border)',
-                        }}
-                      >
-                        <span aria-hidden="true">🔒</span>
-                        {gradeChipLabel}
-                      </span>
-                    ) : /* The `/review` due-count badge branch that used to sit
-                          here was dead code: `/review` appears in none of
-                          CORE_TABS / MORE_ITEMS / SIDEBAR_SECTIONS (it is a
-                          permanent 301), so it could never render. Removing it
-                          also removed this component's only useDashboardData()
-                          call. */
-                      active ? (
-                      <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
-                    ) : null}
-                  </button>
-                );
-              })}
+            <div className="px-5 pb-4 space-y-1 max-h-[calc(80vh-48px)] overflow-y-auto overscroll-contain">
+              {groupedMoreItems.map((group, gi) => (
+                <div key={gi}>
+                  {group.header && (
+                    <p
+                      className="text-[11px] font-bold uppercase tracking-widest px-4 pt-2 pb-1"
+                      style={{ color: 'var(--text-3)' }}
+                    >
+                      {isHi ? group.header.hi : group.header.en}
+                    </p>
+                  )}
+                  <div className="space-y-1">
+                    {group.items.map(item => {
+                      const lock = getItemLock(item);
+                      const active = !lock.locked && isActive(item.href);
+                      const gradeChipLabel = lock.locked
+                        ? (isHi ? `कक्षा ${lock.gradeMin}+` : `Grade ${lock.gradeMin}+`)
+                        : null;
+                      return (
+                        <button
+                          key={item.href}
+                          type="button"
+                          onClick={lock.locked
+                            ? undefined
+                            : () => { setShowMore(false); router.push(item.href); }}
+                          aria-disabled={lock.locked || undefined}
+                          aria-label={lock.locked
+                            ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
+                            : undefined}
+                          className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
+                          style={{
+                            background: active ? 'rgb(var(--orange-rgb) / 0.08)' : 'transparent',
+                            color: lock.locked ? 'var(--text-3)' : (active ? 'var(--orange)' : 'var(--text-2)'),
+                            opacity: lock.locked ? 0.75 : 1,
+                            cursor: lock.locked ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
+                          <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
+                          {lock.locked ? (
+                            <span
+                              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                              style={{
+                                background: 'var(--surface-3)',
+                                color: 'var(--text-3)',
+                                border: '1px solid var(--border)',
+                              }}
+                            >
+                              <span aria-hidden="true">🔒</span>
+                              {gradeChipLabel}
+                            </span>
+                          ) : /* The `/review` due-count badge branch that used to sit
+                                here was dead code: `/review` appears in none of
+                                CORE_TABS / MORE_ITEMS / SIDEBAR_SECTIONS (it is a
+                                permanent 301), so it could never render. Removing it
+                                also removed this component's only useDashboardData()
+                                call. */
+                            active ? (
+                            <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
               {showUpgradePill && (
                 <div className="pt-3 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
                   <a
