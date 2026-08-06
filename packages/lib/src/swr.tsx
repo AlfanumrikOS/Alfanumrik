@@ -31,6 +31,11 @@ import {
   getStudentNotifications,
   getMasteryOverview,
 } from './supabase';
+import type {
+  MasteryCoverage,
+  MasteryOverviewResponse,
+  MasteryOverviewRow,
+} from './dashboard/mastery-buckets';
 
 // Default SWR config optimized for Indian mobile networks.
 // Exported so SWRProvider.tsx can mount it as the global <SWRConfig> — every
@@ -135,11 +140,22 @@ export function useNotifications(studentId: string | undefined, limit = 50) {
 
 /* ── Mastery Overview ── */
 export function useMasteryOverview(studentId: string | undefined, subject?: string) {
-  return useSWR(
+  const res = useSWR<MasteryOverviewResponse>(
     studentId ? `mastery/${studentId}/${subject || 'all'}` : null,
     () => getMasteryOverview(studentId!, subject),
     DEFAULT_CONFIG
   );
+  // D3/A (assessment sign-off 2026-08-06): `data` stays the bare rows array so
+  // every existing consumer (which reads Array.isArray(data) / casts to
+  // MasteryOverviewRow[]) keeps working; the coverage signal rides alongside
+  // so callers can tell "no activity" from "no curriculum for this grade"
+  // from "RPC unavailable" — see MasterySnapshot's empty-state branch.
+  const rows: MasteryOverviewRow[] = res.data?.rows ?? [];
+  return {
+    ...res,
+    data: rows,
+    coverage: res.data?.coverage as MasteryCoverage | undefined,
+  };
 }
 
 /* ── Learner Loop next action (ADR-001 Phase 3a) ──

@@ -91,7 +91,13 @@ describe('REG-57 — L2/L3 client-side fallback must not trust client is_correct
       // rewrite after processAdaptiveLearning's deletion) shifted the same
       // single violation from L567 to L573. Fallback branch still byte-
       // identical — one violation, same branch, no new client-trust site.
-      expect(hits[0]).toMatch(/^L(4[6-9]|5[2-8])\d:/);
+      //
+      // 2026-08-06 (dashboard learner-data semantics sign-off, D3): range
+      // widened again to L46x-L58x. The getMasteryOverview coverage-signal
+      // rework added lines ABOVE submitQuizResults, shifting the same single
+      // violation from L573 to L511. Fallback branch still byte-identical —
+      // one violation, same branch, no new client-trust site.
+      expect(hits[0]).toMatch(/^L(4[6-9]|5[0-8])\d:/);
     }
   });
 

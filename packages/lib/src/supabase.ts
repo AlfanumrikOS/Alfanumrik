@@ -20,6 +20,10 @@ import {
   type AdaptiveClient,
 } from './adaptive/select-adaptive-questions';
 import { humaneCardLabel } from './srs-card-label';
+import type {
+  MasteryOverviewRow,
+  MasteryOverviewResponse,
+} from './dashboard/mastery-buckets';
 import { buildFallbackStudentSnapshot, normalizeStudentSnapshot } from './student-snapshot';
 // NOTE (P10): the canonical P6 gate `./quiz/question-validation` is imported
 // DYNAMICALLY inside validateQuestions() below, not statically here. This file
@@ -117,72 +121,6 @@ export async function getFeatureFlags(context?: { role?: string; institutionId?:
     flags[f.flag_name] = enabled;
   });
   return flags;
-}
-
-/* ── Next topics to learn ── */
-export async function getNextTopics(studentId: string, subject: string | null | undefined, grade: string) {
-  let lessonTopic: any = null;
-  try {
-    // 1. Resolve student's class_id
-    const { data: student } = await supabase
-      .from('students')
-      .select('class_id')
-      .eq('id', studentId)
-      .single();
-
-    let classId = student?.class_id;
-    if (!classId) {
-      const { data: cs } = await supabase
-        .from('class_students')
-        .select('class_id')
-        .eq('student_id', studentId)
-        .eq('is_active', true)
-        .maybeSingle();
-      if (cs) classId = cs.class_id;
-    }
-
-    // 2. Fetch today's lesson plan if class exists
-    if (classId) {
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const { data: lessonPlan } = await supabase
-        .from('classroom_lesson_plans')
-        .select('topic_id, curriculum_topics(*)')
-        .eq('class_id', classId)
-        .eq('date', todayStr)
-        .maybeSingle();
-
-      if (lessonPlan?.curriculum_topics) {
-        lessonTopic = lessonPlan.curriculum_topics;
-      }
-    }
-  } catch (err) {
-    console.error('[getNextTopics] Error fetching classroom lesson plan:', err);
-  }
-
-  let query = supabase.from('curriculum_topics').select('*').eq('is_active', true).eq('grade', grade).order('display_order').limit(10);
-  if (subject) {
-    const { data: subjectRow } = await supabase.from('subjects').select('id').eq('code', subject).single();
-    if (subjectRow) {
-      query = query.eq('subject_id', subjectRow.id);
-    } else {
-      console.warn(
-        '[getNextTopics] preferred_subject did not resolve to a subjects.code row; ' +
-          'falling back to "any subject" for grade.',
-        { studentId, subject, grade },
-      );
-    }
-  }
-  const { data, error } = await query;
-  if (error) console.error('getNextTopics:', error.message);
-
-  let topicsList = data ?? [];
-
-  if (lessonTopic) {
-    // Filter out the classroom-synced topic from the rest of the list to avoid duplicate rendering
-    topicsList = [lessonTopic, ...topicsList.filter(t => t.id !== lessonTopic.id)].slice(0, 10);
-  }
-
-  return topicsList;
 }
 
 /* ── Foxy AI tutor chat ── */
@@ -855,10 +793,24 @@ export async function getCurriculumBrowser(grade: string, subject?: string) {
   return data;
 }
 
-export async function getMasteryOverview(studentId: string, subject?: string) {
+export async function getMasteryOverview(studentId: string, subject?: string): Promise<MasteryOverviewResponse> {
   const { data, error } = await supabase.rpc('get_mastery_overview', { p_student_id: studentId, p_subject: subject ?? null });
-  if (error) console.error('getMasteryOverview:', error.message);
-  return data;
+  if (error) {
+    console.error('getMasteryOverview:', error.message);
+    // RPC failure — nothing can be distinguished, so never attribute any
+    // emptiness to the student (D3/A `not_tracked`).
+    return { rows: [], coverage: 'not_tracked' };
+  }
+  // Post-migration shape (D3/A backend signal):
+  //   { rows: [...], coverage: 'ok' | 'no_activity' | 'no_curriculum' }
+  if (data && typeof data === 'object' && !Array.isArray(data) && 'rows' in data) {
+    return data as MasteryOverviewResponse;
+  }
+  // Legacy pre-migration shape: a bare array of topic rows. An empty array can
+  // only mean "no activity" here — the old RPC could not distinguish a
+  // curriculum-coverage gap from a student with zero attempts.
+  const rows = (data as MasteryOverviewRow[] | null) ?? [];
+  return { rows, coverage: rows.length === 0 ? 'no_activity' : 'ok' };
 }
 
 export async function recordLearningEvent(studentId: string, topicId: string, isCorrect: boolean, interactionType = 'practice', bloomLevel?: string) {

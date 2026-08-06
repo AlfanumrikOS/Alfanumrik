@@ -52,7 +52,7 @@ export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
           <span
             className="text-xs font-bold px-2 py-0.5 rounded-full"
             style={{
-              // Warm tint via the stable channel (--orange-rgb is violet here).
+              // Warm tint via the stable channel (declared in :root).
               background: 'rgb(var(--accent-warm-rgb) / 0.10)',
               color: 'var(--accent-warm, #E8581C)',
               fontVariantNumeric: 'tabular-nums',

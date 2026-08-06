@@ -55,7 +55,7 @@ export interface AppShellProps {
   rail?: ReactNode;
   /** Optional right aside (desktop only). */
   aside?: ReactNode;
-  /** Bottom mobile nav. Render <MobileNav /> here. */
+  /** Bottom mobile nav. Render the role's bottom nav (e.g. <MobileBottomNav />). */
   nav?: ReactNode;
   /** Main content. */
   children: ReactNode;
@@ -214,8 +214,12 @@ export function AppShell({
       {hasRail && <aside className="app-shell-rail">{rail}</aside>}
 
       {/* Main content — single column on mobile, two-column at tab,
-          three-column at desk (when split variant requested). */}
-      <ContentElement className="app-shell-content" id={contentAs === 'main' ? 'main' : undefined}>
+          three-column at desk (when split variant requested).
+          NOTE: no `id` here. The root layout's skip link targets the ONE
+          persistent skip-link owner, `#main-content` (GlobalAppLayout), which
+          exists on every route; a phantom `id="main"` here used to fight it
+          (two "main content" ids in the system, skip landed on neither). */}
+      <ContentElement className="app-shell-content">
         {children}
       </ContentElement>
 

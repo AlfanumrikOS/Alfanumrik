@@ -8,13 +8,40 @@
  * enabled globally) via the shared useTodayQueue hook. This replaces the former
  * DailyRhythmQueue which fetched /api/rhythm/today (gated by
  * ff_pedagogy_v2_daily_rhythm — OFF in production), meaning the hero was empty
- * for all students. The always-present "Begin lesson" CTA provides a direct
- * shortcut when the queue is loading or empty.
+ * for all students.
+ *
+ * ONE-PRIMARY-ACTION RULE (2026-08-05 declutter). The card previously rendered
+ * up to FIVE competing calls to action at once: the primary queue row, two
+ * secondary rows, an always-on "Begin lesson" GlowButton, and (in the empty
+ * state) a "Pick a lesson" button — the last two both routing to /learn and
+ * sitting ~40 px apart. Now:
+ *
+ *   - Exactly ONE primary action renders: the top queue item (or the cold-start
+ *     diagnostic card).
+ *   - The two secondary queue rows sit behind a single collapsed disclosure
+ *     ("Something else?" / "कुछ और?") with aria-expanded + aria-controls.
+ *   - The GlowButton is no longer always-on. It is the SOLE fallback CTA inside
+ *     the empty/error card, so it can never co-exist with a queue row (and it
+ *     replaced, rather than joined, the old ghost "Pick a lesson" button — it
+ *     carries that button's copy and `mission-empty-cta` testid).
+ *   - "Try again" still appears only on an SWR error.
+ *
+ * Every destination and the `deepLinkToHref` mapping are unchanged — this is
+ * prominence and presentation only.
+ *
+ * HERO TOPIC (2026-08-06 RCA W1). The h1 headline no longer depends on the
+ * parent's separate `getNextTopics` client chain (4-5 sequential PostgREST
+ * round-trips that gated the hero for 1.5-2.5s on 4G). The headline now derives
+ * from the SAME queue fetch this card already makes: when the primary action is
+ * chapter-anchored, its `chapterTitle` is the headline; otherwise the bilingual
+ * greeting stands in. One fetch, one source of truth — the resolver decides
+ * what is "next", never a parallel client query.
  *
  * No engine logic here — queue ordering lives in the resolver. This supplies
  * the editorial chrome + queue display + fallback CTA. Bilingual via isHi.
  */
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useTodayQueue } from '@alfanumrik/lib/today/use-today-queue';
@@ -22,16 +49,13 @@ import { todayIcon } from '@alfanumrik/lib/today/icon-map';
 import { todayCopy, deepLinkToHref } from '@alfanumrik/lib/today/copy';
 import { ALWAYS_NATIVE_SCRIPT } from '@alfanumrik/lib/today/render';
 import { PremiumCard, GlowButton } from '@alfanumrik/ui/ui';
-import type { CurriculumTopic } from '@alfanumrik/lib/types';
 import type { TodayQueueItem } from '@alfanumrik/lib/today/types';
 
-/* Stable warm-orange tints. --orange-rgb is remapped to VIOLET under the
-   cosmic-light student surface, so warm tints route through --accent-warm-rgb
-   (re-pinned to burnt orange 232,88,28 in :root AND the cosmic-light block). */
+/* Stable warm-orange tints. Warm tints route through --accent-warm-rgb, the
+   shared warm channel (burnt orange 232,88,28, declared in :root). */
 const WARM_06 = 'rgb(var(--accent-warm-rgb) / 0.06)';
 const WARM_10 = 'rgb(var(--accent-warm-rgb) / 0.10)';
 const WARM_15 = 'rgb(var(--accent-warm-rgb) / 0.15)';
-const WARM_20 = 'rgb(var(--accent-warm-rgb) / 0.20)';
 const WARM_25 = 'rgb(var(--accent-warm-rgb) / 0.25)';
 const WARM = 'var(--accent-warm, #E8581C)';
 
@@ -40,7 +64,6 @@ interface TodaysMissionProps {
   studentName: string;
   grade: string | null | undefined;
   subjectCode: string;
-  todaysTopic: CurriculumTopic | undefined;
 }
 
 function capitalize(s: string | null | undefined): string {
@@ -72,7 +95,6 @@ export default function TodaysMission({
   studentName,
   grade,
   subjectCode,
-  todaysTopic,
 }: TodaysMissionProps) {
   const router = useRouter();
   const { student } = useAuth();
@@ -88,12 +110,21 @@ export default function TodaysMission({
   const hasQueueItems = !!queueData && queueData.queue.length > 0;
   const showEmptyState = !queueLoading && !hasQueueItems;
 
+  // Hero headline: the primary action's chapter title when it is chapter-anchored
+  // (start_quiz / continue_lesson / revise_decayed_topic / introduce_new_topic),
+  // otherwise the bilingual greeting. Derived from the SAME queue fetch — no
+  // parallel getNextTopics chain (RCA W1).
+  const heroTitle = queueData?.primary?.chapterTitle;
+
+  // Secondary queue rows are collapsed by default — one primary action wins the
+  // card. Purely local UI state; no persistence, no analytics.
+  const [showAlternatives, setShowAlternatives] = useState(false);
+
   const beginLesson = () => {
-    if (todaysTopic) {
-      router.push(`/learn/${subjectCode}/${todaysTopic.chapter_number ?? 1}`);
-    } else {
-      router.push('/learn');
-    }
+    // Only reachable from the empty/error card, where no chapter is known —
+    // the resolver produced nothing for this student, so the subject picker is
+    // the honest destination (the queue primary owns chapter-level routing).
+    router.push('/learn');
   };
 
   return (
@@ -103,7 +134,7 @@ export default function TodaysMission({
       className="os-mission p-5 md:p-6 rounded-3xl"
     >
       {/* Soft warm corner glow — the hero's signature warmth, kept warm via the
-          stable --accent-warm channel (NOT the violet-remapped --orange-rgb). */}
+          stable --accent-warm channel. */}
       <div
         className="pointer-events-none absolute -top-12 -left-10 w-48 h-48 rounded-full opacity-70"
         aria-hidden="true"
@@ -130,8 +161,8 @@ export default function TodaysMission({
           className="text-2xl md:text-[1.7rem] font-bold leading-[1.15] tracking-[-0.01em]"
           style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
         >
-          {todaysTopic?.title
-            ? todaysTopic.title
+          {heroTitle
+            ? heroTitle
             : isHi
               ? `चलो शुरू करें, ${firstName}`
               : `Let's get going, ${firstName}`}
@@ -222,40 +253,77 @@ export default function TodaysMission({
                   <span className="text-sm" style={{ color: 'var(--text-3)' }}>→</span>
                 </button>
 
-                {/* Secondary actions (up to 2 more) */}
-                {queueData.queue.slice(1, 3).map((item) => (
-                  <button
-                    key={item.rank}
-                    type="button"
-                    onClick={() => router.push(deepLinkToHref(item.deepLink))}
-                    className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-2.5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
-                    style={{
-                      background: 'var(--surface-2)',
-                      border: '1px solid var(--border)',
-                    }}
-                  >
-                    <span className="text-lg" aria-hidden="true">{todayIcon(item.iconHint)}</span>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-semibold truncate block" style={{ color: 'var(--text-2)' }}>
-                        {todayCopy(item.labelKey, isHi)}
+                {/* Secondary actions (up to 2 more) — collapsed behind ONE
+                    ghost disclosure so the primary action above stands alone.
+                    The rows stay in the markup but are removed from both the
+                    render and the accessibility tree while collapsed (the
+                    `hidden` attribute), and the Tailwind `flex` utility is
+                    applied ONLY when open so it cannot out-specify `[hidden]`.
+                    Destinations are untouched. */}
+                {queueData.queue.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowAlternatives((v) => !v)}
+                      aria-expanded={showAlternatives}
+                      aria-controls="mission-alternatives"
+                      data-testid="mission-alternatives-toggle"
+                      className="self-start inline-flex items-center gap-1.5 rounded-lg px-2 text-xs font-semibold transition-colors hover:opacity-80 focus:outline-none focus-visible:ring-2"
+                      style={{ color: 'var(--text-3)', minHeight: 44 }}
+                    >
+                      {isHi ? 'कुछ और?' : 'Something else?'}
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          display: 'inline-block',
+                          transform: showAlternatives ? 'rotate(180deg)' : 'none',
+                          transition: 'transform 160ms ease',
+                        }}
+                      >
+                        ▾
                       </span>
-                      <span className="text-[10px] truncate block" style={{ color: 'var(--text-3)' }}>
-                        {todayCopy(item.subtitleKey, isHi, {
-                          subject: displaySubjectName((item.meta?.subjectCode as string) ?? subjectCode),
-                          chapterTitle: chapterSuffix(item, isHi),
-                          dueCount: String(item.meta?.dueCount ?? ''),
-                          days: String(item.meta?.daysSinceLastTouch ?? ''),
-                          progress: String(Math.round(((item.meta?.progressPct as number) ?? 0) * 100)),
-                          chapter: String(item.meta?.chapterNumber ?? ''),
-                          n: String(item.estMinutes),
-                        })}
-                      </span>
+                    </button>
+                    <div
+                      id="mission-alternatives"
+                      hidden={!showAlternatives}
+                      className={showAlternatives ? 'flex flex-col gap-2' : undefined}
+                    >
+                      {queueData.queue.slice(1, 3).map((item) => (
+                        <button
+                          key={item.rank}
+                          type="button"
+                          onClick={() => router.push(deepLinkToHref(item.deepLink))}
+                          className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-2.5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+                          style={{
+                            background: 'var(--surface-2)',
+                            border: '1px solid var(--border)',
+                          }}
+                        >
+                          <span className="text-lg" aria-hidden="true">{todayIcon(item.iconHint)}</span>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-semibold truncate block" style={{ color: 'var(--text-2)' }}>
+                              {todayCopy(item.labelKey, isHi)}
+                            </span>
+                            <span className="text-[10px] truncate block" style={{ color: 'var(--text-3)' }}>
+                              {todayCopy(item.subtitleKey, isHi, {
+                                subject: displaySubjectName((item.meta?.subjectCode as string) ?? subjectCode),
+                                chapterTitle: chapterSuffix(item, isHi),
+                                dueCount: String(item.meta?.dueCount ?? ''),
+                                days: String(item.meta?.daysSinceLastTouch ?? ''),
+                                progress: String(Math.round(((item.meta?.progressPct as number) ?? 0) * 100)),
+                                chapter: String(item.meta?.chapterNumber ?? ''),
+                                n: String(item.estMinutes),
+                              })}
+                            </span>
+                          </div>
+                          <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                            ~{item.estMinutes}m
+                          </span>
+                        </button>
+                      ))}
                     </div>
-                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>
-                      ~{item.estMinutes}m
-                    </span>
-                  </button>
-                ))}
+                  </>
+                )}
               </>
             )}
           </>
@@ -264,7 +332,13 @@ export default function TodaysMission({
         {/* Empty / error fallback — never collapse to nothing. Renders an
             actionable, friendly card (P7 bilingual) routing to /learn. Error
             and empty share this card; raw error text is never shown. A subtle
-            retry re-runs the SWR fetch when the failure was an error. */}
+            retry re-runs the SWR fetch when the failure was an error.
+
+            This card now carries the ONLY fallback CTA on the whole hero: the
+            GlowButton that used to sit always-on below the queue was moved in
+            here and took over the old ghost button's copy + testid. Because it
+            renders only when `showEmptyState` is true, it can never appear
+            alongside a queue row. */}
         {showEmptyState && (
           <div
             className="rounded-2xl px-4 py-4"
@@ -286,68 +360,45 @@ export default function TodaysMission({
                 ? 'शुरू करने के लिए एक पाठ चुनो।'
                 : 'Pick a lesson to begin.'}
             </p>
-            <div className="mt-2.5 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => router.push('/learn')}
-                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2"
-                style={{
-                  background: WARM_10,
-                  border: `1px solid ${WARM_20}`,
-                  color: WARM,
-                }}
+            {/* The single fallback action. GlowButton paints from --orange /
+                --orange-light, which are NOT the warm channel this surface uses.
+                We scope-override those two tokens to the stable warm channel on
+                this wrapper ONLY, so the button renders burnt-orange (with its
+                CSS-only shimmer) without touching GlowButton or the globals. */}
+            <div
+              className="mt-3"
+              style={{
+                ['--orange' as string]: 'var(--accent-warm, #E8581C)',
+                ['--orange-light' as string]: 'var(--accent-warm-strong, #C2440F)',
+              }}
+            >
+              <GlowButton
+                size="lg"
+                fullWidth
+                onClick={beginLesson}
+                className="md:w-auto"
+                icon={<span aria-hidden="true">▶</span>}
                 data-testid="mission-empty-cta"
               >
-                {isHi ? 'पाठ चुनो' : 'Pick a lesson'}
-                <span aria-hidden="true">→</span>
-              </button>
-              {queueError && (
-                <button
-                  type="button"
-                  onClick={() => retryQueue()}
-                  className="text-xs font-semibold underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 rounded"
-                  style={{ color: 'var(--text-3)' }}
-                  data-testid="mission-empty-retry"
-                >
-                  {isHi ? 'फिर से कोशिश करें' : 'Try again'}
-                </button>
-              )}
+                <span>
+                  {isHi ? 'पाठ चुनो' : 'Pick a lesson'}
+                </span>
+                <span aria-hidden="true" className="ml-1">→</span>
+              </GlowButton>
             </div>
+            {queueError && (
+              <button
+                type="button"
+                onClick={() => retryQueue()}
+                className="mt-2 text-xs font-semibold underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 rounded"
+                style={{ color: 'var(--text-3)' }}
+                data-testid="mission-empty-retry"
+              >
+                {isHi ? 'फिर से कोशिश करें' : 'Try again'}
+              </button>
+            )}
           </div>
         )}
-      </div>
-
-        {/* Always-present primary CTA — the single dominant warm action.
-            GlowButton paints from --orange / --orange-light, which are VIOLET
-            under the cosmic-light surface. We scope-override those two tokens to
-            the stable warm channel on this wrapper ONLY, so the button renders
-            burnt-orange (with its CSS-only shimmer) without touching GlowButton
-            or the global cosmic remap. */}
-        <div
-          className="mt-4"
-          style={{
-            ['--orange' as string]: 'var(--accent-warm, #E8581C)',
-            ['--orange-light' as string]: 'var(--accent-warm-strong, #C2440F)',
-          }}
-        >
-          <GlowButton
-            size="lg"
-            fullWidth
-            onClick={beginLesson}
-            className="md:w-auto"
-            icon={<span aria-hidden="true">▶</span>}
-          >
-            <span>
-              {todaysTopic
-                ? isHi
-                  ? `पाठ शुरू करो · ${displaySubjectName(subjectCode)}`
-                  : `Begin lesson · ${displaySubjectName(subjectCode)}`
-                : isHi
-                  ? 'आज का पाठ चुनो'
-                  : "Pick today's lesson"}
-            </span>
-            <span aria-hidden="true" className="ml-1">→</span>
-          </GlowButton>
         </div>
       </div>
     </PremiumCard>

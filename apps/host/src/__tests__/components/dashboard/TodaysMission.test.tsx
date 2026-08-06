@@ -103,7 +103,6 @@ async function renderMission(
       studentName: 'Asha Verma',
       grade: '7',
       subjectCode: 'science',
-      todaysTopic: undefined,
       ...overrides,
     }),
   );

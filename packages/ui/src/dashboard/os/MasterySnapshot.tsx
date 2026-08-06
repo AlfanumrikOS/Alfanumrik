@@ -12,7 +12,15 @@
  *   1. Proportion bar  — instant distribution glance (no interaction needed)
  *   2. Count number    — hero stat, text-2xl, tabular mono, colour-coded
  *   3. Label           — clear, never truncated
- *   4. Review now CTA  — only on Needs Revision when count > 0
+ *   4. Review now CTA  — the panel's ONE link, only on Needs Revision when
+ *                        count > 0
+ *
+ * 2026-08-05 declutter: the empty state used to carry a second, generic
+ * "Start a quiz →" anchor pointing at the SAME /quiz destination as the
+ * contextual "Review now →". This panel is a glance surface, not an action
+ * surface — the action for a zero-quiz student is already the dominant
+ * TodaysMission hero on the same screen. Only the contextual link survives; the
+ * empty state keeps its bilingual guidance copy.
  *
  * Accessibility: colour is never the sole carrier of meaning — numbers and
  * labels duplicate every colour signal (WCAG 1.4.1). role="list" / role="listitem"
@@ -84,7 +92,7 @@ function tint(color: string, pct: number): string {
 }
 
 export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProps) {
-  const { data, isLoading, error } = useMasteryOverview(studentId);
+  const { data, isLoading, error, coverage } = useMasteryOverview(studentId);
 
   const rows: MasteryOverviewRow[] = Array.isArray(data) ? (data as MasteryOverviewRow[]) : [];
   const counts = countBuckets(rows);
@@ -115,6 +123,22 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
 
   // Mastered share drives the summary ring (deliberately the positive signal).
   const masteredPct = total > 0 ? Math.round((counts.mastered / total) * 100) : 0;
+
+  /* W3 D2 (assessment sign-off 2026-08-06): the ring needs a sample-size floor
+   * (N = 5). A percentage over fewer than N started topics reads as more certain
+   * than it is — one started-and-mastered topic renders a hero "100%" ring that
+   * is arithmetically correct but pedagogically false. Below N we suppress the
+   * ring and let the segmented bar + counts carry the distribution instead. */
+  const MIN_RING_TOPICS = 5;
+  const showRing = total >= MIN_RING_TOPICS;
+
+  /* W3 D3 (assessment sign-off 2026-08-06): `get_mastery_overview` can return
+   * zero rows because the student has no attempts OR because the student's
+   * grade has no curriculum topics at all (a platform gap). Only the former may
+   * be presented as the student's inaction. `coverage` (undefined on legacy
+   * callers/mocks) defaults to `no_activity` to preserve the historical copy. */
+  const emptyKind: 'no_activity' | 'neutral' =
+    coverage === 'no_curriculum' || coverage === 'not_tracked' ? 'neutral' : 'no_activity';
 
   return (
     <section
@@ -157,32 +181,48 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
             : "Couldn't load — try refreshing."}
         </div>
       ) : total === 0 ? (
-        /* ── Empty / zero-quiz state ── */
-        <div
-          className="rounded-xl p-4 text-center"
-          style={{ background: 'var(--surface-2)', border: '1px dashed var(--border)' }}
-        >
-          <div className="text-2xl mb-2" aria-hidden="true">🎯</div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
-            {isHi ? 'अभी तक कोई क्विज़ नहीं' : 'No quizzes yet'}
-          </p>
-          <p className="text-xs mb-3" style={{ color: 'var(--text-3)' }}>
-            {isHi
-              ? 'पहली क्विज़ दो और महारत यहाँ देखो।'
-              : 'Take a quiz to see your mastery here.'}
-          </p>
-          <a
-            href="/quiz"
-            className="inline-block rounded-xl px-4 py-2 text-sm font-semibold transition-all hover:opacity-90 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-            style={{
-              background: 'linear-gradient(135deg, var(--accent-warm, #E8581C), var(--accent-warm-strong, #C2440F))',
-              color: '#fff',
-              boxShadow: 'var(--shadow-glow)',
-            }}
+        emptyKind === 'neutral' ? (
+          /* ── Empty / no-curriculum or unverifiable state (W3 D3) ──────────────
+             No student attribution: zero rows here can mean the grade has no
+             curriculum topics at all (a platform coverage gap) or the RPC
+             failed. Only `no_activity` may carry the quiz prompt — a child
+             must not be told to "take a quiz" because the platform has nothing
+             for their grade. */
+          <div
+            className="rounded-xl p-4 text-center"
+            style={{ background: 'var(--surface-2)', border: '1px dashed var(--border)' }}
           >
-            {isHi ? 'क्विज़ शुरू करें →' : 'Start a quiz →'}
-          </a>
-        </div>
+            <div className="text-2xl mb-2" aria-hidden="true">📭</div>
+            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
+              {isHi ? 'अभी यहाँ कुछ नहीं है' : 'Nothing to show here yet'}
+            </p>
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+              {isHi
+                ? 'आपकी कक्षा के लिए महारत अभी उपलब्ध नहीं है — जल्द देखें।'
+                : "Mastery for your grade isn't set up yet — check back soon."}
+            </p>
+          </div>
+        ) : (
+          /* ── Empty / zero-quiz state ── */
+          <div
+            className="rounded-xl p-4 text-center"
+            style={{ background: 'var(--surface-2)', border: '1px dashed var(--border)' }}
+          >
+            <div className="text-2xl mb-2" aria-hidden="true">🎯</div>
+            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
+              {isHi ? 'अभी तक कोई क्विज़ नहीं' : 'No quizzes yet'}
+            </p>
+            {/* Guidance copy only — no CTA here. The action for a student with
+                zero quizzes is the TodaysMission hero on the same screen; a
+                second /quiz link would be the redundant twin of the contextual
+                "Review now →" below. */}
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+              {isHi
+                ? 'पहली क्विज़ दो और महारत यहाँ देखो।'
+                : 'Take a quiz to see your mastery here.'}
+            </p>
+          </div>
+        )
       ) : (
         <>
           {/*
@@ -190,18 +230,22 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
             StatRing (Sora data-font center). Sits beside the segmented bar so the
             student gets one hero number plus the full distribution at a glance.
             The number duplicates the green segment (WCAG 1.4.1 — not colour-only).
+            W3 D2: hidden below N = 5 started topics (see showRing above) so a
+            tiny sample can't render a falsely certain hero percentage.
           */}
           <div className="flex items-center gap-3 mb-4">
-            <StatRing value={masteredPct} size={56} strokeWidth={6} color="var(--green, #15803D)">
-              <div className="text-center leading-none">
-                <span
-                  className="block text-sm font-extrabold tabular-nums"
-                  style={{ color: 'var(--green, #15803D)' }}
-                >
-                  {masteredPct}%
-                </span>
-              </div>
-            </StatRing>
+            {showRing && (
+              <StatRing value={masteredPct} size={56} strokeWidth={6} color="var(--green, #15803D)">
+                <div className="text-center leading-none">
+                  <span
+                    className="block text-sm font-extrabold tabular-nums"
+                    style={{ color: 'var(--green, #15803D)' }}
+                  >
+                    {masteredPct}%
+                  </span>
+                </div>
+              </StatRing>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
                 {isHi ? 'महारत हासिल' : 'Mastered'}

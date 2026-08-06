@@ -5,7 +5,9 @@
  *
  * Fetches the student's latest board_score_predictions from GET /api/board-score
  * and renders:
- *   - A circular gauge showing overall predicted %, powered by <StatRing>
+ *   - A circular gauge showing the SELECTED subject's predicted % (W3 D1/A:
+ *     scoped to one subject so ring, confidence band, and coverage bar share a
+ *     single denominator), powered by <StatRing>
  *   - Subject tabs (when multiple subjects exist)
  *   - Coverage progress bar
  *   - Chapter breakdown with status icons + mastery bars (WCAG 1.4.1 — icon+label,
@@ -18,7 +20,8 @@
  * rounded-2xl p-3 cards, CSS variable palette, bilingual via isHi.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import useSWR from 'swr';
 import { StatRing, Skeleton } from '@alfanumrik/ui/ui';
 import { authedFetch } from '@alfanumrik/lib/authed-fetch';
 
@@ -28,8 +31,7 @@ function tint(color: string, pct: number): string {
   return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 }
 
-/* Stable warm-orange tints — --orange-rgb is remapped to VIOLET on this
-   cosmic-light surface, so warm tints route through --accent-warm-rgb. */
+/* Stable warm-orange tints — the shared warm channel, declared in :root. */
 const WARM = 'var(--accent-warm, #E8581C)';
 const WARM_STRONG = 'var(--accent-warm-strong, #C2440F)';
 
@@ -94,45 +96,61 @@ interface BoardScoreWidgetProps {
   studentId: string | undefined;
 }
 
+// ─── Fetch (RCA W1: SWR-wrapped) ────────────────────────────────────────────────
+// Previously this widget fetched raw in a useEffect — no cache, no dedupe, no
+// client timeout, refetching on every mount. Now it rides SWR (keyed by
+// studentId like every other dashboard hook) with a 20s AbortController so a
+// slow Edge Function can never hang the card. Stale-while-revalidate shows the
+// cached prediction instantly and refreshes in the background.
+const CLIENT_TIMEOUT_MS = 20_000;
+
+/** Discriminated fetch result so SWR carries one `data` payload. */
+type BoardScoreResult =
+  | { kind: 'disabled' }
+  | { kind: 'data'; data: BoardScorePrediction[] };
+
+async function fetchBoardScore(): Promise<BoardScoreResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+  try {
+    // authedFetch forwards `Authorization: Bearer <token>` from the live
+    // Supabase session (session lives in localStorage, not a cookie), so the
+    // server's authorizeRequest sees the user instead of 401ing.
+    const res = await authedFetch('/api/board-score', { signal: controller.signal });
+    if (!res.ok) {
+      const err = new Error(`fetch_error:${res.status}`) as Error & { status: number };
+      err.status = res.status;
+      throw err;
+    }
+    const json = (await res.json()) as { code: string; data?: BoardScorePrediction[] };
+    if (json.code === 'disabled') {
+      return { kind: 'disabled' };
+    }
+    return { kind: 'data', data: json.data ?? [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetProps) {
-  const [predictions, setPredictions] = useState<BoardScorePrediction[]>([]);
-  const [isLoading, setIsLoading]     = useState(true);  // true: avoid flash of empty-state before first fetch
-  const [error, setError]             = useState<string | null>(null);
-  const [disabled, setDisabled]       = useState(false);
+  const { data, error, mutate } = useSWR<BoardScoreResult>(
+    studentId ? `board-score/${studentId}` : null,
+    fetchBoardScore,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      dedupingInterval: 30_000,
+      errorRetryCount: 1,
+      keepPreviousData: true,
+    },
+  );
+
+  const disabled = data?.kind === 'disabled';
+  const predictions = data?.kind === 'data' ? data.data : [];
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [showAllChapters, setShowAllChapters] = useState(false);
-
-  // ── Fetch ───────────────────────────────────────────────────────────────────
-
-  const fetchScores = useCallback(async () => {
-    if (!studentId) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      // authedFetch forwards `Authorization: Bearer <token>` from the live
-      // Supabase session (session lives in localStorage, not a cookie), so the
-      // server's authorizeRequest sees the user instead of 401ing.
-      const res = await authedFetch('/api/board-score');
-      if (!res.ok) {
-        setError(`fetch_error:${res.status}`);
-        return;
-      }
-      const json = (await res.json()) as { code: string; data?: BoardScorePrediction[] };
-      if (json.code === 'disabled') {
-        setDisabled(true);
-        return;
-      }
-      setPredictions(json.data ?? []);
-    } catch {
-      setError('network_error');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [studentId]);
-
-  useEffect(() => { void fetchScores(); }, [fetchScores]);
 
   // Reset per-subject UI when data changes
   useEffect(() => {
@@ -169,7 +187,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
 
   // ── Loading ─────────────────────────────────────────────────────────────────
 
-  if (!studentId || isLoading) {
+  if (!studentId || (!data && !error)) {
     return (
       <section
         className="rounded-3xl p-5"
@@ -237,7 +255,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
           <p className="text-xs mt-1 mb-3" style={{ color: 'var(--text-3)' }}>{T.errorDesc}</p>
           <button
             type="button"
-            onClick={() => void fetchScores()}
+            onClick={() => void mutate()}
             className="text-xs font-bold underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 rounded"
             style={{ color: WARM }}
           >
@@ -279,10 +297,16 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
 
   const sel = predictions[selectedIdx] ?? predictions[0];
 
-  // Overall score across all subjects (for gauge + CTA)
-  const totalPredicted = predictions.reduce((s, p) => s + p.predicted_score, 0);
-  const totalMax       = predictions.reduce((s, p) => s + p.max_score, 0);
-  const overallPct     = totalMax > 0 ? Math.round(totalPredicted / totalMax * 100) : Math.round(sel.predicted_pct);
+  // W3 D1 (assessment sign-off 2026-08-06, Option A): the gauge is SCOPED to
+  // the selected subject. The previous ring + marks pair were a cross-subject
+  // aggregate (Σpredicted / Σmax across ALL subjects) stacked directly above a
+  // per-subject confidence band + coverage bar — a mixed-denominator stack that
+  // read as one fact. Now the gauge uses the `sel` row's own engine-emitted
+  // predicted_pct and marks, so ring / confidence band / coverage bar all share
+  // ONE denominator (the selected subject).
+  const gaugeValue = Math.round(sel.predicted_pct);
+  const subjectMax = sel.max_score;
+  const subjectLabel = sel.subject_label || sel.subject_code;
 
   // NOTE: the `ctaGain` total (sum of recoverable_marks across subjects) was
   // removed alongside the AnswerChecker™ CTA — see the note at the end of this
@@ -291,8 +315,8 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
 
   // Gauge colour — semantic tokens (mastered green / warm / danger).
   const gaugeColor =
-    overallPct >= 75 ? 'var(--green, #15803D)'
-    : overallPct >= 50 ? WARM
+    sel.predicted_pct >= 75 ? 'var(--green, #15803D)'
+    : sel.predicted_pct >= 50 ? WARM
     : 'var(--danger, #DC2626)';
 
   // Chapter list — sorted by chapter_number (keys are stringified numbers)
@@ -337,15 +361,15 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
           border: `1px solid ${tint(gaugeColor, 18)}`,
         }}
         role="group"
-        aria-label={isHi ? 'कुल अनुमानित स्कोर' : 'Overall predicted score'}
+        aria-label={isHi ? `${subjectLabel} का अनुमानित स्कोर` : `${subjectLabel} predicted score`}
       >
-        <StatRing value={overallPct} size={84} strokeWidth={7} color={gaugeColor}>
+        <StatRing value={gaugeValue} size={84} strokeWidth={7} color={gaugeColor}>
           <div className="text-center leading-none" style={{ fontFamily: 'var(--font-display)' }}>
             <span
               className="block text-base font-extrabold tabular-nums"
               style={{ color: gaugeColor }}
             >
-              {overallPct}%
+              {gaugeValue}%
             </span>
           </div>
         </StatRing>
@@ -355,10 +379,12 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
             className="text-xl font-bold leading-tight"
             style={{ color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums' }}
           >
-            {Math.round(totalPredicted)}
-            <span className="text-sm font-normal ml-0.5" style={{ color: 'var(--text-3)' }}>
-              /{totalMax}
-            </span>
+            {Math.round(sel.predicted_score)}
+            {subjectMax > 0 && (
+              <span className="text-sm font-normal ml-0.5" style={{ color: 'var(--text-3)' }}>
+                /{subjectMax}
+              </span>
+            )}
           </div>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{T.predicted}</p>
           <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--text-3)' }}>

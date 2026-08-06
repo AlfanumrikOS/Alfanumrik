@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { SWRConfig } from 'swr';
 import React from 'react';
 
 /**
@@ -13,13 +14,15 @@ import React from 'react';
  * changed surfaces — following the hook/fetch-seam + inline-style-scan patterns
  * in momentum-primitives.test.tsx and TodaysMission.test.tsx.
  *
- * INTENDED SEMANTIC CHANGE (assessment condition C1): the MasterySnapshot
- * headline ring now shows ACCURACY % (aggregateAccuracyPercent =
- * round(Σcorrect_attempts / Σattempts * 100), the P1-canonical helper), NOT the
- * old mastered-share (mastered / total). The ring must reconcile with quiz
- * accuracy, not with how many topics happen to be mastered. These tests assert
- * the NEW accuracy semantics and will fail loudly if the panel ever regresses to
- * mastered-share.
+ * W3 (assessment sign-off 2026-08-06) semantics pinned below:
+ * - D1: the BoardScore gauge is SCOPED to the selected subject — a cross-subject
+ *   aggregate is forbidden (ring + confidence band must share one denominator).
+ * - D2: the MasterySnapshot headline ring shows MASTERED-SHARE
+ *   (round(mastered / total * 100)) and is gated at N = 5 started topics — below
+ *   N the ring is SUPPRESSED (a 1-topic "100%" hero is pedagogically false) and
+ *   the segmented bar + counts carry the distribution.
+ * - D3: the empty state distinguishes no-activity (keeps the quiz prompt) from
+ *   no-curriculum / RPC-unavailable (neutral copy, no self-blame CTA).
  *
  * JSDOM has no layout/CSS, so we assert DOM structure, rendered text, ARIA, and
  * the ABSENCE of 6-digit brand hex literals — never computed visual styles.
@@ -64,11 +67,17 @@ function isDistributionBar(el: HTMLElement): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MasterySnapshot — bucket distribution + headline ACCURACY ring (C1)
+// MasterySnapshot — bucket distribution + headline MASTERED-SHARE ring (D2-gated)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Drive the component's only data seam: the useMasteryOverview SWR hook.
-type SwrState = { data: unknown; isLoading: boolean; error: unknown };
+type SwrState = {
+  data: unknown;
+  isLoading: boolean;
+  error: unknown;
+  /** W3 D3 — the coverage signal useMasteryOverview now exposes. */
+  coverage?: 'ok' | 'no_activity' | 'no_curriculum' | 'not_tracked';
+};
 let mockMasteryState: SwrState;
 vi.mock('@alfanumrik/lib/swr', () => ({
   useMasteryOverview: () => mockMasteryState,
@@ -148,18 +157,19 @@ describe('Phase 3b — MasterySnapshot value-bearing visuals', () => {
     expect(container.textContent).toContain('9\u2009topics');
   });
 
-  it('the headline StatRing shows mastered-share on the restored stable UI', async () => {
-    // Σcorrect = 4+1+2 = 7, Σattempts = 4+2+4 = 10 → accuracy = round(7/10*100)
-    // = 70%. Buckets: mastered 2, learning 1 → mastered-share would be
-    // round(2/3*100) = 67%. The ring MUST read 70% (accuracy), never 67%
-    // (mastered-share) — that is the C1 semantic. The not_started row has 0
-    // attempts and contributes nothing to either the buckets or the accuracy.
+  it('the headline ring shows mastered-share round(mastered/total*100)', async () => {
+    // 4 mastered + 2 learning = 6 started topics → mastered-share =
+    // round(4/6*100) = 67%. N = 6 ≥ 5, so the W3 D2 gate ALLOWS the ring.
+    // (The not_started row is excluded from the tally and contributes nothing.)
     mockMasteryState = {
       data: [
-        row('m1', 'mastered', false, 4, 4),
-        row('m2', 'mastered', false, 2, 1),
-        row('l1', 'beginner', false, 4, 2),
-        row('x1', 'not_started', false, 0, 0),
+        row('m1', 'mastered'),
+        row('m2', 'mastered'),
+        row('m3', 'mastered'),
+        row('m4', 'mastered'),
+        row('l1', 'beginner'),
+        row('l2', 'beginner'),
+        row('x1', 'not_started'),
       ],
       isLoading: false,
       error: null,
@@ -171,9 +181,17 @@ describe('Phase 3b — MasterySnapshot value-bearing visuals', () => {
     expect(screen.getByText('67%')).toBeInTheDocument();
   });
 
-  it('accuracy ring is 0% when there are no attempts (no divide-by-zero)', async () => {
+  it('ring reads 0% when nothing is mastered at exactly N = 5 (no divide-by-zero)', async () => {
+    // 5 started topics, none mastered → round(0/5*100) = 0%. N = 5 clears the
+    // W3 D2 gate exactly, so the ring renders 0% rather than dividing by zero.
     mockMasteryState = {
-      data: [row('l1', 'beginner', false, 0, 0), row('l2', 'developing', false, 0, 0)],
+      data: [
+        row('l1', 'beginner', false, 0, 0),
+        row('l2', 'developing', false, 0, 0),
+        row('l3', 'beginner', false, 0, 0),
+        row('l4', 'developing', false, 0, 0),
+        row('l5', 'beginner', false, 0, 0),
+      ],
       isLoading: false,
       error: null,
     };
@@ -182,6 +200,48 @@ describe('Phase 3b — MasterySnapshot value-bearing visuals', () => {
     // getByText('0%') would be ambiguous.
     const ring = await screen.findByRole('img', { name: '0%' });
     expect(ring).toBeInTheDocument();
+  });
+
+  it('suppresses the summary ring below N = 5 started topics (W3 D2)', async () => {
+    // 2 started topics < 5 → no hero percentage; the bar + counts carry the
+    // distribution. A 1-topic "100%" ring would be pedagogically false.
+    mockMasteryState = {
+      data: [row('m1', 'mastered'), row('l1', 'beginner')],
+      isLoading: false,
+      error: null,
+    };
+    const { container } = await renderMastery(false);
+
+    expect(container.querySelector('[role="img"]')).toBeNull();
+    expect(container.querySelector('[role="list"]')).not.toBeNull();
+    expect(container.textContent).toContain('2\u2009topics');
+  });
+
+  it('no-curriculum coverage shows neutral copy with no quiz prompt (W3 D3)', async () => {
+    // Platform coverage gap — the student's grade has no curriculum topics.
+    // The empty state must NOT tell the child to "take a quiz".
+    mockMasteryState = {
+      data: [],
+      coverage: 'no_curriculum',
+      isLoading: false,
+      error: null,
+    };
+    await renderMastery(false);
+    expect(screen.getByText('Nothing to show here yet')).toBeInTheDocument();
+    expect(screen.queryByText(/take a quiz to see your mastery/i)).toBeNull();
+  });
+
+  it('no-activity coverage keeps the actionable quiz prompt (W3 D3)', async () => {
+    // Genuine zero-activity: the quiz prompt survives (the actionable case).
+    mockMasteryState = {
+      data: [],
+      coverage: 'no_activity',
+      isLoading: false,
+      error: null,
+    };
+    await renderMastery(false);
+    expect(screen.getByText('No quizzes yet')).toBeInTheDocument();
+    expect(screen.getByText('Take a quiz to see your mastery here.')).toBeInTheDocument();
   });
 
   it('renders the Hindi accuracy caption + bilingual bucket labels (P7)', async () => {
@@ -274,8 +334,15 @@ async function renderBoardScore(isHi = false) {
   const { default: BoardScoreWidget } = await import(
     '@alfanumrik/ui/dashboard/os/BoardScoreWidget'
   );
+  // Fresh SWR cache per render: the widget keys its request on
+  // `board-score/<studentId>`, and the module-level cache would otherwise leak
+  // one test's payload into the next (all tests share studentId 'stu-1').
   return render(
-    React.createElement(BoardScoreWidget, { isHi, studentId: 'stu-1' }),
+    React.createElement(
+      SWRConfig,
+      { value: { provider: () => new Map() } },
+      React.createElement(BoardScoreWidget, { isHi, studentId: 'stu-1' }),
+    ),
   );
 }
 
@@ -283,23 +350,24 @@ describe('Phase 3b — BoardScoreWidget ProgressRing gauge value mapping', () =>
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => vi.unstubAllGlobals());
 
-  it('gauge renders the overall predicted % = round(totalPredicted/totalMax*100)', async () => {
-    // 60/80 = 75%.
+  it('gauge renders the selected subject predicted % (single subject: 60/80 = 75%)', async () => {
+    // 60/80 = 75% — with one subject, per-subject == the whole widget, so D1
+    // keeps the classic readout.
     mockFetchOnce({ code: 'ok', data: [prediction({ predicted_score: 60, max_score: 80 })] });
     await renderBoardScore(false);
 
-    // The gauge is now the ProgressRing primitive (role="progressbar"), not the
-    // old StatRing (role="img"). Its accessible name + value carry the 75%.
+    // The gauge is the StatRing primitive (role="img"); its accessible name +
+    // value carry the selected subject's predicted %. Here 60/80 → 75%.
     const gauge = await screen.findByRole('img', { name: '75%' });
     expect(gauge).toBeInTheDocument();
-    // Predicted-marks readout = round(totalPredicted) "/" totalMax.
+    // Predicted-marks readout = round(selected subject's predicted_score) "/" max.
     expect(screen.getByText('60')).toBeInTheDocument();
     expect(screen.getByText('/80')).toBeInTheDocument();
   });
 
   it('ProgressRing gauge ARIA clamps an out-of-range upstream pct to 0–100', async () => {
-    // totalMax 0 forces the widget's fallback to round(predicted_pct); set an
-    // out-of-range pct (150) to exercise the clamp.
+    // predicted_pct 150 (out of range) exercises the ring's 0–100 clamp; the
+    // marks denominator guard (max_score 0) hides the "/0" pair.
     mockFetchOnce({
       code: 'ok',
       data: [prediction({ predicted_score: 999, max_score: 0, predicted_pct: 150 })],
@@ -316,18 +384,30 @@ describe('Phase 3b — BoardScoreWidget ProgressRing gauge value mapping', () =>
     expect(screen.getByText('150%')).toBeInTheDocument();
   });
 
-  it('sums marks across multiple subjects for the overall gauge', async () => {
-    // (40 + 20) / (50 + 50) = 60/100 = 60%.
+  it('scopes the gauge to the selected subject — never a cross-subject sum (W3 D1)', async () => {
+    // Two subjects with different predicted_pct. The gauge shows the SELECTED
+    // subject's own number; the pre-D1 behaviour (Σ40+20 / Σ50+50 = 60%) is
+    // deliberately forbidden — ring + confidence band must share one subject.
     mockFetchOnce({
       code: 'ok',
       data: [
-        prediction({ subject_code: 'sci', predicted_score: 40, max_score: 50 }),
-        prediction({ subject_code: 'math', predicted_score: 20, max_score: 50 }),
+        prediction({ subject_code: 'sci', subject_label: 'Science', predicted_score: 40, max_score: 50, predicted_pct: 80 }),
+        prediction({ subject_code: 'math', subject_label: 'Maths', predicted_score: 20, max_score: 50, predicted_pct: 40 }),
       ],
     });
     await renderBoardScore(false);
-    const gauge = await screen.findByRole('img', { name: '60%' });
+
+    // Default selection is the first subject (Science): 80%, marks 40/50.
+    const gauge = await screen.findByRole('img', { name: '80%' });
     expect(gauge).toBeInTheDocument();
+    expect(screen.getByText('40')).toBeInTheDocument();
+    expect(screen.getByText('/50')).toBeInTheDocument();
+
+    // Switching tabs re-scopes the gauge to the selected subject (Maths: 40%).
+    fireEvent.click(screen.getByRole('tab', { name: 'Maths' }));
+    const gaugeMaths = await screen.findByRole('img', { name: '40%' });
+    expect(gaugeMaths).toBeInTheDocument();
+    expect(screen.getByText('20')).toBeInTheDocument();
   });
 
   it('gauge band uses a semantic tone token on the ProgressRing arc — no unguarded 6-digit brand hex', async () => {

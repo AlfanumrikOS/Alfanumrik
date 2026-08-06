@@ -10,8 +10,11 @@
  * should I do right now?" before anything else.
  *
  *   1. Compact header rail   — greeting + StreakBadge + XP (demoted, glanceable).
- *   2. PRIMARY hero          — <TodaysMission> wrapping the existing
- *                              DailyRhythmQueue as the single dominant CTA.
+ *   2. PRIMARY hero          — <TodaysMission>, the single dominant CTA. It
+ *                              reads /api/v2/today's resolver output (the
+ *                              learner-loop queue); its headline derives from
+ *                              the queue primary's chapter title, never a
+ *                              parallel getNextTopics client chain (RCA W1).
  *   3. <MasterySnapshot>     — Mastered / Learning / Needs-Revision buckets.
  *   4. <BoardScoreWidget>    — BoardScore™ predictive board-exam marks (ff_board_score_v1).
  *   5. <RevisionRail>        — secondary spaced-repetition surface (reuses
@@ -34,13 +37,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { supabase, getNextTopics, getPendingParentLinks } from '@alfanumrik/lib/supabase';
+import { supabase, getPendingParentLinks } from '@alfanumrik/lib/supabase';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { useCosmicLightSurface } from '@alfanumrik/lib/use-cosmic-light-surface';
+import { useTodayQueue } from '@alfanumrik/lib/today/use-today-queue';
 import { DashboardSkeleton } from '@alfanumrik/ui/Skeleton';
 import { AppShell } from '@alfanumrik/ui/responsive';
 import { StreakBadge } from '@alfanumrik/ui/ui';
-import type { CurriculumTopic } from '@alfanumrik/lib/types';
 import TodaysMission from '@alfanumrik/ui/dashboard/os/TodaysMission';
 import MasterySnapshot from '@alfanumrik/ui/dashboard/os/MasterySnapshot';
 import RevisionRail from '@alfanumrik/ui/dashboard/os/RevisionRail';
@@ -70,8 +73,6 @@ export default function StudentOSDashboard() {
 
   // Activate Cosmic-LIGHT + student palette for the lifetime of this surface.
   useCosmicLightSurface();
-
-  const [todaysTopic, setTodaysTopic] = useState<CurriculumTopic | undefined>();
 
   // Recovery affordance for the "logged-in but student momentarily null" state
   // (symptom of an AuthContext race; root cause fixed separately). Re-runs the
@@ -147,25 +148,13 @@ export default function StudentOSDashboard() {
     }
   }, [isLoading, isLoggedIn, activeRole, student, router]);
 
-  // Resolve today's next topic for the mission hero CTA.
-  useEffect(() => {
-    if (!student) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const next = await getNextTopics(student.id, student.preferred_subject, student.grade);
-        if (!cancelled) setTodaysTopic(next[0]);
-      } catch {
-        /* non-fatal — hero falls back to a generic CTA */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Keyed on the primitive student fields (not the object) to avoid a
-    // refetch loop on every render — same pattern as AtlasDashboard.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [student?.id, student?.preferred_subject, student?.grade]);
+  // Today's queue — single source of truth for the hero's primary action AND
+  // the Foxy embed's chapter context (RCA W1: the legacy getNextTopics client
+  // chain — 4-5 sequential PostgREST round-trips — is deleted; the queue the
+  // resolver already computes carries chapterTitle/chapterNumber). SWR dedupes
+  // against TodaysMission's identical key, so this adds zero network requests.
+  const { data: queueData } = useTodayQueue(student?.id);
+  const heroChapter = queueData?.primary?.chapterTitle ?? null;
 
   // ─── Explicit loading / error / empty gating (was a single conflated gate) ──
   // 1. Genuinely loading → skeleton.
@@ -240,7 +229,7 @@ export default function StudentOSDashboard() {
       <StreakBadge count={streak} compact />
 
       {/* XP demoted to a small glanceable warm chip. Warm tints route through
-          the stable --accent-warm channel (--orange-rgb is violet here). */}
+          the stable --accent-warm channel. */}
       <span
         className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full"
         style={{
@@ -250,7 +239,7 @@ export default function StudentOSDashboard() {
         }}
         aria-label={isHi ? `कुल ${totalXp} XP` : `${totalXp} total XP`}
       >
-        <span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)' }}>
+        <span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, ui-monospace, monospace)' }}>
           {totalXp.toLocaleString('en-IN')}
         </span>
         <span style={{ opacity: 0.7 }}>XP</span>
@@ -300,7 +289,6 @@ export default function StudentOSDashboard() {
           studentName={student.name}
           grade={student.grade}
           subjectCode={subjectCode}
-          todaysTopic={todaysTopic}
         />
 
         {/* Phase 4 U1: "Ask Foxy" tap-gated launcher next to the hero.
@@ -309,7 +297,7 @@ export default function StudentOSDashboard() {
           <FoxyPanelLauncher
             subject={subjectCode || 'science'}
             grade={student.grade}
-            chapter={todaysTopic?.title ?? null}
+            chapter={heroChapter}
             mode="doubt"
             context="today"
             isHi={isHi}

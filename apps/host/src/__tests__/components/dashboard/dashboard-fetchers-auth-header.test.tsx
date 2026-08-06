@@ -71,8 +71,11 @@ describe('BoardScoreWidget forwards the Bearer token via authedFetch (not bare f
     const { default: BoardScoreWidget } = await import('@alfanumrik/ui/dashboard/os/BoardScoreWidget');
     render(React.createElement(BoardScoreWidget, { isHi: false, studentId: 'stu-1' }));
 
-    await waitFor(() => expect(authedFetch).toHaveBeenCalledWith('/api/board-score'));
-    // Regression guard: a revert to plain fetch would hit the bare global fetch.
+    await waitFor(() => expect(authedFetch).toHaveBeenCalled());
+    // The SWR fetcher passes an AbortSignal init as the second arg — the
+    // regression guard is that the FIRST arg is the exact protected path and
+    // the call goes through authedFetch, never the bare global fetch.
+    expect(vi.mocked(authedFetch).mock.calls[0][0]).toBe('/api/board-score');
     expect(bareFetch).not.toHaveBeenCalled();
   });
 

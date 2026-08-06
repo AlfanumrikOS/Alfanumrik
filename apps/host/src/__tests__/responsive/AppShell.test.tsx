@@ -176,6 +176,9 @@ describe('<AppShell />', () => {
     const { container } = render(<AppShell variant="mobile">body</AppShell>);
     const main = container.querySelector('main.app-shell-content');
     expect(main).toBeTruthy();
-    expect(main?.getAttribute('id')).toBe('main');
+    // The landmark carries NO id: the root layout's skip link targets the one
+    // persistent skip owner `#main-content` (GlobalAppLayout), so a phantom
+    // `id="main"` here would create a second "main content" id in the system.
+    expect(main?.getAttribute('id')).toBeNull();
   });
 });

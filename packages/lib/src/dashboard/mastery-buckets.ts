@@ -36,6 +36,31 @@ export interface MasteryOverviewRow {
 
 export type MasteryBucket = 'mastered' | 'learning' | 'needs-revision';
 
+/**
+ * D3/A (assessment sign-off 2026-08-06) — the distinguishing signal that lets
+ * the empty state attribute emptiness correctly:
+ *
+ * - `ok`           — RPC returned per-topic rows normally.
+ * - `no_activity`  — the student's grade HAS curriculum, but no attempts yet
+ *                    (or legacy pre-migration response with zero rows).
+ * - `no_curriculum`— the student's grade has NO curriculum topics — a platform
+ *                    coverage gap, never the student's inaction.
+ * - `not_tracked`  — RPC failed / no data returned; nothing can be
+ *                    distinguished, so the UI must not attribute emptiness to
+ *                    the student.
+ *
+ * The backend owns emitting `no_curriculum` vs `no_activity` in the
+ * get_mastery_overview response (response-shape change); `not_tracked` is a
+ * client-side value used only when the RPC call itself fails.
+ */
+export type MasteryCoverage = 'ok' | 'no_activity' | 'no_curriculum' | 'not_tracked';
+
+/** getMasteryOverview response — rows plus the coverage/availability signal. */
+export interface MasteryOverviewResponse {
+  rows: MasteryOverviewRow[];
+  coverage: MasteryCoverage;
+}
+
 /** Roadmap node states used by SkillTree / RoadmapNode. */
 export type RoadmapStatus = 'mastered' | 'learning' | 'needs-revision' | 'locked';
 
