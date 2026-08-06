@@ -158,3 +158,66 @@ export function weakestStartedTopic(rows: MasteryOverviewRow[]): MasteryOverview
     masteryPercent(cur) < masteryPercent(lowest) ? cur : lowest,
   );
 }
+
+/**
+ * Canonical CBSE subject display name → code map (from the `subjects` table
+ * seed + common variants). Lowercased keys.
+ */
+export const SUBJECT_CODE_BY_NAME: Record<string, string> = {
+  math: 'math',
+  maths: 'math',
+  mathematics: 'math',
+  science: 'science',
+  english: 'english',
+  hindi: 'hindi',
+  'social studies': 'social_studies',
+  'social science': 'social_studies',
+  sst: 'social_studies',
+  socialstudies: 'social_studies',
+  physics: 'physics',
+  chemistry: 'chemistry',
+  biology: 'biology',
+  economics: 'economics',
+  accountancy: 'accountancy',
+  'business studies': 'business_studies',
+  businessstudies: 'business_studies',
+  history: 'history_sr',
+  geography: 'geography',
+  'political science': 'political_science',
+  politicalscience: 'political_science',
+  'computer science': 'computer_science',
+  computerscience: 'computer_science',
+  cs: 'computer_science',
+  sanskrit: 'sanskrit',
+  coding: 'coding',
+  'informatics practices': 'informatics_practices',
+};
+
+/**
+ * Resolve the canonical subject CODE for a display NAME (the value
+ * get_mastery_overview returns in `subject` — the `subjects.name`, e.g.
+ * "Social Studies"). The live per-student map (allowedSubjects name→code)
+ * wins when it has an entry; otherwise the static SUBJECT_CODE_BY_NAME map
+ * covers the canonical CBSE names + common aliases.
+ *
+ * Returns null when unknown so callers can OMIT the deep-link param instead
+ * of sending garbage: Foxy validates ?subject= against real codes and falls
+ * back to the first allowed subject on mismatch, so a bogus display-name
+ * param silently redirects the student to the WRONG subject.
+ */
+export function subjectCodeForName(
+  name: string | null | undefined,
+  knownByDisplayName?: Record<string, string>,
+): string | null {
+  const trimmed = name?.trim();
+  const normalized = trimmed?.toLowerCase();
+  if (!normalized) return null;
+  if (knownByDisplayName) {
+    const exact = trimmed ? knownByDisplayName[trimmed] : undefined;
+    if (exact) return exact;
+    for (const [display, code] of Object.entries(knownByDisplayName)) {
+      if (display.trim().toLowerCase() === normalized) return code;
+    }
+  }
+  return SUBJECT_CODE_BY_NAME[normalized] ?? null;
+}

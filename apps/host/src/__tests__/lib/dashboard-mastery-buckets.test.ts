@@ -23,6 +23,7 @@ import {
   aggregateAccuracyPercent,
   groupBySubject,
   weakestStartedTopic,
+  subjectCodeForName,
   type MasteryOverviewRow,
 } from '@alfanumrik/lib/dashboard/mastery-buckets';
 
@@ -191,5 +192,44 @@ describe('weakestStartedTopic — lowest-mastery started topic', () => {
       row({ topic_id: 'b', mastery_level: 'not_started', mastery_probability: 0 }),
     ];
     expect(weakestStartedTopic(rows)).toBeNull();
+  });
+});
+
+describe('subjectCodeForName — display name → canonical code for deep links', () => {
+  it('resolves canonical CBSE names via the static map', () => {
+    expect(subjectCodeForName('Social Studies')).toBe('social_studies');
+    expect(subjectCodeForName('Social Science')).toBe('social_studies');
+    expect(subjectCodeForName('Computer Science')).toBe('computer_science');
+    expect(subjectCodeForName('Business Studies')).toBe('business_studies');
+    expect(subjectCodeForName('Political Science')).toBe('political_science');
+    expect(subjectCodeForName('Math')).toBe('math');
+    expect(subjectCodeForName('Mathematics')).toBe('math');
+    expect(subjectCodeForName('History')).toBe('history_sr');
+  });
+
+  it('is case-insensitive and trims surrounding whitespace', () => {
+    expect(subjectCodeForName('  SOCIAL STUDIES ')).toBe('social_studies');
+    expect(subjectCodeForName('science')).toBe('science');
+    expect(subjectCodeForName('SCIENCE')).toBe('science');
+  });
+
+  it('lets the live per-student map WIN over the static map', () => {
+    // A tenant that renamed a subject must be honored over the static map.
+    const live = { 'Math (Advanced)': 'math', 'Social Studies': 'social_studies' };
+    expect(subjectCodeForName('Math (Advanced)', live)).toBe('math');
+    expect(subjectCodeForName('Social Studies', live)).toBe('social_studies');
+  });
+
+  it('falls back to the static map when the live map misses (case-insensitively)', () => {
+    const live = { 'Math (Advanced)': 'math' };
+    expect(subjectCodeForName('Computer Science', live)).toBe('computer_science');
+    expect(subjectCodeForName('SCIENCE', live)).toBe('science');
+  });
+
+  it('returns null when unknown — callers must OMIT the param, never send the raw name', () => {
+    expect(subjectCodeForName('Gym')).toBeNull();
+    expect(subjectCodeForName('')).toBeNull();
+    expect(subjectCodeForName(null)).toBeNull();
+    expect(subjectCodeForName(undefined)).toBeNull();
   });
 });

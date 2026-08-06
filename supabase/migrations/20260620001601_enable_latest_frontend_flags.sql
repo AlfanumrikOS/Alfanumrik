@@ -9,8 +9,8 @@
 --   1. ff_student_os_v1
 --        Renders StudentOSDashboard in place of the legacy AtlasDashboard.
 --        The new OS-style student home surface (Phase 1D) is built and
---        committed. OFF shows AtlasDashboard (byte-identical to today).
---        Row absent from feature_flags until this migration (never seeded).
+--        committed. Row absent from feature_flags until this migration (never
+--        seeded).
 --
 --   2. ff_today_home_v1
 --        Enables the consolidated "Today" home tab config in MobileBottomNav
@@ -68,8 +68,14 @@
 --     'ff_student_os_v1', 'ff_today_home_v1',
 --     'ff_teacher_command_center', 'ff_parent_glance_v1'
 --   );
--- Each consuming surface falls back to its legacy rendering when its flag is
--- OFF or missing, so the rollback is silent on the production experience.
+-- ⚠️ HONEST-CONTRACT WARNING (added 2026-08): the flip is a NO-OP for
+-- ff_student_os_v1. /dashboard no longer reads the flag at render time
+-- (AtlasDashboard deleted; page.tsx renders StudentOSDashboard
+-- unconditionally) and /foxy hardcodes osEnabled = true. Rolling the OS
+-- surfaces back requires a CODE change (re-introduce the render gate + restore
+-- the legacy surface), not a flag flip. The other three flags still honor the
+-- OFF path, so the UPDATE above is an instant rollback only for
+-- ff_today_home_v1 / ff_teacher_command_center / ff_parent_glance_v1.
 
 DO $enable_latest_frontend$
 BEGIN

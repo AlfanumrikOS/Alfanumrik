@@ -120,13 +120,13 @@ export const TUTOR_FLAGS = {
  *    data-theme="light" data-role="student"); dark mode is intentionally not
  *    requested.
  *
- *    When OFF, BOTH surfaces are BYTE-IDENTICAL to today: /dashboard renders
- *    AtlasDashboard (or the legacy dashboard) unchanged and /foxy renders its
- *    existing single-shell layout unchanged. Default: false. Read client-side
- *    via the existing client flag read path (getFeatureFlags).
- *
- *    Not yet seeded by any migration; while absent from `feature_flags` both
- *    read paths resolve it to OFF (and both surfaces stay byte-identical-OFF).
+ *    PERMANENTLY ON (honest-contract fix, 2026-08): seeded at 100% by
+ *    20260620001601 (re-asserted by 20260802110000). Neither surface reads the
+ *    flag at render time anymore — /dashboard always renders
+ *    <StudentOSDashboard> (AtlasDashboard deleted) and /foxy hardcodes
+ *    osEnabled = true. A console flip is a NO-OP on both surfaces: there is no
+ *    OFF path in code. Rollback requires a CODE change (re-introduce the render
+ *    gate + restore the legacy surface), not a flag flip.
  */
 export const STUDENT_OS_FLAGS = {
   /** Alfa OS flagship redesign of the student dashboard + Foxy workspace. Default off. */

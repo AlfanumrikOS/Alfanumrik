@@ -35,7 +35,6 @@ These flags have **no seeding migration**, so there is no `feature_flags` row to
 | `ff_school_command_center` | No migration. Cannot appear in console. |
 | `ff_school_provisioning` | No migration. **Payment-adjacent (P11 seat billing) — see §3.** |
 | `ff_school_reports_depth` | No migration. Cannot appear in console. |
-| `ff_student_os_v1` | No migration. Cannot appear in console. |
 | `ff_subjects_os_v1` | No migration. Cannot appear in console. |
 | `ff_revision_os_v1` | No migration. Cannot appear in console. |
 | `ff_practice_os_v1` | No migration. Cannot appear in console. |
@@ -43,7 +42,7 @@ These flags have **no seeding migration**, so there is no `feature_flags` row to
 | `ff_education_intelligence` | No flag-seeding migration (`20260616000000` creates EIC tables/RPCs but does NOT insert the flag row — verified). Also needs nightly rollup job before dashboards show data. |
 | `ff_principal_ai_v1` | No flag-seeding migration. **AND** backing migration `20260616010000_principal_ai_assistant_v1.sql` is DRAFTED-not-applied, plus grant migration `20260616020000` — both must apply before the flag does anything (it abstains otherwise). **CEO + AI surface — see §3/§4.** |
 
-**Total UNSEEDED: 15 flags.**
+**Total UNSEEDED: 14 flags.**
 
 ---
 
@@ -173,7 +172,7 @@ Legend — **Recommended launch state:** `GA-ON` = flip on at launch · `STAGED`
 
 | Flag | Surface | Gates | OFF behavior | Seed | Rec. | Approval | Rollback |
 |---|---|---|---|---|---|---|---|
-| `ff_student_os_v1` | Student | Alfa OS student dashboard + 3-pane Foxy workspace (presentation-only; engines untouched) | `/dashboard` + `/foxy` byte-identical to today | **UNSEEDED** | STAGED | ops | instant (once seeded) |
+| `ff_student_os_v1` | Student | Alfa OS student dashboard + 3-pane Foxy workspace (presentation-only; engines untouched) | **NO OFF PATH — permanently ON** (flag no longer read at render time; AtlasDashboard deleted, foxy `osEnabled` hardcoded true) | **SEEDED ON** (`20260620001601`, re-asserted `20260802110000`) | GA-ON | ops | **NOT instant — flag flip is a no-op; rollback = code change** |
 | `ff_subjects_os_v1` | Student | Per-subject SubjectsOSHub inside `/learn` (presentation-only) | Legacy chapter list (byte-identical) | **UNSEEDED** | STAGED | ops | instant (once seeded) |
 | `ff_revision_os_v1` | Student | Revision Center at new `/revision` route | `/revision` 404s (additive) | **UNSEEDED** | STAGED | ops | instant (once seeded) |
 | `ff_practice_os_v1` | Student | Practice Center at new `/practice` route | `/practice` 404s (additive) | **UNSEEDED** | STAGED | ops | instant (once seeded) |

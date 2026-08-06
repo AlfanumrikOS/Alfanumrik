@@ -58,8 +58,9 @@ import type { MasterySuggestion } from '@alfanumrik/ui/foxy/MasteryAwareness';
 import { SIMPLIFIED_MODES } from '@alfanumrik/ui/foxy/ConversationManager';
 
 // Alfa OS flagship redesign — the Foxy ContextPanel third pane (ff_student_os_v1).
-// Lazy-loaded so it is fetched ONLY when the flag resolves ON; when OFF the
-// chunk is never requested and the layout is byte-identical to today (P10).
+// ff_student_os_v1 is permanently ON (seeded 20260620001601) and osEnabled below
+// is hardcoded true, so the pane always renders. Lazy-loaded purely for P10
+// (the chunk is not part of the first-paint critical path).
 const ContextPanel = dynamic(
   () => import('@alfanumrik/ui/foxy/ContextPanel'),
   { ssr: false, loading: () => null },
@@ -375,11 +376,12 @@ function FoxyExperience() {
   // Empty state still shows the full starter chips inline.
   const [showStarters, setShowStarters] = useState(false);
 
-  // Alfa OS flagship redesign (ff_student_os_v1) — when ON, render the 3-pane
-  // workspace (conversations rail | chat | ContextPanel). Defaults OFF → the
-  // layout is byte-identical to today. The mobile sheet state controls the
-  // ContextPanel bottom-sheet on phones.
-  // ff_student_os_v1 is always-on; no flag hook needed.
+  // Alfa OS flagship redesign (ff_student_os_v1) — the 3-pane workspace
+  // (conversations rail | chat | ContextPanel) is the ONLY layout. The flag is
+  // permanently ON (seeded 20260620001601, re-asserted 20260802110000) and no
+  // longer read at render time — no flag hook, osEnabled hardcoded true. A
+  // console flip is a no-op; rolling back needs a code change. The mobile sheet
+  // state controls the ContextPanel bottom-sheet on phones.
   const osEnabled = true;
   const [contextSheetOpen, setContextSheetOpen] = useState(false);
   // Activate Cosmic-LIGHT + student palette only while the OS workspace is on.
@@ -1453,8 +1455,8 @@ function FoxyExperience() {
             </span>
           )}
           {/* Alfa OS — open the mobile ContextPanel bottom sheet. Mobile-only
-              (lg:hidden), and rendered only when ff_student_os_v1 is ON so the
-              OFF header is byte-identical. */}
+              (lg:hidden). ff_student_os_v1 is permanently ON, so the sheet is
+              always available on phones. */}
           {osEnabled && (
             <button
               onClick={() => setContextSheetOpen(true)}
@@ -2241,8 +2243,8 @@ function FoxyExperience() {
 
         {/* Alfa OS — third pane (ContextPanel). Desktop: a right rail flanking
             the chat column. Mobile: a bottom sheet (controlled by
-            contextSheetOpen). Rendered ONLY when ff_student_os_v1 is ON, so the
-            OFF layout is byte-identical. The chat column above is untouched. */}
+            contextSheetOpen). ff_student_os_v1 is permanently ON, so the pane
+            is part of the only layout. The chat column above is untouched. */}
         {osEnabled && (
           <ContextPanel
             isHi={isHi}
@@ -2365,10 +2367,10 @@ function FoxyExperience() {
       {/* ═══ FOXY OS — Tools bottom sheet (ff_foxy_os_v1, <lg only) ═══ */}
       {/* Phase 3. Rendered ONLY when the flag is ON and viewport is <lg, so the
           OFF path / >=lg are byte-identical. Every action calls an EXISTING
-          page handler — no logic moves in. The "Your context" entry is only
-          wired when ff_student_os_v1 (osEnabled) is ON, because that is the
-          only flag that mounts the ContextPanel surface; otherwise it is
-          omitted (the sheet never invents a context surface). */}
+          page handler — no logic moves in. The "Your context" entry is wired
+          whenever osEnabled is on (ff_student_os_v1 is permanently ON, so
+          always) — that is the only flag that mounts the ContextPanel surface;
+          otherwise it is omitted (the sheet never invents a context surface). */}
       {useFoxyOsHeader && (
         <FoxyToolsSheet
           open={toolsSheetOpen}
