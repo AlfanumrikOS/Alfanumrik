@@ -567,14 +567,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   bootstrapRetryCountRef.current = 0;
                   break;
                 }
-                // Non-ok response — retry after delay (unless last attempt)
+                // Non-ok response — retry after delay (unless last attempt).
+                // W4 pacing: linear backoff (1s, then 2s) gives later attempts
+                // more room for transient DB errors while the total retry
+                // window shrinks (3s vs the old flat 4s). P15 layer-3 is
+                // otherwise unchanged: same attempt count, same fail-soft
+                // fallback, same Bearer header shape — only the sleep changed.
                 if (attempt < MAX_BOOTSTRAP_RETRIES) {
-                  await new Promise((resolve) => { setTimeout(resolve, 2_000); });
+                  await new Promise((resolve) => { setTimeout(resolve, 1_000 * attempt); });
                 }
               } catch (bootstrapErr) {
                 console.warn(`[Auth] Bootstrap attempt ${attempt}/${MAX_BOOTSTRAP_RETRIES} failed:`, bootstrapErr);
                 if (attempt < MAX_BOOTSTRAP_RETRIES) {
-                  await new Promise((resolve) => { setTimeout(resolve, 2_000); });
+                  await new Promise((resolve) => { setTimeout(resolve, 1_000 * attempt); });
                 }
               }
             }

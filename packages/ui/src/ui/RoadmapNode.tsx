@@ -140,7 +140,7 @@ export function RoadmapNode({
         <span className="block text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
           {statusLabel}
           {' · '}
-          <span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, ui-monospace, monospace)' }}>
             {pct}%
           </span>
         </span>

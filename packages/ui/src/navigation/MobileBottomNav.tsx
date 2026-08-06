@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { supabase } from '@alfanumrik/lib/supabase';
 import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
-import { useDashboardData, useFeatureFlags } from '@alfanumrik/lib/swr';
-import { getCoreTabs, getMoreItems, getItemLockForGrade, isItemVisibleForFlags, type NavFlagGatedItem } from './nav-config';
+import { useFeatureFlags } from '@alfanumrik/lib/swr';
+import { getCoreTabs, getMoreItems, getItemLockForGrade, isItemVisibleForFlags, isNavItemActive, type NavFlagGatedItem } from './nav-config';
+import { useHasUpcomingExam } from './use-has-upcoming-exam';
 
 export function MobileBottomNav() {
   const pathname = usePathname();
@@ -59,24 +59,11 @@ export function MobileBottomNav() {
   }, [showMore]);
 
   const { data: navFlags } = useFeatureFlags();
-  const [hasUpcomingExam, setHasUpcomingExam] = useState(false);
 
   const student = (auth as any)?.student;
-  useEffect(() => {
-    const studentId = student?.id;
-    if (!studentId) return;
-    let cancelled = false;
-    supabase
-      .from('student_exams')
-      .select('id')
-      .eq('student_id', studentId)
-      .gte('exam_date', new Date().toISOString())
-      .limit(1)
-      .then(({ data }) => {
-        if (!cancelled) setHasUpcomingExam((data?.length ?? 0) > 0);
-      });
-    return () => { cancelled = true; };
-  }, [student?.id]);
+  // Extracted to a shared hook so DesktopSidebar derives the SAME gate instead
+  // of hard-coding `true` (which made "Exam Sprint" desktop-only-always).
+  const hasUpcomingExam = useHasUpcomingExam(student?.id);
 
   const tabs = getCoreTabs(activeRole);
   const studentGrade = parseInt(student?.grade ?? '6', 10);
@@ -91,11 +78,9 @@ export function MobileBottomNav() {
     .filter(item => isItemVisibleForFlags(item as NavFlagGatedItem, navFlags))
     .filter(passesExamGate);
 
-  const { data: dashData } = useDashboardData(student?.id);
-  const dueCount: number = (dashData as any)?.due_count ?? 0;
   const streakCount: number = (auth as any)?.snapshot?.current_streak ?? 0;
 
-  const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
+  const isActive = (href: string) => isNavItemActive(pathname ?? '', href);
 
   const isMoreActive = moreItems.some(m => !getItemLock(m).locked && isActive(m.href));
   const hasMultipleRoles = roles.length > 1;
@@ -174,12 +159,13 @@ export function MobileBottomNav() {
                         <span aria-hidden="true">🔒</span>
                         {gradeChipLabel}
                       </span>
-                    ) : item.href === '/review' && dueCount > 0 && activeRole === 'student' ? (
-                      <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
-                        style={{ background: '#DC2626' }}>
-                        {dueCount > 9 ? '9+' : dueCount}
-                      </span>
-                    ) : active ? (
+                    ) : /* The `/review` due-count badge branch that used to sit
+                          here was dead code: `/review` appears in none of
+                          CORE_TABS / MORE_ITEMS / SIDEBAR_SECTIONS (it is a
+                          permanent 301), so it could never render. Removing it
+                          also removed this component's only useDashboardData()
+                          call. */
+                      active ? (
                       <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
                     ) : null}
                   </button>

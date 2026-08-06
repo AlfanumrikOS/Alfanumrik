@@ -2,17 +2,26 @@ import { type UserRole } from '@alfanumrik/lib/AuthContext';
 import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 
 // Consumer Minimalism Wave A — the 4-tab student model (always-on).
-// Today is the home tab (carries the streak badge); Me routes to /progress.
-// Foxy stays the center FAB.
+// Today is the home tab (carries the streak badge); Foxy stays the center FAB.
+//
+// IA law "one destination = one name = one icon" (2026-08-05). `/progress` was
+// "Me" 🙂 here and "My Progress" 📈 in SIDEBAR_SECTIONS — one route wearing two
+// names and two icons across viewports, and colliding with the `/me` and
+// `/profile` entries below. It is now "Progress" 📈 in BOTH lists. No route
+// changed; the labels/icons did.
 export const CORE_TABS = [
   { href: '/today', icon: '☀️', activeIcon: '☀️', label: 'Today', labelHi: 'आज' },
   { href: '/learn', icon: '📚', activeIcon: '📚', label: 'Learn', labelHi: 'सीखें' },
   { href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', isFab: true },
-  { href: '/progress', icon: '🙂', activeIcon: '🙂', label: 'Me', labelHi: 'मैं' },
+  { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
 ];
 
 export const MORE_ITEMS = [
-  { href: '/dashboard', icon: '🏠', label: 'Dashboard', labelHi: 'डैशबोर्ड' },
+  // Was "Dashboard" here and "Home" in SIDEBAR_SECTIONS — one route, two names
+  // (same icon). Found by the cross-projection guard added alongside the
+  // /progress fix; unified to the sidebar's "Home", which is what the route is
+  // to a student. Destination unchanged.
+  { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
   { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट' },
   { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
   // Alfa OS Practice Center — flag-gated (ff_practice_os_v1). A v2 practice hub
@@ -35,7 +44,11 @@ export const MORE_ITEMS = [
   // layer over /profile (apps/host/src/app/me/page.tsx); only appears once
   // the launch flag is ON, same convention as Practice Center / Revision
   // Center above.
-  { href: '/me', icon: '⚙️', label: 'Me (New)', labelHi: 'मैं (नया)', flagName: 'ff_me_v2' },
+  // Label was "Me (New)" — a build-status marker leaking into student-facing
+  // UI, and one of the THREE things called "Me" (the others were the /progress
+  // tab and /profile). With /progress renamed to "Progress", plain "Me" is now
+  // unambiguous and is the screen's real name.
+  { href: '/me', icon: '⚙️', label: 'Me', labelHi: 'मैं', flagName: 'ff_me_v2' },
   // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
   { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है' },
   { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
@@ -49,7 +62,8 @@ export const SIDEBAR_SECTIONS = [
     items: [
       { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
       { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
-      { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
+      // Matches CORE_TABS exactly — same name, same icon, same route.
+      { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
     ],
   },
   {
@@ -57,7 +71,11 @@ export const SIDEBAR_SECTIONS = [
     items: [
       // Alfa OS Practice Center (flag-gated) — v2 hub above the /quiz engine.
       { href: '/practice', icon: '⚡', label: 'Practice Center', labelHi: 'अभ्यास केंद्र', flagName: 'ff_practice_os_v1' },
-      { href: '/quiz', icon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
+      // Was labelled "Practice" — identical to this section's own title and a
+      // near-twin of "Practice Center" one line above, so the section read
+      // "Practice > Practice Center / Practice". Renamed to what the route
+      // actually is. The destination is unchanged.
+      { href: '/quiz', icon: '✏️', label: 'Quiz', labelHi: 'क्विज़' },
       { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट' },
       { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
       { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
@@ -81,9 +99,10 @@ export const SIDEBAR_SECTIONS = [
     items: [
       { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
       // Wave B gap screen 16 "Me" — flag-gated (ff_me_v2). See MORE_ITEMS above
-      // for the full rationale; mirrored here so the desktop sidebar surfaces
-      // the same additive screen once the flag ramps.
-      { href: '/me', icon: '⚙️', label: 'Me (New)', labelHi: 'मैं (नया)', flagName: 'ff_me_v2' },
+      // for the full rationale (including the "Me (New)" rename); mirrored here
+      // so the desktop sidebar surfaces the same additive screen once the flag
+      // ramps, under the same name and icon.
+      { href: '/me', icon: '⚙️', label: 'Me', labelHi: 'मैं', flagName: 'ff_me_v2' },
       // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
       { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है' },
       { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
@@ -111,6 +130,20 @@ export function getItemLockForGrade(
 export interface NavFlagGatedItem {
   flagName?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Shared active-state matcher for every nav projection (bottom tabs, More
+ * sheet, sidebar). RCA W2: both components used to inline
+ * `pathname.startsWith(href)` — a prefix match with NO segment boundary — so
+ * `/me` lit up on `/memory` and `/mock-exam`, and any shorter href matched any
+ * longer sibling. Segment-boundary matching keeps descendant pages active
+ * (`/learn/math/1` → `/learn`) while forbidding cross-route prefix collisions.
+ */
+export function isNavItemActive(pathname: string, href: string): boolean {
+  if (href === '/') return pathname === '/';
+  if (pathname === href) return true;
+  return pathname.startsWith(href + '/');
 }
 
 export function isItemVisibleForFlags(

@@ -40,7 +40,7 @@ function Bone({ width = '100%', height = 16, radius = 8, className = '' }: {
  * roadmaps) eliminates the first-paint layout shift the legacy Atlas skeleton
  * caused. Warm-cream via the shared surface/border tokens (no dark mode);
  * the hero placeholder carries a subtle warm wash through the stable
- * --accent-warm channel (--orange-rgb is violet on the cosmic-light surface).
+ * --accent-warm channel.
  */
 export function DashboardSkeleton() {
   return (
@@ -74,6 +74,11 @@ export function DashboardSkeleton() {
               <Bone height={48} radius={16} />
             </div>
             <Bone height={48} radius={16} className="mt-1" />
+          </div>
+
+          {/* 1b. "Ask Foxy" tap-gated launcher — small left-aligned pill. */}
+          <div className="my-3 flex justify-start">
+            <Bone width={132} height={40} radius={20} />
           </div>
 
           {/* 2. Mastery snapshot. */}
@@ -127,7 +132,23 @@ export function DashboardSkeleton() {
             </div>
           </div>
 
-          {/* 4. Subject roadmaps — section title + skill-tree rows. */}
+          {/* 4. Revision rail — compact secondary card (inline on mobile/tablet). */}
+          <div
+            className="rounded-2xl p-4 space-y-3"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
+          >
+            <div className="flex items-center justify-between">
+              <Bone width="30%" height={11} />
+              <Bone width={44} height={20} radius={10} />
+            </div>
+            <div className="space-y-2">
+              {[0, 1].map((i) => (
+                <Bone key={i} height={44} radius={12} />
+              ))}
+            </div>
+          </div>
+
+          {/* 5. Subject roadmaps — section title + skill-tree rows. */}
           <div className="space-y-3">
             <Bone width="45%" height={12} />
             <div className="space-y-2">

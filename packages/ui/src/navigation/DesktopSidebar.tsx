@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, type UserRole } from '@alfanumrik/lib/AuthContext';
-import { useDashboardData, useFeatureFlags } from '@alfanumrik/lib/swr';
-import { getSidebarSections, getItemLockForGrade, isItemVisibleForFlags, type NavFlagGatedItem } from './nav-config';
+import { useFeatureFlags } from '@alfanumrik/lib/swr';
+import { getSidebarSections, getItemLockForGrade, isItemVisibleForFlags, isNavItemActive, type NavFlagGatedItem } from './nav-config';
+import { useHasUpcomingExam } from './use-has-upcoming-exam';
 
 export function DesktopSidebar() {
   const pathname = usePathname();
@@ -16,7 +17,10 @@ export function DesktopSidebar() {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({ Account: true });
   
   const { data: navFlags } = useFeatureFlags();
-  const [hasUpcomingExam] = useState(true);
+  // Was `useState(true)` — hard-coded, never set, never derived, so "Exam
+  // Sprint" always rendered on desktop while MobileBottomNav genuinely gated
+  // it. Both surfaces now share one derivation.
+  const hasUpcomingExam = useHasUpcomingExam((auth as any)?.student?.id);
 
   const studentGrade = parseInt((auth as any)?.student?.grade ?? '6', 10);
   const getItemLock = (item: any) => getItemLockForGrade(item, studentGrade);
@@ -46,10 +50,7 @@ export function DesktopSidebar() {
         .filter(passesExamGate),
     }));
 
-  const { data: dashData } = useDashboardData((auth as any)?.student?.id);
-  const dueCount: number = (dashData as any)?.due_count ?? 0;
-
-  const isActive = (href: string) => pathname === href || (href !== '/' && pathname.startsWith(href));
+  const isActive = (href: string) => isNavItemActive(pathname ?? '', href);
   const isFocusedFoxy = pathname === '/foxy' || pathname.startsWith('/foxy');
 
   // Fallback for browsers without :has() support (Safari < 15.4, Firefox < 121).
@@ -126,8 +127,11 @@ export function DesktopSidebar() {
                     const lock = getItemLock(item);
                     const active = !lock.locked && isActive(item.href);
                     const isFoxy = item.href === '/foxy';
-                    const isReview = item.href === '/review';
-                    const showReviewBadge = !lock.locked && isReview && dueCount > 0 && activeRole === 'student';
+                    // The `/review` due-count badge that used to live here was
+                    // dead code: `/review` is in none of CORE_TABS, MORE_ITEMS
+                    // or SIDEBAR_SECTIONS (it is a permanent 301), so the branch
+                    // could never render. Removing it also removed this
+                    // component's only useDashboardData() call.
                     const gradeChipLabel = lock.locked
                       ? (isHi ? `कक्षा ${lock.gradeMin}+` : `Grade ${lock.gradeMin}+`)
                       : null;
@@ -168,11 +172,6 @@ export function DesktopSidebar() {
                           >
                             <span aria-hidden="true">🔒</span>
                             {gradeChipLabel}
-                          </span>
-                        ) : showReviewBadge && !collapsed ? (
-                          <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
-                            style={{ background: '#DC2626' }}>
-                            {dueCount > 9 ? '9+' : dueCount}
                           </span>
                         ) : active && !collapsed ? (
                           <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
