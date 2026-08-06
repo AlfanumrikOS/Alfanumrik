@@ -47,6 +47,7 @@
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { createStudentStateBuilder } from '@alfanumrik/lib/state/student-state-builder';
 import { decayedChapters } from '@alfanumrik/lib/state/learner-loop/resolve-next-action';
 import {
@@ -65,11 +66,11 @@ const MAX_ITEMS = 12;
 export async function GET(_request: Request) {
   const supabase = await createSupabaseServerClient();
 
-  const { data: userResult, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userResult?.user) {
-    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+  const auth = await authorizeRequest(_request, 'study_plan.view', { requireStudentId: true });
+  if (!auth.authorized || !auth.userId) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
-  const userId = userResult.user.id;
+  const userId = auth.userId;
 
   // Build StudentState — same canonical builder /api/learner/next uses.
   const builder = createStudentStateBuilder({ sb: supabase });

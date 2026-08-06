@@ -22,6 +22,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@alfanumrik/lib/logger';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { sanitizeText } from '@alfanumrik/lib/sanitize';
@@ -111,7 +112,7 @@ export async function POST(request: NextRequest) {
     // long enough to cover the RPC round-trip time.
     const isFirstBootstrap = await acquireIdempotencyLock(`bootstrap:${user.id}`, 30);
     if (!isFirstBootstrap) {
-      console.warn('[Bootstrap] duplicate bootstrap blocked by Redis:', user.id);
+      logger.warn('[Bootstrap] duplicate bootstrap blocked by Redis', { userId: user.id });
       return NextResponse.json({ success: true, data: { status: 'deduplicated', role: 'unknown', redirect: '/dashboard' } });
     }
 
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
       pendingBootstraps.delete(user.id);
     }
   } catch (error) {
-    console.error('[Bootstrap] Unexpected error:', error);
+    logger.error('[Bootstrap] Unexpected error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' },
       { status: 500 }
@@ -362,10 +363,7 @@ async function handleBootstrap(
       const auditCtx = extractAuditContext(request, admin, user.id);
       await logIdentityEvent(auditCtx, 'bootstrap_failure', { error: rpcError.message, role, name });
 
-      console.error('[Bootstrap] RPC failed:', rpcError.message, {
-        userId: user.id,
-        role,
-      });
+      logger.error('[Bootstrap] RPC failed', { error: rpcError.message, userId: user.id, role });
 
       return NextResponse.json(
         {
@@ -411,7 +409,7 @@ async function handleBootstrap(
         rpc_status: rpcStatus ?? 'unknown',
       });
 
-      console.error('[Bootstrap] RPC logical failure (no profile created):', {
+      logger.error('[Bootstrap] RPC logical failure (no profile created)', {
         userId: user.id,
         role,
         rpcStatus: rpcStatus ?? 'unknown',
@@ -458,7 +456,7 @@ async function handleBootstrap(
         }
       } catch (inviteErr) {
         // Swallow — P15: a minor-invite hiccup can never break signup.
-        console.warn('[Bootstrap] minor guardian-invite enqueue skipped:', inviteErr);
+        logger.warn('[Bootstrap] minor guardian-invite enqueue skipped', { error: inviteErr instanceof Error ? inviteErr.message : String(inviteErr) });
       }
     }
 
@@ -475,7 +473,7 @@ async function handleBootstrap(
       },
     });
   } catch (error) {
-    console.error('[Bootstrap] Unexpected error:', error);
+    logger.error('[Bootstrap] Unexpected error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' },
       { status: 500 }

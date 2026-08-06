@@ -130,23 +130,17 @@ export const ADAPTIVE_LOOPS_BC_FLAGS = {
 /**
  * Post-submit quiz telemetry flag (2026-06-15, SPEC-1..5).
  *
- *  ff_quiz_telemetry_v1 — master switch for the best-effort post-submit learning
- *    telemetry on the server-authoritative quiz submit path (/api/v2/quiz/submit
- *    via the shared submit-side-effects seam). When ON, after a FRESH grade the
- *    route emits per-answer learning_events (SPEC-1), mastery-achieved
- *    learning_events (SPEC-2, 0.8 pre/post threshold), and (when a reliable
- *    node_code↔topic mapping exists — see OQ-5) consecutive-wrong
- *    intervention_alerts (SPEC-3). All telemetry is fire-and-forget and never
- *    blocks/breaks the submit response; idempotent replays + errors emit nothing
- *    (SPEC-5). When OFF/unseeded, the route captures no pre-snapshot and the
- *    telemetry step is a complete no-op (submit path byte-identical to today).
- *    Default: false.
+ *  ff_quiz_telemetry_v1 — promoted to always-on in code (2026-08-06, backendaudit
+ *    P0). The v2/quiz/submit route now unconditionally calls prepareQuizTelemetry
+ *    and emits learning_events on every fresh grade. The DB flag row may remain
+ *    OFF — the route no longer reads it. This registry entry is retained for
+ *    migration/audit traceability.
  *
- *    Seeded OFF in a follow-up migration; ships gated (isFeatureEnabled returns
- *    false for the unseeded flag until then).
+ *    Originally: master switch for the best-effort post-submit learning
+ *    telemetry on the server-authoritative quiz submit path.
  */
 export const QUIZ_TELEMETRY_FLAGS = {
-  /** Post-submit learning telemetry (per-answer + mastery + intervention). Default off. */
+  /** Post-submit learning telemetry (per-answer + mastery + intervention). Always-on in code. */
   V1: 'ff_quiz_telemetry_v1',
 } as const;
 

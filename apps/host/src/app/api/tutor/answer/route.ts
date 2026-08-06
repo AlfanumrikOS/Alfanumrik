@@ -39,6 +39,7 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { logger } from '@alfanumrik/lib/logger';
@@ -68,11 +69,11 @@ type Body = z.infer<typeof BodySchema>;
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
-  const { data: userResult } = await supabase.auth.getUser();
-  if (!userResult?.user) {
-    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+  const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
+  if (!auth.authorized || !auth.userId) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
-  const userId = userResult.user.id;
+  const userId = auth.userId;
   const envHint = {
     userId,
     role: 'student' as const,

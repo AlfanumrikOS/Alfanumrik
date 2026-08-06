@@ -245,7 +245,9 @@ export const PROTECTED_FLAGS: Record<string, FlagProtection> = {
   // staged_rollout — E7 never-ramped / retired experiments
   ff_class_leaderboard_v1: STAGED_ROLLOUT,
   ff_streak_guardian_cron_v1: STAGED_ROLLOUT,
-  ff_quiz_telemetry_v1: STAGED_ROLLOUT,
+  // ff_quiz_telemetry_v1 was promoted to always-on in code (v2/quiz/submit/route.ts
+  // always calls prepareQuizTelemetry unconditionally, 2026-08-06 backendaudit P0).
+  // The DB row may remain OFF — the route no longer reads it.
   ff_institution_entitlements_v1: STAGED_ROLLOUT,
   ff_foxy_curriculum_guard_v1: STAGED_ROLLOUT,
   ff_unified_quiz_v1: STAGED_ROLLOUT,
@@ -478,7 +480,11 @@ export const EXPECTED_OFF_FLAGS: string[] = [
   // E7 — never-ramped / retired experiments
   'ff_class_leaderboard_v1',
   'ff_streak_guardian_cron_v1',
-  'ff_quiz_telemetry_v1',
+  // ff_quiz_telemetry_v1 promoted to always-on in code (v2/quiz/submit/route.ts
+  // unconditionally calls prepareQuizTelemetry, 2026-08-06 backendaudit P0).
+  // Remains a PROTECTED_FLAGS entry above so any further flag change requires
+  // typed confirmation. If the always-on code path is ever gated behind a flag
+  // again, re-add 'ff_quiz_telemetry_v1' to this list.
   'ff_institution_entitlements_v1',
   'ff_foxy_curriculum_guard_v1',
   'ff_unified_quiz_v1',

@@ -43,7 +43,6 @@ import {
   runQuizSubmitSideEffects,
   type QuizSubmitOfflineMeta,
 } from '@alfanumrik/lib/quiz/submit-side-effects';
-import { isFeatureEnabled, QUIZ_TELEMETRY_FLAGS } from '@alfanumrik/lib/feature-flags';
 import {
   prepareQuizTelemetry,
   type QuizTelemetryPre,
@@ -259,27 +258,20 @@ export const POST = withRoute(async (request: NextRequest) => {
     };
   }
 
-  // 4c. POST-SUBMIT TELEMETRY PRE-SNAPSHOT (SPEC-1..5). Gated behind
-  //     ff_quiz_telemetry_v1 (unseeded → false → dormant). SPEC-2 needs a
-  //     pre/post mastery comparison, so the topic_id resolution + pre-mastery
-  //     read MUST happen BEFORE the RPC. Best-effort: prepareQuizTelemetry never
-  //     throws (returns a safe empty snapshot on failure). When the flag is OFF
-  //     telemetryPre stays undefined and the side-effects telemetry step no-ops,
-  //     keeping the submit path byte-identical to today.
+  // 4c. POST-SUBMIT LEARNING TELEMETRY PRE-SNAPSHOT (SPEC-1..5). Always-on
+  //     (P0): the closed-loop learning-evidence requirement mandates that every
+  //     quiz submission writes learning_events. The pre-RPC topic_id resolution +
+  //     pre-mastery read is best-effort — failures degrade gracefully to an empty
+  //     snapshot (target topic still gets a quiz_attempt event).
   //     DUAL-ID: this PRE-read keys concept_mastery by students.id (body.studentId,
   //     cross-checked == studentRow.id above). WRITES (auth.uid) happen post-RPC.
   let telemetryPre: QuizTelemetryPre | undefined;
   try {
-    const telemetryEnabled = await isFeatureEnabled(QUIZ_TELEMETRY_FLAGS.V1, {
-      userId: auth.userId,
-    });
-    if (telemetryEnabled) {
-      telemetryPre = await prepareQuizTelemetry(
-        admin,
-        body.studentId, // students.id — concept_mastery READ key
-        body.responses.map((r) => r.question_id),
-      );
-    }
+    telemetryPre = await prepareQuizTelemetry(
+      admin,
+      body.studentId, // students.id — concept_mastery READ key
+      body.responses.map((r) => r.question_id),
+    );
   } catch {
     // Never let telemetry preparation break submit. Leave telemetryPre undefined.
     telemetryPre = undefined;

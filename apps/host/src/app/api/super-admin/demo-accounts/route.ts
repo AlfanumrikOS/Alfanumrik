@@ -364,7 +364,7 @@ async function provisionDemoSchool(adminAuthUserId: string, adminName: string): 
         email_confirm: true,
         user_metadata: { name: seed.name, role: 'student', is_demo_account: true, persona: seed.persona },
       }),
-    });
+    signal: AbortSignal.timeout(15_000) });
     if (!userRes.ok) continue;
     const authUser = await userRes.json();
     const studentRes = await fetch(supabaseAdminUrl('students'), {
@@ -524,7 +524,7 @@ async function createSingleDemoAccount(
       email_confirm: true,
       user_metadata: { name, role, is_demo_account: true, persona: effectivePersona },
     }),
-  });
+    signal: AbortSignal.timeout(15_000) });
 
   if (!createUserRes.ok) {
     const err = await createUserRes.json().catch(() => ({}));
@@ -617,7 +617,7 @@ async function createSingleDemoAccount(
             approved_by: auth.userId,
             approved_at: new Date().toISOString(),
           }),
-        });
+  signal: AbortSignal.timeout(15_000) });
         if (!linkRes.ok) {
           console.error('[demo-accounts] guardian_student_links insert failed:', await linkRes.text());
         }
@@ -890,7 +890,7 @@ export async function PUT(request: NextRequest) {
         method: 'POST',
         headers: supabaseAdminHeaders('return=representation'),
         body: JSON.stringify({ p_demo_account_id: id }),
-      });
+        signal: AbortSignal.timeout(15_000) });
       if (!rpcRes.ok) {
         const errBody = await rpcRes.text();
         return NextResponse.json(
@@ -1104,7 +1104,7 @@ export async function DELETE(request: NextRequest) {
     const deleteAuthRes = await fetch(`${config.url}/auth/v1/admin/users/${authUserId}`, {
       method: 'DELETE',
       headers: { 'apikey': config.key, 'Authorization': `Bearer ${config.key}` },
-    });
+      signal: AbortSignal.timeout(15_000) });
     if (!deleteAuthRes.ok) {
       console.error('[demo-accounts] Failed to delete auth user:', authUserId);
     }

@@ -42,6 +42,7 @@
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import {
   bucketForHorizon,
@@ -86,11 +87,11 @@ export interface ScheduledResponse {
 export async function GET(request: Request) {
   const supabase = await createSupabaseServerClient();
 
-  const { data: userResult, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userResult?.user) {
-    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+  const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
+  if (!auth.authorized || !auth.userId) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
-  const userId = userResult.user.id;
+  const userId = auth.userId;
 
   // Flag gate. Mirrors the rhythm/today + learner/next pattern — 404
   // when off so consumers fall through to legacy behaviour without

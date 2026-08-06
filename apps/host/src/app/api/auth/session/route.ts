@@ -25,6 +25,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
+import { logger } from '@alfanumrik/lib/logger';
 
 const MAX_SESSIONS = 2;
 const SESSION_COOKIE = 'alfanumrik_sid';
@@ -164,7 +165,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertErr || !newSession) {
-      console.error('[Session] Insert failed:', insertErr?.message);
+      logger.error('[Session] Insert failed', { error: insertErr?.message });
       return NextResponse.json({ error: 'Failed to register session' }, { status: 500 });
     }
 
@@ -203,7 +204,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (err) {
-    console.error('[Session] Registration error:', err instanceof Error ? err.message : err);
+    logger.error('[Session] Registration error', { error: err instanceof Error ? err.message : String(err) });
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
