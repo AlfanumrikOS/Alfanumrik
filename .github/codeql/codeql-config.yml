@@ -1,0 +1,8 @@
+paths-ignore:
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/*.spec.ts'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**'
+  - e2e/**
+  - supabase/migrations/**
