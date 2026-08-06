@@ -35,6 +35,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ADAPTIVE_REMEDIATION_RULES } from '@alfanumrik/lib/learn/remediation-queue-adapter';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 
 // ── Mocks (I/O seams only) ───────────────────────────────────────────────────
 
@@ -63,6 +64,11 @@ vi.mock('@alfanumrik/lib/feature-flags', () => ({
     isFeatureEnabledMock(...(a as [string])),
   PEDAGOGY_V2_FLAGS: { DAILY_RHYTHM: 'ff_pedagogy_v2_daily_rhythm' },
   ADAPTIVE_REMEDIATION_FLAGS: { V1: 'ff_adaptive_remediation_v1' },
+}));
+
+vi.mock('@alfanumrik/lib/rbac', () => ({
+  authorizeRequest: vi.fn().mockResolvedValue({ authorized: true, userId: 'auth-user-1' }),
+  logAudit: vi.fn(),
 }));
 
 // ── Recording supabase-server client ─────────────────────────────────────────
