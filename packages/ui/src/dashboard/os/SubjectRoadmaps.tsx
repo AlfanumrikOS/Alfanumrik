@@ -11,6 +11,13 @@
  * mastery is computed here. Tapping a node routes the student to Foxy scoped to
  * that subject/topic (an existing route + URL-context mechanism, no new AI
  * call). Bilingual via isHi.
+ *
+ * Deep links: the display name is resolved to a canonical subject CODE via
+ * subjectCodeForName (live allowedSubjects map wins, then the static map).
+ * When the name can't be resolved, the `subject` param is OMITTED — Foxy
+ * validates ?subject= against real codes and silently falls back to the first
+ * allowed subject on a bogus value, so sending a raw name lands on the WRONG
+ * subject.
  */
 
 import { useRouter } from 'next/navigation';
@@ -21,6 +28,7 @@ import {
   groupBySubject,
   roadmapStatusForRow,
   masteryPercent,
+  subjectCodeForName,
   type MasteryOverviewRow,
   type RoadmapStatus,
 } from '@alfanumrik/lib/dashboard/mastery-buckets';
@@ -98,14 +106,21 @@ export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: 
               const status = roadmapStatusForRow(row);
               const label =
                 isHi && row.title_hi ? row.title_hi : row.title || `Chapter ${row.chapter_number ?? ''}`;
-              const code = subjectCodeByName?.[g.subject] ?? g.subject.toLowerCase();
+              // Resolve the display name → canonical subject CODE. When the
+              // name can't be mapped (unknown subject), the `subject` param
+              // is OMITTED — Foxy validates ?subject= against real codes
+              // and silently falls back to the first allowed subject on a
+              // bogus value, so sending a raw name lands on the WRONG
+              // subject.
+              const code = subjectCodeForName(g.subject, subjectCodeByName);
               const onClick =
                 status === 'locked'
                   ? undefined
                   : () => {
                       // Deep-link Foxy scoped to this subject + chapter via the
                       // existing URL-context mechanism — no new AI call here.
-                      const params = new URLSearchParams({ subject: code, source: 'dashboard' });
+                      const params = new URLSearchParams({ source: 'dashboard' });
+                      if (code) params.set('subject', code);
                       if (row.chapter_number != null) params.set('chapter', String(row.chapter_number));
                       router.push(`/foxy?${params.toString()}`);
                     };

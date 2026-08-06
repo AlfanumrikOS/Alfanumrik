@@ -15,8 +15,10 @@
  * unmount. It DELIBERATELY never writes data-theme="dark" — dark mode is killed
  * for these surfaces (CEO directive). It only ever requests the LIGHT theme.
  *
- * SSR-safe (guards `document`). No effect on the flag-OFF path because the OS
- * surfaces are the only callers and they only mount when ff_student_os_v1 is ON.
+ * SSR-safe (guards `document`). ff_student_os_v1 is permanently ON (seeded
+ * 20260620001601, re-asserted 20260802110000) and the OS surfaces mount
+ * unconditionally — the `active` argument is the only control (foxy passes
+ * osEnabled=true; StudentOSDashboard always passes true).
  */
 
 import { useEffect } from 'react';
