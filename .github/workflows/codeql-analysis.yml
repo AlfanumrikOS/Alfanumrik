@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   analyze:
-    name: CodeQL (JavaScript/TypeScript)
+    name: CodeQL Analysis
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
