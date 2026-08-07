@@ -40,12 +40,13 @@
       "rcaItem": "RCA-04",
       "path": "apps/host/src/__tests__/lib/slc4-fallback-cap-alignment.test.ts",
       "status": "repo_guarded",
-      "readinessRole": "Pins the SLC-4 fallback fix so the client fallback path routes through the canonical 7-param capped ledger writer and cannot award a second 200 XP.",
+      "readinessRole": "Pins the SLC-4 repoint (2026-08-06, backendaudit P0) as a v2-ONLY submit contract: the client has no scoring/XP/upsert path, scoring and the 200/day ledger cap live server-side in submit_quiz_results_v2, and the removed uncapped client fallback cannot return.",
       "evidence": [
-        "Fallback Daily-Cap Alignment",
-        "p_session_id: session?.id ?? null",
-        "effectiveXp = ledgerRow.amount",
-        "the pre-SLC-4 uncapped fallback would have allowed up to 400/day"
+        "canonical v2-only submit pin",
+        "submit_quiz_results_v2",
+        "p_session_id",
+        "the pre-SLC-4 uncapped client fallback would have allowed up to 400/day",
+        "NOT 370/400 (the pre-fix bug)"
       ]
     },
     {
