@@ -70,7 +70,7 @@ jobs:
       contents: read       # gitleaks needs to read repo history
       pull-requests: read  # gitleaks needs the PR commit list (fixes 403)
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # Full history required by gitleaks to scan diffs
 
@@ -196,7 +196,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ''
       SUPABASE_DB_PASSWORD: ''
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -1031,7 +1031,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -1156,7 +1156,7 @@ jobs:
     name: Lint & Type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # apps/host/vercel.json is the single deploy config (Vercel project root dir = apps/host); a root copy is dead config that silently drifts.
       - name: Root vercel.json drift guard
@@ -1526,7 +1526,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -1619,7 +1619,7 @@ jobs:
           console.log('Lint/type-check and all 4 unit-test shards succeeded.');
           NODE
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -1920,7 +1920,7 @@ jobs:
         supabase/functions/grounded-answer/__tests__/validation.test.ts
         supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -2371,7 +2371,7 @@ jobs:
     # reason documented on the `quality` job above.)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -2432,7 +2432,7 @@ jobs:
     name: Production Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -2724,7 +2724,7 @@ jobs:
       (github.base_ref == 'main' || github.base_ref == 'master' || github.base_ref == 'staging') &&
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
