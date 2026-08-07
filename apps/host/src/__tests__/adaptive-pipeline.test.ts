@@ -116,28 +116,27 @@ describe('Adaptive Pipeline Integrity', () => {
   });
 
   // ---------------------------------------------------------------
-  // 5. Fallback path awareness
+  // 5. No client-side scoring fallback (P0-2 remediation, 2026-08-06)
+  //    The v2 RPC is the single authoritative scoring path; the client-side
+  //    atomic_quiz_profile_update fallback was removed.
   // ---------------------------------------------------------------
-  it('submitQuizResults fallback must use atomic_quiz_profile_update', () => {
+  it('submitQuizResults must not retain the client-side atomic fallback', () => {
     const supabasePath = path.resolve('../../packages/lib/src/supabase.ts');
     const source = fs.readFileSync(supabasePath, 'utf-8');
-    // The fallback path after submit_quiz_results RPC fails
-    expect(source).toContain('atomic_quiz_profile_update');
+    expect(source).not.toContain('atomic_quiz_profile_update');
   });
 
-  it('submitQuizResults must try submit_quiz_results RPC as primary path', () => {
+  it('submitQuizResults must try submit_quiz_results_v2 RPC as primary path', () => {
     const supabasePath = path.resolve('../../packages/lib/src/supabase.ts');
     const source = fs.readFileSync(supabasePath, 'utf-8');
-    // The function body within submitQuizResults. Window widened from 500 to
-    // 1000 chars — the function now has a dedup prelude + layered try/catch
-    // wrappers that push the RPC call past the old 500-char cutoff. Intent of
-    // the assertion is unchanged: the RPC call must appear in the function's
-    // primary path, not in a deep fallback.
+    // P0-1/P0-2 remediation (2026-08-06): the only submission path is the v2
+    // RPC. The v1 RPC and client-side scoring fallbacks were removed.
     const funcStart = source.indexOf('export async function submitQuizResults');
     expect(funcStart).toBeGreaterThan(-1);
     const funcBody = source.slice(funcStart, funcStart + 1000);
-    // Primary path calls the full RPC (not the fallback)
-    expect(funcBody).toContain("supabase.rpc('submit_quiz_results'");
+    expect(funcBody).toContain("supabase.rpc('submit_quiz_results_v2'");
+    // v1 fallback must NOT be present
+    expect(funcBody).not.toContain("supabase.rpc('submit_quiz_results'");
   });
 
   // ---------------------------------------------------------------
@@ -158,8 +157,8 @@ describe('Adaptive Pipeline Integrity', () => {
     // The contract comment should appear shortly before the function
     const preamble = source.slice(Math.max(0, funcStart - 2000), funcStart);
     expect(preamble).toContain('ARCHITECTURAL CONTRACT');
-    expect(preamble).toContain('Layer 1');
-    expect(preamble).toContain('Layer 2');
+    expect(preamble).toContain('canonical v2 RPC path');
+    expect(preamble).toContain('v1 L2 fallback');
   });
 
   // ---------------------------------------------------------------

@@ -1,6 +1,13 @@
 -- Migration: Backup verification automation (P1-8)
--- Audit remediation 2026-08-06: backup_status table is manually maintained.
--- Adds automated verification, pg_cron scheduling, and alerting.
+-- Audit remediation 2026-08-07 — REBUILT against real schema.
+--
+-- Real schema facts (baseline 00000000000000):
+--   backup_status (line 9978): backup_type CHECK allows database|storage|full|manual
+--     (line 9991); status CHECK allows success|failed|in_progress|unknown|unverified
+--     (line 9992).
+--   state_events (20260521100000:74): columns are event_id, kind,
+--     actor_auth_user_id, tenant_id, idempotency_key, occurred_at, payload,
+--     created_at — NOT event_type/payload.
 
 -- Part 1: Automate backup status verification
 CREATE OR REPLACE FUNCTION public.verify_and_log_backup_status()
@@ -10,43 +17,32 @@ SECURITY DEFINER
 SET search_path = public, pg_catalog
 AS $$
 DECLARE
-  v_backup_count integer;
   v_latest_backup timestamptz;
-  v_status text;
   v_size_bytes bigint;
+  v_status text;
 BEGIN
-  -- Check for recent backup records (Supabase-managed)
-  -- This queries the backup_status table for the most recent entry
-  SELECT count(*), MAX(completed_at), MAX(size_bytes)
-    INTO v_backup_count, v_latest_backup, v_size_bytes
-    FROM public.backup_status
-    WHERE status IN ('success', 'completed', 'verified');
+  -- Check for recent successful backup records (Supabase-managed).
+  -- backup_status.status CHECK allows only success|failed|in_progress|unknown|unverified.
+  SELECT MAX(completed_at), MAX(size_bytes) INTO v_latest_backup, v_size_bytes
+  FROM public.backup_status
+  WHERE status = 'success';
 
-  -- Determine verification status
-  IF v_backup_count = 0 THEN
-    v_status := 'no_backup_found';
-  ELSIF v_latest_backup < now() - interval '25 hours' THEN
-    v_status := 'stale_backup';
-  ELSIF v_latest_backup IS NOT NULL THEN
-    v_status := 'healthy';
-  ELSE
+  -- Map freshness to the allowed CHECK values.
+  IF v_latest_backup IS NULL THEN
     v_status := 'unknown';
+  ELSIF v_latest_backup < now() - interval '25 hours' THEN
+    v_status := 'unverified';   -- backup exists but is stale → needs manual verify
+  ELSE
+    v_status := 'success';
   END IF;
 
-  -- Record verification result
+  -- Record verification result using only CHECK-compliant values.
   INSERT INTO public.backup_status (
-    backup_type,
-    status,
-    provider,
-    coverage,
-    size_bytes,
-    started_at,
-    completed_at,
-    verified_at,
-    notes
+    backup_type, status, provider, coverage, size_bytes,
+    started_at, completed_at, verified_at, notes
   ) VALUES (
-    'auto_verification',
-    v_status,
+    'manual',           -- CHECK allows database|storage|full|manual
+    v_status,           -- CHECK allows success|failed|in_progress|unknown|unverified
     'supabase',
     'full_project',
     v_size_bytes,
@@ -54,26 +50,27 @@ BEGIN
     v_latest_backup,
     now(),
     CASE v_status
-      WHEN 'healthy' THEN 'Automated verification: backup within 24h window'
-      WHEN 'stale_backup' THEN 'ALERT: Last backup older than 25 hours. Check Supabase dashboard.'
-      WHEN 'no_backup_found' THEN 'ALERT: No backup records found. Backup may be disabled.'
-      ELSE 'Automated verification: status could not be determined'
+      WHEN 'success' THEN 'Automated verification: latest backup within 24h window'
+      WHEN 'unverified' THEN 'ALERT: last backup older than 25h — check Supabase dashboard'
+      ELSE 'No backup record found — backup may be disabled'
     END
   );
 
-  -- Alert on unhealthy status via state_events
-  IF v_status != 'healthy' THEN
-    INSERT INTO public.state_events (event_type, payload)
-    VALUES (
+  -- Alert on unhealthy status via state_events (real column: kind).
+  IF v_status <> 'success' THEN
+    INSERT INTO public.state_events (
+      event_id, kind, actor_auth_user_id, idempotency_key, occurred_at, payload
+    ) VALUES (
+      gen_random_uuid(),
       'system.backup_verification_failed',
+      NULL,
+      'backup-verify-' || now()::text,
+      now(),
       jsonb_build_object(
         'status', v_status,
         'latest_backup', v_latest_backup,
         'checked_at', now(),
-        'severity', CASE v_status
-          WHEN 'no_backup_found' THEN 'CRITICAL'
-          ELSE 'HIGH'
-        END
+        'severity', CASE v_status WHEN 'unknown' THEN 'CRITICAL' ELSE 'HIGH' END
       )
     );
   END IF;
@@ -83,7 +80,7 @@ $$;
 REVOKE ALL ON FUNCTION public.verify_and_log_backup_status() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.verify_and_log_backup_status() TO service_role;
 
--- Part 2: Restore drill tracking table
+-- Part 2: Restore drill tracking table (self-contained, safe)
 CREATE TABLE IF NOT EXISTS public.restore_drill_log (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   drill_type text NOT NULL CHECK (drill_type IN (
@@ -129,12 +126,12 @@ CREATE POLICY "Authenticated can read drill log"
   TO authenticated
   USING (true);
 
--- Part 3: RPO/RTO SLO monitoring view
+-- Part 3: RPO/RTO SLO monitoring view (uses CHECK-compliant 'success', not 'healthy')
 CREATE OR REPLACE VIEW public.v_backup_health_summary AS
 SELECT
   (SELECT status FROM public.backup_status ORDER BY completed_at DESC NULLS LAST LIMIT 1) AS latest_backup_status,
-  (SELECT completed_at FROM public.backup_status WHERE status = 'healthy' ORDER BY completed_at DESC LIMIT 1) AS last_healthy_backup,
-  (SELECT count(*) FROM public.backup_status WHERE status = 'healthy' AND completed_at > now() - interval '7 days') AS backups_last_7d,
+  (SELECT completed_at FROM public.backup_status WHERE status = 'success' ORDER BY completed_at DESC LIMIT 1) AS last_healthy_backup,
+  (SELECT count(*) FROM public.backup_status WHERE status = 'success' AND completed_at > now() - interval '7 days') AS backups_last_7d,
   (SELECT count(*) FROM public.restore_drill_log WHERE drill_date > now() - interval '90 days') AS drills_last_quarter,
   (SELECT result FROM public.restore_drill_log ORDER BY drill_date DESC LIMIT 1) AS last_drill_result,
   (SELECT drill_date FROM public.restore_drill_log ORDER BY drill_date DESC LIMIT 1) AS last_drill_date,
@@ -168,14 +165,12 @@ BEGIN
   ) INTO v_result
   FROM public.v_backup_health_summary;
 
-  -- Execute data quality checks (from P1-7 migration)
-  -- Best-effort: quality failures are logged but don't block health check
+  -- Execute data quality checks (from P1-7 migration) — best-effort.
   BEGIN
     INSERT INTO public.data_quality_check_results (check_name, result, detail, severity)
     SELECT check_name, result, detail, severity
     FROM public.run_data_quality_checks();
   EXCEPTION WHEN OTHERS THEN
-    -- Data quality checks may not exist yet; catch gracefully
     NULL;
   END;
 

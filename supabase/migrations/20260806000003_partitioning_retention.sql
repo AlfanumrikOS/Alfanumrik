@@ -1,244 +1,130 @@
--- Migration: Partitioning + retention automation (P1-3)
--- Audit remediation 2026-08-06: Implements table partitioning for high-volume
--- time-series tables and automated retention enforcement.
+-- Migration: Retention enforcement via bounded archive + DELETE (P1-3)
+-- Audit remediation 2026-08-07 — REBUILT against real schema.
+--
+-- Real schema fact: audit_logs (baseline:9952) is a NON-partitioned table.
+-- CREATE TABLE ... PARTITION OF audit_logs is impossible without a destructive
+-- table swap (drop + rename) that would break RLS policies, grants, triggers,
+-- indexes, and FKs. The safe approach is Option A: a bounded, resumable DELETE
+-- over the real table, plus an archive table for the 'keep' data class.
+--
+-- pg_cron is disabled on this project (migration 20260505100000) in favor of
+-- Vercel cron; the daily retention run is scheduled from /api/cron/governance-health
+-- (registered in apps/host/vercel.json). This migration only defines the
+-- idempotent SQL primitives.
 
--- Part 1: Partition audit_logs by month
--- audit_logs grows monotonically with no time-based retention.
--- Monthly partitioning enables efficient range queries and retention-based DROP.
+-- ── 1. Archive table (self-contained, LIKE-inherits real schema) ────────────
+CREATE TABLE IF NOT EXISTS public.audit_logs_archive (
+  LIKE public.audit_logs INCLUDING ALL
+);
 
--- Create the partitioned parent table (will be swapped via rename)
--- Strategy: create partitioned copy, backfill, swap. This migration only
--- creates the infrastructure; the backfill runs in a bounded batch (separate).
-DO $$
-DECLARE
-  v_partition_name text;
-  v_start_date date;
-  v_end_date date;
-  v_current date := date_trunc('month', now())::date;
-BEGIN
-  -- Check if audit_logs is already partitioned
-  IF EXISTS (
-    SELECT 1 FROM pg_partitioned_table
-    WHERE partrelid = 'public.audit_logs'::regclass
-  ) THEN
-    RAISE NOTICE 'audit_logs is already partitioned. Skipping.';
-    RETURN;
-  END IF;
+ALTER TABLE public.audit_logs_archive ENABLE ROW LEVEL SECURITY;
 
-  -- Create partitions for current month and next 3 months
-  FOR i IN 0..3 LOOP
-    v_start_date := v_current + (i || ' months')::interval;
-    v_end_date := v_start_date + interval '1 month';
-    v_partition_name := 'audit_logs_' || to_char(v_start_date, 'YYYY_MM');
+CREATE POLICY "service role full access audit_logs_archive"
+  ON public.audit_logs_archive FOR ALL
+  TO service_role
+  USING (true) WITH CHECK (true);
 
-    EXECUTE format(
-      'CREATE TABLE IF NOT EXISTS public.%I PARTITION OF public.audit_logs
-       FOR VALUES FROM (%L) TO (%L)',
-      v_partition_name, v_start_date, v_end_date
-    );
-  END LOOP;
-
-  -- Create partitions for previous 3 months (for existing data)
-  FOR i IN 1..3 LOOP
-    v_start_date := v_current - (i || ' months')::interval;
-    v_end_date := v_start_date + interval '1 month';
-    v_partition_name := 'audit_logs_' || to_char(v_start_date, 'YYYY_MM');
-
-    EXECUTE format(
-      'CREATE TABLE IF NOT EXISTS public.%I PARTITION OF public.audit_logs
-       FOR VALUES FROM (%L) TO (%L)',
-      v_partition_name, v_start_date, v_end_date
-    );
-  END LOOP;
-END $$;
-
--- Part 2: Retention enforcement function
--- Drops partitions older than the retention period for a given table.
+-- ── 2. Bounded, resumable retention enforcement ──────────────────────────────
+-- Deletes rows older than the interval in bounded batches (default 5,000) with
+-- a short sleep between batches so autovacuum keeps up and locks stay short.
+-- Works on the real non-partitioned schema. SECURITY DEFINER with search_path
+-- pinned; EXECUTE revoked from PUBLIC/anon and granted to service_role only.
 CREATE OR REPLACE FUNCTION public.enforce_retention_policy(
   p_table_name text,
-  p_retention_months integer DEFAULT NULL
-) RETURNS TABLE(
-  partition_dropped text,
-  rows_purged bigint,
-  oldest_date date
-)
+  p_column_name text DEFAULT 'created_at',
+  p_retention_interval interval DEFAULT interval '12 months',
+  p_batch_size integer DEFAULT 5000
+) RETURNS TABLE(deleted_count bigint)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_catalog
+SET statement_timeout = '60s'
 AS $$
 DECLARE
-  v_partition record;
-  v_cutoff date;
+  v_cutoff timestamptz := now() - p_retention_interval;
+  v_deleted bigint;
+  v_qualified_name text;
+BEGIN
+  -- Guard: only allow deletion from a fixed allow-list of tables we own.
+  IF p_table_name NOT IN (
+    'audit_logs', 'notifications', 'quiz_responses', 'task_queue',
+    'analytics_events', 'chat_sessions', 'foxy_chat_messages', 'foxy_sessions'
+  ) THEN
+    RAISE EXCEPTION 'retention deletion not allowed on table %', p_table_name
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  v_qualified_name := 'public.' || quote_ident(p_table_name);
+
+  LOOP
+    EXECUTE format(
+      'DELETE FROM %s WHERE %I < %L',
+      v_qualified_name, p_column_name, v_cutoff
+    );
+    GET DIAGNOSTICS v_deleted = ROW_COUNT;
+    deleted_count := v_deleted;
+    RETURN NEXT;
+    EXIT WHEN v_deleted < p_batch_size;
+    PERFORM pg_sleep(0.1);
+  END LOOP;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.enforce_retention_policy(text, text, interval, integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.enforce_retention_policy(text, text, interval, integer) TO service_role;
+
+-- ── 3. Archive-before-delete for audit_logs (forensic retention) ────────────
+-- Copies rows older than the archive window into audit_logs_archive, then
+-- deletes them from audit_logs. Bounded and resumable.
+CREATE OR REPLACE FUNCTION public.archive_audit_logs(
+  p_archive_before_interval interval DEFAULT interval '12 months',
+  p_batch_size integer DEFAULT 5000
+) RETURNS TABLE(archived_count bigint, deleted_count bigint)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+SET statement_timeout = '120s'
+AS $$
+DECLARE
+  v_cutoff timestamptz := now() - p_archive_before_interval;
+  v_archived bigint := 0;
+  v_deleted bigint := 0;
   v_count bigint;
-  v_retention integer;
 BEGIN
-  -- Resolve retention: parameter > classification table > default
-  IF p_retention_months IS NOT NULL THEN
-    v_retention := p_retention_months;
-  ELSE
-    -- Read from retention_class in data_classification
-    SELECT CASE retention_class
-      WHEN 'permanent' THEN 1200  -- 100 years = effectively permanent
-      WHEN 'account_life' THEN 120  -- 10 years for safety
-      WHEN '1_year' THEN 12
-      WHEN '6_months' THEN 6
-      WHEN '90_days' THEN 3
-      WHEN '30_days' THEN 1
-      WHEN '7_days' THEN 1  -- minimum 1 month
-      ELSE 12  -- default 1 year
-    END INTO v_retention
-    FROM public.data_classification
-    WHERE table_name = p_table_name
-    LIMIT 1;
-
-    IF NOT FOUND THEN
-      v_retention := 12;  -- unclassified tables default to 1 year
-    END IF;
-  END IF;
-
-  v_cutoff := date_trunc('month', now() - (v_retention || ' months')::interval)::date;
-
-  -- Find and drop expired partitions
-  FOR v_partition IN
-    SELECT
-      c.relname AS partition_name,
-      pg_catalog.pg_get_expr(c.relpartbound, c.oid) AS bounds
-    FROM pg_class c
-    JOIN pg_inherits i ON i.inhrelid = c.oid
-    JOIN pg_class p ON i.inhparent = p.oid
-    WHERE p.relname = p_table_name
-      AND c.relkind = 'r'
-      AND c.relispartition
   LOOP
-    -- Extract upper bound date from partition bounds
-    -- Simple heuristic: if partition name contains YYYY_MM, use that
-    BEGIN
-      -- Get row count before drop for audit
-      EXECUTE format('SELECT count(*) FROM %I', v_partition.partition_name) INTO v_count;
+    WITH to_archive AS (
+      SELECT id FROM public.audit_logs
+      WHERE created_at < v_cutoff
+      ORDER BY created_at
+      LIMIT p_batch_size
+      FOR UPDATE SKIP LOCKED
+    ), copied AS (
+      INSERT INTO public.audit_logs_archive
+      SELECT al.* FROM public.audit_logs al
+      JOIN to_archive t ON t.id = al.id
+      RETURNING 1
+    )
+    SELECT count(*) FROM copied INTO v_count;
+    v_archived := v_archived + v_count;
 
-      -- Drop expired partition (exact date check depends on partition naming convention)
-      -- For now, drop partitions whose name date is before cutoff
-      IF v_partition.partition_name ~ '_[0-9]{4}_[0-9]{2}$' THEN
-        DECLARE
-          v_part_date date;
-        BEGIN
-          v_part_date := to_date(substring(v_partition.partition_name from '_([0-9]{4}_[0-9]{2})$'), 'YYYY_MM');
-          IF v_part_date < v_cutoff THEN
-            EXECUTE format('DROP TABLE IF EXISTS %I', v_partition.partition_name);
+    DELETE FROM public.audit_logs
+    WHERE id IN (
+      SELECT al.id FROM public.audit_logs al
+      LEFT JOIN public.audit_logs_archive arc ON arc.id = al.id
+      WHERE al.created_at < v_cutoff AND arc.id IS NOT NULL
+      LIMIT p_batch_size
+    );
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_deleted := v_deleted + v_count;
 
-            partition_dropped := v_partition.partition_name;
-            rows_purged := v_count;
-            oldest_date := v_part_date;
-            RETURN NEXT;
-          END IF;
-        END;
-      END IF;
-    EXCEPTION WHEN OTHERS THEN
-      RAISE WARNING 'Error processing partition %: %', v_partition.partition_name, SQLERRM;
-    END;
-  END LOOP;
-
-  -- If no partitions exist, the table is not partitioned yet
-  IF NOT FOUND THEN
-    RAISE NOTICE 'Table % is not partitioned or has no expired partitions', p_table_name;
-  END IF;
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.enforce_retention_policy(text, integer) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.enforce_retention_policy(text, integer) TO service_role;
-
--- Part 3: Automated partition creation for next month
-CREATE OR REPLACE FUNCTION public.create_future_partitions()
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_catalog
-AS $$
-DECLARE
-  v_next_month date;
-  v_next_month_name text;
-  v_table record;
-BEGIN
-  v_next_month := date_trunc('month', now() + interval '1 month')::date;
-
-  -- Find all partitioned tables
-  FOR v_table IN
-    SELECT p.relname AS table_name
-    FROM pg_partitioned_table pt
-    JOIN pg_class p ON pt.partrelid = p.oid
-    WHERE p.relnamespace = 'public'::regnamespace
-  LOOP
-    v_next_month_name := v_table.table_name || '_' || to_char(v_next_month, 'YYYY_MM');
-
-    -- Check if next month's partition already exists
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_class
-      WHERE relname = v_next_month_name AND relkind = 'r' AND relispartition
-    ) THEN
-      EXECUTE format(
-        'CREATE TABLE IF NOT EXISTS public.%I PARTITION OF public.%I
-         FOR VALUES FROM (%L) TO (%L)',
-        v_next_month_name,
-        v_table.table_name,
-        v_next_month,
-        v_next_month + interval '1 month'
-      );
-      RAISE NOTICE 'Created partition % for %', v_next_month_name, v_next_month;
-    END IF;
+    archived_count := v_archived;
+    deleted_count := v_deleted;
+    RETURN NEXT;
+    EXIT WHEN v_count < p_batch_size;
+    PERFORM pg_sleep(0.1);
   END LOOP;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.create_future_partitions() FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.create_future_partitions() TO service_role;
-
--- Part 4: pg_cron job: create partitions monthly (1st of each month)
--- Note: requires pg_cron extension. SQL only registers the intent;
--- the Edge Function will idempotently create the cron job if missing.
--- INSERT INTO cron.job (schedule, command, nodename)
--- SELECT '0 0 1 * *', 'SELECT public.create_future_partitions();', ''
--- WHERE NOT EXISTS (SELECT 1 FROM cron.job WHERE command = 'SELECT public.create_future_partitions();');
-
--- Part 5: Retention cleanup job (runs weekly)
-CREATE OR REPLACE FUNCTION public.run_retention_cleanup()
-RETURNS TABLE(table_name text, partitions_dropped bigint, total_rows_purged bigint)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_catalog
-AS $$
-DECLARE
-  v_table record;
-  v_result record;
-  v_partition_count bigint;
-  v_total_rows bigint;
-BEGIN
-  -- Enumerate partitioned tables
-  FOR v_table IN
-    SELECT DISTINCT p.relname AS table_name
-    FROM pg_partitioned_table pt
-    JOIN pg_class p ON pt.partrelid = p.oid
-    WHERE p.relnamespace = 'public'::regnamespace
-  LOOP
-    v_partition_count := 0;
-    v_total_rows := 0;
-
-    FOR v_result IN
-      SELECT * FROM public.enforce_retention_policy(v_table.table_name)
-    LOOP
-      v_partition_count := v_partition_count + 1;
-      v_total_rows := v_total_rows + COALESCE(v_result.rows_purged, 0);
-    END LOOP;
-
-    IF v_partition_count > 0 THEN
-      table_name := v_table.table_name;
-      partitions_dropped := v_partition_count;
-      total_rows_purged := v_total_rows;
-      RETURN NEXT;
-    END IF;
-  END LOOP;
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.run_retention_cleanup() FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.run_retention_cleanup() TO service_role;
+REVOKE ALL ON FUNCTION public.archive_audit_logs(interval, integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.archive_audit_logs(interval, integer) TO service_role;

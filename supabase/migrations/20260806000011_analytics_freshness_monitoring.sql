@@ -1,6 +1,7 @@
 -- Migration: Analytics freshness monitoring (P2-4)
--- Audit remediation 2026-08-06: Adds freshness tracking to dashboards and
--- automated stale-data detection for analytics consumers.
+-- Audit remediation 2026-08-07 -- REBUILT against real schema.
+-- Fix: a STORED generated column cannot call now() (volatile). is_stale is a
+-- plain boolean computed at insert time and recomputed live in the view.
 
 -- Table: Track freshness of analytical data sources
 CREATE TABLE IF NOT EXISTS public.analytics_freshness_log (
@@ -13,10 +14,7 @@ CREATE TABLE IF NOT EXISTS public.analytics_freshness_log (
   latest_source_watermark timestamptz,   -- Latest data point included in source
   row_count bigint,
   freshness_slo interval DEFAULT '24 hours',
-  is_stale boolean GENERATED ALWAYS AS (
-    last_refreshed_at IS NULL OR
-    last_refreshed_at < now() - freshness_slo
-  ) STORED,
+  is_stale boolean DEFAULT false,        -- computed at insert time
   checked_at timestamptz DEFAULT now(),
   notes text
 );
@@ -53,10 +51,12 @@ AS $$
 BEGIN
   INSERT INTO public.analytics_freshness_log (
     source_name, source_type, last_refreshed_at,
-    row_count, freshness_slo, checked_at
+    row_count, freshness_slo, is_stale, checked_at
   ) VALUES (
     p_source_name, p_source_type, p_last_refreshed,
-    p_row_count, p_freshness_slo, now()
+    p_row_count, p_freshness_slo,
+    (p_last_refreshed IS NULL OR p_last_refreshed < now() - p_freshness_slo),
+    now()
   );
 END;
 $$;
@@ -64,7 +64,9 @@ $$;
 REVOKE ALL ON FUNCTION public.record_analytics_freshness(text, text, timestamptz, bigint, interval) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.record_analytics_freshness(text, text, timestamptz, bigint, interval) TO service_role;
 
--- View: Current freshness status for all tracked sources
+-- View: Current freshness status for all tracked sources.
+-- is_stale is computed live (now() based) so a source that ages past its SLO
+-- after insertion is still flagged correctly.
 CREATE OR REPLACE VIEW public.v_analytics_freshness_status AS
 SELECT DISTINCT ON (source_name)
   source_name,
@@ -72,11 +74,12 @@ SELECT DISTINCT ON (source_name)
   last_refreshed_at,
   row_count,
   freshness_slo,
-  is_stale,
+  (last_refreshed_at IS NULL OR last_refreshed_at < now() - freshness_slo) AS is_stale,
   checked_at,
   CASE
-    WHEN is_stale AND checked_at > now() - interval '1 hour' THEN 'STALE'
-    WHEN is_stale THEN 'STALE_UNCONFIRMED'
+    WHEN (last_refreshed_at IS NULL OR last_refreshed_at < now() - freshness_slo)
+         AND checked_at > now() - interval '1 hour' THEN 'STALE'
+    WHEN (last_refreshed_at IS NULL OR last_refreshed_at < now() - freshness_slo) THEN 'STALE_UNCONFIRMED'
     WHEN last_refreshed_at IS NULL THEN 'UNKNOWN'
     ELSE 'FRESH'
   END AS freshness_status

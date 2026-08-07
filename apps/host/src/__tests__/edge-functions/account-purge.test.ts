@@ -242,8 +242,11 @@ describe('account-purge — students/teachers/guardians PII columns nulled', () 
     const src = readFileSync(FN_PATH, 'utf8');
     // Pin: the students-row mutation in deleteStudentPii must be .update(),
     // never .delete(). (Hard-delete would orphan the anon payment FKs.)
-    expect(src).toMatch(/deleteStudentPii[\s\S]{0,3000}from\(['"]students['"]\)\s*\.update\(/);
-    expect(src).not.toMatch(/deleteStudentPii[\s\S]{0,3000}from\(['"]students['"]\)\s*\.delete\(/);
+    // Window is 8000 chars because deleteStudentPii now enumerates the full
+    // tenant-scoped cascade (audit_logs..student_subscriptions) before the
+    // students-row update (audit 2026-08-07).
+    expect(src).toMatch(/deleteStudentPii[\s\S]{0,8000}from\(['"]students['"]\)\s*\.update\(/);
+    expect(src).not.toMatch(/deleteStudentPii[\s\S]{0,8000}from\(['"]students['"]\)\s*\.delete\(/);
   });
 
   it('teachers: handles teachers.email NOT NULL (sets to invalid sentinel, not null)', () => {

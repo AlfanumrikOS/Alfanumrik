@@ -3,6 +3,9 @@
 -- drift detection for credential rotation.
 
 -- Table: Secret and key inventory
+-- Fix: generated columns cannot call now() (volatile). next_rotation_due stays
+-- a generated column (interval+timestamptz is immutable); is_expired is removed
+-- and computed live in the function/view instead.
 CREATE TABLE IF NOT EXISTS public.secret_inventory (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   secret_name text NOT NULL UNIQUE,      -- e.g., 'SUPABASE_SERVICE_ROLE_KEY', 'ANTHROPIC_API_KEY'
@@ -18,9 +21,6 @@ CREATE TABLE IF NOT EXISTS public.secret_inventory (
   rotation_interval interval DEFAULT '90 days',
   next_rotation_due timestamptz GENERATED ALWAYS AS (
     COALESCE(last_rotated_at, created_at_estimate) + rotation_interval
-  ) STORED,
-  is_expired boolean GENERATED ALWAYS AS (
-    COALESCE(last_rotated_at, created_at_estimate) + rotation_interval < now()
   ) STORED,
   rotation_status text DEFAULT 'on_track' CHECK (rotation_status IN (
     'on_track', 'due_soon', 'overdue', 'emergency_rotation_needed'
@@ -79,7 +79,9 @@ ON CONFLICT (secret_name) DO UPDATE SET
   rotation_interval = EXCLUDED.rotation_interval,
   notes = EXCLUDED.notes;
 
--- Function: Detect secrets due for rotation
+-- Function: Detect secrets due for rotation.
+-- is_expired is computed live (next_rotation_due < now()); the generated column
+-- was removed because generated columns cannot call now().
 CREATE OR REPLACE FUNCTION public.get_secrets_due_for_rotation()
 RETURNS TABLE(
   secret_name text,
@@ -96,8 +98,8 @@ AS $$
   SELECT
     secret_name,
     provider,
-    CASE WHEN is_expired
-      THEN EXTRACT(DAY FROM (now() - next_rotation_due))::integer
+    CASE WHEN next_rotation_due < now()
+      THEN GREATEST(0, EXTRACT(DAY FROM (now() - next_rotation_due))::integer)
       ELSE 0
     END AS days_overdue,
     rotation_status,
@@ -105,18 +107,18 @@ AS $$
     array_length(consumers, 1) AS consumer_count
   FROM public.secret_inventory
   WHERE environment = 'production'
-    AND is_expired = true
+    AND next_rotation_due < now()
   ORDER BY days_overdue DESC;
 $$;
 
 REVOKE ALL ON FUNCTION public.get_secrets_due_for_rotation() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_secrets_due_for_rotation() TO service_role;
 
--- View: Secret health summary
+-- View: Secret health summary (is_expired computed live)
 CREATE OR REPLACE VIEW public.v_secret_rotation_health AS
 SELECT
   (SELECT count(*) FROM public.secret_inventory WHERE environment = 'production') AS total_secrets,
-  (SELECT count(*) FROM public.secret_inventory WHERE is_expired = true AND environment = 'production') AS expired_secrets,
+  (SELECT count(*) FROM public.secret_inventory WHERE next_rotation_due < now() AND environment = 'production') AS expired_secrets,
   (SELECT count(*) FROM public.secret_inventory WHERE rotation_status = 'overdue' AND environment = 'production') AS overdue_secrets,
-  (SELECT secret_name FROM public.secret_inventory WHERE is_expired = true ORDER BY next_rotation_due ASC LIMIT 1) AS most_overdue_secret,
+  (SELECT secret_name FROM public.secret_inventory WHERE next_rotation_due < now() ORDER BY next_rotation_due ASC LIMIT 1) AS most_overdue_secret,
   (SELECT MIN(next_rotation_due) FROM public.secret_inventory WHERE environment = 'production') AS next_rotation_due;

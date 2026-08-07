@@ -142,64 +142,67 @@ async function anonymisePaymentFks(
 async function deleteStudentPii(
   sb: SB,
   studentId: string,
+  authUserId: string | null,
 ): Promise<{ deleted: Record<string, number>; nulled: boolean }> {
-  // ── P0-4/P0-5 remediation (audit 2026-08-06) ──
-  // Expanded table coverage to match the data-erasure-purger pipeline.
-  // Tables grouped by deletion order: FK-referenced children first, then
-  // directly-referenced tables, then the student row itself (nulled, not deleted).
-  // Tables covered that were previously MISSING:
-  //   audit_logs, notifications, quiz_attempts, score_history,
-  //   student_learning_profiles, student_subscriptions (hard-delete),
-  //   class_students, parental_consent, guardian_student_links,
-  //   concept_mastery, learner_twin_snapshots, learner_twin_memory,
-  //   knowledge_gaps, cme_error_log, student_skill_state,
-  //   monthly_synthesis_runs, foxy_quality_scores, grounded_ai_traces,
-  //   learning_events, adaptive_interventions, intervention_alerts,
-  //   foxy_served_items, student_misconceptions, student_concept_state,
-  //   chapter_progress
+  // ── P0-4/P0-5 remediation (audit 2026-08-07, rebuilt) ──
+  // Expanded table coverage matching the data-erasure-purger pipeline.
+  // CRITICAL: FK column names differ per table — verified against the real
+  // schema (baseline + active migrations):
+  //   audit_logs.auth_user_id, notifications.recipient_id (NOT student_id)
+  //   intervention_alerts.student_id references auth.users(id) — use auth_user_id
+  //   quiz_attempts does NOT exist — omitted (pre-existing bug in parent pipeline)
+  // All other tables key on student_id (students.id).
 
   const deleted: Record<string, number> = {}
 
-  // Phase 1: FK-dependent tables (children of students, quiz_sessions, etc.)
-  const PHASE1_TABLES = [
-    'audit_logs',           // auth_user_id FK (student's auth_user_id)
-    'notifications',        // recipient_id
-    'quiz_responses',       // student_id FK
-    'quiz_attempts',        // student_id FK
-    'chat_sessions',        // student_id FK
-    'foxy_chat_messages',   // student_id FK
-    'foxy_sessions',        // student_id FK
-    'foxy_scan_queries',    // student_id FK
-    'foxy_served_items',    // student_id FK (previously missing)
-    'foxy_quality_scores',  // student_id FK (previously missing)
-    'image_uploads',        // student_id FK
-    'score_history',        // student_id FK (previously missing)
-    'quiz_sessions',        // deleted after quiz_responses/quiz_attempts
-    'student_learning_profiles', // student_id FK (previously missing)
-    'student_misconceptions',   // student_id FK (previously missing)
-    'student_concept_state',    // student_id FK (previously missing)
-    'chapter_progress',     // student_id FK (previously missing)
-    'concept_mastery',      // student_id FK (previously missing)
-    'knowledge_gaps',       // student_id FK (previously missing)
-    'cme_error_log',        // student_id FK (previously missing)
-    'student_skill_state',  // student_id FK (previously missing)
-    'monthly_synthesis_runs', // student_id FK (previously missing)
-    'learning_events',      // student_id FK (previously missing)
-    'adaptive_interventions', // student_id FK (previously missing)
-    'intervention_alerts',  // student_id FK (previously missing)
-    'learner_twin_snapshots', // student_id FK (previously missing)
-    'learner_twin_memory',  // student_id FK (previously missing)
-    'grounded_ai_traces',   // student_id FK (previously missing)
-  ] as const
+  // Entries: [table, column, value]
+  const DELETE_TARGETS: ReadonlyArray<[string, string, string]> = [
+    ['audit_logs', 'auth_user_id', authUserId ?? ''],
+    ['notifications', 'recipient_id', authUserId ?? ''],
+    ['quiz_responses', 'student_id', studentId],
+    ['chat_sessions', 'student_id', studentId],
+    ['foxy_chat_messages', 'student_id', studentId],
+    ['foxy_sessions', 'student_id', studentId],
+    ['foxy_scan_queries', 'student_id', studentId],
+    ['foxy_served_items', 'student_id', studentId],
+    ['foxy_quality_scores', 'student_id', studentId],
+    ['image_uploads', 'student_id', studentId],
+    ['score_history', 'student_id', studentId],
+    ['quiz_sessions', 'student_id', studentId],
+    ['student_learning_profiles', 'student_id', studentId],
+    ['student_misconceptions', 'student_id', studentId],
+    ['student_concept_state', 'student_id', studentId],
+    ['chapter_progress', 'student_id', studentId],
+    ['concept_mastery', 'student_id', studentId],
+    ['knowledge_gaps', 'student_id', studentId],
+    ['cme_error_log', 'student_id', studentId],
+    ['student_skill_state', 'student_id', studentId],
+    ['monthly_synthesis_runs', 'student_id', studentId],
+    ['learning_events', 'student_id', studentId],
+    ['adaptive_interventions', 'student_id', studentId],
+    ['intervention_alerts', 'auth_user_id', authUserId ?? ''], // references auth.users(id)
+    ['learner_twin_snapshots', 'student_id', studentId],
+    ['learner_twin_memory', 'student_id', studentId],
+    ['grounded_ai_traces', 'student_id', studentId],
+    ['class_students', 'student_id', studentId],
+    ['guardian_student_links', 'student_id', studentId],
+    ['parental_consent', 'student_id', studentId],
+    ['student_subscriptions', 'student_id', studentId],
+  ]
 
-  for (const table of PHASE1_TABLES) {
+  // We keep the student row (null PII) but hard-delete all tenant-scoped data.
+  for (const [table, column, value] of DELETE_TARGETS) {
+    if (!value) {
+      deleted[table] = -1
+      continue
+    }
     try {
       const { count, error } = await sb
         .from(table)
         .delete({ count: 'exact' })
-        .eq('student_id', studentId)
+        .eq(column, value)
       if (error) {
-        // Some tables may not have student_id FK; skip with warning
+        // Table may not exist in this environment; record and continue.
         console.warn(`account-purge: delete ${table} skipped: ${error.message}`)
         deleted[table] = -1
       } else {
@@ -211,41 +214,18 @@ async function deleteStudentPii(
     }
   }
 
-  // Phase 2: Relationship tables (class membership, guardians, consent)
-  const PHASE2_TABLES = [
-    'class_students',        // (previously missing)
-    'guardian_student_links', // (previously missing)
-    'parental_consent',      // (previously missing)
-    'student_subscriptions', // hard-delete (previously only anonymised; now deleted too)
-  ] as const
-
-  for (const table of PHASE2_TABLES) {
-    try {
-      const { count, error } = await sb
-        .from(table)
-        .delete({ count: 'exact' })
-        .eq('student_id', studentId)
-      if (error) {
-        console.warn(`account-purge: delete ${table} skipped: ${error.message}`)
-        deleted[table] = -1
-      } else {
-        deleted[table] = count ?? 0
-      }
-    } catch (e) {
-      console.warn(`account-purge: delete ${table} error: ${e}`)
-      deleted[table] = -1
-    }
-  }
-
-  // Phase 3: Write audit entry BEFORE nulling the student row
-  // P0-5: account-purge now writes audit_logs for every row deletion
+  // P0-5: account-purge writes an audit entry BEFORE nulling the student row.
+  // audit_logs real columns: auth_user_id, action, resource_type, resource_id,
+  // details, status, created_at (baseline:9952). auth_user_id is null here
+  // because we just deleted the actor's audit rows.
   try {
     await sb.from('audit_logs').insert({
+      auth_user_id: null,
       action: 'account_purge_executed',
       resource_type: 'student',
       resource_id: studentId,
       details: {
-        tables_deleted: PHASE1_TABLES.concat(PHASE2_TABLES),
+        tables_deleted: DELETE_TARGETS.map(([t]) => t),
         row_counts: deleted,
         purged_at: new Date().toISOString(),
       },
@@ -255,7 +235,7 @@ async function deleteStudentPii(
     console.error('account-purge: audit_logs write failed:', auditErr)
   }
 
-  // Phase 4: Null PII columns on the students row but KEEP the row
+  // Null PII columns on the students row but KEEP the row.
   const { error: uErr } = await sb
     .from('students')
     .update({
@@ -366,13 +346,13 @@ async function deleteAuthUserForAccount(
   sb: SB,
   role: AccountRole,
   accountId: string,
-): Promise<boolean> {
+): Promise<string | null> {
   // Find the auth.users.id by reading auth_user_id from the role table BEFORE
-  // we nulled it (this is called early in the orchestration) — but we may also
+  // we null it (this is called early in the orchestration) — but we may also
   // be called in re-run scenarios where it was already nulled. So we check the
   // account_deletion_log.auth_user_id (captured at request time) as a fallback.
-  // Here we simply attempt the delete using the auth_user_id we've fetched
-  // upstream. Returns false if no auth user found.
+  // Returns the auth_user_id (null if already gone) so the caller can purge
+  // auth-user-keyed tables (audit_logs, notifications) correctly.
   const table = role === 'student' ? 'students' : role === 'teacher' ? 'teachers' : 'guardians'
   const { data: row, error } = await sb
     .from(table)
@@ -381,17 +361,17 @@ async function deleteAuthUserForAccount(
     .maybeSingle()
   if (error) throw new Error(`fetch auth_user_id: ${error.message}`)
   const authUserId = (row as { auth_user_id: string | null } | null)?.auth_user_id
-  if (!authUserId) return false
+  if (!authUserId) return null
 
   const { error: aErr } = await sb.auth.admin.deleteUser(authUserId)
   if (aErr) {
     // 404 / not-found is benign in idempotent re-runs — auth row was already
     // cascaded. Anything else is a hard failure.
     const msg = aErr.message ?? String(aErr)
-    if (/not.?found|user_not_found|404/i.test(msg)) return false
+    if (/not.?found|user_not_found|404/i.test(msg)) return null
     throw new Error(`auth.admin.deleteUser: ${msg}`)
   }
-  return true
+  return authUserId
 }
 
 // ─── Orchestrator ────────────────────────────────────────────────────────────
@@ -412,8 +392,8 @@ async function runPurge(sb: SB, body: PurgeBody): Promise<PurgedCategories> {
 
   // Step A — delete auth user FIRST while we can still read auth_user_id from
   // the role row. After step B/C the role row's auth_user_id is nulled.
-  // (deleteAuthUserForAccount is itself tolerant of already-deleted users.)
-  const authUserDeleted = await deleteAuthUserForAccount(sb, body.account_role, body.account_id)
+  // Returns the auth_user_id (or null) for purging auth-user-keyed tables.
+  const authUserId = await deleteAuthUserForAccount(sb, body.account_role, body.account_id)
 
   // Step B — anonymise payment FKs (student-only; teachers/guardians don't
   // own subscriptions in our model).
@@ -423,7 +403,7 @@ async function runPurge(sb: SB, body: PurgeBody): Promise<PurgedCategories> {
 
   // Step C — delete PII rows + null PII columns on role row.
   if (body.account_role === 'student') {
-    const r = await deleteStudentPii(sb, body.account_id)
+    const r = await deleteStudentPii(sb, body.account_id, authUserId)
     piiRowsDeleted = r.deleted
     piiColumnsNulled = r.nulled
   } else if (body.account_role === 'teacher') {
@@ -440,7 +420,7 @@ async function runPurge(sb: SB, body: PurgeBody): Promise<PurgedCategories> {
     payment_fk_anonymised: paymentFkAnonymised,
     pii_rows_deleted: piiRowsDeleted,
     pii_columns_nulled: piiColumnsNulled,
-    auth_user_deleted: authUserDeleted,
+    auth_user_deleted: authUserId !== null,
     synthetic_anon_id: syntheticId,
   }
 }

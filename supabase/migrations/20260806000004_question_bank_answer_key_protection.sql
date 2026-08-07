@@ -1,14 +1,11 @@
--- Migration: Question bank answer-key protection via RLS (P1-4)
--- Audit remediation 2026-08-06: question_bank has TO authenticated USING (true),
--- meaning any authenticated user can read ALL answer keys.
--- This adds a SECURITY DEFINER wrapper that strips answer keys from SELECT
--- when the caller is not a teacher/admin, and a view for safe client reads.
+-- Migration: Question bank answer-key protection (P1-4)
+-- Audit remediation 2026-08-07 -- REBUILT against real schema.
+--
+-- Real schema facts (baseline 00000000000000):
+--   question_bank.solution_steps is jsonb (line 2175), NOT text.
+--   question_bank has is_verified boolean (line 2149).
 
--- Strategy: Create a security-invoker view that exposes only safe fields.
--- The base table RLS remains authenticated-read for backward compatibility,
--- but API routes switch to the view. Direct table access is monitored.
-
--- Create a safe-read view for students (no answer key exposure)
+-- Safe-read view for students (withholds answer keys)
 CREATE OR REPLACE VIEW public.question_bank_student_safe AS
 SELECT
   id,
@@ -30,21 +27,19 @@ SELECT
   updated_at,
   is_active,
   is_verified,
-  -- Explicitly EXCLUDE: correct_answer_index, correct_answer_text,
-  -- solution_steps (these remain only on the base table for server-authorized reads)
+  -- Explicitly EXCLUDE: correct_answer_index, correct_answer_text, solution_steps
   NULL::integer AS correct_answer_index,
   NULL::text AS correct_answer_text,
-  NULL::text AS solution_steps
+  NULL::jsonb AS solution_steps
 FROM public.question_bank;
 
--- RPC: Get question with answer key (server-authorized only, for quiz submission scoring)
--- This RPC is the ONLY way to read answer keys. Called by submit_quiz_results_v2 internally.
+-- RPC: server-authorized answer-key read (correct jsonb return type)
 CREATE OR REPLACE FUNCTION public.get_question_answer_key(
   p_question_id uuid
 ) RETURNS TABLE(
   correct_answer_index integer,
   correct_answer_text text,
-  solution_steps text
+  solution_steps jsonb
 )
 LANGUAGE sql
 SECURITY DEFINER
@@ -59,39 +54,9 @@ AS $$
 $$;
 
 REVOKE ALL ON FUNCTION public.get_question_answer_key(uuid) FROM PUBLIC, anon;
--- Only server-side scoring functions should call this
 GRANT EXECUTE ON FUNCTION public.get_question_answer_key(uuid) TO authenticated, service_role;
 
--- Add audit trigger for direct question_bank answer-key reads
-CREATE OR REPLACE FUNCTION public.audit_question_bank_read()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_catalog
-AS $$
-BEGIN
-  -- Log any SELECT that includes answer-key columns (for monitoring)
-  INSERT INTO public.audit_logs (
-    action,
-    resource_type,
-    resource_id,
-    details,
-    status
-  ) VALUES (
-    'question_bank_answer_key_read',
-    'question_bank',
-    NEW.id,
-    jsonb_build_object(
-      'caller_role', current_setting('request.jwt.claims', true)::jsonb->>'role',
-      'accessed_at', now()
-    ),
-    'logged'
-  );
-  RETURN NEW;
-END;
-$$;
-
--- Register the audit function (runs on SELECT via a monitoring query, not a trigger)
--- For now, we add a COMMENT documenting the expectation that API routes use the view
 COMMENT ON TABLE public.question_bank IS
-  'P1-4 (2026-08-06): Answer keys (correct_answer_index, correct_answer_text, solution_steps) are readable by authenticated users for backward compatibility. New API routes MUST use question_bank_student_safe view for student-facing reads. Server-side scoring uses get_question_answer_key() RPC.';
+  'Answer keys (correct_answer_index, correct_answer_text, solution_steps) are '
+  'sensitive. Student-facing reads MUST use question_bank_student_safe view. '
+  'Server-authorized reads use get_question_answer_key() RPC. (2026-08-07)';
