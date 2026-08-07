@@ -1169,7 +1169,7 @@ jobs:
 
       - name: Cache node_modules
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -1534,7 +1534,7 @@ jobs:
 
       - name: Cache node_modules
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -1627,7 +1627,7 @@ jobs:
 
       - name: Cache node_modules
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -2379,7 +2379,7 @@ jobs:
 
       - name: Cache node_modules
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -2440,7 +2440,7 @@ jobs:
 
       - name: Cache node_modules
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -2458,7 +2458,7 @@ jobs:
       # support {ts,tsx} brace expansion (patterns use @actions/glob), so the
       # ts/tsx globs are listed separately.
       - name: Cache Next.js build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/host/.next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/host/src/**/*.ts', 'apps/host/src/**/*.tsx', 'packages/**/*.ts', 'packages/**/*.tsx') }}
@@ -2730,7 +2730,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
