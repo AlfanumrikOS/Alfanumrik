@@ -220,21 +220,13 @@ test.describe('REG-45 Quiz Happy Path', () => {
     }
   });
 
-  // ── Test 5b: OPEN DEFECT — rejection renders a fabricated 0% scorecard ───
+  // ── Test 5b: rejection must not render a fabricated 0% scorecard ──────────
+  // P0-1/P0-2 remediation (2026-08-06): the client-side fallback that
+  // fabricated a 0% scorecard from is_correct=false responses was removed
+  // entirely — the submit path is v2-ONLY, so the recovery/retry UI surfaces
+  // and no score is rendered. Formerly a test.fail() known-defect gate (found
+  // 2026-07-28); the defect is closed, so this now asserts the fix positively.
   test('quiz: submit RPC rejection must not render a fabricated score (P1)', async ({ page }) => {
-    test.fail(
-      true,
-      'KNOWN DEFECT (found 2026-07-28 by reviving this gate; owner: assessment + frontend). ' +
-        'Under the canonical server-shuffle (v2) path the client sets is_correct=false on EVERY ' +
-        'response because it does not know the correct index. When both submit_quiz_results_v2 and ' +
-        'submit_quiz_results fail, submitQuizResults() falls through to its client-side fallback, ' +
-        'which computes correct = responses.filter(r => r.is_correct).length = 0 and renders a full ' +
-        '"Quiz Results" screen at 0% / Grade F with no error and no retry affordance. That fabricated ' +
-        'score violates P1 (score_percent must equal round(correct/total*100) over the REAL answers). ' +
-        'The fallback scoring is only sound on the legacy serverSessionId === null path. ' +
-        'Fix = gate the fallback on serverSessionId === null and surface the existing retrySubmit() ' +
-        'state otherwise; then delete this test.fail() line.',
-    );
     await installQuizBackend(page, REJECTED_SUBMIT);
     await mockStudentSession(page, { anyProjectRef: true });
 

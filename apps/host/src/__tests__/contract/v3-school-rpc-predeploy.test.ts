@@ -276,8 +276,15 @@ describe('One Experience V3 selected-school RPC predeploy migration', () => {
       expect(selectedSchoolIntegrationJob).toContain(assertion);
     }
 
-    expect(ciGateJob).toContain('- selected-school-rpc-integration');
-    expect(ciGateJob).toContain("'selected-school-rpc-integration'");
+    // Post-2026-08-07 perf contract (409123b5): the selected-school
+    // integration job skips on PRs and is NOT a ci-gate need anymore — the
+    // repository ruleset enforces it directly, so ci-gate's needs list only
+    // carries the 7 always-run jobs. Pin the new shape so a future edit cannot
+    // silently un-gate the migration integration on push.
+    expect(selectedSchoolIntegrationJob).toContain(
+      "if: ${{ github.event_name != 'pull_request' }}",
+    );
+    expect(ciGateJob).not.toContain('- selected-school-rpc-integration');
     expect(ciGateJob).not.toContain('migration-reproducibility');
   });
 });

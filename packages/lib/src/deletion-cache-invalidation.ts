@@ -1,7 +1,8 @@
 /**
  * Deletion cache invalidation module (P2-7).
- * Audit remediation 2026-08-06: Account deletion must propagate to Redis caches,
- * CDN edge, PostHog, and Sentry to prevent deleted data resurrection.
+ * Audit remediation 2026-08-07 — REBUILT to match real project patterns.
+ * Redis init mirrors apps/host/src/proxy.ts (new Redis({url,token})); session
+ * cache keys are `sess:valid:<sessionId>` (proxy.ts:312,367).
  */
 
 import { logger } from './logger';
@@ -22,18 +23,24 @@ export async function invalidateCachesOnDeletion(
 ): Promise<CacheInvalidationResult[]> {
   const results: CacheInvalidationResult[] = [];
 
-  // Redis/Upstash cache invalidation
+  // Redis/Upstash cache invalidation — same init as proxy.ts
   try {
-    // Dynamic import to prevent bundle inclusion in client code
     const { Redis } = await import('@upstash/redis');
-    const redis = Redis.fromEnv();
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-    if (redis) {
-      // Invalidate session cache key patterns
-      const keys = await redis.keys(`session:*:${accountId}*`);
+    if (url && token) {
+      const redis = new Redis({ url, token });
+
+      // Session-validation cache keys are sess:valid:<sessionId>. We cannot
+      // enumerate them by account id, so we clear the account's active-session
+      // records via Supabase (server) — handled by the caller — and purge the
+      // rate-limit buckets keyed on the account where the caller passed the id.
+      // Session keys will age out via their 300s TTL.
       const userKeys = await redis.keys(`user:*:${accountId}*`);
+      const rateKeys = await redis.keys(`rl:*:*${accountId}*`);
 
-      const allKeys = [...keys, ...userKeys];
+      const allKeys = [...userKeys, ...rateKeys];
       if (allKeys.length > 0) {
         await redis.del(...allKeys);
         logger.info('Redis cache invalidated for deleted account', {
@@ -85,22 +92,8 @@ export async function invalidateCachesOnDeletion(
     results.push({ cache: 'posthog', status: 'failed', error: (e as Error).message });
   }
 
-  // Sentry: set user to deleted state (if Sentry SDK available in server context)
-  try {
-    if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_SENTRY_DSN) {
-      // Sentry does not expose a deletion API from the SDK;
-      // data ages out per retention settings. We log for audit.
-      logger.info('Sentry data will age out per retention policy', {
-        accountId: accountId.slice(0, 8),
-        role: accountRole,
-      });
-      results.push({ cache: 'sentry', status: 'skipped' });
-    } else {
-      results.push({ cache: 'sentry', status: 'skipped' });
-    }
-  } catch (e) {
-    results.push({ cache: 'sentry', status: 'skipped' });
-  }
+  // Sentry: no deletion API from the SDK; data ages out per retention policy.
+  results.push({ cache: 'sentry', status: 'skipped' });
 
   return results;
 }

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { authorizeAdmin } from '@alfanumrik/lib/admin-auth';
 import { getBackupHealthView, runBackupHealthCheck } from '@alfanumrik/lib/data-platform';
 
 /**
  * GET /api/super-admin/governance/health
  * Returns current governance health status (backup, data quality, policies).
- * Requires super-admin authorization (handled by middleware).
+ * Requires super-admin authorization (handled here via authorizeAdmin).
  */
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request, 'support');
+  if (!auth.authorized) return auth.response;
+
   const results: Record<string, unknown> = {};
 
   try {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runDataQualityChecks, runBackupHealthCheck } from '@alfanumrik/lib/data-platform';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 
 /**
  * GET /api/cron/governance-health
@@ -8,8 +10,9 @@ import { runDataQualityChecks, runBackupHealthCheck } from '@alfanumrik/lib/data
  * Requires CRON_SECRET header.
  */
 export async function GET(request: NextRequest) {
-  const cronSecret = request.headers.get('x-cron-secret');
-  if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
+  const startedAt = Date.now();
+  // Fail-closed CRON_SECRET gate (house pattern) BEFORE any DB I/O.
+  if (!verifyCronAuth(request).ok) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -61,6 +64,16 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     results.unclassified_tables = { error: (e as Error).message };
   }
+
+  // Job-health heartbeat (house pattern): a successful run — including one
+  // that reports findings — writes the registered last-success metric.
+  await recordCronJobHealth({
+    path: '/api/cron/governance-health',
+    metric: 'ops.cron.governance_health.last_success_at',
+    source: 'cron/governance-health',
+    durationMs: Date.now() - startedAt,
+    context: { checked_at: results.checked_at as string },
+  });
 
   return NextResponse.json(results);
 }

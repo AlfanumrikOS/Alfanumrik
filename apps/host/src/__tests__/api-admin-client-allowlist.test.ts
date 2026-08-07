@@ -266,7 +266,11 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // (auth.uid()-resolved; a client-supplied ?student_id is ignored) after
 // authorizeRequest('leaderboard.view'). Ledger entry added in the same change;
 // ratchet-down path recorded in scripts/admin-client-allowlist.json.
-const EXPECTED_COUNT = 269;
+// P1 health consolidation (2026-08-06, commit eaa7e1ab): 269 -> 268.
+// src/app/api/health/route.ts is now a PURE liveness endpoint (no downstream
+// probes, no service-role reads); its ledger entry is pruned in the same change
+// so the guard ratchets DOWN, not drifts.
+const EXPECTED_COUNT = 268;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

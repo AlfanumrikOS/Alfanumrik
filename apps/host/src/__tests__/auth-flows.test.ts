@@ -98,66 +98,66 @@ describe('middleware.ts — must NOT exist (Next.js 16 uses proxy.ts exclusively
 
 describe('identity/constants.ts — roles', () => {
   it('VALID_ROLES contains student', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("'student'");
   });
 
   it('VALID_ROLES contains teacher', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("'teacher'");
   });
 
   it('VALID_ROLES contains parent', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("'parent'");
   });
 
   it('VALID_ROLES contains institution_admin', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("'institution_admin'");
   });
 });
 
 describe('identity/constants.ts — ROLE_DESTINATIONS', () => {
   it('maps student to /dashboard', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("student: '/dashboard'");
   });
 
   it('maps teacher to /teacher', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("teacher: '/teacher'");
   });
 
   it('maps parent to /parent', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("parent: '/parent'");
   });
 
   it('maps institution_admin to /school-admin', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("institution_admin: '/school-admin'");
   });
 });
 
 describe('identity/constants.ts — PUBLIC_ROUTES', () => {
   it('contains /login', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("'/login'");
   });
 
   it('contains /auth/callback', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("'/auth/callback'");
   });
 
   it('contains /auth/confirm', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("'/auth/confirm'");
   });
 
   it('contains /welcome', () => {
-    const content = readFile('packages/lib/src/identity/constants.ts');
+    const content = readFile('../../packages/lib/src/identity/constants.ts');
     expect(content).toContain("'/welcome'");
   });
 });
@@ -288,7 +288,7 @@ describe('CRITICAL AUTH PATH — protection comments on critical files', () => {
     AUTH_SCREEN,
     'src/app/auth/callback/route.ts',
     'src/app/auth/confirm/route.ts',
-    'packages/lib/src/identity/constants.ts',
+    '../../packages/lib/src/identity/constants.ts',
     'src/app/api/auth/session/route.ts',
   ];
 

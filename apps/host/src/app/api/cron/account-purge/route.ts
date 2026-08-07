@@ -40,6 +40,7 @@ import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
+import { invalidateCachesOnDeletion } from '@alfanumrik/lib/deletion-cache-invalidation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -55,6 +56,7 @@ interface PurgeRow {
   id: string;
   account_id: string;
   account_role: 'student' | 'teacher' | 'parent';
+  auth_user_id: string | null;
 }
 
 interface DispatchResult {
@@ -130,7 +132,7 @@ async function handle(req: NextRequest) {
 
   const { data: dueRows, error: queryError } = await supabaseAdmin
     .from('account_deletion_log')
-    .select('id, account_id, account_role')
+    .select('id, account_id, account_role, auth_user_id')
     .in('status', ['requested', 'cooling_off'])
     .lte('cooling_off_ends_at', new Date().toISOString())
     .order('cooling_off_ends_at', { ascending: true })
@@ -185,11 +187,43 @@ async function handle(req: NextRequest) {
     network_error: results.filter((r) => r.status === 'network_error').length,
   };
 
+  // P2-7: after a successful purge, propagate deletion to caches and third-party
+  // stores (Redis/Upstash, PostHog, Sentry). Best-effort; failures are logged
+  // but do not fail the cron (the authoritative purge already committed).
+  const cacheInvalidations: Array<{ account_id: string; cache: string; status: string; error?: string }> = [];
+  for (const row of rows) {
+    const res = results.find((r) => r.deletion_log_id === row.id);
+    if (res?.status === 'invoked') {
+      // Drop any live session rows so the Redis sess:valid cache (300s TTL)
+      // cannot resurrect a deleted user's session on the next request.
+      // user_active_sessions is keyed on auth_user_id (baseline: identity_integrity).
+      if (row.auth_user_id) {
+        const { error: sessErr } = await supabaseAdmin
+          .from('user_active_sessions')
+          .delete()
+          .eq('auth_user_id', row.auth_user_id)
+          .or(`is_active.eq.true`);
+        if (sessErr) {
+          logger.warn('cron/account-purge: user_active_sessions cleanup failed', {
+            account_id: row.account_id.slice(0, 8),
+            error: new Error(sessErr.message),
+          });
+        }
+      }
+
+      const invalidation = await invalidateCachesOnDeletion(row.account_id, row.account_role);
+      for (const r of invalidation) {
+        cacheInvalidations.push({ account_id: row.account_id, cache: r.cache, status: r.status, error: r.error });
+      }
+    }
+  }
+
   logger.info('cron/account-purge: complete', {
     route: '/api/cron/account-purge',
     duration_ms: Date.now() - startedAt,
     processed: rows.length,
     ...summary,
+    cache_invalidations: cacheInvalidations,
   });
 
   // 207-style outcome: if every row failed, surface 502 so Vercel's cron log
@@ -213,6 +247,7 @@ async function handle(req: NextRequest) {
         processed: rows.length,
         summary,
         results,
+        cache_invalidations: cacheInvalidations,
       },
     },
     { status: allFailed ? 502 : 200 },

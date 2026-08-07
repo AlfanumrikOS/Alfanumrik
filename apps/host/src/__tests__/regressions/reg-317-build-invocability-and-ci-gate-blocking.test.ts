@@ -433,10 +433,15 @@ describe('REG-317 (4) the three quality-job gates exist and are BLOCKING', () =>
   it('the continue-on-error detector is non-vacuous', () => {
     // META-PIN. Every "is blocking" assertion below is an absence check, and
     // an absence check passes for free if the parser cannot see the key at
-    // all. This step is deliberately advisory in ci.yml, so seeing `true` here
-    // proves the detector reads the key correctly.
-    const advisory = byName('Verify Supabase types are up to date');
-    expect(advisory).toBeDefined();
+    // all. The former advisory type-sync step ("Verify Supabase types are up to
+    // date") was commented out entirely on 2026-08-07 (see #1472), so we pin
+    // against the workflow's remaining deliberately-advisory step, which still
+    // carries `continue-on-error: true`. Seeing `true` here proves the detector
+    // reads the key correctly in the job it is called with.
+    const advisory = workflow.jobs?.['edge-function-tests']?.steps?.find(
+      (s) => s.name === 'Measure Deno type-check debt (advisory)'
+    );
+    expect(advisory, 'edge-function-tests advisory step missing').toBeDefined();
     expect(advisory!['continue-on-error']).toBe(true);
   });
 

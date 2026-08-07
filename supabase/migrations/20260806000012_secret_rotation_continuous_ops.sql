@@ -1,6 +1,10 @@
 -- Migration: Secret rotation drift + continuous operations setup (P2-8, P3-2)
--- Audit remediation 2026-08-06: Adds secret-expiry tracking and automated
--- drift detection for credential rotation.
+-- Audit remediation 2026-08-07 -- REBUILT against real schema.
+--
+-- Fix: generated columns must be immutable. `COALESCE(...) + interval_column`
+-- is rejected by Postgres as non-immutable (SQLSTATE 42P17) because the
+-- interval operand is a mutable column. next_rotation_due is therefore a plain
+-- column; the due/expired dates are computed live in the functions/views.
 
 -- Table: Secret and key inventory
 CREATE TABLE IF NOT EXISTS public.secret_inventory (
@@ -16,12 +20,6 @@ CREATE TABLE IF NOT EXISTS public.secret_inventory (
   created_at_estimate timestamptz,       -- When the secret was first provisioned
   last_rotated_at timestamptz,
   rotation_interval interval DEFAULT '90 days',
-  next_rotation_due timestamptz GENERATED ALWAYS AS (
-    COALESCE(last_rotated_at, created_at_estimate) + rotation_interval
-  ) STORED,
-  is_expired boolean GENERATED ALWAYS AS (
-    COALESCE(last_rotated_at, created_at_estimate) + rotation_interval < now()
-  ) STORED,
   rotation_status text DEFAULT 'on_track' CHECK (rotation_status IN (
     'on_track', 'due_soon', 'overdue', 'emergency_rotation_needed'
   )),
@@ -79,7 +77,10 @@ ON CONFLICT (secret_name) DO UPDATE SET
   rotation_interval = EXCLUDED.rotation_interval,
   notes = EXCLUDED.notes;
 
--- Function: Detect secrets due for rotation
+-- Function: Detect secrets due for rotation.
+-- next_rotation_due is computed live as
+-- (COALESCE(last_rotated_at, created_at_estimate) + rotation_interval) because
+-- generated columns with an interval column operand are non-immutable (42P17).
 CREATE OR REPLACE FUNCTION public.get_secrets_due_for_rotation()
 RETURNS TABLE(
   secret_name text,
@@ -96,8 +97,8 @@ AS $$
   SELECT
     secret_name,
     provider,
-    CASE WHEN is_expired
-      THEN EXTRACT(DAY FROM (now() - next_rotation_due))::integer
+    CASE WHEN (COALESCE(last_rotated_at, created_at_estimate) + rotation_interval) < now()
+      THEN GREATEST(0, EXTRACT(DAY FROM (now() - (COALESCE(last_rotated_at, created_at_estimate) + rotation_interval)))::integer)
       ELSE 0
     END AS days_overdue,
     rotation_status,
@@ -105,18 +106,18 @@ AS $$
     array_length(consumers, 1) AS consumer_count
   FROM public.secret_inventory
   WHERE environment = 'production'
-    AND is_expired = true
+    AND (COALESCE(last_rotated_at, created_at_estimate) + rotation_interval) < now()
   ORDER BY days_overdue DESC;
 $$;
 
 REVOKE ALL ON FUNCTION public.get_secrets_due_for_rotation() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_secrets_due_for_rotation() TO service_role;
 
--- View: Secret health summary
+-- View: Secret health summary (next_rotation_due computed live)
 CREATE OR REPLACE VIEW public.v_secret_rotation_health AS
 SELECT
   (SELECT count(*) FROM public.secret_inventory WHERE environment = 'production') AS total_secrets,
-  (SELECT count(*) FROM public.secret_inventory WHERE is_expired = true AND environment = 'production') AS expired_secrets,
+  (SELECT count(*) FROM public.secret_inventory WHERE (COALESCE(last_rotated_at, created_at_estimate) + rotation_interval) < now() AND environment = 'production') AS expired_secrets,
   (SELECT count(*) FROM public.secret_inventory WHERE rotation_status = 'overdue' AND environment = 'production') AS overdue_secrets,
-  (SELECT secret_name FROM public.secret_inventory WHERE is_expired = true ORDER BY next_rotation_due ASC LIMIT 1) AS most_overdue_secret,
-  (SELECT MIN(next_rotation_due) FROM public.secret_inventory WHERE environment = 'production') AS next_rotation_due;
+  (SELECT secret_name FROM public.secret_inventory WHERE (COALESCE(last_rotated_at, created_at_estimate) + rotation_interval) < now() ORDER BY (COALESCE(last_rotated_at, created_at_estimate) + rotation_interval) ASC LIMIT 1) AS most_overdue_secret,
+  (SELECT MIN(COALESCE(last_rotated_at, created_at_estimate) + rotation_interval) FROM public.secret_inventory WHERE environment = 'production') AS next_rotation_due;

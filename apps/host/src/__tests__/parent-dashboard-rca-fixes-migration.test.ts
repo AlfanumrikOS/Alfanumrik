@@ -107,7 +107,9 @@ describe('synthesis/parent-share RBAC gate (Task 1.5)', () => {
   it('calls authorizeRequest before any DB access, keeping the inline ownership check', () => {
     const route = readFileSync(routePath, 'utf8');
     expect(route).toContain("import { authorizeRequest } from '@alfanumrik/lib/rbac';");
-    expect(route).toContain("authorizeRequest(request, 'report.download_own')");
+    // eaa7e1ab (2026-08-06) upgraded the gate from report.download_own to
+    // child.view_progress — the closer match for "share own monthly synthesis".
+    expect(route).toContain("authorizeRequest(request, 'child.view_progress')");
 
     const rbacIdx = route.indexOf('authorizeRequest(request');
     const ownershipIdx = route.indexOf('row.students.auth_user_id !== userId');

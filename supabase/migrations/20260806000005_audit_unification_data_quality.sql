@@ -76,7 +76,9 @@ REVOKE ALL ON FUNCTION public.detect_vacuous_own_policies() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.detect_vacuous_own_policies() TO authenticated, service_role;
 
 -- Part 3: Automated data quality validation
--- Function checks critical integrity invariants and returns failures.
+-- Function checks critical integrity invariants against REAL tables and returns
+-- failures as rows. Fixed 2026-08-07: removed the invalid FOR..SELECT loop and
+-- the made-up table-name query; every check references a proven column.
 CREATE OR REPLACE FUNCTION public.run_data_quality_checks()
 RETURNS TABLE(
   check_name text,
@@ -91,58 +93,22 @@ SET statement_timeout = '30s'
 AS $$
 DECLARE
   v_count bigint;
-  v_student_count bigint;
-  v_orphaned_count bigint;
+  v_emitted boolean := false;
 BEGIN
-  -- Check 1: Null student_id on tenant-scoped tables
-  FOR check_name, result, detail, severity IN
-    SELECT
-      c.relname::text || '_null_student_id' AS check_name,
-      CASE WHEN count(*) = 0 THEN 'pass' ELSE 'fail' END AS result,
-      CASE WHEN count(*) > 0 THEN count(*)::text || ' rows with NULL student_id' ELSE 'All rows have student_id' END AS detail,
-      CASE WHEN count(*) > 0 THEN 'HIGH' ELSE 'INFO' END AS severity
-    FROM pg_class c
-    JOIN pg_namespace n ON c.relnamespace = n.oid
-    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'student_id'
-    WHERE n.nspname = 'public'
-      AND c.relkind = 'r'
-      AND c.relname IN (
-        'quiz_responses', 'quiz_sessions', 'concept_mastery',
-        'student_learning_profiles', 'foxy_chat_messages'
-      )
-      AND EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = c.relname AND column_name = 'student_id'
-          AND is_nullable = 'YES'
-      )
-  LOOP
-    -- Check for nulls only on nullable columns
-    EXECUTE format(
-      'SELECT count(*) FROM %I WHERE student_id IS NULL',
-      check_name -- will be 'tablename_null_student_id', extract table name
-    ) INTO v_count;
-
-    IF v_count > 0 THEN
-      RETURN NEXT;
-    END IF;
-  END LOOP;
-
-  -- Check 2: Orphaned quiz_responses (no matching quiz_session or student)
-  SELECT count(*) INTO v_orphaned_count
+  -- Check 1: Orphaned quiz_responses (no matching student) -- real columns
+  SELECT count(*) INTO v_count
   FROM public.quiz_responses qr
   WHERE NOT EXISTS (
     SELECT 1 FROM public.students s WHERE s.id = qr.student_id
   );
-  IF v_orphaned_count > 0 THEN
+  IF v_count > 0 THEN
     RETURN QUERY SELECT
-      'orphaned_quiz_responses'::text,
-      'fail'::text,
-      v_orphaned_count::text || ' quiz_responses with no matching student',
-      'HIGH'::text;
+      'orphaned_quiz_responses'::text, 'fail'::text,
+      v_count::text || ' quiz_responses with no matching student', 'HIGH'::text;
+    v_emitted := true;
   END IF;
 
-  -- Check 3: Duplicate student_learning_profiles per (student_id, subject)
-  -- (unique constraint should prevent this, but verify)
+  -- Check 2: Duplicate student_learning_profiles per (student_id, subject)
   SELECT count(*) INTO v_count FROM (
     SELECT student_id, subject, count(*)
     FROM public.student_learning_profiles
@@ -151,46 +117,74 @@ BEGIN
   ) dupes;
   IF v_count > 0 THEN
     RETURN QUERY SELECT
-      'duplicate_learning_profiles'::text,
-      'fail'::text,
-      v_count::text || ' duplicate (student_id, subject) pairs',
-      'CRITICAL'::text;
+      'duplicate_learning_profiles'::text, 'fail'::text,
+      v_count::text || ' duplicate (student_id, subject) pairs', 'CRITICAL'::text;
+    v_emitted := true;
   END IF;
 
-  -- Check 4: Streak consistency (student with streak > 0 but no recent activity)
+  -- Check 3: Orphaned quiz_sessions (no matching student) -- real columns
   SELECT count(*) INTO v_count
-  FROM public.students
-  WHERE streak_days > 0
-    AND last_active < now() - interval '48 hours';
+  FROM public.quiz_sessions qs
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.students s WHERE s.id = qs.student_id
+  );
   IF v_count > 0 THEN
     RETURN QUERY SELECT
-      'stale_streaks'::text,
-      'fail'::text,
-      v_count::text || ' students with active streak but no activity in 48h',
-      'MEDIUM'::text;
+      'orphaned_quiz_sessions'::text, 'fail'::text,
+      v_count::text || ' quiz_sessions with no matching student', 'HIGH'::text;
+    v_emitted := true;
   END IF;
 
-  -- Check 5: Payment history without student (should not happen after anonymisation)
+  -- Check 4: Quiz_completed state events with no matching session.
+  -- state_events has NO processing_status column; reconciliation is by
+  -- occurred_at against quiz_sessions.created_at (bounded window).
+  SELECT count(*) INTO v_count
+  FROM public.state_events se
+  WHERE se.kind = 'learner.quiz_completed'
+    AND se.occurred_at > now() - interval '30 days'
+    AND NOT EXISTS (
+      SELECT 1 FROM public.quiz_sessions qs
+      WHERE qs.created_at BETWEEN se.occurred_at - interval '1 min'
+                              AND se.occurred_at + interval '5 min'
+    );
+  IF v_count > 0 THEN
+    RETURN QUERY SELECT
+      'unmatched_quiz_completed_events'::text, 'fail'::text,
+      v_count::text || ' quiz_completed events with no session (30d)', 'HIGH'::text;
+    v_emitted := true;
+  END IF;
+
+  -- Check 5: Blank student names (students.name is NOT NULL; check empty)
+  SELECT count(*) INTO v_count
+  FROM public.students
+  WHERE btrim(name) = '';
+  IF v_count > 0 THEN
+    RETURN QUERY SELECT
+      'blank_student_name'::text, 'warn'::text,
+      v_count::text || ' students with blank name', 'MEDIUM'::text;
+    v_emitted := true;
+  END IF;
+
+  -- Check 6: Payment history rows that are NOT anonymised (real student id
+  -- still resolves) AND not deleted -- orphaned-but-not-anonymised is a red flag.
   SELECT count(*) INTO v_count
   FROM public.payment_history ph
   WHERE NOT EXISTS (
     SELECT 1 FROM public.students s WHERE s.id = ph.student_id
-  );
+  )
+  AND ph.student_id IS NOT NULL;
   IF v_count > 0 THEN
     RETURN QUERY SELECT
-      'orphaned_payment_history'::text,
-      'warn'::text,
-      v_count::text || ' payment_history rows with no matching student (may be anonymised)',
-      'LOW'::text;
+      'orphaned_payment_history'::text, 'warn'::text,
+      v_count::text || ' payment_history rows with no matching student (un-anonymised)', 'LOW'::text;
+    v_emitted := true;
   END IF;
 
-  -- If no checks returned, emit a pass row
-  IF NOT FOUND THEN
+  -- If nothing failed, emit a single pass row.
+  IF NOT v_emitted THEN
     RETURN QUERY SELECT
-      'all_checks'::text,
-      'pass'::text,
-      'All data quality checks passed'::text,
-      'INFO'::text;
+      'all_checks'::text, 'pass'::text,
+      'All data quality checks passed'::text, 'INFO'::text;
   END IF;
 END;
 $$;

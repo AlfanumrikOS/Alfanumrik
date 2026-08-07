@@ -201,13 +201,18 @@ describe('submitQuizResults — v2 dispatch contract', () => {
     }
   });
 
-  it('falls back to v1 submit_quiz_results when sessionId is null', async () => {
+  // P0-1/P0-2 remediation (audit 2026-08-06): v1 L2 fallback and L3
+  // client-side scoring were removed. submitQuizResults now uses the single
+  // canonical v2 RPC path — a null sessionId is forwarded to the v2 RPC as
+  // p_session_id (the server handles the legacy/mobile flow), and any v2
+  // error surfaces as a throw, never a silent v1 fallback.
+  it('calls submit_quiz_results_v2 even when sessionId is null (v1 fallback removed)', async () => {
     rpcMock.mockResolvedValueOnce({
       data: { total: 1, correct: 1, score_percent: 100, xp_earned: 80, session_id: 'qs-1', flagged: false },
       error: null,
     });
 
-    await submitQuizResults(
+    const res = await submitQuizResults(
       'student-1',
       'mathematics',
       '9',
@@ -215,36 +220,33 @@ describe('submitQuizResults — v2 dispatch contract', () => {
       1,
       [{ question_id: 'q-1', selected_option: 0, is_correct: true, time_spent: 5, shuffle_map: null }],
       30,
-      null, // legacy path
+      null, // legacy path — now forwarded to the v2 RPC as p_session_id=null
     );
 
     expect(rpcMock).toHaveBeenCalledTimes(1);
-    expect(rpcMock.mock.calls[0][0]).toBe('submit_quiz_results');
+    expect(rpcMock.mock.calls[0][0]).toBe('submit_quiz_results_v2');
+    expect(rpcMock.mock.calls[0][1].p_session_id).toBeNull();
+    expect(res).toMatchObject({ score_percent: 100 });
   });
 
-  it('falls back to v1 if v2 RPC returns an error', async () => {
-    rpcMock
-      .mockResolvedValueOnce({ data: null, error: { message: 'v2 failed' } })       // v2 attempt
-      .mockResolvedValueOnce({                                                       // v1 fallback
-        data: { total: 1, correct: 1, score_percent: 100, xp_earned: 80, session_id: 'qs-1', flagged: false },
-        error: null,
-      });
+  it('throws when the v2 RPC returns an error (no v1 fallback)', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'v2 failed' } });
 
-    const res = await submitQuizResults(
-      'student-2',  // distinct student to avoid dedup collision with previous test
-      'science',
-      '9',
-      'Science',
-      1,
-      [{ question_id: 'q-1', selected_option: 0, is_correct: false, time_spent: 5, shuffle_map: null }],
-      30,
-      'session-2',
-    );
+    await expect(
+      submitQuizResults(
+        'student-2',  // distinct student to avoid dedup collision with previous test
+        'science',
+        '9',
+        'Science',
+        1,
+        [{ question_id: 'q-1', selected_option: 0, is_correct: false, time_spent: 5, shuffle_map: null }],
+        30,
+        'session-2',
+      ),
+    ).rejects.toThrow('v2 failed');
 
-    expect(rpcMock).toHaveBeenCalledTimes(2);
+    expect(rpcMock).toHaveBeenCalledTimes(1);
     expect(rpcMock.mock.calls[0][0]).toBe('submit_quiz_results_v2');
-    expect(rpcMock.mock.calls[1][0]).toBe('submit_quiz_results');
-    expect(res).toMatchObject({ score_percent: 100 });
   });
 });
 

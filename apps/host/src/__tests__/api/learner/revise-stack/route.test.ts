@@ -40,6 +40,40 @@ vi.mock('@alfanumrik/lib/supabase-server', () => ({
   })),
 }));
 
+// RBAC gate: authorizeRequest replaced the direct getUser() auth path
+// (eaa7e1ab, 2026-08-06 — audit-driven RBAC hardening on student-data
+// routes). Mirror its contract: authorized with the fixture userId when a
+// session exists, otherwise an unauthorized 401.
+let authorizeRequestImpl: unknown;
+const authorizeRequest = vi.fn(async () => {
+  if (typeof authorizeRequestImpl === 'function') {
+    return (authorizeRequestImpl as (...args: unknown[]) => unknown)();
+  }
+  if (!authUser) {
+    return {
+      authorized: false,
+      userId: null,
+      studentId: null,
+      roles: [],
+      permissions: [],
+      errorResponse: new Response(
+        JSON.stringify({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } },
+      ),
+    };
+  }
+  return {
+    authorized: true,
+    userId: authUser.id,
+    studentId: 'student-1',
+    roles: ['student'],
+    permissions: ['study_plan.view'],
+  };
+});
+vi.mock('@alfanumrik/lib/rbac', () => ({
+  authorizeRequest: (...args: unknown[]) => authorizeRequest(...(args as [])),
+}));
+
 // Feature flags: EVERY flag (including the deleted ff_revise_route_v1)
 // resolves to `false` — this is byte-for-byte the production state after
 // the flag row was dropped. The route must NOT consult this at all.
@@ -142,7 +176,9 @@ describe('GET /api/learner/revise-stack — REG-303 dead-flag-gate regression', 
     const res = await GET(mkReq());
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe('unauthenticated');
+    // eaa7e1ab moved auth from getUser() to authorizeRequest(); the gate's
+    // error body is now the RBAC module's 'unauthorized', not 'unauthenticated'.
+    expect(body.error).toBe('unauthorized');
   });
 
   it('404 no_decayed_topics when the student has nothing decayed (not a flag-off 404)', async () => {

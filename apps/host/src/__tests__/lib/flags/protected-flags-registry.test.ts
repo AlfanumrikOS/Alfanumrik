@@ -24,7 +24,7 @@
  *   - the P0 quiz-submit pair, the 4 constitution-pinned Group A flags, the 5
  *     MoL program flags, and the standalone ff_foxy_openai_primary_rollout_v1
  *     lever are protected at their declared tiers;
- *   - EXPECTED_OFF_FLAGS is the 57-name CEO-approved forced-OFF posture
+ *   - EXPECTED_OFF_FLAGS is the 56-name CEO-approved forced-OFF posture
  *     (52 block-(ii) names from migration 20260720110000, MINUS
  *     ff_adaptive_remediation_v1 (see below), MINUS ff_whatsapp_bot_v1 (see
  *     below), MINUS ff_foxy_streaming / ff_goal_aware_rag /
@@ -227,9 +227,9 @@ describe('PROTECTED_FLAGS registry — tier membership', () => {
 // ─── EXPECTED_OFF_FLAGS posture list ──────────────────────────────────
 
 describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
-  it('contains exactly 57 unique names (52 block-(ii) + ff_irt_question_selection + 2 Pedagogy v2 additions + 2 WhatsApp bot protected flags (seed 20260801100500) + 5 GenAI ecosystem additions (seed 20260801120000) + ff_foxy_openai_primary_rollout_v1 (seed 20260803120000) MINUS ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) MINUS ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) MINUS 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine) MINUS ff_foxy_openai_primary_rollout_v1 (CEO-approved intentionally-live, 2026-08-03))', () => {
-    expect(EXPECTED_OFF_FLAGS).toHaveLength(57);
-    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(57);
+  it('contains exactly 56 unique names (52 block-(ii) + ff_irt_question_selection + 2 Pedagogy v2 additions + 2 WhatsApp bot protected flags (seed 20260801100500) + 5 GenAI ecosystem additions (seed 20260801120000) + ff_foxy_openai_primary_rollout_v1 (seed 20260803120000) MINUS ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) MINUS ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) MINUS 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine) MINUS ff_foxy_openai_primary_rollout_v1 (CEO-approved intentionally-live, 2026-08-03) MINUS ff_quiz_telemetry_v1 (promoted always-on in code, 2026-08-06 backendaudit P0))', () => {
+    expect(EXPECTED_OFF_FLAGS).toHaveLength(56);
+    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(56);
     expect(EXPECTED_OFF_FLAGS).toContain('ff_irt_question_selection');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_productive_failure_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_pedagogy_v2_monthly_synthesis');
@@ -303,6 +303,12 @@ describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
     // CEO-approved intentionally-live at enabled=true/100 — same add-then-
     // delete treatment as ff_whatsapp_bot_v1.
     expected.delete('ff_foxy_openai_primary_rollout_v1');
+    // 2026-08-06: ff_quiz_telemetry_v1 promoted to always-on in code
+    // (v2/quiz/submit/route.ts unconditionally calls prepareQuizTelemetry,
+    // backendaudit P0) — the route no longer reads the flag, so it is no
+    // longer expected fully-OFF. Still parsed from migration block (ii) here,
+    // so it must be excluded exactly like the other always-on promotions above.
+    expected.delete('ff_quiz_telemetry_v1');
     expect(new Set(EXPECTED_OFF_FLAGS)).toEqual(expected);
   });
 

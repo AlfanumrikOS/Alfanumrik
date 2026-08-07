@@ -105,6 +105,10 @@
       "schedule": "50 4 * * *"
     },
     {
+      "path": "/api/cron/governance-health",
+      "schedule": "55 4 * * *"
+    },
+    {
       "path": "/api/cron/whatsapp-drain",
       "schedule": "* * * * *"
     }
