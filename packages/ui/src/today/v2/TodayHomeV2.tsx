@@ -325,7 +325,7 @@ export default function TodayHomeV2({ data, subjects, isHi, streak, totalXp, nex
       )}
 
       {rest.length > 0 && (
-        <section aria-label={todayCopy('today.heading', isHi)} className="flex flex-col gap-2">
+        <section aria-label={todayCopy('today.heading', isHi)} role="list" className="flex flex-col gap-2">
           <p className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
             {isHi ? 'आगे' : 'Up next'}
           </p>

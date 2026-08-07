@@ -172,16 +172,18 @@ function LegacyTodayPage() {
     return (
       <main className="app-container py-6" data-testid="today-error">
         {greetingStrip}
-        <EmptyState
-          icon="😕"
-          title={isHi ? 'अभी लोड नहीं हो पाया' : "Couldn't load this right now"}
-          description={isHi ? 'थोड़ी देर में फिर कोशिश करें।' : 'Please try again in a moment.'}
-          action={
-            <Button variant="soft" onClick={() => mutate()}>
-              {isHi ? 'फिर कोशिश करें' : 'Retry'}
-            </Button>
-          }
-        />
+        <div role="status">
+          <EmptyState
+            icon="😕"
+            title={isHi ? 'अभी लोड नहीं हो पाया' : "Couldn't load this right now"}
+            description={isHi ? 'थोड़ी देर में फिर कोशिश करें।' : 'Please try again in a moment.'}
+            action={
+              <Button variant="soft" onClick={() => mutate()}>
+                {isHi ? 'फिर कोशिश करें' : 'Retry'}
+              </Button>
+            }
+          />
+        </div>
       </main>
     );
   }

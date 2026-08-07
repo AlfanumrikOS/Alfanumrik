@@ -31,11 +31,12 @@ export default function TodayQueueItem({ item, subjects, isHi }: TodayQueueItemP
   const teacherAssigned = isTeacherAssigned(item);
 
   return (
-    <Card
-      hoverable
-      onClick={() => router.push(href)}
-      className="!p-3.5"
-    >
+    <li role="listitem" className="contents">
+      <Card
+        hoverable
+        onClick={() => router.push(href)}
+        className="!p-3.5"
+      >
       <div className="flex items-center gap-3" style={{ minHeight: 44 }}>
         <div
           className="rounded-xl flex items-center justify-center flex-shrink-0"
@@ -81,6 +82,7 @@ export default function TodayQueueItem({ item, subjects, isHi }: TodayQueueItemP
           </span>
         </div>
       </div>
-    </Card>
+      </Card>
+    </li>
   );
 }

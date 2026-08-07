@@ -241,7 +241,7 @@ export function ChatBubble({
           </div>
         )}
         <span className="text-xs font-bold" style={{ color: isTutor ? 'var(--orange)' : color }}>
-          {isTutor ? 'Foxy' : (studentName || 'You')}
+          {isTutor ? 'Foxy' : (studentName || (isHi ? 'आप' : 'You'))}
         </span>
         <span
           className="text-[10px] text-[var(--text-3)]"
@@ -337,7 +337,7 @@ export function ChatBubble({
           {/* Thumbs up */}
           <button
             onClick={() => onFeedback(true)}
-            aria-label="Helpful response"
+            aria-label={isHi ? 'मददगार उत्तर' : 'Helpful response'}
             aria-pressed={feedback === 'up'}
             className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
             style={{
@@ -352,7 +352,7 @@ export function ChatBubble({
           {/* Thumbs down */}
           <button
             onClick={() => onFeedback(false)}
-            aria-label="Not helpful response"
+            aria-label={isHi ? 'अनुपयोगी उत्तर' : 'Not helpful response'}
             aria-pressed={feedback === 'down'}
             className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
             style={{
@@ -368,15 +368,15 @@ export function ChatBubble({
           {!reported ? (
             <button
               onClick={onReport}
-              aria-label="Report incorrect response"
+              aria-label={isHi ? 'गलत उत्तर रिपोर्ट करें' : 'Report incorrect response'}
               className="px-2 py-1 rounded-lg text-[10px] font-semibold transition-all active:scale-95 ml-1"
               style={{ color: 'var(--text-3)' }}
             >
-              ⚠️ Report
+              {isHi ? '⚠️ रिपोर्ट करें' : '⚠️ Report'}
             </button>
           ) : (
             <span className="px-2 py-1 text-[10px] font-semibold" style={{ color: 'var(--danger)' }}>
-              ✓ Reported
+              {isHi ? '✓ रिपोर्ट किया गया' : '✓ Reported'}
             </span>
           )}
 
@@ -384,8 +384,8 @@ export function ChatBubble({
           {onSpeak && (
             <button
               onClick={onSpeak}
-              aria-label="Read aloud"
-              title="Read aloud"
+              aria-label={isHi ? 'ज़ोर से पढ़ें' : 'Read aloud'}
+              title={isHi ? 'ज़ोर से पढ़ें' : 'Read aloud'}
               className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90 ml-auto"
               style={{ color: 'var(--text-3)', background: 'transparent' }}
             >
@@ -398,14 +398,14 @@ export function ChatBubble({
             (rawContent.includes('=') || rawContent.includes('formula') || rawContent.includes('²') || rawContent.includes('√')) && (
               <span className="ml-auto text-[9px] px-2 py-0.5 rounded"
                 style={{ color: 'var(--text-3)', background: 'var(--surface-2)' }}>
-                Verify with textbook
+                {isHi ? 'पाठ्यपुस्तक से जाँचें' : 'Verify with textbook'}
               </span>
             )}
           {onSpeak && ['math', 'science', 'physics', 'chemistry'].includes(activeSubject) &&
             (rawContent.includes('=') || rawContent.includes('formula') || rawContent.includes('²') || rawContent.includes('√')) && (
               <span className="text-[9px] px-2 py-0.5 rounded"
                 style={{ color: 'var(--text-3)', background: 'var(--surface-2)' }}>
-                Verify with textbook
+                {isHi ? 'पाठ्यपुस्तक से जाँचें' : 'Verify with textbook'}
               </span>
             )}
         </div>

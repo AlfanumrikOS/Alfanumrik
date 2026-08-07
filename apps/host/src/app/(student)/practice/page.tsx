@@ -4,12 +4,14 @@
  * /practice — the Alfa OS Practice Center (ff_practice_os_v1, Tier 1+ /
  * presentation-only). NEW route; it does not exist today.
  *
- * Additive contract: when the flag is OFF the route must behave as if it never
- * existed. The flag is read client-side, so this page resolves it and:
+ * Additive contract: when the flag is OFF the route behaves as a non-route —
+ * students are redirected to the existing /quiz engine (the pre-launch
+ * equivalent), never stranded on a 404. The flag is read client-side, so this
+ * page resolves it and:
  *
  *   • flag PENDING (first paint, async DB read not yet settled) → skeleton.
- *     We do NOT 404 prematurely, or a legitimately-ON user would flash a 404.
- *   • flag OFF (resolved)                                       → notFound().
+ *     We do NOT redirect prematurely, or a legitimately-ON user would flash away.
+ *   • flag OFF (resolved)                                       → redirect to /quiz.
  *   • flag ON  (resolved)                                       → PracticeCenter.
  *
  * Auth is required (student surface). The Practice Center consumes the existing

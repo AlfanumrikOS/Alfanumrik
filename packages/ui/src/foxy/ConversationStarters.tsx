@@ -132,7 +132,9 @@ export function ConversationStarters({
           className="foxy-starter-chip animate-slide-up foxy-starter-more"
           style={{ animationDelay: `${visible.length * 60}ms` }}
           aria-expanded={showMore}
-          aria-label={showMore ? 'Show fewer suggestions' : 'Show more suggestions'}
+          aria-label={showMore
+            ? (language === 'hi' ? 'कम सुझाव दिखाएँ' : 'Show fewer suggestions')
+            : (language === 'hi' ? 'और सुझाव दिखाएँ' : 'Show more suggestions')}
         >
           {showMore
             ? (language === 'hi' ? 'कम दिखाओ ▲' : 'Less ▲')
