@@ -33,6 +33,7 @@
  * already establishes for this page's own primary DTO.
  */
 
+import { useEffect, useRef, useState, type Ref } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Subject } from '@alfanumrik/lib/subjects.types';
 import type { TodayResponse, TodayQueueItem as TodayQueueItemDTO } from '@alfanumrik/lib/today/types';
@@ -40,6 +41,7 @@ import { todayCopy, deepLinkToHref } from '@alfanumrik/lib/today/copy';
 import { todayIcon } from '@alfanumrik/lib/today/icon-map';
 import { resolveItemCopy, isTeacherAssigned, fromTeacherLabel } from '@alfanumrik/lib/today/render';
 import TodayQueueItem from '@alfanumrik/ui/today/TodayQueueItem';
+import { Button, EmptyState } from '@alfanumrik/ui/ui';
 import type { ExamScheduleEntry } from '@alfanumrik/lib/exams/types';
 import { ExamScheduleCard } from '@alfanumrik/ui/exams/v2/ExamSchedule';
 
@@ -55,15 +57,19 @@ interface TodayHomeV2Props {
 }
 
 /** The dark "pick up where you left off" hero. Only rendered for a genuine
- *  `resume_in_progress` item — never synthesised. */
+ *  `resume_in_progress` item — never synthesised. "Later" dismisses the prompt
+ *  for this visit (no navigation): the session is still in progress server-side,
+ *  so the next /today read re-offers it. */
 function ResumeHero({
   item,
   subjects,
   isHi,
+  onLater,
 }: {
   item: TodayQueueItemDTO;
   subjects: Subject[];
   isHi: boolean;
+  onLater: () => void;
 }) {
   const router = useRouter();
   const { label, subtitle } = resolveItemCopy(item, subjects, isHi);
@@ -101,7 +107,7 @@ function ResumeHero({
         </button>
         <button
           type="button"
-          onClick={() => router.push('/quiz')}
+          onClick={onLater}
           className="flex-1 rounded-xl text-sm font-semibold"
           style={{
             border: '1px solid rgb(255 255 255 / 0.28)',
@@ -118,15 +124,20 @@ function ResumeHero({
 }
 
 /** The standard hero for every non-resume primary item. Same information as
- *  Wave A's TodayFocusCard, restyled to the one-primary-action rule. */
+ *  Wave A's TodayFocusCard, restyled to the one-primary-action rule.
+ *  `ctaRef` lets the parent move focus to the primary CTA after the resume
+ *  hero is dismissed (a11y floor — the dismissed button would otherwise drop
+ *  focus to body). */
 function FocusHero({
   item,
   subjects,
   isHi,
+  ctaRef,
 }: {
   item: TodayQueueItemDTO;
   subjects: Subject[];
   isHi: boolean;
+  ctaRef?: Ref<HTMLButtonElement>;
 }) {
   const router = useRouter();
   const { label, subtitle, minutesBadge } = resolveItemCopy(item, subjects, isHi);
@@ -183,6 +194,7 @@ function FocusHero({
         </div>
       </div>
       <button
+        ref={ctaRef}
         type="button"
         onClick={() => router.push(deepLinkToHref(item.deepLink))}
         className="w-full rounded-xl text-sm font-bold mt-4"
@@ -197,9 +209,22 @@ function FocusHero({
 
 export default function TodayHomeV2({ data, subjects, isHi, streak, totalXp, nextExam }: TodayHomeV2Props) {
   const examRouter = useRouter();
+  const [resumeDismissed, setResumeDismissed] = useState(false);
+  const heroCtaRef = useRef<HTMLButtonElement>(null);
   const primary = data.primary;
-  const rest = data.queue.slice(1);
-  const isResume = primary.type === 'resume_in_progress';
+  // "Later" dismisses the resume prompt for this visit and promotes the next
+  // queue item into the hero (one-primary-action rule). A queue with nothing
+  // else falls through to the empty state, so the screen never loses its
+  // primary action.
+  const isResume = primary.type === 'resume_in_progress' && !resumeDismissed;
+  const hero = isResume ? primary : resumeDismissed ? (data.queue[1] ?? null) : primary;
+  const rest = resumeDismissed ? data.queue.slice(2) : data.queue.slice(1);
+
+  // a11y floor: after the resume hero unmounts, focus moves to the promoted
+  // hero's primary CTA instead of dropping to <body>.
+  useEffect(() => {
+    if (resumeDismissed) heroCtaRef.current?.focus();
+  }, [resumeDismissed]);
 
   return (
     <div data-testid="today-v2">
@@ -268,9 +293,35 @@ export default function TodayHomeV2({ data, subjects, isHi, streak, totalXp, nex
       />
 
       {isResume ? (
-        <ResumeHero item={primary} subjects={subjects} isHi={isHi} />
+        <ResumeHero
+          item={primary}
+          subjects={subjects}
+          isHi={isHi}
+          onLater={() => setResumeDismissed(true)}
+        />
+      ) : hero ? (
+        <FocusHero
+          item={hero}
+          subjects={subjects}
+          isHi={isHi}
+          ctaRef={resumeDismissed ? heroCtaRef : undefined}
+        />
       ) : (
-        <FocusHero item={primary} subjects={subjects} isHi={isHi} />
+        <div className="mt-4">
+          <EmptyState
+            icon="✅"
+            title={todayCopy('today.empty', isHi)}
+            action={
+              <Button
+                variant="primary"
+                onClick={() => examRouter.push('/quiz')}
+                data-testid="today-empty-practice"
+              >
+                {isHi ? 'मुफ़्त अभ्यास शुरू करें' : 'Start free practice'}
+              </Button>
+            }
+          />
+        </div>
       )}
 
       {rest.length > 0 && (

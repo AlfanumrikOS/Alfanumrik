@@ -16,13 +16,15 @@
  *     locale formatted.
  *   - the streak-at-risk banner only when practicedToday===false AND streak>0.
  *   - clicking the resume/focus continue buttons navigates to the resolved
- *     deep link; "Later" navigates to /quiz.
+ *     deep link; "Later" dismisses the resume hero (no navigation), promoting
+ *     the next queue item into the focus hero and falling through to the empty
+ *     state (free practice) when the queue had nothing else.
  *   - "Up next" section renders the REST of the queue (rank 2+), omitted
  *     when the queue has only the primary item.
  *   - the from-teacher tag renders only for a teacher-assigned primary item.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import type { TodayResponse, TodayQueueItem as TodayQueueItemDTO } from '@alfanumrik/lib/today/types';
 import type { Subject } from '@alfanumrik/lib/subjects.types';
 import type { ExamScheduleEntry } from '@alfanumrik/lib/exams/types';
@@ -189,9 +191,29 @@ describe('TodayHomeV2 — resume vs focus hero selection', () => {
     expect(mockPush).toHaveBeenCalledWith('/learn/science/7');
   });
 
-  it('clicking the resume "Later" button navigates to /quiz', () => {
+  it('clicking the resume "Later" button dismisses the resume hero without navigating', () => {
+    const next = focusItem({ rank: 2 });
+    render(<TodayHomeV2 data={response(resumeItem(), [next])} subjects={SUBJECTS} isHi={false} streak={0} totalXp={0} />);
+    fireEvent.click(screen.getByTestId('today-v2-resume-later'));
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('today-v2-resume-hero')).not.toBeInTheDocument();
+  });
+
+  it('"Later" promotes the next queue item into the focus hero and moves focus to its CTA', () => {
+    const next = focusItem({ rank: 2 });
+    render(<TodayHomeV2 data={response(resumeItem(), [next])} subjects={SUBJECTS} isHi={false} streak={0} totalXp={0} />);
+    fireEvent.click(screen.getByTestId('today-v2-resume-later'));
+    expect(screen.getByTestId('today-v2-focus-hero')).toBeInTheDocument();
+    expect(screen.getByTestId('today-v2-focus-continue')).toHaveFocus();
+  });
+
+  it('"Later" on a single-item queue falls through to the empty state with free practice', () => {
     render(<TodayHomeV2 data={response(resumeItem())} subjects={SUBJECTS} isHi={false} streak={0} totalXp={0} />);
-    screen.getByTestId('today-v2-resume-later').click();
+    fireEvent.click(screen.getByTestId('today-v2-resume-later'));
+    expect(screen.queryByTestId('today-v2-resume-hero')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('today-v2-focus-hero')).not.toBeInTheDocument();
+    expect(screen.getByTestId('today-empty-practice')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('today-empty-practice'));
     expect(mockPush).toHaveBeenCalledWith('/quiz');
   });
 

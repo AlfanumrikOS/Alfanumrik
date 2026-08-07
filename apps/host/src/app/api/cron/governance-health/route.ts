@@ -65,6 +65,28 @@ export async function GET(request: NextRequest) {
     results.unclassified_tables = { error: (e as Error).message };
   }
 
+  // Enforce retention (P1-3): archive audit_logs, then bounded DELETE on the
+  // allow-list tables. Each table is isolated by runRetentionEnforcement so one
+  // failure reports here without aborting the run.
+  try {
+    const { runRetentionEnforcement } = await import('@alfanumrik/lib/data-platform');
+    const retentionResults = await runRetentionEnforcement();
+    results.retention = {
+      total_archived: retentionResults.reduce((acc, r) => acc + r.archived, 0),
+      total_deleted: retentionResults.reduce((acc, r) => acc + r.deleted, 0),
+      errors: retentionResults.filter(r => r.error).map(r => ({ table: r.table, error: r.error })),
+      tables: retentionResults.map(r => ({
+        table: r.table,
+        method: r.method,
+        archived: r.archived,
+        deleted: r.deleted,
+        ...(r.error ? { error: r.error } : {}),
+      })),
+    };
+  } catch (e) {
+    results.retention = { error: (e as Error).message };
+  }
+
   // Job-health heartbeat (house pattern): a successful run — including one
   // that reports findings — writes the registered last-success metric.
   await recordCronJobHealth({
