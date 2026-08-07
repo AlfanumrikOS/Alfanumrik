@@ -113,7 +113,10 @@ function ScoreTrendSparkline({ datapoints, isHi }: { datapoints: ScoreHistoryRow
   );
 }
 
-/* ── Bloom Mastery Heatmap for a single subject ── */
+/* ── Bloom Mastery Heatmap for a single subject ──
+ * Assessment-owned honesty floor (spec §5.4): a percentage over fewer than
+ * N=5 observations is suppressed — the cell shows the observation count and
+ * the tooltip marks it "provisional" instead of fabricating a confidence. */
 function BloomHeatmap({ data, isHi }: { data: Array<{ bloom_level: BloomLevel; mastery: number }>; isHi: boolean }) {
   // Aggregate mastery per bloom level
   const masteryByLevel: Record<BloomLevel, number[]> = {
@@ -125,13 +128,29 @@ function BloomHeatmap({ data, isHi }: { data: Array<{ bloom_level: BloomLevel; m
     }
   }
 
+  const MIN_OBSERVATIONS = 5;
+
   return (
     <div className="flex gap-1 items-center w-full">
       {BLOOM_LEVELS.map((level) => {
         const values = masteryByLevel[level];
-        const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+        const count = values.length;
+        const avg = count > 0 ? values.reduce((a, b) => a + b, 0) / count : 0;
+        const hasEvidence = count >= MIN_OBSERVATIONS;
         const cfg = BLOOM_CONFIG[level];
-        const opacity = Math.max(0.1, avg);
+        const opacity = count > 0 ? Math.max(0.1, avg) : 0.08;
+        const title =
+          `${isHi ? cfg.labelHi : cfg.label}: ` +
+          (count === 0
+            ? isHi ? 'कोई डेटा नहीं' : 'no data'
+            : hasEvidence
+              ? `${Math.round(avg * 100)}% · ${count} ${isHi ? 'प्रश्न' : 'questions'}`
+              : isHi ? `${count} प्रश्न (प्रारंभिक)` : `${count} questions (provisional)`);
+        const cell = hasEvidence
+          ? `${Math.round(avg * 100)}%`
+          : count > 0
+            ? `${count}`
+            : '—';
         return (
           <div
             key={level}
@@ -142,10 +161,10 @@ function BloomHeatmap({ data, isHi }: { data: Array<{ bloom_level: BloomLevel; m
               opacity,
               minWidth: 0,
             }}
-            title={`${isHi ? cfg.labelHi : cfg.label}: ${Math.round(avg * 100)}%`}
+            title={title}
           >
             <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
-              {Math.round(avg * 100)}%
+              {cell}
             </div>
           </div>
         );
@@ -628,6 +647,9 @@ function LegacyProgressPage() {
                       <p className="text-sm font-semibold mt-2" style={{ fontFamily: 'var(--font-display)' }}>
                         {isHi ? 'कुल सटीकता' : 'Overall Accuracy'}
                       </p>
+                      <p className="text-[10px] text-[var(--text-3)] mt-0.5">
+                        {totalCorrect}/{totalAsked} {isHi ? 'सही' : 'correct'}
+                      </p>
                       <p className="text-xs text-[var(--text-3)] mt-1">
                         {isHi
                           ? 'Performance Score जल्द ही calculate होगा'
@@ -781,11 +803,14 @@ function LegacyProgressPage() {
                                 {isHi ? (meta?.name_hi ?? meta?.name ?? p.subject) : (meta?.name ?? p.subject)}
                               </div>
                               <div className="text-xs text-[var(--text-3)]">
-                                {correctPct}% {isHi ? 'सटीकता' : 'accuracy'} · {p.total_sessions} {isHi ? 'सत्र' : 'sessions'}
+                                {p.total_questions_answered_correctly}/{p.total_questions_asked} ({correctPct}%) · {p.total_sessions} {isHi ? 'सत्र' : 'sessions'}
                               </div>
                             </div>
                             <div className="text-right">
                               <div className="text-sm font-bold" style={{ color: meta?.color ?? 'var(--accent-warm)' }}>{correctPct}%</div>
+                              <div className="text-[10px] text-[var(--text-3)]">
+                                {p.total_questions_answered_correctly}/{p.total_questions_asked}
+                              </div>
                             </div>
                           </Card>
                         );

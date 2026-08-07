@@ -189,7 +189,7 @@ async function fetchRecentSession(
   };
 }
 
-async function fetchAllConversations(studentId: string): Promise<ConversationSummary[]> {
+async function fetchAllConversations(studentId: string, isHi = false): Promise<ConversationSummary[]> {
   // Step 1: get recent sessions ordered by activity
   const { data: sessions } = await supabase
     .from('foxy_sessions')
@@ -222,7 +222,7 @@ async function fetchAllConversations(studentId: string): Promise<ConversationSum
       const lastMsg = msgs[msgs.length - 1];
       return {
         id: s.id,
-        title: generateTitle(msgs, s.subject),
+        title: generateTitle(msgs, s.subject, isHi),
         subject: s.subject || 'science',
         chapter: s.chapter || undefined,
         chapterNumber: undefined,
@@ -638,11 +638,11 @@ function FoxyExperience() {
   useEffect(() => {
     if (!authStudent?.id) return;
     setConversationsLoading(true);
-    fetchAllConversations(authStudent.id).then(convs => {
+    fetchAllConversations(authStudent.id, isHi).then(convs => {
       setConversations(convs);
       setConversationsLoading(false);
     });
-  }, [authStudent?.id]);
+  }, [authStudent?.id, isHi]);
 
   // Select a conversation from the sidebar
   const selectConversation = useCallback(async (sessionId: string) => {
@@ -702,7 +702,7 @@ function FoxyExperience() {
   // Refresh conversation list after a message is sent (debounced)
   const refreshConversations = useCallback(() => {
     if (!student?.id) return;
-    fetchAllConversations(student.id).then(convs => {
+    fetchAllConversations(student.id, isHi).then(convs => {
       setConversations(
         convs.map(c => ({
           ...c,
@@ -710,7 +710,7 @@ function FoxyExperience() {
         }))
       );
     });
-  }, [student?.id, chatSessionId]);
+  }, [student?.id, chatSessionId, isHi]);
 
   // Apply URL context (subject, chapter, mode, grade, source) — runs after student
   // loads AND allowedSubjects resolves, so subject validation can use the real
@@ -1405,7 +1405,7 @@ function FoxyExperience() {
   // premium header band (Row 1) so we can drop the whole redundant chrome row.
   const activeConversationTitle =
     messages.length > 0
-      ? generateTitle(messages.map((m: ChatMessage) => ({ role: m.role, content: m.content })), activeSubject)
+      ? generateTitle(messages.map((m: ChatMessage) => ({ role: m.role, content: m.content })), activeSubject, isHi)
       : '';
 
   // ─── Header bag — passed into AppShell.header ─────────────────────────

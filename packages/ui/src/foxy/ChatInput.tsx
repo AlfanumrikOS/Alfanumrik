@@ -14,15 +14,15 @@ import { toast } from '@alfanumrik/ui/ui/toast';
    ══════════════════════════════════════════════════════════════ */
 
 export const MATH_SYMBOL_TABS = [
-  { id: 'basic', label: 'Basic', emoji: '±', symbols: ['±', '×', '÷', '≠', '≈', '√', '²', '³', '∞', 'π'] },
-  { id: 'algebra', label: 'Algebra', emoji: '∈', symbols: ['≤', '≥', '<', '>', '∈', '∉', '∪', '∩', '∅', '⊆'] },
-  { id: 'calculus', label: 'Calc', emoji: '∫', symbols: ['∫', '∂', '∑', '∏', 'Δ', '∇', 'dx', 'dy', 'lim', '∞'] },
-  { id: 'greek', label: 'Greek', emoji: 'α', symbols: ['α', 'β', 'γ', 'δ', 'ε', 'θ', 'λ', 'μ', 'σ', 'ω'] },
-  { id: 'arrows', label: 'Arrows', emoji: '→', symbols: ['→', '←', '⇒', '⇔', '↑', '↓', '⇌', '∝'] },
-  { id: 'science', label: 'Sci', emoji: '⚛', symbols: ['℃', '°', 'Ω', 'Å', 'mol', 'pH', 'atm', 'eV', 'Pa', 'Hz'] },
-  { id: 'geometry', label: 'Geo', emoji: '∠', symbols: ['∠', '⊥', '∥', '△', '○', '°', 'π', 'r²'] },
-  { id: 'super', label: 'Sup', emoji: 'x²', symbols: ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'] },
-  { id: 'sub', label: 'Sub', emoji: 'x₂', symbols: ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'] },
+  { id: 'basic', label: 'Basic', labelHi: 'मूल', emoji: '±', symbols: ['±', '×', '÷', '≠', '≈', '√', '²', '³', '∞', 'π'] },
+  { id: 'algebra', label: 'Algebra', labelHi: 'बीजगणित', emoji: '∈', symbols: ['≤', '≥', '<', '>', '∈', '∉', '∪', '∩', '∅', '⊆'] },
+  { id: 'calculus', label: 'Calc', labelHi: 'कैल्क', emoji: '∫', symbols: ['∫', '∂', '∑', '∏', 'Δ', '∇', 'dx', 'dy', 'lim', '∞'] },
+  { id: 'greek', label: 'Greek', labelHi: 'ग्रीक', emoji: 'α', symbols: ['α', 'β', 'γ', 'δ', 'ε', 'θ', 'λ', 'μ', 'σ', 'ω'] },
+  { id: 'arrows', label: 'Arrows', labelHi: 'तीर', emoji: '→', symbols: ['→', '←', '⇒', '⇔', '↑', '↓', '⇌', '∝'] },
+  { id: 'science', label: 'Sci', labelHi: 'विज्ञान', emoji: '⚛', symbols: ['℃', '°', 'Ω', 'Å', 'mol', 'pH', 'atm', 'eV', 'Pa', 'Hz'] },
+  { id: 'geometry', label: 'Geo', labelHi: 'ज्यामिति', emoji: '∠', symbols: ['∠', '⊥', '∥', '△', '○', '°', 'π', 'r²'] },
+  { id: 'super', label: 'Sup', labelHi: 'घात', emoji: 'x²', symbols: ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'] },
+  { id: 'sub', label: 'Sub', labelHi: 'नीचे', emoji: 'x₂', symbols: ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'] },
 ];
 
 // Fallback used only until the subjects service hook resolves.
@@ -137,7 +137,7 @@ export const ChatInput = memo(function ChatInput({
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be under 5MB'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error(language === 'hi' ? 'छवि 5MB से छोटी होनी चाहिए' : 'Image must be under 5MB'); return; }
     setImage(file);
     const reader = new FileReader();
     reader.onload = () => setImagePreview(reader.result as string);
@@ -278,7 +278,7 @@ export const ChatInput = memo(function ChatInput({
                   color: symTab === tab.id ? cfg.color : 'var(--text-3)',
                   border: symTab === tab.id ? `1px solid ${cfg.color}30` : '1px solid transparent',
                 }}>
-                <span className="text-sm mr-0.5">{tab.emoji}</span> {tab.label}
+                <span className="text-sm mr-0.5">{tab.emoji}</span> {language === 'hi' ? tab.labelHi : tab.label}
               </button>
             ))}
           </div>
@@ -303,7 +303,7 @@ export const ChatInput = memo(function ChatInput({
             color: showSymbols ? cfg.color : 'var(--text-3)',
             border: `1px solid ${showSymbols ? `${cfg.color}30` : 'var(--border)'}`,
           }}>
-          {showSymbols ? '× Close' : 'fx Math'}
+          {showSymbols ? (language === 'hi' ? '× बंद करें' : '× Close') : (language === 'hi' ? 'fx गणित' : 'fx Math')}
         </button>
         <button onClick={togglePoints}
           className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
@@ -312,7 +312,7 @@ export const ChatInput = memo(function ChatInput({
             color: pointMode ? cfg.color : 'var(--text-3)',
             border: `1px solid ${pointMode ? `${cfg.color}30` : 'var(--border)'}`,
           }}>
-          {pointMode ? '1. ON' : '1. Points'}
+          {pointMode ? (language === 'hi' ? '1. चालू' : '1. ON') : (language === 'hi' ? '1. अंक' : '1. Points')}
         </button>
         <input type="file" ref={fileRef} accept="image/*" capture="environment" onChange={handleImage} className="hidden" />
         <button onClick={() => fileRef.current?.click()}
@@ -322,7 +322,7 @@ export const ChatInput = memo(function ChatInput({
             color: image ? cfg.color : 'var(--text-3)',
             border: `1px solid ${image ? `${cfg.color}30` : 'var(--border)'}`,
           }}>
-          {image ? '1 image' : 'Photo'}
+          {image ? (language === 'hi' ? '1 छवि' : '1 image') : (language === 'hi' ? 'फ़ोटो' : 'Photo')}
         </button>
 
         {/* Voice button — hidden entirely if browser doesn't support STT */}
@@ -339,18 +339,18 @@ export const ChatInput = memo(function ChatInput({
               color: isListening ? 'var(--accent-warm)' : 'var(--text-3)',
               border: `1px solid ${isListening ? 'rgb(var(--accent-warm-rgb) / 0.25)' : 'var(--border)'}`,
             }}
-            aria-label={isListening ? 'Stop listening' : 'Start voice input'}
-            title={isListening ? 'Stop' : 'Voice input'}
+            aria-label={isListening ? (language === 'hi' ? 'सुनना बंद करें' : 'Stop listening') : (language === 'hi' ? 'आवाज़ इनपुट शुरू करें' : 'Start voice input')}
+            title={isListening ? (language === 'hi' ? 'रोकें' : 'Stop') : (language === 'hi' ? 'आवाज़ इनपुट' : 'Voice input')}
           >
             {isListening ? (
               <>
                 <span style={{ fontSize: 10 }}>●</span>
-                <span>Listening…</span>
+                <span>{language === 'hi' ? 'सुन रहा हूँ…' : 'Listening…'}</span>
               </>
             ) : (
               <>
                 <span>🎤</span>
-                <span>Voice</span>
+                <span>{language === 'hi' ? 'आवाज़' : 'Voice'}</span>
               </>
             )}
           </button>
@@ -374,14 +374,14 @@ export const ChatInput = memo(function ChatInput({
           <div className="relative">
             {/* blob: / data: URLs are not supported by next/image — keep native img */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imagePreview} alt="Attached" width={48} height={48} loading="lazy" className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: 'var(--border)' }} />
+            <img src={imagePreview} alt={language === 'hi' ? 'संलग्न' : 'Attached'} width={48} height={48} loading="lazy" className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: 'var(--border)' }} />
             <button
               onClick={() => { setImage(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
               className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-red-500 text-white">
               x
             </button>
           </div>
-          <span className="text-xs" style={{ color: 'var(--text-3)' }}>Image attached</span>
+          <span className="text-xs" style={{ color: 'var(--text-3)' }}>{language === 'hi' ? 'छवि संलग्न' : 'Image attached'}</span>
         </div>
       )}
 

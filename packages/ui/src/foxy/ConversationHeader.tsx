@@ -8,7 +8,7 @@ import { useSubjectLookup } from '@alfanumrik/lib/useSubjectLookup';
    ═══════════════════════════════════════════════════════════════ */
 
 // Fallback for the brief first-paint window before useAllowedSubjects resolves.
-const FALLBACK_SUBJECT = { name: 'Science', icon: '\u269B', color: '#10B981' };
+const FALLBACK_SUBJECT = { name: 'Science', nameHi: 'विज्ञान', icon: '\u269B', color: '#10B981' };
 
 interface ConversationHeaderProps {
   title: string;
@@ -48,8 +48,8 @@ export function ConversationHeader({
   const lookupSubject = useSubjectLookup();
   const resolved = lookupSubject(subject);
   const cfg = resolved
-    ? { name: resolved.name, icon: resolved.icon, color: resolved.color }
-    : FALLBACK_SUBJECT;
+    ? { name: isHi ? (resolved.nameHi ?? resolved.name) : resolved.name, icon: resolved.icon, color: resolved.color }
+    : { name: isHi ? FALLBACK_SUBJECT.nameHi : FALLBACK_SUBJECT.name, icon: FALLBACK_SUBJECT.icon, color: FALLBACK_SUBJECT.color };
   const modeInfo = MODE_LABELS[mode] || MODE_LABELS.ask;
 
   return (

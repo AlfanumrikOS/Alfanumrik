@@ -22,9 +22,21 @@ export const FALLBACK_SUBJECT_NAMES: Record<string, string> = {
   coding: 'Coding',
 };
 
-export function generateTitle(messages: Array<{ role: string; content: string }>, subject: string): string {
+export const FALLBACK_SUBJECT_NAMES_HI: Record<string, string> = {
+  math: 'गणित',
+  science: 'विज्ञान',
+  english: 'अंग्रेज़ी',
+  hindi: 'हिंदी',
+  physics: 'भौतिकी',
+  chemistry: 'रसायन विज्ञान',
+  biology: 'जीव विज्ञान',
+  social_studies: 'सामाजिक विज्ञान',
+  coding: 'कोडिंग',
+};
+
+export function generateTitle(messages: Array<{ role: string; content: string }>, subject: string, isHi = false): string {
   const firstUserMsg = messages.find(m => m.role === 'student' || m.role === 'user');
-  const subjectLabel = FALLBACK_SUBJECT_NAMES[subject] || subject || 'New Chat';
+  const subjectLabel = (isHi ? FALLBACK_SUBJECT_NAMES_HI : FALLBACK_SUBJECT_NAMES)[subject] || subject || (isHi ? 'नई चैट' : 'New Chat');
   if (!firstUserMsg) return subjectLabel;
   // Extract meaningful title: strip common prefixes, truncate
   let title = firstUserMsg.content

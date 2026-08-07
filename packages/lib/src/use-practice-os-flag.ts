@@ -3,18 +3,18 @@
  *
  * Gates the "Alfa OS" Practice Center (Tier 1+, presentation-only) mounted at
  * the NEW route /practice. When ON, /practice renders the Practice Center over
- * GET /api/practice/history. When OFF, /practice does not exist (the page calls
- * notFound()), so the route stays purely additive — no existing surface
- * changes. Mirrors the proven `use-revision-os-flag` shape (synchronous first
- * paint from a TTL-cached value, async confirm/correct on mount) with the same
- * critical contract:
+ * GET /api/practice/history. When OFF, /practice redirects to the existing /quiz
+ * engine (the pre-launch equivalent — see the page itself), so the route stays
+ * additive — no existing surface changes. Mirrors the proven
+ * `use-revision-os-flag` shape (synchronous first paint from a TTL-cached value,
+ * async confirm/correct on mount) with the same critical contract:
  *
  *   DEFAULT IS OFF.
  *
  * The flag is not seeded in any environment yet and the OFF path must behave as
- * a non-existent route (404). So the first-ever paint (no cache) resolves to
- * false — /practice 404s — and the async `getFeatureFlags()` only flips us ON
- * if the DB row is explicitly enabled. This guarantees production users who
+ * a non-route (redirect to /quiz). So the first-ever paint (no cache) resolves
+ * to false — /practice redirects — and the async `getFeatureFlags()` only flips
+ * us ON if the DB row is explicitly enabled. This guarantees production users who
  * shouldn't see the Practice Center never get a flash of it.
  *
  * Cache shape (localStorage key `alfanumrik_practice_os_flag_v1`):
