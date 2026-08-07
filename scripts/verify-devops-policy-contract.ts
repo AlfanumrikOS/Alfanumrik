@@ -346,7 +346,19 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
         const deployText = readFileSync(repoPath('.github/workflows/deploy-production.yml'), 'utf8');
         const deployHealth = mappingEntryBlock(deployText, 'health-check', 2);
         return /permissions:\r?\n  contents: read/.test(text)
-          && includesAll('name: CI Gate', 'if: always()', 'SAME_REPOSITORY_PR', "forkSkips.push('integration-tests', 'e2e-critical-paths')", 'process.exit(1)')(gate)
+          && includesAll(
+            'name: CI Gate',
+            // P2-16 (409123b5, 2026-08-07): ci-gate now skips PR events — the
+            // repository ruleset enforces the 7 required checks directly, so
+            // freeing the gate (and the 4 non-PR jobs it consumed) on PRs is a
+            // deliberate runner-pressure cut. It still runs on `always()`
+            // semantics for pushes, so the aggregate/terminal gate posture is
+            // unchanged on main.
+            "if: ${{ always() && github.event_name != 'pull_request' }}",
+            'SAME_REPOSITORY_PR',
+            "forkSkips.push('integration-tests', 'e2e-critical-paths')",
+            'process.exit(1)',
+          )(gate)
           && includesAll('Trusted integration job requires', 'exit 1')(mappingEntryBlock(text, 'integration-tests', 2))
           && mappingEntryBlock(text, 'health-check', 2) === ''
           && includesAll('POLL_WINDOW_SECONDS=600', 'while [ "$SECONDS" -lt "$DEADLINE" ]; do', 'EXPECTED_SHA=', "b.ok===true&&b.status==='healthy'", "b.version?.git_sha||''")(deployHealth)

@@ -33,6 +33,27 @@ vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+// RBAC gate: authorizeRequest replaced the direct supabase.auth.getUser()
+// auth path (eaa7e1ab, 2026-08-06 — audit-driven RBAC hardening on
+// student-data routes). Mirror its contract: authorized with the fixture
+// userId when a session exists, otherwise an unauthorized 401.
+let authorizeRequestImpl: unknown;
+const authorizeRequest = vi.fn(async () => {
+  if (typeof authorizeRequestImpl === 'function') {
+    return (authorizeRequestImpl as (...args: unknown[]) => unknown)();
+  }
+  return {
+    authorized: true,
+    userId: 'u1',
+    studentId: 's1',
+    roles: ['student'],
+    permissions: ['study_plan.view'],
+  };
+});
+vi.mock('@alfanumrik/lib/rbac', () => ({
+  authorizeRequest: (...args: unknown[]) => authorizeRequest(...(args as [])),
+}));
+
 import { GET } from './route';
 
 function makeSupabase(opts: {

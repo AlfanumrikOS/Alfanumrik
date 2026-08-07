@@ -246,8 +246,12 @@ export const PROTECTED_FLAGS: Record<string, FlagProtection> = {
   ff_class_leaderboard_v1: STAGED_ROLLOUT,
   ff_streak_guardian_cron_v1: STAGED_ROLLOUT,
   // ff_quiz_telemetry_v1 was promoted to always-on in code (v2/quiz/submit/route.ts
-  // always calls prepareQuizTelemetry unconditionally, 2026-08-06 backendaudit P0).
-  // The DB row may remain OFF — the route no longer reads it.
+  // always calls prepareQuizTelemetry unconditionally, 2026-08-06 backendaudit P0)
+  // — the route no longer reads the flag, so it is NOT watched by the posture
+  // canary (EXPECTED_OFF_FLAGS). It REMAINS a PROTECTED_FLAGS entry (staged_rollout)
+  // so any further flag change still requires typed confirmation; the DB mirror
+  // row (migration 20260722090000) is unchanged.
+  ff_quiz_telemetry_v1: STAGED_ROLLOUT,
   ff_institution_entitlements_v1: STAGED_ROLLOUT,
   ff_foxy_curriculum_guard_v1: STAGED_ROLLOUT,
   ff_unified_quiz_v1: STAGED_ROLLOUT,

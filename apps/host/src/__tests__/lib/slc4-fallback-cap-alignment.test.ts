@@ -1,39 +1,30 @@
 /**
- * SLC-4 (engineering-audit remediation) — Fallback Daily-Cap Alignment (P2).
+ * SLC-4 (engineering-audit remediation) — canonical v2-only submit pin (P0-1/P0-2).
  *
- * THE FIX (src/lib/supabase.ts, submitQuizResults client-side fallback ~544-606)
- * ============================================================================
- * The quiz-submit fallback's atomic-RPC call was repointed from the BROKEN
- * 6-param JSONB overload of `atomic_quiz_profile_update` — whose daily-cap read
- * referenced a NON-EXISTENT `quiz_sessions.xp_earned` column, raised Postgres
- * 42703 at runtime, and let the catch silently degrade to an UNCAPPED
- * `student_learning_profiles` upsert (so the fallback enforced NO 200/day cap and
- * could award a SECOND 200 on top of the primary path → up to 400/day, a P2
- * breach) — to the CANONICAL 7-param VOID overload. Passing
- * `p_session_id: session?.id ?? null` is what forces PostgREST to resolve the
- * void, ledger-based, IST-boundary, 200/day-CAPPED writer — the SAME writer the
- * primary v2 path uses.
- *
- * The void overload returns no JSONB, so the over-cap UI display (`effective_xp`
- * / `xp_capped`) is RE-DERIVED by reading back the AUTHORITATIVE `xp_transactions`
- * ledger row (`reference_id = 'quiz_<session>'`, `.maybeSingle()`):
- *   effectiveXp = ledgerRow.amount;  xpCapped = effectiveXp < xpEarnedUncapped;
- * It is NEVER a client recompute of XP from the correct-count.
- *
- * The degraded uncapped upsert is now reached ONLY on a GENUINE RPC failure
- * (`if (rpcErr) throw rpcErr`), not the old 42703 missing-column path.
+ * THE CONTRACT (packages/lib/src/supabase.ts, submitQuizResults ~465-494)
+ * =========================================================================
+ * submitQuizResults uses the SINGLE canonical v2 RPC path (submit_quiz_results_v2).
+ * The audit-2026-08-06 remediation REMOVED:
+ *   - the v1 L2 fallback (submit_quiz_results),
+ *   - the client-side atomic_quiz_profile_update fallback whose 6-param JSONB
+ *     overload referenced a non-existent quiz_sessions.xp_earned column (42703),
+ *     letting the catch silently degrade to an UNCAPPED student_learning_profiles
+ *     upsert (up to 400 XP/day instead of 200),
+ *   - the L3 client-side score recompute.
+ * All scoring/XP/cap logic now lives server-side inside submit_quiz_results_v2
+ * (ledger-based, IST-boundary, 200/day-capped). The client sends only the
+ * displayed indices it clicked (selected_displayed_index + time_spent) — no
+ * is_correct, no shuffle_map, no client XP — and returns the RPC result VERBATIM.
  *
  * WHY SOURCE-PIN (+ a MODELLED behavioral arm)
  * ============================================
- * Driving the real `submitQuizResults` fallback needs a full stateful mock of the
- * browser supabase client (rpc + from().insert().select().single() +
- * from().select().eq().maybeSingle()) across primary AND fallback. The repo
- * convention for THIS exact path is the source-pin + ledger-model approach used
- * by `quiz-submit-idempotency-contract-pin.test.ts` and the parity-pin approach
- * of `lib/xp-daily-cap.test.ts`. We mirror both: comment-stripped SOURCE pins
- * that prove the fix is wired (and the broken shape is gone), plus a MODELLED
- * cap arm proving primary+fallback can never exceed 200/day. If the fix is ever
- * reverted, the source pins fail — that is the intended trip-wire.
+ * This file mirrors the source-pin + model convention of
+ * quiz-submit-idempotency-contract-pin.test.ts and lib/xp-daily-cap.test.ts:
+ * comment-stripped SOURCE pins prove the v2-only wiring (and that the broken
+ * fallback shapes are gone), plus a MODELLED cap arm proving the ledger clamp
+ * can never exceed 200/day. If the removed fallback is ever reintroduced — or
+ * a bare client-side upsert sneaks back — the pins fail. That is the intended
+ * trip-wire.
  *
  * TEST-ONLY structural + model pins. Does NOT modify supabase.ts.
  */
@@ -45,8 +36,8 @@ import { XP_RULES } from '@alfanumrik/lib/xp-config';
 
 // ─────────────────────────────────────────────────────────────────────
 // Helpers: locate + comment-strip the source so prose mentioning the
-// "6-param" overload / `atomic_quiz_profile_update` in comments cannot
-// produce false matches. We must read CODE, not documentation.
+// removed "6-param" overload / `atomic_quiz_profile_update` in comments
+// cannot produce false matches. We must read CODE, not documentation.
 // ─────────────────────────────────────────────────────────────────────
 function resolveRepo(rel: string): string {
   for (const c of [resolve(process.cwd(), rel), resolve(process.cwd(), '..', rel)]) {
@@ -82,105 +73,74 @@ const submitFn = extractSubmitFn(code);
 const flatSubmit = submitFn.replace(/\s+/g, ' ');
 
 // ════════════════════════════════════════════════════════════════════════════
-// 1. SOURCE PIN — the fallback RPC resolves to the 7-param VOID overload.
-//    The call MUST carry p_session_id (the 7th param). The broken 6-param JSONB
-//    shape (no p_session_id) MUST be gone from the submit path.
+// 1. SOURCE PIN — the submit path is v2-ONLY. The v1 L2 fallback and the
+//    atomic_quiz_profile_update fallback are GONE from the submit path.
 // ════════════════════════════════════════════════════════════════════════════
-describe('SLC-4 source pin: fallback routes through the 7-param capped void overload', () => {
-  it('submitQuizResults is present and contains an atomic_quiz_profile_update fallback call', () => {
+describe('SLC-4 source pin: submit path is canonical v2-only', () => {
+  it('submitQuizResults is present and calls submit_quiz_results_v2', () => {
     expect(submitFn.length).toBeGreaterThan(0);
-    expect(submitFn).toMatch(/rpc\(\s*['"]atomic_quiz_profile_update['"]/);
+    expect(flatSubmit).toMatch(/rpc\(\s*['"]submit_quiz_results_v2['"]/);
   });
 
-  it('the fallback atomic_quiz_profile_update call passes p_session_id (forces the void overload)', () => {
-    // Isolate the rpc('atomic_quiz_profile_update', { ... }) argument object and
-    // assert p_session_id is present inside it.
+  it('the v1 RPC submit_quiz_results is NOT called in the submit path (L2 fallback removed)', () => {
+    expect(flatSubmit).not.toMatch(/rpc\(\s*['"]submit_quiz_results['"]/);
+  });
+
+  it('the broken atomic_quiz_profile_update fallback is NOT present (no uncapped catch upsert)', () => {
+    expect(flatSubmit).not.toMatch(/rpc\(\s*['"]atomic_quiz_profile_update['"]/);
+    // No client-side upsert to student_learning_profiles remains in the submit path.
+    expect(flatSubmit).not.toMatch(/from\(\s*['"]student_learning_profiles['"]\s*\)\s*\.upsert/);
+  });
+
+  it('the canonical v2 params are all present (p_session_id, p_student_id, p_subject, p_grade, p_topic, p_chapter, p_responses, p_time)', () => {
     const m = flatSubmit.match(
-      /rpc\(\s*['"]atomic_quiz_profile_update['"]\s*,\s*\{[^}]*\}/,
-    );
-    expect(m).not.toBeNull();
-    expect(m![0]).toMatch(/p_session_id\s*:/);
-    // It is routed off the just-inserted session row, not a fabricated id.
-    expect(m![0]).toMatch(/p_session_id\s*:\s*session\?\.id\s*\?\?\s*null/);
-  });
-
-  it('every atomic_quiz_profile_update call in the submit path carries p_session_id (no bare 6-param shape)', () => {
-    // There must be NO atomic_quiz_profile_update rpc invocation whose argument
-    // object lacks p_session_id — that would be the broken JSONB overload.
-    const calls = [
-      ...flatSubmit.matchAll(
-        /rpc\(\s*['"]atomic_quiz_profile_update['"]\s*,\s*(\{[^}]*\})/g,
-      ),
-    ];
-    expect(calls.length).toBeGreaterThan(0);
-    for (const c of calls) {
-      expect(c[1]).toMatch(/p_session_id\s*:/);
-    }
-  });
-
-  it('the canonical 7 named params are all present (p_student_id, p_subject, p_xp, p_total, p_correct, p_time_seconds, p_session_id)', () => {
-    const m = flatSubmit.match(
-      /rpc\(\s*['"]atomic_quiz_profile_update['"]\s*,\s*(\{[^}]*\})/,
+      /rpc\(\s*['"]submit_quiz_results_v2['"]\s*,\s*(\{[^}]*\})/,
     );
     expect(m).not.toBeNull();
     for (const param of [
+      'p_session_id',
       'p_student_id',
       'p_subject',
-      'p_xp',
-      'p_total',
-      'p_correct',
-      'p_time_seconds',
-      'p_session_id',
+      'p_grade',
+      'p_topic',
+      'p_chapter',
+      'p_responses',
+      'p_time',
     ]) {
       expect(m![1]).toMatch(new RegExp(`${param}\\s*:`));
     }
+    // The client forwards its session id (null for the legacy/mobile flow) —
+    // idempotency lives server-side, not in a client re-derivation.
+    expect(m![1]).toMatch(/p_session_id\s*:\s*sessionId/);
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// 2. SOURCE PIN — over-cap display is RE-DERIVED from the xp_transactions ledger
-//    row, never recomputed client-side from the correct-count.
+// 2. SOURCE PIN — the client sends DISPLAYED INDICES ONLY and returns the RPC
+//    result VERBATIM. No client score recompute, no client XP derivation.
 // ════════════════════════════════════════════════════════════════════════════
-describe('SLC-4 source pin: effective_xp / xp_capped re-derived from the authoritative ledger row', () => {
-  it('reads back xp_transactions filtered by reference_id = `quiz_${session.id}` via maybeSingle()', () => {
-    expect(flatSubmit).toMatch(/from\(\s*['"]xp_transactions['"]\s*\)/);
-    expect(flatSubmit).toMatch(/\.select\(\s*['"]amount['"]\s*\)/);
-    // reference_id eq filter built from the session id.
-    expect(flatSubmit).toMatch(
-      /\.eq\(\s*['"]reference_id['"]\s*,\s*`quiz_\$\{session\.id\}`\s*\)/,
-    );
-    expect(flatSubmit).toMatch(/\.maybeSingle\(\)/);
+describe('SLC-4 source pin: server-authoritative response (no client recompute)', () => {
+  it('success returns the v2 RPC data verbatim (never recomputed)', () => {
+    expect(flatSubmit).toMatch(/if\s*\(\s*!v2\.error\s*&&\s*v2\.data\s*\)\s*return\s+v2\.data/);
   });
 
-  it('effectiveXp is taken from the ledger row amount, not a client XP recompute', () => {
-    expect(flatSubmit).toMatch(/effectiveXp\s*=\s*ledgerRow\.amount/);
-    // xpCapped is derived by comparing the ledger amount to the uncapped value.
-    expect(flatSubmit).toMatch(/xpCapped\s*=\s*effectiveXp\s*<\s*xpEarnedUncapped/);
+  it('a v2 RPC error surfaces as a throw, never a silent fallback', () => {
+    expect(flatSubmit).toMatch(/throw\s+new\s+Error\(v2\.error\?\.message/);
   });
 
-  it('the returned xp_earned surfaces the ledger-derived effectiveXp (not xpEarnedUncapped)', () => {
-    expect(flatSubmit).toMatch(/xp_earned\s*:\s*effectiveXp/);
+  it('the response mapper strips is_correct and shuffle_map (server re-derives both)', () => {
+    const mapper = rawSrc.match(/function _mapV2\([\s\S]*?\n}/);
+    expect(mapper).not.toBeNull();
+    const mapped = stripComments(mapper![0]).replace(/\s+/g, ' ');
+    expect(mapped).not.toMatch(/is_correct/);
+    expect(mapped).not.toMatch(/shuffle_map/);
+    expect(mapped).toMatch(/selected_displayed_index/);
+    expect(mapped).toMatch(/time_spent/);
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// 3. SOURCE PIN — the degraded uncapped upsert is reached ONLY on a genuine RPC
-//    failure (`if (rpcErr) throw rpcErr`), not the old swallowed 42703.
-// ════════════════════════════════════════════════════════════════════════════
-describe('SLC-4 source pin: degraded uncapped upsert is gated behind a real RPC failure', () => {
-  it('the rpc error is re-thrown (if (rpcErr) throw rpcErr) so success never falls through to the uncapped path', () => {
-    expect(flatSubmit).toMatch(/if\s*\(\s*rpcErr\s*\)\s*throw\s+rpcErr/);
-  });
-
-  it('the last-resort path is an upsert on student_learning_profiles inside the catch (degraded, documented)', () => {
-    expect(flatSubmit).toMatch(
-      /from\(\s*['"]student_learning_profiles['"]\s*\)\s*\.upsert/,
-    );
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 4. CAP VALUE UNCHANGED — guard against accidental cap drift. SLC-4 is alignment
+// 3. CAP VALUE UNCHANGED — guard against accidental cap drift. SLC-4 is alignment
 //    only: the 200/day value must NOT move.
 // ════════════════════════════════════════════════════════════════════════════
 describe('SLC-4: the 200 XP/day cap value is unchanged (alignment only, not a cap change)', () => {
@@ -190,21 +150,22 @@ describe('SLC-4: the 200 XP/day cap value is unchanged (alignment only, not a ca
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// 5. BEHAVIORAL (MODELLED) — primary + fallback can never award more than the
-//    200/day cap. Models BOTH paths flowing through the SAME ledger writer:
-//    a per-day SUM(amount) clamp on xp_transactions. This is the property the
-//    SLC-4 repoint restores (the broken 6-param path bypassed this clamp).
+// 4. BEHAVIORAL (MODELLED) — the server-side capped ledger writer can never
+//    award more than the 200/day cap. Since the client no longer has ANY
+//    scoring/upsert path, this models the authoritative per-day SUM(amount)
+//    clamp inside submit_quiz_results_v2 — the property the SLC-4 repoint
+//    restored (the old 6-param fallback bypassed this clamp).
 //
-//    NOTE: the real submitQuizResults fallback requires a full stateful supabase
-//    client mock to drive end-to-end; per repo convention for this path
-//    (quiz-submit-idempotency-contract-pin.test.ts) the behavioral arm is
-//    MODELLED against the SQL clamp semantics rather than the live client. The
-//    source pins in §1-§3 prove the fallback is actually wired to this writer.
+//    NOTE: the real submit_quiz_results_v2 clamp lives in Postgres (SECURITY
+//    DEFINER RPC, atomic_quiz_profile_update shared writer); per repo convention
+//    for this path the behavioral arm is MODELLED against the SQL clamp
+//    semantics rather than a live DB. The source pins in §1-§2 prove the client
+//    cannot reach an uncapped path at all.
 // ════════════════════════════════════════════════════════════════════════════
-describe('SLC-4 modelled behavior: primary + fallback both flow through the capped ledger writer', () => {
+describe('SLC-4 modelled behavior: server ledger writer enforces the cap', () => {
   const CAP = XP_RULES.quiz_daily_cap; // 200
 
-  // Mirrors atomic_quiz_profile_update's IST-day clamp:
+  // Mirrors the ledger clamp's IST-day semantics:
   //   v_remaining    := GREATEST(0, cap - SUM(amount today));
   //   v_effective_xp := LEAST(GREATEST(0, p_xp), v_remaining);
   // and the reference_id ON CONFLICT DO NOTHING idempotency.
@@ -231,34 +192,33 @@ describe('SLC-4 modelled behavior: primary + fallback both flow through the capp
     expect(ledger.totalToday).toBe(170);
   });
 
-  it('primary 200 then a fallback-path quiz cannot push the day past 200 (no second 200 award)', () => {
+  it('primary 200 then a second quiz cannot push the day past 200 (no second 200 award)', () => {
     const ledger = new CappedLedgerWriter();
     // Primary path already maxed the day.
     expect(ledger.award('quiz_primary', 200)).toBe(200);
-    // A later quiz that degrades to the fallback path routes through the SAME
-    // capped writer (the SLC-4 repoint) → it can award at most the remainder (0).
+    // A later quiz routes through the SAME capped writer → at most the remainder (0).
     expect(ledger.award('quiz_fallback', 170)).toBe(0);
     expect(ledger.totalToday).toBe(200); // NOT 370/400 (the pre-fix bug)
   });
 
-  it('199 earned + a quiz worth 50 via the fallback path awards exactly 1 (partial remainder, not the full 50, not 0)', () => {
+  it('199 earned + a quiz worth 50 awards exactly 1 (partial remainder, not the full 50, not 0)', () => {
     const ledger = new CappedLedgerWriter();
     expect(ledger.award('quiz_a', 199)).toBe(199);
     expect(ledger.award('quiz_fallback', 50)).toBe(1);
     expect(ledger.totalToday).toBe(200);
   });
 
-  it('same session replayed (network retry) via the fallback awards 0 the second time (reference_id idempotency)', () => {
+  it('same session replayed (network retry) awards 0 the second time (reference_id idempotency)', () => {
     const ledger = new CappedLedgerWriter();
     expect(ledger.award('quiz_dup', 100)).toBe(100);
     expect(ledger.award('quiz_dup', 100)).toBe(0);
     expect(ledger.totalToday).toBe(100);
   });
 
-  it('REGRESSION: the pre-SLC-4 uncapped fallback would have allowed up to 400/day — the capped writer forbids it', () => {
+  it('REGRESSION: the pre-SLC-4 uncapped client fallback would have allowed up to 400/day — the capped writer forbids it', () => {
     // Pre-fix: the 6-param overload hit 42703 and the catch did an UNCAPPED
-    // upsert, so primary (200) + fallback (200) = 400. Model that the capped
-    // writer the fallback now uses caps the SECOND award to the remainder (0).
+    // client upsert, so primary (200) + fallback (200) = 400. Model that the
+    // capped writer caps the SECOND award to the remainder (0).
     const ledger = new CappedLedgerWriter();
     ledger.award('quiz_primary', 200);
     const fallbackAward = ledger.award('quiz_fallback', 200);

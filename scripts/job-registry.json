@@ -155,6 +155,15 @@
       "alertThreshold": "no success for 26h"
     },
     {
+      "path": "/api/cron/governance-health",
+      "platform": "vercel",
+      "owner": "backend",
+      "schedule": "55 4 * * *",
+      "idempotencyKey": "governance-health:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.governance_health.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
       "path": "/api/cron/whatsapp-drain",
       "platform": "vercel",
       "owner": "backend",

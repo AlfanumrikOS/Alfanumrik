@@ -46,9 +46,14 @@
  *      OpenAI-primary rollback lever, #1443), so it is no longer expected
  *      fully-OFF (still ai_provider-protected for any further change) —
  *      mirrors the ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 precedents.
+ *      On 2026-08-06 EXPECTED_OFF_FLAGS shrank 58 → 57 when ff_quiz_telemetry_v1
+ *      was promoted to always-on in code (v2/quiz/submit/route.ts unconditionally
+ *      calls prepareQuizTelemetry, backendaudit P0) — the route no longer reads
+ *      the flag, so it is no longer expected fully-OFF (still staged_rollout-
+ *      protected for any further change, mirroring the same precedents).
  *      The watched set below is derived from EXPECTED_OFF_FLAGS directly, so
  *      this suite's length pin tracks those net changes (watched set
- *      54 → 56 → 55 → 57 → 56 → 61 → 58 → 59 → 58):
+ *      54 → 56 → 55 → 57 → 56 → 61 → 58 → 59 → 58 → 57):
  *        - any EXPECTED_OFF flag with is_enabled=true OR rollout>0 → drift;
  *        - ff_atomic_subscription_activation disabled OR missing → drift
  *          (P11 kill-switch must exist and be enabled);
@@ -268,7 +273,7 @@ describe('flag-posture-canary — auth gate (fail-closed before I/O)', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('flag-posture-canary — DB query shape', () => {
-  it('reads feature_flags once, selecting state columns, .in() over the 58-name watched set (57 EXPECTED_OFF + the P11 kill-switch)', async () => {
+  it('reads feature_flags once, selecting state columns, .in() over the 57-name watched set (56 EXPECTED_OFF + the P11 kill-switch)', async () => {
     const { GET } = await loadRoute();
     await GET(req({ 'x-cron-secret': SECRET }));
 
@@ -280,7 +285,7 @@ describe('flag-posture-canary — DB query shape', () => {
     const inOp = fromCalls[0].ops.find((o) => o.op === 'in');
     expect(inOp?.args[0]).toBe('flag_name');
     const watched = inOp?.args[1] as string[];
-    // 57 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
+    // 56 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
     // ff_adaptive_remediation_v1's 10% pilot exclusion, + ff_whatsapp_alarm_template
     // — the surviving 2026-07-30 WhatsApp bot protected flag, seed
     // 20260801100500 companion — minus ff_whatsapp_bot_v1, which left
@@ -290,11 +295,13 @@ describe('flag-posture-canary — DB query shape', () => {
     // — ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine —
     // minus ff_foxy_openai_primary_rollout_v1, which was added same-day by
     // seed 20260803120000 then CEO-approved intentionally-live at
-    // enabled=true/100 the same day, so it never nets into this list)
+    // enabled=true/100 the same day, so it never nets into this list,
+    // minus ff_quiz_telemetry_v1, promoted to always-on in code 2026-08-06,
+    // backendaudit P0)
     // + ATOMIC; the two MoL shadow flags are already members of EXPECTED_OFF,
-    // so the de-duped set is 58.
+    // so the de-duped set is 57.
     expect(new Set(watched).size).toBe(watched.length);
-    expect(watched).toHaveLength(58);
+    expect(watched).toHaveLength(57);
     // Belt-and-braces against the silent-merge failure mode described in the
     // file header: pin the RELATION as well as the literal, so a future
     // EXPECTED_OFF_FLAGS edit that forgets this file fails with a message that
