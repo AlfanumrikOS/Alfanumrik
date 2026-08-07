@@ -56,14 +56,17 @@ BEGIN
     END
   );
 
-  -- Alert on unhealthy status via state_events (real column: kind).
+  -- Alert on unhealthy status via state_events (real columns, verified).
+  -- NOTE: state_events.actor_auth_user_id is NOT NULL (20260521100000:77).
+  -- Use a reserved system actor UUID (00000000-0000-0000-0000-000000000000)
+  -- for automated/background events that have no human actor.
   IF v_status <> 'success' THEN
     INSERT INTO public.state_events (
       event_id, kind, actor_auth_user_id, idempotency_key, occurred_at, payload
     ) VALUES (
       gen_random_uuid(),
       'system.backup_verification_failed',
-      NULL,
+      '00000000-0000-0000-0000-000000000000',
       'backup-verify-' || now()::text,
       now(),
       jsonb_build_object(
