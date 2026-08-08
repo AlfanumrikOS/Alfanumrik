@@ -259,6 +259,75 @@ describe('ROLE_CONFIG', () => {
       }
     }
   });
+
+  // ── Label ↔ destination honesty ───────────────────────────────────────────
+  // A nav label that lies about where it goes is the same defect class as a
+  // link to a page that does not exist: the user taps a promise and gets
+  // something else. `guardian.nav` shipped `/parent/children` twice — as
+  // "Children" and as "Exams" — so a parent tapping "Exams" landed on Children
+  // with no exam content anywhere. Route resolution itself (every href points
+  // at a real page or a configured redirect) is pinned separately by
+  // `internal-href-route-resolution.test.ts`; these assertions are about the
+  // NAMES.
+
+  it('no role nav points two different labels at the same destination', () => {
+    for (const role of ['student', 'teacher', 'guardian', 'institution_admin'] as const) {
+      const labelsByHref = new Map<string, Set<string>>();
+      for (const item of ROLE_CONFIG[role].nav) {
+        if (!labelsByHref.has(item.href)) labelsByHref.set(item.href, new Set());
+        labelsByHref.get(item.href)!.add(item.label);
+      }
+      const conflicts = [...labelsByHref.entries()]
+        .filter(([, labels]) => labels.size > 1)
+        .map(([href, labels]) => `${href} → ${[...labels].sort().join(' / ')}`);
+      expect(conflicts, `ROLE_CONFIG.${role}.nav: one destination wearing several names`).toEqual([]);
+    }
+  });
+
+  it('no role nav lists the same destination twice, even under one name', () => {
+    for (const role of ['student', 'teacher', 'guardian', 'institution_admin'] as const) {
+      const hrefs = ROLE_CONFIG[role].nav.map((n) => n.href as string);
+      expect(hrefs, `ROLE_CONFIG.${role}.nav has duplicate hrefs`).toEqual([...new Set(hrefs)]);
+    }
+  });
+
+  it('no role nav reuses one label for two different destinations', () => {
+    for (const role of ['student', 'teacher', 'guardian', 'institution_admin'] as const) {
+      const hrefsByLabel = new Map<string, Set<string>>();
+      for (const item of ROLE_CONFIG[role].nav) {
+        if (!hrefsByLabel.has(item.label)) hrefsByLabel.set(item.label, new Set());
+        hrefsByLabel.get(item.label)!.add(item.href);
+      }
+      const conflicts = [...hrefsByLabel.entries()]
+        .filter(([, hrefs]) => hrefs.size > 1)
+        .map(([label, hrefs]) => `${label} → ${[...hrefs].sort().join(' / ')}`);
+      expect(conflicts, `ROLE_CONFIG.${role}.nav: one name pointing several places`).toEqual([]);
+    }
+  });
+
+  it('the parent nav offers no "Exams" entry — no parent-facing exams page exists', () => {
+    const labels = ROLE_CONFIG.guardian.nav.map((n) => n.label as string);
+    expect(labels).not.toContain('Exams');
+    const labelsHi = ROLE_CONFIG.guardian.nav.map((n) => n.labelHi as string);
+    expect(labelsHi).not.toContain('परीक्षा');
+    // Every guardian destination stays inside the parent portal.
+    for (const item of ROLE_CONFIG.guardian.nav) {
+      expect(item.href === '/parent' || item.href.startsWith('/parent/')).toBe(true);
+    }
+  });
+
+  it('the student nav no longer points at the page-less /review route', () => {
+    // `/review` lost its page in Study Menu v2 and is now only a 301 to
+    // `/refresh?tab=flashcards`. The entry claimed "Review" and delivered
+    // "Refresh"; it now names its real destination, matching the live student
+    // nav in packages/ui/src/navigation/nav-config.ts.
+    const hrefs = ROLE_CONFIG.student.nav.map((n) => n.href as string);
+    expect(hrefs).not.toContain('/review');
+    expect(hrefs).toContain('/refresh');
+    const refresh = ROLE_CONFIG.student.nav.find((n) => n.href === '/refresh')!;
+    expect(refresh.label).toBe('Refresh');
+    expect(refresh.labelHi).toBe('ताज़ा करो');
+  });
 });
 
 // ─── FOXY_MODES ─────────────────────────────────────────────

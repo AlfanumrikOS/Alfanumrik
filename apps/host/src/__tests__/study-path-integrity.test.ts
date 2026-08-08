@@ -17,7 +17,20 @@
  *     is available (guards against the "chapters = []" regression).
  *   - The response is normalized so `chapter_title` is surfaced as `title`
  *     AND legacy `title` is still accepted for back-compat.
- *   - Empty/401/422 responses degrade to `[]` rather than throwing.
+ *   - No response shape throws.
+ *
+ * FAILURE-vs-EMPTY CONTRACT (added when getChaptersForSubject started
+ * returning `ServiceResult`): the helper used to collapse 401, 5xx, network
+ * errors AND "this subject isn't yours" all into the same `[]`, so /learn and
+ * QuizSetup rendered "No chapters available yet" — a claim that the student's
+ * syllabus is empty — after a mere auth hiccup. Exactly ONE non-2xx is a
+ * genuine empty answer now:
+ *
+ *   - 422 (subject not in the student's allowed set) → ok, data: []
+ *   - 401 / other non-2xx / network throw            → ok: false
+ *
+ * Both directions are asserted below; a test that only checked the failure
+ * direction would pass even if the genuine-empty path had been deleted.
  *
  * Any future refactor that strips the Bearer header or forgets the shape
  * mapping will fail these tests. Pair with the DB-level trigger
@@ -85,9 +98,10 @@ describe('study-path integrity — getChaptersForSubject', () => {
       }),
     });
 
-    const chapters = await getChaptersForSubject('math', '9');
+    const res = await getChaptersForSubject('math', '9');
 
-    expect(chapters).toEqual([
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.data).toEqual([
       { chapter_number: 1, title: 'Number Systems', title_hi: null, verified_question_count: 0 },
       { chapter_number: 2, title: 'Polynomials', title_hi: null, verified_question_count: 0 },
       { chapter_number: 3, title: 'Coordinate Geometry', title_hi: null, verified_question_count: 0 },
@@ -102,9 +116,10 @@ describe('study-path integrity — getChaptersForSubject', () => {
       }),
     });
 
-    const chapters = await getChaptersForSubject('math', '9');
+    const res = await getChaptersForSubject('math', '9');
 
-    expect(chapters).toEqual([{ chapter_number: 1, title: 'Number Systems', title_hi: null, verified_question_count: 0 }]);
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.data).toEqual([{ chapter_number: 1, title: 'Number Systems', title_hi: null, verified_question_count: 0 }]);
   });
 
   it('falls back to "Chapter N" placeholder when neither field is present', async () => {
@@ -115,40 +130,72 @@ describe('study-path integrity — getChaptersForSubject', () => {
       }),
     });
 
-    const chapters = await getChaptersForSubject('math', '9');
+    const res = await getChaptersForSubject('math', '9');
 
-    expect(chapters).toEqual([{ chapter_number: 5, title: 'Chapter 5', title_hi: null, verified_question_count: 0 }]);
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.data).toEqual([{ chapter_number: 5, title: 'Chapter 5', title_hi: null, verified_question_count: 0 }]);
   });
 
-  it('returns [] on 401 (unauthenticated) without throwing', async () => {
+  it('reports a FAILURE (not an empty list) on 401 — an auth hiccup is not an empty syllabus', async () => {
     (global.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 401,
     });
 
-    const chapters = await getChaptersForSubject('math', '9');
+    const res = await getChaptersForSubject('math', '9');
 
-    expect(chapters).toEqual([]);
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.code).toBe('UNAUTHORIZED');
+    // The old shape — a bare, success-looking [] — must not come back.
+    expect(res).not.toHaveProperty('data');
   });
 
-  it('returns [] on 422 (subject not allowed) without throwing', async () => {
+  it('reports a genuine EMPTY (ok, data: []) on 422 — subject not in this student\'s set', async () => {
     (global.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 422,
     });
 
-    const chapters = await getChaptersForSubject('physics', '6');
+    const res = await getChaptersForSubject('physics', '6');
 
-    expect(chapters).toEqual([]);
+    // Other direction of the same contract: 422 is an ANSWER, not a failure —
+    // "No chapters available for this subject yet" is correct here.
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.data).toEqual([]);
   });
 
-  it('returns [] on network error without throwing', async () => {
+  it('reports a FAILURE (not an empty list) on a 5xx', async () => {
+    (global.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 503,
+    });
+
+    const res = await getChaptersForSubject('math', '9');
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.code).toBe('EXTERNAL_FAILURE');
+  });
+
+  it('reports a FAILURE on a network error, without throwing', async () => {
     (global.fetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error('network failure'),
     );
 
-    const chapters = await getChaptersForSubject('math', '9');
+    const res = await getChaptersForSubject('math', '9');
 
-    expect(chapters).toEqual([]);
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toContain('network failure');
+  });
+
+  it('reports a genuine EMPTY (ok, data: []) when the server returns zero chapters', async () => {
+    (global.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({ chapters: [] }),
+    });
+
+    const res = await getChaptersForSubject('math', '9');
+
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.data).toEqual([]);
   });
 });

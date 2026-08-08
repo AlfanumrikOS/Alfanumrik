@@ -91,6 +91,10 @@ export default function QuizSetup({
   const [showCustom, setShowCustom] = useState(!smartSuggestion);
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
+  // Distinguishes "this subject genuinely has no chapters" from "the chapter
+  // read failed". Both used to render "No chapters available for this subject
+  // yet", so an auth hiccup or a 5xx told the student their syllabus was empty.
+  const [chaptersFailed, setChaptersFailed] = useState(false);
 
   // E5: emit (subject, chapter) so the parent can render PrereqSuggestion.
   // Fired on every selection change (including reset-to-null).
@@ -107,12 +111,21 @@ export default function QuizSetup({
   useEffect(() => {
     if (!selectedSubject || !studentGrade) {
       setChapters([]);
+      setChaptersFailed(false);
       setSelectedChapter(null);
       return;
     }
     setChaptersLoading(true);
+    setChaptersFailed(false);
     getChaptersForSubject(selectedSubject, studentGrade)
-      .then(data => {
+      .then(res => {
+        if (!res.ok) {
+          setChaptersFailed(true);
+          setChapters([]);
+          setSelectedChapter(null);
+          return;
+        }
+        const data = res.data;
         setChapters(data);
         // If coming in with a pre-selected chapter (e.g. from /learn page), keep it
         if (initialChapter && data.some(c => c.chapter_number === initialChapter)) {
@@ -121,7 +134,7 @@ export default function QuizSetup({
           setSelectedChapter(null);
         }
       })
-      .catch(() => setChapters([]))
+      .catch(() => { setChaptersFailed(true); setChapters([]); })
       .finally(() => setChaptersLoading(false));
   }, [selectedSubject, studentGrade, initialChapter]);
 
@@ -349,6 +362,15 @@ export default function QuizSetup({
               <div className="text-xs text-[var(--text-3)] py-2">
                 {isHi ? 'अध्याय लोड हो रहे हैं...' : 'Loading chapters...'}
               </div>
+            ) : chaptersFailed ? (
+              /* Distinct from the genuine "no chapters" copy below: a failed
+                 read must never be reported as an empty syllabus. Quizzing all
+                 chapters still works, so this is a notice, not a dead end. */
+              <p className="text-xs py-2" style={{ color: 'var(--orange)' }} role="status">
+                {isHi
+                  ? 'अध्याय अभी लोड नहीं हो पाए — तुम अभी भी सभी अध्यायों का क्विज़ ले सकते हो।'
+                  : "Couldn't load chapters right now — you can still quiz across all chapters."}
+              </p>
             ) : chapters.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {/* "All chapters" option */}

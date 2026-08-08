@@ -24,6 +24,19 @@ import type {
   MasteryOverviewResponse,
 } from './dashboard/mastery-buckets';
 import { buildFallbackStudentSnapshot, normalizeStudentSnapshot } from './student-snapshot';
+// ServiceResult is the canonical result shape for data reads in this codebase
+// (see packages/lib/src/domains/types.ts — every `domains/*` module returns it).
+// The read helpers below used to `console.error(...)` the PostgREST error and
+// then `return data ?? []`, which made a FAILED read structurally
+// indistinguishable from a genuinely-empty one: `supabase.rpc()` and the query
+// builder RESOLVE with `{ data, error }`, they never reject, so a caller's
+// `.catch()` was dead code and its `[]` was ambiguous. /progress showed a
+// student "No knowledge gaps detected!" — a clean bill of academic health —
+// after the request had 500'd. Reads that carry that ambiguity now return
+// ServiceResult so the caller MUST decide (the union makes `.data`
+// inaccessible until `ok` is checked). Only the helpers whose emptiness is
+// user-visible have been converted so far; see the TODO(backend) below.
+import { ok, fail, type ServiceResult } from './domains/types';
 // NOTE (P10): the canonical P6 gate `./quiz/question-validation` is imported
 // DYNAMICALLY inside validateQuestions() below, not statically here. This file
 // is in the module graph of nearly every page; a static import puts the full
@@ -64,18 +77,31 @@ export async function getStudentSnapshot(studentId: string) {
   return buildFallbackStudentSnapshot({ profilesResult, masteredResult, inProgressResult, quizzesResult });
 }
 
-/* ── Student learning profiles ── */
-export async function getStudentProfiles(studentId: string) {
+/* TODO(backend): the same swallow-and-return-empty defect still exists in the
+ * other read helpers in this file (getBoardPapers, getCompetitions,
+ * getCompetitionLeaderboard, getHallOfFame, getTopicDiagrams,
+ * getChapterQuestions, getReviewCards, getLeaderboard, getFeatureFlags,
+ * getStudentNotifications, getUserRole, getTeacherDashboard, getClassDetail,
+ * getAssignmentReport, getGuardianDashboard, getCurriculumBrowser,
+ * getUnreadNotifications, getPendingParentLinks, getChapterTopics,
+ * getQuestionHistoryStats, getNCERTCoverageReport). None of them currently
+ * feeds a surface that turns emptiness into a reassuring CLAIM, which is why
+ * they are out of scope here; convert them as their surfaces gain one. */
+
+/* ── Student learning profiles ──
+ * Query shape is load-bearing: /progress derives XP, accuracy and session
+ * counts from these rows, so table / select / eq / order must not change. */
+export async function getStudentProfiles(studentId: string): Promise<ServiceResult<any[]>> {
   const { data, error } = await supabase.from('student_learning_profiles').select('*').eq('student_id', studentId).order('xp', { ascending: false });
-  if (error) console.error('getStudentProfiles:', error.message);
-  return data ?? [];
+  if (error) return fail(`getStudentProfiles: ${error.message}`, 'DB_ERROR');
+  return ok(data ?? []);
 }
 
 /* ── Subjects list ── */
-export async function getSubjects() {
+export async function getSubjects(): Promise<ServiceResult<any[]>> {
   const { data, error } = await supabase.from('subjects').select('*').eq('is_active', true).order('display_order');
-  if (error) console.error('getSubjects:', error.message);
-  return data ?? [];
+  if (error) return fail(`getSubjects: ${error.message}`, 'DB_ERROR');
+  return ok(data ?? []);
 }
 
 /* ── Feature flags ──
@@ -521,14 +547,24 @@ export async function getLeaderboard(period = 'weekly', limit = 20) {
   }));
 }
 
-export async function getStudyPlan(studentId: string) {
+/**
+ * `has_plan: false` drives /exam-prep's "Generate your AI Study Plan" screen,
+ * so it must only ever mean "this student genuinely has no active plan" —
+ * telling a student who HAS a plan that they have none is the same defect
+ * class as /progress's false all-clear. A failed read is now reported instead.
+ *
+ * The RPC → direct-query ladder is a DEGRADATION path, not a failure path: an
+ * RPC error still falls through to the direct query exactly as before, and
+ * only a failure of the fallback is reported to the caller.
+ */
+export async function getStudyPlan(studentId: string): Promise<ServiceResult<any>> {
   try {
     const { data, error } = await supabase.rpc('get_study_plan', { p_student_id: studentId });
-    if (!error && data) return data;
+    if (!error && data) return ok(data);
   } catch { /* RPC may not exist */ }
 
   // Fallback: direct query
-  const { data: plan } = await supabase.from('study_plans')
+  const { data: plan, error: planError } = await supabase.from('study_plans')
     .select('*')
     .eq('student_id', studentId)
     .eq('is_active', true)
@@ -536,15 +572,21 @@ export async function getStudyPlan(studentId: string) {
     .limit(1)
     .single();
 
-  if (!plan) return { has_plan: false };
+  // PGRST116 = ".single() matched no rows" — the legitimate "no active plan
+  // yet" case, NOT a failure. Every other PostgREST error IS one.
+  if (planError && planError.code !== 'PGRST116') {
+    return fail(`getStudyPlan: ${planError.message}`, 'DB_ERROR');
+  }
+  if (!plan) return ok({ has_plan: false });
 
-  const { data: tasks } = await supabase.from('study_plan_tasks')
+  const { data: tasks, error: tasksError } = await supabase.from('study_plan_tasks')
     .select('*')
     .eq('plan_id', plan.id)
     .order('day_number')
     .order('task_order');
+  if (tasksError) return fail(`getStudyPlan: ${tasksError.message}`, 'DB_ERROR');
 
-  return { has_plan: true, plan, tasks: tasks ?? [] };
+  return ok({ has_plan: true, plan, tasks: tasks ?? [] });
 }
 
 export async function getReviewCards(studentId: string, limit = 10) {
@@ -800,30 +842,33 @@ export async function getBoardPapers(subject?: string) {
 }
 
 /* ── Bloom's Progression ── */
-export async function getBloomProgression(studentId: string, subject?: string) {
+export async function getBloomProgression(studentId: string, subject?: string): Promise<ServiceResult<any[]>> {
   const params: Record<string, unknown> = { p_student_id: studentId };
   if (subject) params.p_subject = subject;
   const { data, error } = await supabase.rpc('get_bloom_progression', params);
-  if (error) console.error('getBloomProgression:', error.message);
-  return data ?? [];
+  if (error) return fail(`getBloomProgression: ${error.message}`, 'DB_ERROR');
+  return ok(data ?? []);
 }
 
-/* ── Knowledge Gaps ── */
-export async function getKnowledgeGaps(studentId: string, subject?: string, limit = 10) {
+/* ── Knowledge Gaps ──
+ * The highest-stakes read in this file: its empty result renders as the
+ * reassuring "No knowledge gaps detected!". An empty array here must therefore
+ * only ever mean "the RPC succeeded and found none". */
+export async function getKnowledgeGaps(studentId: string, subject?: string, limit = 10): Promise<ServiceResult<any[]>> {
   const params: Record<string, unknown> = { p_student_id: studentId, p_limit: limit };
   if (subject) params.p_subject = subject;
   const { data, error } = await supabase.rpc('get_knowledge_gaps', params);
-  if (error) console.error('getKnowledgeGaps:', error.message);
-  return data ?? [];
+  if (error) return fail(`getKnowledgeGaps: ${error.message}`, 'DB_ERROR');
+  return ok(data ?? []);
 }
 
 /* ── Learning Velocity ── */
-export async function getLearningVelocity(studentId: string, subject?: string) {
+export async function getLearningVelocity(studentId: string, subject?: string): Promise<ServiceResult<any[]>> {
   let query = supabase.from('learning_velocity').select('*').eq('student_id', studentId);
   if (subject) query = query.eq('subject', subject);
   const { data, error } = await query.order('updated_at', { ascending: false }).limit(20);
-  if (error) console.error('getLearningVelocity:', error.message);
-  return data ?? [];
+  if (error) return fail(`getLearningVelocity: ${error.message}`, 'DB_ERROR');
+  return ok(data ?? []);
 }
 
 /* ── Cognitive Session Metrics ── */
@@ -1054,16 +1099,25 @@ export async function getChapterQuestions(subject: string, grade: string, chapte
  * New code MUST call `useAllowedChapters(subject)` from
  * '@alfanumrik/lib/useAllowedChapters' instead.
  *
+ * 422 (subject not in this student's allowed set) is the ONLY non-2xx that is
+ * a genuine "no chapters" answer. 401 and 5xx are failures and are reported as
+ * such — collapsing them into `[]` is what made the picker say "No chapters
+ * available for this subject yet" after an auth hiccup.
+ *
  * @deprecated Use `useAllowedChapters` from '@alfanumrik/lib/useAllowedChapters'.
  */
-export async function getChaptersForSubject(subject: string, _grade: string) {
+export interface AllowedChapterOption {
+  chapter_number: number;
+  title: string;
+  title_hi?: string | null;
+  verified_question_count?: number;
+}
+export async function getChaptersForSubject(subject: string, _grade: string): Promise<ServiceResult<AllowedChapterOption[]>> {
   void _grade;
   try {
     // Auth tokens live in localStorage (no middleware to sync to cookies).
     // Send the access token as Bearer header so /api/student/chapters can
-    // authenticate the request. Without this, the route returns 401 and the
-    // picker shows "No chapters available for this subject yet" even though
-    // cbse_syllabus has data. Matches useAllowedSubjects() behavior.
+    // authenticate the request. Matches useAllowedSubjects() behavior.
     const headers: Record<string, string> = {};
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -1071,7 +1125,7 @@ export async function getChaptersForSubject(subject: string, _grade: string) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
     } catch {
-      // Proceed without — server will return 401 and we fall back to [].
+      // Proceed without — the server answers 401, reported as a failure below.
     }
 
     const r = await fetch(
@@ -1079,9 +1133,11 @@ export async function getChaptersForSubject(subject: string, _grade: string) {
       { headers },
     );
     if (!r.ok) {
-      // 422 = subject not allowed for this student; 401 = unauthenticated.
-      // Either way the correct UI behavior is "no chapters available".
-      return [] as Array<{ chapter_number: number; title: string; title_hi?: string | null; verified_question_count?: number }>;
+      if (r.status === 422) return ok([]);
+      return fail(
+        `getChaptersForSubject: HTTP ${r.status}`,
+        r.status === 401 ? 'UNAUTHORIZED' : 'EXTERNAL_FAILURE',
+      );
     }
     // API v2 returns { chapters: [{ chapter_number, chapter_title, chapter_title_hi, verified_question_count }] }
     // QuizSetup expects { chapter_number, title } so map server column
@@ -1096,15 +1152,17 @@ export async function getChaptersForSubject(subject: string, _grade: string) {
         verified_question_count?: number;
       }>;
     };
-    return (body.chapters ?? []).map((c) => ({
+    return ok((body.chapters ?? []).map((c) => ({
       chapter_number: c.chapter_number,
       title: c.chapter_title ?? c.title ?? `Chapter ${c.chapter_number}`,
       title_hi: c.chapter_title_hi ?? null,
       verified_question_count: c.verified_question_count ?? 0,
-    }));
+    })));
   } catch (e) {
-    console.error('getChaptersForSubject(compat):', e instanceof Error ? e.message : String(e));
-    return [];
+    return fail(
+      `getChaptersForSubject: ${e instanceof Error ? e.message : String(e)}`,
+      'EXTERNAL_FAILURE',
+    );
   }
 }
 

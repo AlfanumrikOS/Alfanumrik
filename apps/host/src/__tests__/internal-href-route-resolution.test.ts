@@ -205,6 +205,50 @@ for (const abs of sourceFiles) {
   }
 }
 
+// ── 3b. collect OBJECT-PROPERTY hrefs (nav configs, quick-action tables) ──────
+/**
+ * `HREF_LITERAL` above only matches the JSX ATTRIBUTE form (`href="/x"`). Every
+ * navigation destination in this product is declared as an OBJECT PROPERTY
+ * instead — `{ href: '/learn', icon: '📚', label: 'Learn' }` — in nav config
+ * tables that are later spread onto `<Link>`. The attribute scan is structurally
+ * blind to all of them.
+ *
+ * That was the canary's highest-stakes blind spot. A dead JSX link is one broken
+ * CTA on one screen; a dead nav entry is a permanently broken tab in the chrome
+ * of an entire portal — the "no nav item may lead to a blank page" rule, which
+ * has cost a live school demo before. It is also not hypothetical: the same
+ * sweep that added this block found `ROLE_CONFIG.guardian.nav` shipping two
+ * entries pointing at `/parent/children`, one of them labelled "Exams".
+ *
+ * Scanned across `packages/lib/src` as well as the two roots above, because the
+ * role nav tables live in `packages/lib/src/constants.ts`. Deliberately a
+ * SEPARATE scan rather than widening `SCAN_ROOTS`, so the attribute canary's
+ * proven-green scope is not altered by this addition.
+ *
+ * Same literal-only limits as the attribute scan: template/computed hrefs are
+ * skipped, `/api/*` is skipped.
+ */
+const NAV_SCAN_ROOTS = ['apps/host/src', 'packages/ui/src', 'packages/lib/src'] as const;
+const HREF_PROPERTY = /\bhref\s*:\s*['"](\/[^'"]*)['"]/g;
+
+const navSourceFiles: string[] = [];
+for (const root of NAV_SCAN_ROOTS) {
+  const abs = resolve(REPO_ROOT, root);
+  if (existsSync(abs)) walkSource(abs, navSourceFiles);
+}
+
+const propertyHrefHits: HrefHit[] = [];
+for (const abs of navSourceFiles) {
+  const rel = toPosix(relative(REPO_ROOT, abs));
+  const lines = readFileSync(abs, 'utf8').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    for (const m of lines[i].matchAll(HREF_PROPERTY)) {
+      if (m[1].includes('${')) continue;
+      propertyHrefHits.push({ path: normalizeUrlPath(m[1]), rel, line: i + 1 });
+    }
+  }
+}
+
 const ROUTES = enumerateRoutes(APP_DIR);
 const REDIRECTS = redirectSources(readFileSync(NEXT_CONFIG, 'utf8'));
 
@@ -232,6 +276,11 @@ export function isResolvable(urlPath: string, routes: string[], redirects: strin
 
 const internalHrefs = hrefHits.filter((h) => !h.path.startsWith('/api/'));
 const unresolved = internalHrefs.filter(
+  (h) => !isResolvable(h.path, ROUTES, REDIRECTS) && !KNOWN_DEAD_LINKS.has(h.path),
+);
+
+const internalPropertyHrefs = propertyHrefHits.filter((h) => !h.path.startsWith('/api/'));
+const unresolvedProperty = internalPropertyHrefs.filter(
   (h) => !isResolvable(h.path, ROUTES, REDIRECTS) && !KNOWN_DEAD_LINKS.has(h.path),
 );
 
@@ -317,6 +366,62 @@ describe('internal link canary — every literal internal href resolves', () => 
         `nothing links to ${dead} any more — delete it from KNOWN_DEAD_LINKS`,
       ).toBe(true);
     }
+  });
+});
+
+describe('nav-destination canary — no nav item leads to a blank page', () => {
+  it('scanned the nav config tables (non-vacuous)', () => {
+    // If the object-property regex ever stops matching, this block would pass
+    // trivially while covering nothing. Pin that it still sees the real tables.
+    expect(internalPropertyHrefs.length).toBeGreaterThan(100);
+    const byFile = (needle: string) => internalPropertyHrefs.some((h) => h.rel.includes(needle));
+    expect(byFile('packages/ui/src/navigation/nav-config.ts')).toBe(true);
+    expect(byFile('packages/lib/src/constants.ts')).toBe(true);
+    expect(byFile('apps/host/src/app/parent/_components/ParentShell.tsx')).toBe(true);
+    expect(byFile('apps/host/src/app/teacher/_components/TeacherShell.tsx')).toBe(true);
+    // The student core tabs and both portal home paths are in the scan.
+    const paths = [...new Set(internalPropertyHrefs.map((h) => h.path))];
+    expect(paths).toContain('/today');
+    expect(paths).toContain('/parent');
+    expect(paths).toContain('/teacher');
+  });
+
+  it('every object-property href resolves to a page or a configured redirect', () => {
+    const report = unresolvedProperty.map((h) => `  ${h.path}\n      ${h.rel}:${h.line}`).join('\n');
+    expect(
+      unresolvedProperty.map((h) => `${h.path} (${h.rel}:${h.line})`),
+      `Nav/config entr(ies) point at paths with no page.tsx and no redirect. A nav item ` +
+        `that leads nowhere is a blank screen in the chrome of a whole portal:\n${report}\n\n` +
+        `Fix by adding the page, adding a redirect in apps/host/next.config.js, or removing the entry.`,
+    ).toEqual([]);
+  });
+
+  it('nothing links to a parent exams page — no such route exists', () => {
+    // Hard assertion, not allowlist-mediated — same shape as the /answer-checker
+    // pin above. `ROLE_CONFIG.guardian.nav` carried an "Exams" tab pointing at
+    // `/parent/children`; the honest fix was to drop it, because no parent-facing
+    // exams surface exists. If one ever ships, this flips first.
+    //
+    // The label-vs-destination half of that defect (two names for one href) is
+    // asserted where the tables live, in `constants.test.ts` — not duplicated here.
+    expect(ROUTES).not.toContain('/parent/exams');
+    expect(internalPropertyHrefs.filter((h) => h.path === '/parent/exams')).toEqual([]);
+    expect(internalHrefs.filter((h) => h.path === '/parent/exams')).toEqual([]);
+  });
+
+  it('/review is redirect-served, so the links still pointing at it are not dead', () => {
+    // `/review` has had no page since Study Menu v2 deleted it; the orphan
+    // `app/review/{layout,error}.tsx` left behind (unreachable — a segment with
+    // no page.tsx is not a route, and the 301 fires before routing anyway) was
+    // removed on 2026-08-08. Many live surfaces still link to `/review`
+    // (dashboard quick actions, ReviewsDueCard, QuizResults, NextActionCard,
+    // TodaysFocus, the learner-loop next-action). The ONLY thing keeping them
+    // off a 404 is the redirect — deleting that line silently breaks all of them.
+    expect(ROUTES).not.toContain('/review');
+    expect(REDIRECTS).toContain('/review');
+    expect(isResolvable('/review', ROUTES, REDIRECTS)).toBe(true);
+    // ...and its destination is a real page.
+    expect(ROUTES).toContain('/refresh');
   });
 });
 

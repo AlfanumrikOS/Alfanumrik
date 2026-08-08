@@ -99,6 +99,34 @@ export const FOXY_MODES = [
 /* ─── Role System ─── */
 export type UserRole = 'student' | 'teacher' | 'guardian' | 'institution_admin' | 'none';
 
+/**
+ * Per-role identity (label / icon / colour / homePath) plus a legacy `nav` array.
+ *
+ * WHAT IS LIVE HERE: `label`, `labelHi`, `icon`, `color`, `homePath` — read by
+ * the role switcher in `packages/ui/src/navigation/MobileBottomNav.tsx`.
+ *
+ * WHAT IS NOT: the `nav` arrays render for NO role today (verified 2026-08-08).
+ * Their only readers are `getCoreTabs` / `getMoreItems` / `getSidebarSections`
+ * in `packages/ui/src/navigation/nav-config.ts`, and:
+ *   - the teacher/guardian branches are unreachable — the two components that
+ *     call them (`MobileBottomNav`, `DesktopSidebar`) mount ONLY from
+ *     `GlobalAppLayout`, whose `showNav` requires `activeRole === 'student'`
+ *     and additionally path-excludes `/parent` and `/teacher`;
+ *   - the student branch returns `CORE_TABS` / `MORE_ITEMS` /
+ *     `SIDEBAR_SECTIONS`, never `ROLE_CONFIG.student.nav`;
+ *   - `institution_admin.nav` has no reader at all.
+ *
+ * The navigation a user ACTUALLY sees:
+ *   student → `packages/ui/src/navigation/nav-config.ts`
+ *   parent  → `apps/host/src/app/parent/_components/ParentShell.tsx` (+ `ParentMobileNav.tsx`)
+ *   teacher → `apps/host/src/app/teacher/_components/TeacherShell.tsx` (+ `TeacherMobileNav.tsx`)
+ *
+ * These arrays are still kept honest rather than deleted: they sit one
+ * `activeRole` check away from rendering, so a stale entry here is a
+ * mislabeled tab waiting to ship. Every `href` below is pinned to a real page
+ * or configured redirect by the nav-destination canary in
+ * `apps/host/src/__tests__/internal-href-route-resolution.test.ts`.
+ */
 export const ROLE_CONFIG = {
   student: {
     label: 'Student', labelHi: 'छात्र', icon: '🎓', color: '#E8581C',
@@ -110,7 +138,13 @@ export const ROLE_CONFIG = {
       { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
       { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
       { href: '/leaderboard', icon: '🏆', label: 'Ranks', labelHi: 'रैंक' },
-      { href: '/review', icon: '🔄', label: 'Review', labelHi: 'रिव्यू' },
+      // Was `/review` "Review". `/review` has had no page since Study Menu v2;
+      // it is a permanent 301 to `/refresh?tab=flashcards` (apps/host/next.config.js).
+      // The label therefore promised "Review" and delivered "Refresh". Repointed
+      // to the real route under the name the live student nav already gives it
+      // (nav-config.ts MORE_ITEMS / SIDEBAR_SECTIONS "Study") — one destination,
+      // one name, one icon.
+      { href: '/refresh', icon: '🔁', label: 'Refresh', labelHi: 'ताज़ा करो' },
       { href: '/exams', icon: '📋', label: 'Exams', labelHi: 'परीक्षा' },
       { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन' },
       { href: '/reports', icon: '📊', label: 'Reports', labelHi: 'रिपोर्ट' },
@@ -137,7 +171,12 @@ export const ROLE_CONFIG = {
       { href: '/parent', icon: '🏠', label: 'Dashboard', labelHi: 'डैशबोर्ड' },
       { href: '/parent/children', icon: '👧', label: 'Children', labelHi: 'बच्चे' },
       { href: '/parent/reports', icon: '📊', label: 'Reports', labelHi: 'रिपोर्ट' },
-      { href: '/parent/children', icon: '📋', label: 'Exams', labelHi: 'परीक्षा' },
+      // REMOVED: a second `/parent/children` entry labelled "Exams" / "परीक्षा".
+      // Two labels, one destination — a parent tapping "Exams" would land on
+      // Children with no exam content anywhere on the page. There is no
+      // parent-facing exams surface (`apps/host/src/app/parent/` has no
+      // `exams/`), so the honest fix is no link, not a relabelled one. Do not
+      // re-add without a real `/parent/exams` page.
       { href: '/parent/support', icon: '💬', label: 'Support', labelHi: 'सहायता' },
       { href: '/parent/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
     ],

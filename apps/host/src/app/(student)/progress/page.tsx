@@ -1,11 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
-import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVelocity, getKnowledgeGaps, supabase } from '@alfanumrik/lib/supabase';
+import {
+  supabase,
+  getStudentProfiles,
+  getSubjects,
+  getBloomProgression,
+  getLearningVelocity,
+  getKnowledgeGaps,
+} from '@alfanumrik/lib/supabase';
+import { logger } from '@alfanumrik/lib/logger';
 import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@alfanumrik/lib/cognitive-engine';
 import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@alfanumrik/lib/types';
@@ -49,6 +57,28 @@ interface DecayTopic {
   mastery_probability: number;
   next_review_at: string | null;
 }
+
+/* ── Per-source load tracking ──────────────────────────────────────────────
+ * Every data source on this page is settled INDEPENDENTLY and records whether
+ * it failed, so the render can tell "the request failed" apart from "the
+ * request succeeded and there is genuinely nothing here". Before this, all
+ * four cognitive sources were fetched with `.catch(() => {})` and the
+ * Performance-Score block with `.catch(() => setPerfLoading(false))` — a 500
+ * rendered IDENTICALLY to a real empty result, so a student whose request had
+ * failed was told "No knowledge gaps detected!".
+ *
+ * The five queries this page used to inline (student_learning_profiles,
+ * subjects, get_bloom_progression, learning_velocity, get_knowledge_gaps) are
+ * back on the shared `@alfanumrik/lib/supabase` helpers: those helpers now
+ * return `ServiceResult` instead of swallowing the PostgREST error into an
+ * ambiguous `[]`, so there is exactly one copy of each query shape again.
+ * cognitive_session_metrics + the Performance-Score block have no shared
+ * helper and still read `error` off the query directly. */
+type ProgressSource = 'core' | 'bloom' | 'velocity' | 'gaps' | 'sessions' | 'perf';
+
+const NO_LOAD_ERRORS: Record<ProgressSource, boolean> = {
+  core: false, bloom: false, velocity: false, gaps: false, sessions: false, perf: false,
+};
 
 /* ── Helpers ── */
 const SEVERITY_COLORS: Record<string, string> = {
@@ -304,6 +334,124 @@ function MyPulseSection({
   );
 }
 
+/* ── Honest data-failure state ─────────────────────────────────────────────
+ * Rendered INSTEAD of (never alongside) the reassuring empty state whenever a
+ * source failed to load. It deliberately asserts no number: it says the
+ * request failed, reassures the student their progress is not lost, and gives
+ * a retry. Bilingual per P7. Kept visually distinct from every empty state on
+ * this page (📡 + "Retry" vs ✅/📊 + a learning CTA). */
+function DataErrorBody({
+  isHi,
+  titleEn,
+  titleHi,
+  onRetry,
+}: {
+  isHi: boolean;
+  titleEn: string;
+  titleHi: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div role="alert">
+      <div className="text-2xl mb-1" aria-hidden="true">📡</div>
+      <p className="text-sm font-semibold text-[var(--text-2)] mb-1">
+        {isHi ? titleHi : titleEn}
+      </p>
+      <p className="text-xs text-[var(--text-3)] mb-3 max-w-xs mx-auto leading-relaxed">
+        {isHi
+          ? 'तुम्हारी प्रगति सुरक्षित है — सिर्फ़ connection टूटा है। फिर से कोशिश करो।'
+          : 'Your progress is safe — only the connection failed. Please try again.'}
+      </p>
+      {/* min-h/min-w pinned locally (not via `size`): the shared Button's
+          `sm` size is px-3 py-2.5, which lays out at 42px — under the 44px
+          touch target this repo requires (WCAG 2.5.8), as measured at all
+          nine viewports by e2e/ui-error-states.spec.ts. Fixing it here rather
+          than widening Button's `sm` keeps the change contained to this
+          recovery control instead of reflowing every `size="sm"` button in
+          the app. Mirrors the sibling DataStaleNotice below, which already
+          pins the same two classes. inline-flex centres the label inside the
+          enlarged box so the extra height is padding, not dead space. */}
+      <Button
+        variant="soft"
+        size="sm"
+        color="var(--accent-warm)"
+        onClick={onRetry}
+        className="inline-flex items-center justify-center gap-1 min-h-[44px] min-w-[44px]"
+      >
+        🔄 {isHi ? 'फिर से कोशिश करो' : 'Retry'}
+      </Button>
+    </div>
+  );
+}
+
+function DataErrorCard(props: { isHi: boolean; titleEn: string; titleHi: string; onRetry: () => void }) {
+  return (
+    <Card className="!p-4 text-center">
+      <DataErrorBody {...props} />
+    </Card>
+  );
+}
+
+/* ── Not-yet-known placeholder ──
+ * Shown while a source is still in flight, so the page never shows a
+ * reassuring empty (or a zero) for data it hasn't received yet.
+ *
+ * a11y (WCAG 2.2 AA, 4.1.3 Status Messages): the shimmer alone is invisible to
+ * a screen reader, so the wrapper carries role="status" (implicit
+ * aria-live="polite" + aria-atomic="true") and aria-busy so the pending state
+ * is ANNOUNCED rather than silent. Mirrors the sibling DataErrorCard's
+ * role="alert". The announced content is the static bilingual label — it is
+ * fixed for the lifetime of the mount, so this announces exactly once and
+ * cannot re-fire on re-render. The shimmer bar stays aria-hidden so it never
+ * contributes an empty second announcement. */
+function DataPendingCard({ isHi, label, labelHi }: { isHi: boolean; label: string; labelHi: string }) {
+  return (
+    <Card className="!p-4 text-center">
+      <div role="status" aria-busy="true">
+        <div
+          className="h-3 w-40 rounded animate-pulse mx-auto"
+          style={{ background: 'var(--surface-2)' }}
+          aria-hidden="true"
+        />
+        <div className="text-xs text-[var(--text-3)] mt-2">{isHi ? labelHi : label}</div>
+      </div>
+    </Card>
+  );
+}
+
+/* ── Stale-but-valid notice (failed REFRESH, not failed initial load) ──
+ * Deliberately NOT a DataErrorCard. The error card REPLACES a surface that has
+ * no good data behind it; this one sits ALONGSIDE last-known-good data whose
+ * refresh failed, so a student keeps reading numbers that were valid when they
+ * were fetched instead of losing them to an error card. It asserts no number of
+ * its own and never claims the data is current. Bilingual per P7; role="status"
+ * (not "alert") because nothing on screen became wrong — it just stopped being
+ * fresh. Retry control meets the 44px touch target. */
+function DataStaleNotice({ isHi, onRetry }: { isHi: boolean; onRetry: () => void }) {
+  return (
+    <div
+      role="status"
+      className="mt-3 flex items-center gap-2 rounded-xl px-3 py-1 text-left"
+      style={{ background: 'var(--surface-2)' }}
+    >
+      <span aria-hidden="true">⚠️</span>
+      <span className="flex-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+        {isHi
+          ? 'ताज़ा नहीं हो सका — पिछली बार का सुरक्षित डेटा दिख रहा है।'
+          : "Couldn't refresh — showing your last saved data."}
+      </span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="shrink-0 min-h-[44px] min-w-[44px] px-3 rounded-lg text-xs font-semibold"
+        style={{ color: 'var(--accent-warm)' }}
+      >
+        🔄 {isHi ? 'फिर से ताज़ा करो' : 'Refresh'}
+      </button>
+    </div>
+  );
+}
+
 /* =================================================================
    PROGRESS PAGE -- Performance Score System + Cognitive Analytics
    ================================================================= */
@@ -324,9 +472,40 @@ function LegacyProgressPage() {
   // Performance Score state
   const [perfScores, setPerfScores] = useState<PerformanceScoreRow[]>([]);
   const [scoreHistory, setScoreHistory] = useState<ScoreHistoryRow[]>([]);
-  const [coinBalance, setCoinBalance] = useState<number>(0);
+  // null = not known yet (loading or failed). A failed coin fetch must not
+  // render a confident "0 coins" — P-invariant of this page: never show a
+  // number we can't stand behind.
+  const [coinBalance, setCoinBalance] = useState<number | null>(null);
   const [decayTopics, setDecayTopics] = useState<DecayTopic[]>([]);
   const [perfLoading, setPerfLoading] = useState(true);
+  // Has the Performance-Score block EVER settled successfully? This is what
+  // separates "the first load failed — there is nothing good to show, so show
+  // the honest error card" from "a refresh failed after an earlier success —
+  // the data already on screen is stale but still valid, so keep it and add a
+  // non-destructive notice". Latches true; a later failure never un-sets it.
+  const [perfLoadedOnce, setPerfLoadedOnce] = useState(false);
+
+  // Load state per source (see NO_LOAD_ERRORS above for why this exists).
+  const [loadErrors, setLoadErrors] = useState<Record<ProgressSource, boolean>>(NO_LOAD_ERRORS);
+  const [coreLoading, setCoreLoading] = useState(true);
+  const [cognitiveLoading, setCognitiveLoading] = useState(true);
+
+  /** Record the outcome of one source. Pass a failure to mark it failed. */
+  const settleSource = useCallback((source: ProgressSource, failure?: unknown) => {
+    const failed = failure != null;
+    if (failed) {
+      // Structured + PII-redacted (P13). Message only — never the student id,
+      // and never the row payload.
+      logger.warn('progress: data source failed to load', {
+        source,
+        reason:
+          failure instanceof Error
+            ? failure.message
+            : String((failure as { message?: string })?.message ?? 'unknown error'),
+      });
+    }
+    setLoadErrors((prev) => (prev[source] === failed ? prev : { ...prev, [source]: failed }));
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !isLoggedIn) router.replace('/login');
@@ -343,60 +522,137 @@ function LegacyProgressPage() {
     }
   }, [router]);
 
-  useEffect(() => {
-    if (!student) return;
-    refreshSnapshot();
+  /* ── Loaders (one per source, each independently retryable) ───────────── */
 
-    // Core data
-    Promise.all([getStudentProfiles(student.id), getSubjects()]).then(([p, s]) => {
-      setProfiles(p);
-      setSubjects(s);
-    });
+  // Core: subject profiles + subject metadata. Drives XP, accuracy, session
+  // counts and the first-run empty state — so a failure here MUST NOT fall
+  // through to "Your progress will show up here".
+  const loadCore = useCallback(async (studentId: string) => {
+    setCoreLoading(true);
+    try {
+      const [profileRes, subjectRes] = await Promise.all([
+        getStudentProfiles(studentId),
+        getSubjects(),
+      ]);
+      if (!profileRes.ok) { settleSource('core', new Error(profileRes.error)); return; }
+      if (!subjectRes.ok) { settleSource('core', new Error(subjectRes.error)); return; }
+      setProfiles(profileRes.data as StudentLearningProfile[]);
+      setSubjects(subjectRes.data as Subject[]);
+      settleSource('core');
+    } catch (e) {
+      settleSource('core', e ?? new Error('core load failed'));
+    } finally {
+      setCoreLoading(false);
+    }
+  }, [settleSource]);
 
-    // Cognitive 2.0 data
-    getBloomProgression(student.id).then(setBloomData).catch(() => {});
-    getLearningVelocity(student.id).then(setVelocityData).catch(() => {});
-    getKnowledgeGaps(student.id, undefined, 20).then(setKnowledgeGaps).catch(() => {});
+  const loadBloom = useCallback(async (studentId: string) => {
+    try {
+      const res = await getBloomProgression(studentId);
+      if (!res.ok) { settleSource('bloom', new Error(res.error)); return; }
+      setBloomData(res.data as Record<string, unknown>[]);
+      settleSource('bloom');
+    } catch (e) {
+      settleSource('bloom', e ?? new Error('bloom load failed'));
+    }
+  }, [settleSource]);
 
-    // Cognitive session metrics
-    supabase
-      .from('cognitive_session_metrics')
-      .select('*')
-      .eq('student_id', student.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
-      .then(({ data }) => setSessionMetrics((data as CognitiveSessionMetrics[]) ?? []));
+  const loadVelocity = useCallback(async (studentId: string) => {
+    try {
+      const res = await getLearningVelocity(studentId);
+      if (!res.ok) { settleSource('velocity', new Error(res.error)); return; }
+      setVelocityData(res.data as LearningVelocity[]);
+      settleSource('velocity');
+    } catch (e) {
+      settleSource('velocity', e ?? new Error('velocity load failed'));
+    }
+  }, [settleSource]);
 
-    // Performance Scores
+  // Gaps: the highest-stakes source on this page. Its empty state is the
+  // reassuring "No knowledge gaps detected!" — telling a student that after a
+  // FAILED request is the exact defect this page is being repaired for.
+  // `limit` stays 20 — it is the page's existing page-size, not a new number.
+  const loadGaps = useCallback(async (studentId: string) => {
+    try {
+      const res = await getKnowledgeGaps(studentId, undefined, 20);
+      if (!res.ok) { settleSource('gaps', new Error(res.error)); return; }
+      setKnowledgeGaps(res.data as KnowledgeGap[]);
+      settleSource('gaps');
+    } catch (e) {
+      settleSource('gaps', e ?? new Error('gaps load failed'));
+    }
+  }, [settleSource]);
+
+  const loadSessions = useCallback(async (studentId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('cognitive_session_metrics')
+        .select('*')
+        .eq('student_id', studentId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (error) { settleSource('sessions', error); return; }
+      setSessionMetrics((data as CognitiveSessionMetrics[]) ?? []);
+      settleSource('sessions');
+    } catch (e) {
+      settleSource('sessions', e ?? new Error('sessions load failed'));
+    }
+  }, [settleSource]);
+
+  const loadCognitive = useCallback(async (studentId: string) => {
+    setCognitiveLoading(true);
+    await Promise.all([
+      loadBloom(studentId),
+      loadVelocity(studentId),
+      loadGaps(studentId),
+      loadSessions(studentId),
+    ]);
+    setCognitiveLoading(false);
+  }, [loadBloom, loadVelocity, loadGaps, loadSessions]);
+
+  const loadPerf = useCallback(async (studentId: string) => {
     setPerfLoading(true);
-    Promise.all([
-      // Fetch performance_scores for this student
-      supabase
-        .from('performance_scores')
-        .select('id, student_id, subject, overall_score, performance_component, behavior_component, level_name, updated_at')
-        .eq('student_id', student.id),
-      // Fetch score_history for the last 30 days
-      supabase
-        .from('score_history')
-        .select('id, student_id, subject, score, recorded_at')
-        .eq('student_id', student.id)
-        .gte('recorded_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-        .order('recorded_at', { ascending: true }),
-      // Fetch coin balance
-      supabase
-        .from('coin_balances')
-        .select('balance')
-        .eq('student_id', student.id)
-        .single(),
-      // Fetch decaying topics (concept_mastery with low mastery_probability and overdue review)
-      supabase
-        .from('concept_mastery')
-        .select('id, topic_id, mastery_probability, next_review_at')
-        .eq('student_id', student.id)
-        .lt('mastery_probability', 0.5)
-        .order('mastery_probability', { ascending: true })
-        .limit(8),
-    ]).then(([perfRes, histRes, coinRes, decayRes]) => {
+    try {
+      const [perfRes, histRes, coinRes, decayRes] = await Promise.all([
+        // Fetch performance_scores for this student
+        supabase
+          .from('performance_scores')
+          .select('id, student_id, subject, overall_score, performance_component, behavior_component, level_name, updated_at')
+          .eq('student_id', studentId),
+        // Fetch score_history for the last 30 days
+        supabase
+          .from('score_history')
+          .select('id, student_id, subject, score, recorded_at')
+          .eq('student_id', studentId)
+          .gte('recorded_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+          .order('recorded_at', { ascending: true }),
+        // Fetch coin balance
+        supabase
+          .from('coin_balances')
+          .select('balance')
+          .eq('student_id', studentId)
+          .single(),
+        // Fetch decaying topics (concept_mastery with low mastery_probability and overdue review)
+        supabase
+          .from('concept_mastery')
+          .select('id, topic_id, mastery_probability, next_review_at')
+          .eq('student_id', studentId)
+          .lt('mastery_probability', 0.5)
+          .order('mastery_probability', { ascending: true })
+          .limit(8),
+      ]);
+
+      // PGRST116 = ".single() matched no rows". For coin_balances that is the
+      // legitimate "no balance row yet" case (= 0 coins), NOT a failure.
+      const coinMissingRow = coinRes.error?.code === 'PGRST116';
+      const failure =
+        perfRes.error ?? histRes.error ?? (coinMissingRow ? null : coinRes.error) ?? decayRes.error;
+      // On failure every setter below is skipped, so the last-known-good
+      // perfScores / scoreHistory / coinBalance / decayTopics survive in state.
+      // Whether the render KEEPS them or falls back to the error card is
+      // decided by `perfLoadedOnce` (see the render gates further down).
+      if (failure) { settleSource('perf', failure); return; }
+
       setPerfScores((perfRes.data as PerformanceScoreRow[]) ?? []);
       setScoreHistory((histRes.data as ScoreHistoryRow[]) ?? []);
       setCoinBalance(coinRes.data?.balance ?? 0);
@@ -408,8 +664,6 @@ function LegacyProgressPage() {
       const decayRaw = decayRes.data ?? [];
       const decayData = decayRaw.map((d: any) => {
         // topic_id is a UUID — show first 8 chars as a readable chip.
-        // TODO(data-gap): add topic_name to concept_mastery or join via a lookup RPC
-        // so the displayed label can show the real concept name.
         const shortId = d.topic_id ? `${String(d.topic_id).substring(0, 8)}…` : '—';
         return {
           id: d.id,
@@ -421,11 +675,21 @@ function LegacyProgressPage() {
         };
       });
       setDecayTopics(decayData);
+      settleSource('perf');
+      setPerfLoadedOnce(true);
+    } catch (e) {
+      settleSource('perf', e ?? new Error('performance load failed'));
+    } finally {
       setPerfLoading(false);
-    }).catch(() => {
-      setPerfLoading(false);
-    });
+    }
+  }, [settleSource]);
 
+  useEffect(() => {
+    if (!student) return;
+    refreshSnapshot();
+    loadCore(student.id);
+    loadCognitive(student.id);
+    loadPerf(student.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- depend on student.id to avoid re-running on object reference changes
   }, [student?.id]);
 
@@ -445,6 +709,37 @@ function LegacyProgressPage() {
     : 0;
   const overallLevelName = getLevelFromScore(overallPerfScore);
   const hasPerfScores = perfScores.length > 0;
+
+  /* ── Empty-vs-error gates ──
+   * A reassuring empty may only render once the source THAT SUMMARISES IT has
+   * settled successfully. Otherwise the student gets the honest error card (or
+   * the pending placeholder) instead.
+   *
+   * First-run status is derived from CORE alone. `total_sessions` comes from
+   * `student_learning_profiles`, so core is the only source that actually knows
+   * whether this student has any quiz history — and by the time this branch
+   * renders, core has already settled successfully (the JSX below tries
+   * `loadErrors.core` then `coreLoading` first). Gating it on the unrelated
+   * `perf` source instead meant (a) a genuinely-new student whose perf fetch
+   * FAILED never saw the welcoming first-run card and got the full dashboard
+   * rendered at 0%, and (b) a pending→dashboard→first-run flash while perf was
+   * still in flight. `hasPerfScores` stays in the condition only as a
+   * one-directional safety valve: if perf scores DO exist we must not claim
+   * there is no history, and since perfScores can only go []→populated within a
+   * mount, the card can never disappear and then reappear. */
+  const showFirstRunEmpty = totalSessions === 0 && !hasPerfScores;
+  const cognitiveFailed =
+    loadErrors.bloom || loadErrors.velocity || loadErrors.gaps || loadErrors.sessions;
+
+  /* ── Performance-Score load state model ──
+   * initial-loading  → skeleton (nothing good to show yet)
+   * initial-failure  → error card (nothing good to show, ever)
+   * refreshing       → keep last-known-good on screen (no destructive skeleton)
+   * refresh-failure  → keep last-known-good + non-destructive stale notice
+   * settled          → normal render */
+  const perfInitialLoading = perfLoading && !perfLoadedOnce;
+  const perfInitialFailed = loadErrors.perf && !perfLoadedOnce;
+  const perfRefreshFailed = loadErrors.perf && perfLoadedOnce;
 
   /* ── Score history grouped by subject ── */
   const historyBySubject = new Map<string, ScoreHistoryRow[]>();
@@ -523,12 +818,15 @@ function LegacyProgressPage() {
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             {isHi ? 'प्रगति' : 'Progress'}
           </h1>
-          {/* Foxy Coins in header */}
-          <div className="ml-auto">
-            <Link href="/foxy">
-              <CoinBalance balance={coinBalance} isHi={isHi} />
-            </Link>
-          </div>
+          {/* Foxy Coins in header — hidden until the balance is actually known.
+              A failed (or in-flight) fetch must not render a confident "0". */}
+          {coinBalance != null && (
+            <div className="ml-auto">
+              <Link href="/foxy">
+                <CoinBalance balance={coinBalance} isHi={isHi} />
+              </Link>
+            </div>
+          )}
         </div>
       </header>
 
@@ -589,8 +887,33 @@ function LegacyProgressPage() {
               <MyPulseSection isHi={isHi} snapshot={snapshot} />
             )}
 
-            {/* === EMPTY STATE -- show when student has zero quiz history === */}
-            {totalSessions === 0 && !hasPerfScores ? (
+            {/* === CORE LOAD FAILURE ===
+                XP, accuracy, session counts and subject mastery are all derived
+                from `profiles`. When that fetch fails `profiles` is [] — which
+                is indistinguishable from a brand-new student. Rendering the
+                first-run empty state (or a 0% accuracy ring) here would be
+                telling the student something we do not know, so the error card
+                replaces the whole derived block until a retry succeeds. */}
+            {loadErrors.core ? (
+              <DataErrorCard
+                isHi={isHi}
+                titleEn="Couldn't load your progress"
+                titleHi="तुम्हारी प्रगति लोड नहीं हो सकी"
+                onRetry={() => loadCore(student.id)}
+              />
+            ) : coreLoading ? (
+              <DataPendingCard
+                isHi={isHi}
+                label="Loading your progress…"
+                labelHi="तुम्हारी प्रगति लोड हो रही है…"
+              />
+
+            /* === EMPTY STATE -- show when student has zero quiz history ===
+               Derived from CORE, which has settled successfully by this branch
+               and is the only source that knows the session count. It is NOT
+               gated on the independent Performance-Score fetch — see the
+               `showFirstRunEmpty` comment above. */
+            ) : showFirstRunEmpty ? (
               <Card className="!p-6 text-center">
                 <div className="text-5xl mb-3">📊</div>
                 <h2 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -626,17 +949,42 @@ function LegacyProgressPage() {
                     PERFORMANCE SCORE HERO -- Overall Score (0-100)
                     =========================================================== */}
                 <PremiumCard gradient glow className="warm-cta !p-4">
-                  {perfLoading ? (
+                  {perfInitialLoading ? (
+                    /* INITIAL load only. A refresh must not blank out data the
+                       student is already reading, so the skeleton is gated on
+                       "we have never had this data" rather than "a request is
+                       in flight". */
                     <div className="flex flex-col items-center py-6">
                       <div className="w-20 h-20 rounded-full animate-pulse" style={{ background: 'var(--surface-2)' }} />
                       <div className="w-32 h-4 mt-3 rounded animate-pulse" style={{ background: 'var(--surface-2)' }} />
                     </div>
+                  ) : perfInitialFailed ? (
+                    /* INITIAL failure — nothing good has ever loaded, so the
+                       honest error card is all we can show. Deliberately NOT
+                       "your score will be calculated soon": that copy is a
+                       promise we can only make once we know the fetch succeeded
+                       and there is genuinely no score row.
+                       A REFRESH failure takes the branch below instead, keeping
+                       the last-known-good numbers on screen. */
+                    <div className="text-center py-4">
+                      <DataErrorBody
+                        isHi={isHi}
+                        titleEn="Couldn't load your Performance Score"
+                        titleHi="तुम्हारा Performance Score लोड नहीं हो सका"
+                        onRetry={() => loadPerf(student.id)}
+                      />
+                    </div>
                   ) : hasPerfScores ? (
-                    <ScoreHero
-                      overallScore={overallPerfScore}
-                      levelName={overallLevelName}
-                      isHi={isHi}
-                    />
+                    <>
+                      <ScoreHero
+                        overallScore={overallPerfScore}
+                        levelName={overallLevelName}
+                        isHi={isHi}
+                      />
+                      {perfRefreshFailed && (
+                        <DataStaleNotice isHi={isHi} onRetry={() => loadPerf(student.id)} />
+                      )}
+                    </>
                   ) : (
                     <div className="text-center py-4">
                       <MasteryRing value={accuracy} size={80} strokeWidth={6}>
@@ -676,6 +1024,13 @@ function LegacyProgressPage() {
                           {isHi ? 'अभी क्विज़ लो →' : 'Take a quiz now →'}
                         </a>
                       </div>
+                      {/* Reached only when an EARLIER perf load succeeded and
+                          genuinely returned no score row — that empty result is
+                          the last-known-good truth, so it stays; the notice just
+                          says the refresh on top of it failed. */}
+                      {perfRefreshFailed && (
+                        <DataStaleNotice isHi={isHi} onRetry={() => loadPerf(student.id)} />
+                      )}
                     </div>
                   )}
                 </PremiumCard>
@@ -922,7 +1277,14 @@ function LegacyProgressPage() {
         {activeTab === 'cognitive' && (
           <>
             {/* Bloom Mastery Heatmap — per-subject or aggregated all-subjects */}
-            {bloomFlattened.length > 0 && (
+            {loadErrors.bloom ? (
+              <DataErrorCard
+                isHi={isHi}
+                titleEn="Couldn't load your Bloom's mastery"
+                titleHi="तुम्हारी Bloom's महारत लोड नहीं हो सकी"
+                onRetry={() => loadBloom(student.id)}
+              />
+            ) : bloomFlattened.length > 0 ? (
               <div>
                 <SectionHeader icon="🧠">
                   {isHi ? "Bloom's स्तर महारत" : "Bloom's Level Mastery"}
@@ -952,10 +1314,17 @@ function LegacyProgressPage() {
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
 
             {/* Learning Velocity */}
-            {velocityData.length > 0 && (
+            {loadErrors.velocity ? (
+              <DataErrorCard
+                isHi={isHi}
+                titleEn="Couldn't load your learning velocity"
+                titleHi="तुम्हारी सीखने की गति लोड नहीं हो सकी"
+                onRetry={() => loadVelocity(student.id)}
+              />
+            ) : velocityData.length > 0 ? (
               <div>
                 <SectionHeader icon="🚀">{isHi ? 'सीखने की गति' : 'Learning Velocity'}</SectionHeader>
                 <div className="space-y-2">
@@ -990,12 +1359,29 @@ function LegacyProgressPage() {
                   })}
                 </div>
               </div>
-            )}
+            ) : null}
 
-            {/* Knowledge Gaps */}
+            {/* Knowledge Gaps
+                THE reassuring empty on this page: "No knowledge gaps detected!"
+                is a clean bill of academic health. It may ONLY render when the
+                fetch actually succeeded and returned nothing. While in flight →
+                pending placeholder; on failure → error card. */}
             <div>
               <SectionHeader icon="🕳️">{isHi ? 'ज्ञान की कमियाँ' : 'Knowledge Gaps'}</SectionHeader>
-              {gapsBySeverity.length === 0 ? (
+              {loadErrors.gaps ? (
+                <DataErrorCard
+                  isHi={isHi}
+                  titleEn="Couldn't check your knowledge gaps"
+                  titleHi="ज्ञान की कमियाँ जाँची नहीं जा सकीं"
+                  onRetry={() => loadGaps(student.id)}
+                />
+              ) : cognitiveLoading ? (
+                <DataPendingCard
+                  isHi={isHi}
+                  label="Checking your knowledge gaps…"
+                  labelHi="ज्ञान की कमियाँ जाँच रहे हैं…"
+                />
+              ) : gapsBySeverity.length === 0 ? (
                 <Card className="!p-4 text-center">
                   <div className="text-2xl mb-1">✅</div>
                   <div className="text-sm text-[var(--text-3)]">
@@ -1038,7 +1424,14 @@ function LegacyProgressPage() {
             </div>
 
             {/* Cognitive Session History */}
-            {sessionMetrics.length > 0 && (
+            {loadErrors.sessions ? (
+              <DataErrorCard
+                isHi={isHi}
+                titleEn="Couldn't load your quiz sessions"
+                titleHi="तुम्हारे क्विज़ सत्र लोड नहीं हो सके"
+                onRetry={() => loadSessions(student.id)}
+              />
+            ) : sessionMetrics.length > 0 ? (
               <div>
                 <SectionHeader icon="🧠">{isHi ? 'स्मार्ट क्विज़ सत्र' : 'Smart Quiz Sessions'}</SectionHeader>
                 <div className="space-y-2">
@@ -1047,10 +1440,13 @@ function LegacyProgressPage() {
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
 
-            {/* Empty state for cognitive tab */}
-            {bloomFlattened.length === 0 && velocityData.length === 0 && gapsBySeverity.length === 0 && sessionMetrics.length === 0 && (
+            {/* Empty state for cognitive tab — only once every cognitive source
+                has settled successfully. "Start learning to see your progress"
+                told to a student with months of history because four fetches
+                failed is the defect this gate exists to prevent. */}
+            {!cognitiveLoading && !cognitiveFailed && bloomFlattened.length === 0 && velocityData.length === 0 && gapsBySeverity.length === 0 && sessionMetrics.length === 0 && (
               <EmptyState
                 icon="📈"
                 title={isHi ? 'प्रगति देखने के लिए सीखना शुरू करो' : 'Start learning to see your progress'}

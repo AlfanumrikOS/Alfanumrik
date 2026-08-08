@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { getStudentNotifications, supabase } from '@alfanumrik/lib/supabase';
+import { logger } from '@alfanumrik/lib/logger';
 import { Card, Button, LoadingFoxy, EmptyState } from '@alfanumrik/ui/ui';
+import { toast } from '@alfanumrik/ui/ui/toast';
 
 const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; labelHi: string }> = {
   streak_risk: { icon: '🔥', color: '#DC2626', label: 'Streak Alert', labelHi: 'स्ट्रीक अलर्ट' },
@@ -119,21 +121,56 @@ export default function NotificationsPage() {
 
   useEffect(() => { if (student) load(); }, [student, load]);
 
+  // supabase.rpc() resolves with { data, error } — it does NOT reject on a
+  // server/RLS failure, so the `error` field has to be inspected explicitly.
+  // Applying the optimistic local update without checking it would show the
+  // student a read notification (and a decremented badge) that the server
+  // never actually recorded.
+  //
+  // Failure feedback is IDENTICAL in shape to markAllRead below (same
+  // try/throw/catch, same logger.warn + toast.error pair, same bilingual copy
+  // register). It used to return silently, so the row stayed unread with no
+  // explanation — correct, but inconsistent with the sibling path that does
+  // toast. One pattern, both paths.
   const markRead = async (id: string) => {
     try {
-      await supabase.rpc('mark_notification_read', { p_notification_id: id });
+      const { error } = await supabase.rpc('mark_notification_read', { p_notification_id: id });
+      if (error) throw new Error(error.message);
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
       setUnreadCount(c => Math.max(0, c - 1));
-    } catch (e) { console.error('Failed to mark notification read:', e); }
+    } catch (e) {
+      // Local state is deliberately left untouched — the row stays visibly
+      // unread rather than faking a write the server rejected.
+      logger.warn('notifications: mark_notification_read failed', {
+        reason: e instanceof Error ? e.message : 'unknown error',
+      });
+      toast.error(
+        isHi
+          ? 'सूचना पढ़ी हुई मार्क नहीं हो सकी। फिर से कोशिश करो।'
+          : "Couldn't mark that as read. Please try again.",
+      );
+    }
   };
 
+  // Explicit user action — a silent no-op reads as a broken button, so a
+  // failure is surfaced to the student (bilingual, P7) instead of swallowed.
   const markAllRead = async () => {
     if (!student) return;
     try {
-      await supabase.rpc('mark_all_notifications_read', { p_student_id: student.id });
+      const { error } = await supabase.rpc('mark_all_notifications_read', { p_student_id: student.id });
+      if (error) throw new Error(error.message);
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setUnreadCount(0);
-    } catch {}
+    } catch (e) {
+      logger.warn('notifications: mark_all_notifications_read failed', {
+        reason: e instanceof Error ? e.message : 'unknown error',
+      });
+      toast.error(
+        isHi
+          ? 'सब पढ़ा हुआ मार्क नहीं हो सका। फिर से कोशिश करो।'
+          : "Couldn't mark all as read. Please try again.",
+      );
+    }
   };
 
   const handleTap = (n: Notification) => {

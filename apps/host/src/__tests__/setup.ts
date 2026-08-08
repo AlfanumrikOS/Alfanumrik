@@ -1,7 +1,122 @@
-// ── Default test environment variables ────────────────────────────────────────
-process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ci-placeholder-service-role';
+// ── Hermetic test environment ────────────────────────────────────────────────
+//
+// ⚠️  DO NOT "SIMPLIFY" THIS BACK TO `process.env.X = process.env.X || '...'`.
+//
+// INCIDENT (2026-08-08). This block previously used the `||` fallback pattern
+// for exactly three Supabase variables and neutralised nothing else. The
+// fallback only fires when the variable is ABSENT — so on any developer
+// machine that exports real credentials into the shell (which is the normal
+// state for anyone who also runs `supabase`, `vercel env pull`, or a
+// `.env`-sourcing profile), the placeholder never applied and **the entire
+// unit suite executed against production infrastructure**.
+//
+// Measured blast radius on one such shell (real SUPABASE_SERVICE_ROLE_KEY,
+// real project ref, `rzp_live_` Razorpay key, real Upstash Redis):
+//   • baseline `npm test` → 13 failed files / 62 failed tests / 41 errors /
+//     24 "Worker exited unexpectedly" crashes, 63 minutes wall clock
+//   • same 13 files with the env scrubbed → 13 passed / 199 tests / 44.1s
+//   • genuine product defects found among those 62 failures: ZERO
+//
+// Three distinct mechanisms produced those artifacts:
+//   1. `acquireIdempotencyLock()` (packages/lib/src/redis.ts) wrote real keys
+//      into production Upstash Redis. `/api/auth/bootstrap` takes a 30s lock
+//      on `bootstrap:<userId>`; the first test claimed it and every later test
+//      short-circuited to `{ status: 'deduplicated' }` HTTP 200, yielding
+//      "expected 200 to be 400" style failures. The lock OUTLIVED the process,
+//      so the failure set changed run to run — non-deterministic red.
+//   2. `NEXT_PUBLIC_APP_URL=http://localhost:3000` overrode the
+//      `https://alfanumrik.com` default in `appHost()`
+//      (packages/lib/src/school-provisioning.ts), breaking claim-URL assertions.
+//   3. Real Supabase round-trips produced AbortErrors, a 234.9s hang, and the
+//      worker crashes.
+//
+// THE RULE: the unit lane's environment is DECLARED here, not inherited.
+// Anything a test needs, that test sets and restores itself (this is already
+// the established convention — see the payments, alfabot, health, env-accessors
+// and internal-caller-signing suites, all of which set/delete their own vars).
+//
+// PARITY TARGET: CI (`.github/workflows/ci.yml` top-level `env:`) sets exactly
+// three application variables and nothing else. Reproducing that exact state
+// locally is the whole point — it removes the "passes for me" class of bug in
+// both directions.
+//
+// ESCAPE HATCH: the integration lane (`npm run test:integration`, i.e.
+// `RUN_INTEGRATION_TESTS=1`) legitimately talks to a real staging project and
+// shares this setup file, so the scrub is skipped there. That lane is explicit
+// opt-in and is the ONLY supported way to point tests at a live backend.
+const IS_INTEGRATION_LANE = process.env.RUN_INTEGRATION_TESTS === '1';
+
+if (!IS_INTEGRATION_LANE) {
+  // ── Step 1: remove inherited credentials ──────────────────────────────────
+  // Prefix sweep. Every consumer of these degrades to an in-memory / no-op /
+  // throw-before-network path when the variable is ABSENT (verified in source
+  // 2026-08-08):
+  //   UPSTASH_*  → getRedis() returns null in packages/lib/src/redis.ts:21,
+  //                rbac.ts:59, middleware-helpers.ts:84,
+  //                deletion-cache-invalidation.ts:32, api-rate-limit.ts:30 and
+  //                the ensureUpstash() guard in apps/host/src/proxy.ts:216 —
+  //                all fall back to the in-memory limiter/cache, and
+  //                acquireIdempotencyLock() returns true (allow) rather than
+  //                dedupe.
+  //   SUPABASE_* → no application code reads bare SUPABASE_URL /
+  //                SUPABASE_ANON_KEY (the one reference,
+  //                api/whatsapp/_lib/daily6.ts:220, prefers
+  //                NEXT_PUBLIC_SUPABASE_URL which is force-assigned below).
+  //                They MUST stay absent: observability-migration-1a/1b.test.ts
+  //                gate `describeIfSupabase` on `SUPABASE_URL &&
+  //                SUPABASE_SERVICE_ROLE_KEY` and would otherwise wake up and
+  //                dial a live Postgres from the unit lane.
+  //   RAZORPAY_* / ANTHROPIC_* / OPENAI_* → every test that needs one assigns a
+  //                fake itself; absent, callOpenAI/callClaude throw
+  //                "…_API_KEY not configured" before touching the network,
+  //                which is the safe default REG-168 already assumes.
+  const SCRUB_PREFIXES = [
+    'UPSTASH_',
+    'SUPABASE_',
+    'RAZORPAY_',
+    'ANTHROPIC_',
+    'OPENAI_',
+  ];
+
+  // Named credentials with a demonstrated network or signing path that do not
+  // share a sweepable prefix. Keep this list additive: a new secret in a dev
+  // shell is a new way for the suite to lie.
+  const SCRUB_EXACT = [
+    // Host derivation — must be absent so appHost() / guardian-invite.ts use
+    // their `https://alfanumrik.com` default (mechanism 2 of the incident).
+    'NEXT_PUBLIC_APP_URL',
+    // Paid / networked AI + messaging providers.
+    'VOYAGE_API_KEY',
+    'GEMINI_API_KEY',
+    'LLAMA_API_KEY',
+    'TWILIO_AUTH_TOKEN',
+    // Request-signing and privileged access secrets.
+    'INTERNAL_CALLER_SIGNING_SECRET',
+    'ADMIN_API_KEY',
+    'SUPER_ADMIN_SECRET',
+    'CRON_SECRET',
+    // Telemetry sinks — a real DSN turns test noise into production events.
+    'SENTRY_DSN',
+    'NEXT_PUBLIC_SENTRY_DSN',
+    'SENTRY_AUTH_TOKEN',
+  ];
+
+  for (const name of Object.keys(process.env)) {
+    if (SCRUB_PREFIXES.some((p) => name.startsWith(p)) || SCRUB_EXACT.includes(name)) {
+      delete process.env[name];
+    }
+  }
+
+  // ── Step 2: declare the test identity (force-assign, never fall back) ─────
+  // These three values are byte-identical to `.github/workflows/ci.yml`'s
+  // top-level `env:` block. The service-role placeholder MUST differ from the
+  // anon placeholder or packages/lib/src/env.ts's anti-leak check throws at
+  // boot. Assignment happens AFTER the sweep above, which deletes
+  // SUPABASE_SERVICE_ROLE_KEY by prefix.
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://placeholder.supabase.co';
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ci-placeholder-service-role';
+}
 
 // ─── Hermetic AI test layer (REG-168) ──────────────────────────────────────
 // All three LLM client modules have dedicated unit tests that exercise the
@@ -33,10 +148,20 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ||
 // an LLM client MUST add vi.mock('@alfanumrik/lib/ai/clients/<module>') at the top of
 // that file. The CI environment guard below warns when keys are present so the
 // risk of accidental real calls is visible in test output.
+//
+// UPDATE (2026-08-08): the "safe no-network default" the two bullets above rely
+// on is now GUARANTEED rather than hoped for — the hermetic-environment block at
+// the top of this file deletes ANTHROPIC_* / OPENAI_* (and every other provider
+// credential) in the unit lane, so an unmocked call-site fails loudly and
+// offline instead of silently billing a real account. The per-call-site vi.mock
+// rule still stands: it is what makes those tests deterministic, not merely safe.
 
 // ─── CI environment guard ──────────────────────────────────────────────────
 // Warn if real AI API keys are present so developers know to check their mocks.
 // The three client modules are NOT globally mocked here — see note above.
+// In the unit lane these branches are now unreachable (the keys were deleted
+// above); they remain live for the RUN_INTEGRATION_TESTS=1 lane, which skips
+// the scrub and therefore CAN inherit real keys from the environment.
 if (process.env.ANTHROPIC_API_KEY) {
   console.warn(
     '[TEST SETUP] ANTHROPIC_API_KEY is set. ' +

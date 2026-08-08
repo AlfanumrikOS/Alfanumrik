@@ -73,10 +73,18 @@ export default function SubjectsOSHub({
     let cancelled = false;
     if (!subjectCode || !grade) return;
     getChaptersForSubject(subjectCode, grade)
-      .then((rows) => {
+      .then((res) => {
         if (cancelled) return;
+        // DELIBERATE empty-on-failure. This read only supplies DISPLAY LABELS
+        // for the skill tree; the tree's nodes, its loading state and its own
+        // error state all come from useSubjectReadiness above. On failure the
+        // map stays empty and SubjectSkillTree falls back to "Chapter N" — no
+        // claim is made about the student and no surface is hidden, so there
+        // is nothing to escalate. Not a swallowed error: the failure branch is
+        // explicit here rather than an unreachable `.catch()`.
+        if (!res.ok) return;
         const map: Record<number, string> = {};
-        for (const r of rows) map[r.chapter_number] = r.title;
+        for (const r of res.data) map[r.chapter_number] = r.title;
         setChapterTitles(map);
       })
       .catch(() => {

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { getStudyPlan, generateStudyPlan, supabase } from '@alfanumrik/lib/supabase';
+import { logger } from '@alfanumrik/lib/logger';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { BLOOM_CONFIG, type BloomLevel } from '@alfanumrik/lib/cognitive-engine';
@@ -94,6 +95,11 @@ export default function ExamPrepPage() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [hasPlan, setHasPlan] = useState<boolean | null>(null);
+  // Separates "this student genuinely has no active plan" from "the plan read
+  // failed". Both used to set hasPlan=false, which rendered the "Generate your
+  // AI Study Plan" screen — telling a student who HAS a plan that they have
+  // none, and inviting them to overwrite it.
+  const [planLoadFailed, setPlanLoadFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
 
@@ -119,50 +125,89 @@ export default function ExamPrepPage() {
     if (!student) return;
     setLoading(true);
     try {
-      const data = await getStudyPlan(student.id);
-      if (data?.has_plan) {
-        setPlan(data.plan);
-        setTasks(Array.isArray(data.tasks) ? data.tasks : []);
-        setHasPlan(true);
-        const today = new Date().toISOString().split('T')[0];
-        const todayTask = (data.tasks || []).find((t: Task) => t.scheduled_date === today);
-        if (todayTask) setExpandedDay(todayTask.day_number);
-        else setExpandedDay(1);
+      const res = await getStudyPlan(student.id);
+      if (!res.ok) {
+        // P13: message only — no student id, no row payload.
+        logger.warn('exam-prep: study plan load failed', { reason: res.error });
+        setPlanLoadFailed(true);
+        setHasPlan(null);
       } else {
-        setHasPlan(false);
+        setPlanLoadFailed(false);
+        const data = res.data;
+        if (data?.has_plan) {
+          setPlan(data.plan);
+          setTasks(Array.isArray(data.tasks) ? data.tasks : []);
+          setHasPlan(true);
+          const today = new Date().toISOString().split('T')[0];
+          const todayTask = (data.tasks || []).find((t: Task) => t.scheduled_date === today);
+          if (todayTask) setExpandedDay(todayTask.day_number);
+          else setExpandedDay(1);
+        } else {
+          setHasPlan(false);
+        }
       }
-    } catch {
-      setHasPlan(false);
+    } catch (e) {
+      logger.warn('exam-prep: study plan load threw', {
+        reason: e instanceof Error ? e.message : 'unknown error',
+      });
+      setPlanLoadFailed(true);
+      setHasPlan(null);
     }
 
     // Cognitive 2.0: energy level from latest session (DB columns: fatigue_detected, difficulty_adjustments)
+    //
+    // BEST-EFFORT ENRICHMENT (deliberately non-blocking). This only decorates
+    // the plan-overview row with an "Energy: High/Medium/Low" chip. On failure
+    // `energyLevel` stays null and the chip is simply absent — no number is
+    // asserted and no empty state claims anything — so the failure is not
+    // surfaced to the student. It IS logged (structured + PII-redacted) rather
+    // than swallowed into the void.
     try {
-      const { data: session } = await supabase.from('cognitive_session_metrics')
+      const { data: session, error } = await supabase.from('cognitive_session_metrics')
         .select('fatigue_detected, difficulty_adjustments')
         .eq('student_id', student.id)
         .order('created_at', { ascending: false })
         .limit(1);
-      if (session && session.length > 0) {
+      if (error) {
+        logger.warn('exam-prep: energy-level lookup failed', { reason: error.message });
+      } else if (session && session.length > 0) {
         setEnergyLevel(session[0].fatigue_detected ? 'low' : (session[0].difficulty_adjustments ?? 0) > 2 ? 'medium' : 'high');
       }
-    } catch {}
+    } catch (e) {
+      logger.warn('exam-prep: energy-level lookup threw', {
+        reason: e instanceof Error ? e.message : 'unknown error',
+      });
+    }
 
     // Cognitive 2.0: critical knowledge gaps (DB columns: target_concept_name, missing_prerequisite_name, confidence_score, status)
+    //
+    // BEST-EFFORT ENRICHMENT. Drives the supplementary "Foxy Suggests" card.
+    // On failure the card is absent — unlike /progress, this surface has no
+    // "no gaps found ✅" copy, so a failure never turns into a false all-clear.
+    // Logged, not swallowed.
     try {
-      const { data: gaps } = await supabase.from('knowledge_gaps')
+      const { data: gaps, error } = await supabase.from('knowledge_gaps')
         .select('id, target_concept_name, missing_prerequisite_name, confidence_score')
         .eq('student_id', student.id)
         .neq('status', 'resolved')
         .gte('confidence_score', 0.7)
         .order('confidence_score', { ascending: false })
         .limit(2);
-      setCriticalGaps((gaps ?? []).map(g => ({
-        id: g.id,
-        topic_title: g.target_concept_name,
-        description: `Missing: ${g.missing_prerequisite_name}`,
-        description_hi: `कमी: ${g.missing_prerequisite_name}`,
-      })));
-    } catch {}
+      if (error) {
+        logger.warn('exam-prep: critical-gaps lookup failed', { reason: error.message });
+      } else {
+        setCriticalGaps((gaps ?? []).map(g => ({
+          id: g.id,
+          topic_title: g.target_concept_name,
+          description: `Missing: ${g.missing_prerequisite_name}`,
+          description_hi: `कमी: ${g.missing_prerequisite_name}`,
+        })));
+      }
+    } catch (e) {
+      logger.warn('exam-prep: critical-gaps lookup threw', {
+        reason: e instanceof Error ? e.message : 'unknown error',
+      });
+    }
 
     setLoading(false);
   }, [student]);
@@ -320,6 +365,34 @@ export default function ExamPrepPage() {
             <div className="text-4xl animate-float mb-3">📅</div>
             <p className="text-sm text-[var(--text-3)]">{isHi ? 'योजना लोड हो रही है...' : 'Loading your plan...'}</p>
           </div>
+
+        ) : planLoadFailed && !showGenerate ? (
+          /* HONEST FAILURE — distinct from "you have no plan yet". Falling
+             through to the generate screen here would tell a student who HAS a
+             plan that they have none, and invite them to overwrite it. The
+             generate flow stays reachable via the button below, but only as a
+             deliberate choice, never as the default rendered by a 500. */
+          <Card className="!p-5 text-center">
+            <div role="alert">
+              <div className="text-4xl mb-3">⚠️</div>
+              <p className="text-sm font-bold mb-1">
+                {isHi ? 'तुम्हारी योजना लोड नहीं हो सकी' : "Couldn't load your study plan"}
+              </p>
+              <p className="text-xs text-[var(--text-3)] mb-4">
+                {isHi
+                  ? 'इसका मतलब यह नहीं कि तुम्हारी कोई योजना नहीं है — दोबारा कोशिश करो।'
+                  : "This doesn't mean you have no plan — please try again."}
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+              <Button variant="primary" size="sm" className="min-h-[44px]" onClick={() => load()}>
+                {isHi ? 'फिर से कोशिश करो' : 'Try again'}
+              </Button>
+              <Button variant="ghost" size="sm" className="min-h-[44px]" onClick={() => setShowGenerate(true)}>
+                {isHi ? 'नई योजना बनाओ' : 'Create a new plan'}
+              </Button>
+            </div>
+          </Card>
 
         ) : (!hasPlan || showGenerate) ? (
           /* ═══ GENERATE PLAN SCREEN ═══ */

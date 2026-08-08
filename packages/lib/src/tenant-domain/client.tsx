@@ -80,6 +80,58 @@ const NULL_STATE: TenantConfigState = {
 
 const TenantConfigCtx = createContext<TenantConfigState>(NULL_STATE);
 
+/**
+ * Does this response body carry EVERYTHING the `ready` state promises?
+ *
+ * ── Why a positive guard (2026-08-08) ────────────────────────────────────
+ * This used to be a NEGATIVE guard — `if (!body || body.isTenantContext ===
+ * false) → no_tenant`, everything else → `ready`. That treats "the failure
+ * marker is absent" as "the success payload is present", which is not the
+ * same claim. Any truthy 200 JSON that is merely SHAPED differently (`{}`,
+ * `[]`, the repo's `{ success: false, error }` envelope, a stale
+ * service-worker cache entry, an intercepting proxy) was promoted to
+ * `status: 'ready'` with `tenant: undefined`. The CSS-vars effect below then
+ * dereferenced `tenant.branding.primaryColor` and threw
+ * `TypeError: Cannot read properties of undefined (reading 'branding')`
+ * from inside a useEffect.
+ *
+ * That throw is not survivable in this app: `TenantConfigProvider` is
+ * mounted in the ROOT LAYOUT *outside* the layout's <ErrorBoundary> (which
+ * only wraps `children`), so React unwound to the root and Next.js rendered
+ * `app/global-error.tsx` — the full-page "Something went wrong / The app
+ * could not load." white screen — instead of the page. One malformed 200 on
+ * a purely COSMETIC branding endpoint took down every student surface.
+ *
+ * The sibling provider `SchoolContext.tsx` already guards positively
+ * (`if (data && data.isSchoolContext)`); this brings the two in line and
+ * makes the code honour this file's own documented contract: "if
+ * /api/tenant/config returns { isTenantContext: false } OR ANY ERROR, the
+ * provider exposes a 'no tenant' state ... The page never blocks on a
+ * config fetch."
+ *
+ * The guard requires exactly the fields a consumer will dereference while
+ * `status === 'ready'` — no more (so a legitimate response is never
+ * downgraded) and no less (so `ready` cannot lie):
+ *   - `tenant.branding` + `tenant.typography` → cssVarsFromTenant()
+ *   - `tenant.tenantType`                     → useTenantType()
+ *   - `modules`                               → useIsModuleEnabled()
+ *   - `config`                                → useTenantConfigValue()
+ * Anything short of that is `no_tenant`, i.e. default Alfanumrik branding —
+ * which is the correct, non-fatal outcome for a branding lookup.
+ */
+function isCompleteTenantConfig(body: unknown): body is TenantConfigResponse {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const candidate = body as Partial<TenantConfigResponse>;
+  if (candidate.isTenantContext !== true) return false;
+
+  const isRecord = (v: unknown): boolean => !!v && typeof v === 'object' && !Array.isArray(v);
+  if (!isRecord(candidate.tenant)) return false;
+  if (!isRecord(candidate.modules) || !isRecord(candidate.config)) return false;
+
+  const tenant = candidate.tenant as TenantConfigResponse['tenant'];
+  return isRecord(tenant.branding) && isRecord(tenant.typography);
+}
+
 // ─── Provider component ────────────────────────────────────────────────
 
 export interface TenantConfigProviderProps {
@@ -122,10 +174,14 @@ export function TenantConfigProvider({
 
     let cancelled = false;
     fetch(endpoint, { credentials: 'same-origin' })
+      // A non-OK status, a non-JSON body (an HTML error page from a proxy),
+      // or a rejected fetch all land in `.catch()` / resolve to null below.
       .then(r => (r.ok ? r.json() : null))
-      .then((body: TenantConfigResponse | { isTenantContext: false } | null) => {
+      .then((body: unknown) => {
         if (cancelled) return;
-        if (!body || body.isTenantContext === false) {
+        // Positive guard: only a body that carries every field the `ready`
+        // state promises may become `ready`. See isCompleteTenantConfig().
+        if (!isCompleteTenantConfig(body)) {
           setState(NULL_STATE);
           return;
         }
@@ -223,21 +279,41 @@ export function useTenantType(): TenantType {
  *   --tenant-font-body
  *   --tenant-radius         (e.g. '8px')
  */
+/**
+ * Defense in depth: the provider above can no longer hand this an incomplete
+ * tenant, but this helper is EXPORTED and is also called with server-resolved
+ * data (SSR seeding, `initialState`), where the type system is the only thing
+ * standing between a partial row and a thrown TypeError. Building a CSS
+ * variable map is cosmetic work — an absent field must yield an absent
+ * variable (so the stylesheet's own default wins), never an exception.
+ *
+ * Field presence is checked with `typeof === 'string'` rather than
+ * truthiness so a legitimate empty string keeps its previous behaviour; only
+ * genuinely missing/undefined values are skipped.
+ */
 export function cssVarsFromTenant(
-  tenant: TenantConfigResponse['tenant'],
+  tenant: TenantConfigResponse['tenant'] | null | undefined,
 ): Record<string, string> {
-  const vars: Record<string, string> = {
-    '--color-brand-primary': tenant.branding.primaryColor,
-    '--color-brand-secondary': tenant.branding.secondaryColor,
-  };
-  if (tenant.typography.fontHeading) {
-    vars['--tenant-font-heading'] = tenant.typography.fontHeading;
+  const vars: Record<string, string> = {};
+  if (!tenant || typeof tenant !== 'object') return vars;
+
+  const branding = tenant.branding as TenantConfigResponse['tenant']['branding'] | undefined;
+  if (typeof branding?.primaryColor === 'string') {
+    vars['--color-brand-primary'] = branding.primaryColor;
   }
-  if (tenant.typography.fontBody) {
-    vars['--tenant-font-body'] = tenant.typography.fontBody;
+  if (typeof branding?.secondaryColor === 'string') {
+    vars['--color-brand-secondary'] = branding.secondaryColor;
   }
-  if (tenant.typography.borderRadiusPx != null) {
-    vars['--tenant-radius'] = `${tenant.typography.borderRadiusPx}px`;
+
+  const typography = tenant.typography as TenantConfigResponse['tenant']['typography'] | undefined;
+  if (typography?.fontHeading) {
+    vars['--tenant-font-heading'] = typography.fontHeading;
+  }
+  if (typography?.fontBody) {
+    vars['--tenant-font-body'] = typography.fontBody;
+  }
+  if (typography?.borderRadiusPx != null) {
+    vars['--tenant-radius'] = `${typography.borderRadiusPx}px`;
   }
   return vars;
 }
