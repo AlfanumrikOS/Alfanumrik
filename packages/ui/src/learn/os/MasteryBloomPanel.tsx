@@ -58,19 +58,26 @@ export default function MasteryBloomPanel({
     setState((s) => ({ ...s, status: 'loading' }));
     (async () => {
       try {
-        const [profiles, bloom, velocity] = await Promise.all([
+        const [profileRes, bloomRes, velocityRes] = await Promise.all([
           getStudentProfiles(studentId),
           getBloomProgression(studentId, subjectCode),
           getLearningVelocity(studentId, subjectCode),
         ]);
         if (cancelled) return;
+        // Any read failing lands on the 'error' branch. The zero-state below
+        // ("No data for this subject yet — take a quiz to begin") is a claim
+        // about the STUDENT, so it may only render on a successful read.
+        if (!profileRes.ok || !bloomRes.ok || !velocityRes.ok) {
+          setState((s) => ({ ...s, status: 'error' }));
+          return;
+        }
         const profile =
-          (profiles as StudentLearningProfile[]).find((p) => p.subject === subjectCode) ?? null;
+          (profileRes.data as StudentLearningProfile[]).find((p) => p.subject === subjectCode) ?? null;
         setState({
           status: 'ready',
           profile,
-          bloomData: (bloom as Array<{ bloom_level: BloomLevel; mastery: number }>) ?? [],
-          velocity: (velocity as LearningVelocity[])?.[0],
+          bloomData: (bloomRes.data as Array<{ bloom_level: BloomLevel; mastery: number }>) ?? [],
+          velocity: (velocityRes.data as LearningVelocity[])?.[0],
         });
       } catch {
         if (!cancelled) setState((s) => ({ ...s, status: 'error' }));

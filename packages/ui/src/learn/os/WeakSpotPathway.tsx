@@ -35,9 +35,15 @@ export default function WeakSpotPathway({ studentId, subjectCode, isHi }: WeakSp
     setStatus('loading');
     (async () => {
       try {
-        const data = await getKnowledgeGaps(studentId, subjectCode, 6);
+        const res = await getKnowledgeGaps(studentId, subjectCode, 6);
         if (cancelled) return;
-        setGaps((data as KnowledgeGap[]) ?? []);
+        // A failed read must reach the 'error' branch, never the zero-state:
+        // KnowledgeGapActions' empty copy reads as "you have no weak spots".
+        // (Before getKnowledgeGaps returned a ServiceResult it resolved to []
+        // on failure, so the catch below was unreachable and this surface
+        // silently rendered the all-clear.)
+        if (!res.ok) { setStatus('error'); return; }
+        setGaps(res.data as KnowledgeGap[]);
         setStatus('ready');
       } catch {
         if (!cancelled) setStatus('error');

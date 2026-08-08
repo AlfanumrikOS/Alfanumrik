@@ -128,6 +128,65 @@ describe('TenantConfigProvider — fetch lifecycle', () => {
     });
     await waitFor(() => expect(result.current.status).toBe('no_tenant'));
   });
+
+  /**
+   * ── Malformed-but-200 bodies (regression, 2026-08-08) ──────────────────
+   * The four cases above all cover a body that is ABSENT or explicitly
+   * negative. The uncovered case was a body that is PRESENT, 200, valid JSON
+   * — and simply the wrong shape. The provider used to guard negatively
+   * (`isTenantContext === false` → no_tenant, everything else → ready), so
+   * each of these was promoted to `status: 'ready'` with `tenant: undefined`.
+   * The CSS-vars effect then threw
+   * `TypeError: Cannot read properties of undefined (reading 'branding')`
+   * out of a useEffect. Because TenantConfigProvider is mounted in the root
+   * layout OUTSIDE the layout's <ErrorBoundary>, that unwound the entire
+   * React tree to `app/global-error.tsx` — a full-page "Something went
+   * wrong" white screen on every route, caused by a cosmetic branding call.
+   *
+   * These are not hypothetical shapes: `{}` is what a blanket test/proxy
+   * stub returns, `{ success: false, error }` is this repo's own standard API
+   * envelope, and `[]` is what a mis-routed PostgREST-style handler returns.
+   *
+   * Contract: a branding lookup that cannot be fully understood degrades to
+   * default Alfanumrik branding (`no_tenant`). It never becomes `ready`, and
+   * it never throws.
+   */
+  it.each([
+    ['an empty object (blanket stub / proxy default)', {}],
+    ['the repo standard error envelope', { success: false, error: 'upstream failed' }],
+    ['an array', []],
+    ['isTenantContext true but no tenant', { isTenantContext: true }],
+    ['a tenant with no branding', {
+      isTenantContext: true,
+      tenant: { tenantType: 'school', typography: {} },
+      modules: {},
+      config: {},
+    }],
+    ['a tenant with no typography', {
+      isTenantContext: true,
+      tenant: { tenantType: 'school', branding: { primaryColor: '#fff', secondaryColor: '#000' } },
+      modules: {},
+      config: {},
+    }],
+    ['a complete tenant but no modules/config map', {
+      isTenantContext: true,
+      tenant: HAPPY_BODY.tenant,
+    }],
+  ])('degrades to no_tenant (never ready, never throws) on a 200 carrying %s', async (_label, body) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(body), { status: 200 }),
+    );
+    // applyCssVars deliberately LEFT ON: the original crash happened in the
+    // CSS-vars effect, so disabling it would test around the defect.
+    const Wrapper = ({ children }: { children: ReactNode }) => (
+      <TenantConfigProvider>{children}</TenantConfigProvider>
+    );
+    Wrapper.displayName = 'MalformedBodyWrapper';
+
+    const { result } = renderHook(() => useTenantConfig(), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.status).toBe('no_tenant'));
+    expect(result.current.tenant).toBeNull();
+  });
 });
 
 describe('TenantConfigProvider — initialState seed', () => {

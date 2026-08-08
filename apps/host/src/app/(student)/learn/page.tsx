@@ -26,6 +26,7 @@ const CelebrationOverlay = dynamic(
   { ssr: false },
 );
 import { getChaptersForSubject, supabase } from '@alfanumrik/lib/supabase';
+import { logger } from '@alfanumrik/lib/logger';
 import {  LoadingFoxy, PremiumCard, GlowButton, LockedCard } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
@@ -64,6 +65,13 @@ function LegacyLearnPage() {
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string; title_hi?: string | null; verified_question_count?: number }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
+  // Separates "this subject genuinely has no chapters yet" from "the chapter
+  // read failed". Both used to render "No chapters available yet" — telling a
+  // student their whole syllabus was missing after a 401 or a 5xx.
+  const [chaptersFailed, setChaptersFailed] = useState(false);
+  // Bumped by the retry control so the chapter effect re-runs without having
+  // to unset/reset the selected subject (which would flash the subject grid).
+  const [chaptersReloadKey, setChaptersReloadKey] = useState(0);
   const [lastStudied, setLastStudied] = useState<{ subject: string; chapter: number; chapterTitle: string; concept: number; timestamp: number } | null>(null);
   const [progressRows, setProgressRows] = useState<Array<{ subject: string; chapter_number: number; is_completed: boolean }>>([]);
   const [subjectTotalChapters, setSubjectTotalChapters] = useState<Record<string, number>>({});
@@ -71,7 +79,17 @@ function LegacyLearnPage() {
   // Track previously-completed keys so we can fire celebration on new completions
   const [prevCompletedKeys, setPrevCompletedKeys] = useState<Set<string>>(new Set());
 
-  // Load last-studied position from localStorage
+  // Load last-studied position from localStorage.
+  //
+  // BEST-EFFORT, CLIENT-ONLY (deliberately non-blocking). This is not a
+  // backend read — it can only fail when localStorage is unavailable (private
+  // browsing / storage quota / a hardened school tablet) or the cached JSON is
+  // corrupt. Either way the correct behaviour is to skip the "Continue where
+  // you left off" shortcut; the chapter list below is the real navigation and
+  // is unaffected, so there is no failure to surface to the student. The
+  // corrupt entry is dropped so it can't fail forever, and the reason is
+  // logged (message only — the cached value holds a chapter title, so it is
+  // never logged).
   useEffect(() => {
     try {
       const stored = localStorage.getItem('alfanumrik_last_studied');
@@ -82,7 +100,12 @@ function LegacyLearnPage() {
           setLastStudied(data);
         }
       }
-    } catch {}
+    } catch (e) {
+      logger.warn('learn: last-studied shortcut unavailable', {
+        reason: e instanceof Error ? e.message : 'unknown error',
+      });
+      try { localStorage.removeItem('alfanumrik_last_studied'); } catch { /* storage itself is unavailable */ }
+    }
   }, []);
 
   useEffect(() => {
@@ -136,13 +159,29 @@ function LegacyLearnPage() {
   }, [student?.grade]);
 
   useEffect(() => {
-    if (!selectedSubject || !student?.grade) { setChapters([]); return; }
+    if (!selectedSubject || !student?.grade) { setChapters([]); setChaptersFailed(false); return; }
     setChaptersLoading(true);
+    setChaptersFailed(false);
     getChaptersForSubject(selectedSubject, student.grade)
-      .then(setChapters)
-      .catch(() => setChapters([]))
+      .then((res) => {
+        if (!res.ok) {
+          // P13: message only — no student id, no row payload.
+          logger.warn('learn: chapter list failed to load', { reason: res.error });
+          setChaptersFailed(true);
+          setChapters([]);
+          return;
+        }
+        setChapters(res.data);
+      })
+      .catch((e) => {
+        logger.warn('learn: chapter list threw', {
+          reason: e instanceof Error ? e.message : 'unknown error',
+        });
+        setChaptersFailed(true);
+        setChapters([]);
+      })
       .finally(() => setChaptersLoading(false));
-  }, [selectedSubject, student?.grade]);
+  }, [selectedSubject, student?.grade, chaptersReloadKey]);
 
   // Guard: if selected subject is locked (plan downgrade, grade change, etc.),
   // reset selection. Calling setSelectedSubject() during render is a React
@@ -387,6 +426,29 @@ function LegacyLearnPage() {
                   {[...Array(5)].map((_, i) => (
                     <div key={i} className="h-16 bg-[var(--surface-2)] rounded-xl animate-pulse" />
                   ))}
+                </div>
+
+              ) : chaptersFailed ? (
+                /* HONEST FAILURE — distinct from the genuine empty below. The
+                   empty state says the syllabus has nothing in it; saying that
+                   after a failed read is a lie about the student's course. */
+                <div className="text-center py-10" role="alert">
+                  <div className="text-5xl mb-3">⚠️</div>
+                  <p className="text-sm font-semibold text-[var(--text-2)] mb-1">
+                    {isHi ? 'अध्याय लोड नहीं हो सके' : "Couldn't load chapters"}
+                  </p>
+                  <p className="text-xs text-[var(--text-3)] mb-6">
+                    {isHi
+                      ? 'यह तुम्हारे कोर्स के बारे में कुछ नहीं कहता — दोबारा कोशिश करो।'
+                      : "This doesn't mean your course is empty — please try again."}
+                  </p>
+                  <GlowButton
+                    className="warm-cta min-h-[44px]"
+                    icon="🔄"
+                    onClick={() => setChaptersReloadKey((k) => k + 1)}
+                  >
+                    {isHi ? 'फिर से कोशिश करो' : 'Try again'}
+                  </GlowButton>
                 </div>
 
               ) : chapters.length === 0 ? (

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { supabase, getStudentProfiles, getSubjects, studentJoinClass } from '@alfanumrik/lib/supabase';
+import { logger } from '@alfanumrik/lib/logger';
 import { Card, Button, Input, Select, Avatar, SectionHeader, ProgressBar, StatCard, LoadingFoxy } from '@alfanumrik/ui/ui';
 import { toast } from '@alfanumrik/ui/ui/toast';
 import TrustFooter from '@alfanumrik/ui/TrustFooter';
@@ -266,12 +267,28 @@ export default function ProfilePage() {
 
   const loadData = useCallback(async () => {
     if (!student) return;
-    const [profs, subs] = await Promise.all([
+    const [profsRes, subsRes] = await Promise.all([
       getStudentProfiles(student.id),
       getSubjects(),
     ]);
-    setProfiles(profs);
-    setSubjects(subs);
+    // DELIBERATE degrade-to-absent, settled independently.
+    //
+    // The only thing these two reads render on this page is the supplementary
+    // "Subject Breakdown" card, which is already gated on `profiles.length > 0`
+    // and makes NO claim when absent — unlike /progress ("No knowledge gaps
+    // detected!") or /learn ("No chapters available yet"), an empty result here
+    // does not tell the student anything false about themselves, and /progress
+    // is the canonical surface for this data. So a failed read leaves the card
+    // off rather than adding an error affordance to the account screen.
+    //
+    // What it must NOT do is stay invisible to us: the failure is logged
+    // (P13 — message only, no student id, no row payload) instead of being
+    // swallowed, and the two reads settle independently so a failed `subjects`
+    // lookup cannot also hide profiles the student really has.
+    if (profsRes.ok) setProfiles(profsRes.data);
+    else logger.warn('profile: subject profiles failed to load', { reason: profsRes.error });
+    if (subsRes.ok) setSubjects(subsRes.data);
+    else logger.warn('profile: subject metadata failed to load', { reason: subsRes.error });
 
     // Achievements
     const { data: sa } = await supabase

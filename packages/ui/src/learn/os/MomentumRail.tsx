@@ -61,11 +61,20 @@ export default function MomentumRail({
     setState((s) => ({ ...s, status: 'loading' }));
     (async () => {
       try {
-        const [velocity, profiles] = await Promise.all([
+        const [velocityRes, profileRes] = await Promise.all([
           getLearningVelocity(studentId, subjectCode),
           getStudentProfiles(studentId),
         ]);
         if (cancelled) return;
+        // Either read failing lands on the 'error' branch. The zero-state
+        // below ("Take a few quizzes and your momentum shows here") is a claim
+        // about the STUDENT, so it may only render on a successful read.
+        if (!velocityRes.ok || !profileRes.ok) {
+          setState((s) => ({ ...s, status: 'error' }));
+          return;
+        }
+        const velocity = velocityRes.data;
+        const profiles = profileRes.data;
         const profile = (profiles as StudentLearningProfile[]).find((p) => p.subject === subjectCode);
         const scorePct =
           profile && profile.total_questions_asked > 0

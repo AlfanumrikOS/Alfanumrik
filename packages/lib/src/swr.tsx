@@ -36,6 +36,22 @@ import type {
   MasteryOverviewResponse,
   MasteryOverviewRow,
 } from './dashboard/mastery-buckets';
+import type { ServiceResult } from './domains/types';
+
+/**
+ * Bridge a ServiceResult-returning read into SWR's own success/failure model.
+ *
+ * SWR already HAS the distinction this codebase needs: on failure a consumer
+ * sees `data: undefined, error: Error`; on a genuinely-empty read it sees
+ * `data: [], error: undefined`. Resolving a failure to `[]` would erase that,
+ * so the fetcher throws instead. Deliberate and load-bearing — do not "soften"
+ * this back into a `?? []`.
+ */
+async function unwrapOrThrow<T>(read: Promise<ServiceResult<T>>): Promise<T> {
+  const result = await read;
+  if (!result.ok) throw new Error(result.error);
+  return result.data;
+}
 
 // Default SWR config optimized for Indian mobile networks.
 // Exported so SWRProvider.tsx can mount it as the global <SWRConfig> — every
@@ -67,14 +83,14 @@ const STATIC_CONFIG: SWRConfiguration = {
 export function useStudentProfiles(studentId: string | undefined) {
   return useSWR(
     studentId ? `profiles/${studentId}` : null,
-    () => getStudentProfiles(studentId!),
+    () => unwrapOrThrow(getStudentProfiles(studentId!)),
     DEFAULT_CONFIG
   );
 }
 
 /* ── Subjects List (rarely changes) ── */
 export function useSubjects() {
-  return useSWR('subjects', getSubjects, STATIC_CONFIG);
+  return useSWR('subjects', () => unwrapOrThrow(getSubjects()), STATIC_CONFIG);
 }
 
 /* ── Student Snapshot (XP, streaks, mastery counts) ── */
@@ -95,7 +111,7 @@ export function useFeatureFlags() {
 export function useStudyPlan(studentId: string | undefined) {
   return useSWR(
     studentId ? `study-plan/${studentId}` : null,
-    () => getStudyPlan(studentId!),
+    () => unwrapOrThrow(getStudyPlan(studentId!)),
     DEFAULT_CONFIG
   );
 }
