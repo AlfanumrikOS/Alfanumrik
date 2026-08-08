@@ -68,8 +68,14 @@ describeIntegration('cbse_syllabus migration', () => {
 
   it('UNIQUE constraint on (board, grade, subject_code, chapter_number)', async (ctx) => {
     // Self-heal: restore the invariant when the helper migration (20260814000002)
-    // is present on the target DB.
-    await supabaseAdmin.rpc('ensure_cbse_syllabus_unique_constraint').catch(() => null);
+    // is present on the target DB. Best-effort — ignore failure (a missing
+    // function just means the environment is un-synced; the probe below is the
+    // source of truth).
+    try {
+      await supabaseAdmin.rpc('ensure_cbse_syllabus_unique_constraint');
+    } catch {
+      // best-effort self-heal; probe below is authoritative
+    }
 
     // Setup: insert the row. Retry a bounded number of times to absorb the
     // transient lock/connection failures observed under parallel lane load.
