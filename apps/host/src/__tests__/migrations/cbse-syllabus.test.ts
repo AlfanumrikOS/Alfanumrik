@@ -5,6 +5,17 @@ import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
 
 describeIntegration('cbse_syllabus migration', () => {
+  it('DIAGNOSTIC: dump unique constraints on cbse_syllabus from information_schema', async () => {
+    const { data, error } = await supabaseAdmin
+      .from('information_schema.table_constraints')
+      .select('constraint_name, constraint_type')
+      .eq('table_schema', 'public')
+      .eq('table_name', 'cbse_syllabus');
+    // eslint-disable-next-line no-console
+    console.log('cbse_syllabus_constraints', JSON.stringify({ data, error }));
+    expect(error).toBeNull();
+  });
+
   it('table exists with expected columns and CHECK constraints', async () => {
     const { data: raw } = await supabaseAdmin.from('cbse_syllabus').select('*').limit(0);
     expect(raw).toBeDefined();
