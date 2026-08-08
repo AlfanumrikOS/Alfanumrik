@@ -71,7 +71,9 @@ const SESSION_ID = '33333333-3333-4333-8333-333333333333';
 const QUESTION_ID = '44444444-4444-4444-8444-444444444444';
 const IDEMPOTENCY_KEY = '55555555-5555-4555-8555-555555555555';
 
-let _studentLookup: { data: { id: string } | null } = { data: { id: STUDENT_A } };
+let _studentLookup: { data: { id: string; account_status?: string } | null } = {
+  data: { id: STUDENT_A },
+};
 let _cachedRow: { data: Record<string, unknown> | null } = { data: null };
 // Server-stored quiz_session_shuffles snapshot rows (Wave 2.5.1 offline gate).
 let _shuffleRows: { data: Array<{ question_id: string; shuffle_map: number[] }> | null } = {
@@ -308,9 +310,17 @@ describe('POST /api/v2/quiz/submit — RPC parity (mirrors /api/quiz/submit)', (
     );
     const [, args] = rpcSpy.mock.calls[0];
     expect(args.p_subject).toBe('unknown');
-    expect(args.p_grade).toBe('0');
+    expect(args.p_grade).toBe('unknown');
     expect(args.p_topic).toBeNull();
     expect(args.p_chapter).toBeNull();
+  });
+
+  it('blocks a suspended student with 403 ACCOUNT_SUSPENDED (M1 parity with /api/quiz/submit)', async () => {
+    _studentLookup = { data: { id: STUDENT_A, account_status: 'suspended' } };
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('ACCOUNT_SUSPENDED');
+    expect(rpcSpy).not.toHaveBeenCalled();
   });
 });
 

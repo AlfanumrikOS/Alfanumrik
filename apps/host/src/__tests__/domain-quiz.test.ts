@@ -398,15 +398,19 @@ describe('submitQuizSession', () => {
     });
   });
 
-  // ── Path 2: RPC fails → fallback insert ─────────────────────────────────
+  // ── Path 2 (M5, audit 2026-08-14): RPC fails → FAIL CLOSED (no split-write) ──
+  // The former manual-session-insert + separate atomic_quiz_profile_update
+  // fallback was a non-atomic split-write (authoritative-state loss if the
+  // process died between the two). Quiz submission MUST be atomic via a single
+  // RPC (P4). This module has zero production callers, so the fallback now
+  // returns an explicit failure instead of writing a partial session row.
 
-  describe('fallback path (manual insert)', () => {
+  describe('fallback path (fail-closed — no split-write)', () => {
     beforeEach(() => {
       mockRpc.mockResolvedValue({ data: null, error: { message: 'RPC submit failed' } });
     });
 
     it('logs error when RPC fails', async () => {
-      mockFrom.mockReturnValue(chain({ data: { id: 'sess-fallback-1' }, error: null }));
       await submitQuizSession(makeSubmissionInput());
 
       expect(logger.error).toHaveBeenCalledWith(
@@ -415,9 +419,7 @@ describe('submitQuizSession', () => {
       );
     });
 
-    it('returns fail DB_ERROR when both RPC and session insert fail', async () => {
-      mockFrom.mockReturnValue(chain({ data: null, error: { message: 'Connection refused' } }));
-
+    it('returns fail DB_ERROR when the scoring RPC is unavailable', async () => {
       const result = await submitQuizSession(makeSubmissionInput());
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('expected fail');
@@ -425,23 +427,23 @@ describe('submitQuizSession', () => {
       expect(result.error).toContain('Quiz submission failed');
     });
 
-    it('logs session insert failure', async () => {
-      mockFrom.mockReturnValue(chain({ data: null, error: { message: 'insert error' } }));
+    it('NEVER writes a quiz_sessions row on RPC failure (no non-atomic insert)', async () => {
       await submitQuizSession(makeSubmissionInput());
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
 
-      expect(logger.error).toHaveBeenCalledWith(
-        'quiz_domain_submit_session_insert_failed',
-        expect.objectContaining({ studentId: 'student-uuid-1' })
-      );
+    it('NEVER calls atomic_quiz_profile_update separately on RPC failure', async () => {
+      await submitQuizSession(makeSubmissionInput());
+      const atomicCalls = mockRpc.mock.calls.filter((c) => c[0] === 'atomic_quiz_profile_update');
+      expect(atomicCalls).toHaveLength(0);
     });
   });
 
-  // ── Dual failure contract ────────────────────────────────────────────────
+  // ── RPC throw contract ──────────────────────────────────────────────────
 
-  describe('dual failure contract', () => {
-    it('returns fail() — never throws — when RPC throws and insert fails', async () => {
+  describe('RPC throw contract', () => {
+    it('returns fail() — never throws — when RPC throws', async () => {
       mockRpc.mockRejectedValueOnce(new Error('network timeout'));
-      mockFrom.mockReturnValue(chain({ data: null, error: { message: 'also failed' } }));
 
       const result = await submitQuizSession(makeSubmissionInput());
       expect(result.ok).toBe(false);
@@ -451,7 +453,6 @@ describe('submitQuizSession', () => {
 
     it('logs exception on RPC throw', async () => {
       mockRpc.mockRejectedValueOnce(new Error('Connection pool exhausted'));
-      mockFrom.mockReturnValue(chain({ data: null, error: { message: 'fallback also down' } }));
 
       await submitQuizSession(makeSubmissionInput());
       expect(logger.error).toHaveBeenCalledWith(

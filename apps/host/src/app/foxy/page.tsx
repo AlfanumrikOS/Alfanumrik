@@ -154,7 +154,7 @@ async function fetchRecentSession(
   subject: string
 ): Promise<{ sessionId: string; messages: ChatMessage[] } | null> {
   const cutoff = new Date(Date.now() - 240 * 60 * 1000).toISOString(); // RCA-FIX: aligned with server SESSION_IDLE_MINUTES = 240
-  const { data: sessions } = await supabase
+  const { data: sessions, error: sessionsError } = await supabase
     .from('foxy_sessions')
     .select('id')
     .eq('student_id', studentId)
@@ -162,6 +162,9 @@ async function fetchRecentSession(
     .gte('last_active_at', cutoff)
     .order('last_active_at', { ascending: false })
     .limit(1);
+  if (sessionsError) {
+    console.error('[fetchRecentSession] foxy_sessions query failed:', sessionsError);
+  }
   if (!sessions || sessions.length === 0) return null;
   const sessionId = sessions[0].id;
   // Phase 2 (structured rendering): pull the `structured` JSONB column so
@@ -169,11 +172,14 @@ async function fetchRecentSession(
   // row was persisted post-migration. NULL on legacy rows; the bubble falls
   // back to the markdown renderer in that case (see ChatBubble's renderer
   // choice).
-  const { data: msgs } = await supabase
+  const { data: msgs, error: msgsError } = await supabase
     .from('foxy_chat_messages')
     .select('id, role, content, structured, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
+  if (msgsError) {
+    console.error('[fetchRecentSession] foxy_chat_messages query failed:', msgsError);
+  }
   if (!msgs || msgs.length === 0) return null;
   return {
     sessionId,
@@ -191,21 +197,30 @@ async function fetchRecentSession(
 
 async function fetchAllConversations(studentId: string, isHi = false): Promise<ConversationSummary[]> {
   // Step 1: get recent sessions ordered by activity
-  const { data: sessions } = await supabase
+  const { data: sessions, error: sessionsError } = await supabase
     .from('foxy_sessions')
     .select('id, subject, chapter, last_active_at')
     .eq('student_id', studentId)
     .order('last_active_at', { ascending: false })
     .limit(30);
+  if (sessionsError) {
+    // Confirmed live 2026-08-08: a student with 1,359 real foxy_sessions rows
+    // saw an empty sidebar with no trace of why — the error was discarded
+    // here and the UI rendered identically to a genuinely empty account.
+    console.error('[fetchAllConversations] foxy_sessions query failed:', sessionsError);
+  }
   if (!sessions || sessions.length === 0) return [];
 
   // Step 2: batch-fetch messages for all sessions in a single query
   const sessionIds = sessions.map((s: any) => s.id);
-  const { data: allMsgs } = await supabase
+  const { data: allMsgs, error: msgsError } = await supabase
     .from('foxy_chat_messages')
     .select('session_id, role, content, created_at')
     .in('session_id', sessionIds)
     .order('created_at', { ascending: true });
+  if (msgsError) {
+    console.error('[fetchAllConversations] foxy_chat_messages query failed:', msgsError);
+  }
 
   // Step 3: group messages by session
   const msgsBySession: Record<string, Array<{ role: string; content: string; created_at: string }>> = {};
@@ -235,19 +250,25 @@ async function fetchAllConversations(studentId: string, isHi = false): Promise<C
 }
 
 async function fetchConversationById(sessionId: string) {
-  const { data: session } = await supabase
+  const { data: session, error: sessionError } = await supabase
     .from('foxy_sessions')
     .select('id, subject, chapter, mode')
     .eq('id', sessionId)
     .single();
+  if (sessionError) {
+    console.error('[fetchConversationById] foxy_sessions query failed:', sessionError);
+  }
   if (!session) return null;
   // Phase 2 (structured rendering): include `structured` so resumed sessions
   // can render historical assistant turns via FoxyStructuredRenderer.
-  const { data: messages } = await supabase
+  const { data: messages, error: messagesError } = await supabase
     .from('foxy_chat_messages')
     .select('id, role, content, structured, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
+  if (messagesError) {
+    console.error('[fetchConversationById] foxy_chat_messages query failed:', messagesError);
+  }
   return {
     id: session.id,
     subject: session.subject,

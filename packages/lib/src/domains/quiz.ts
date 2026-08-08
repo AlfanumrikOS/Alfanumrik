@@ -27,7 +27,6 @@ import {
   type QuizQuestionFetchInput,
   type QuizQuestionSource,
 } from './types';
-import { calculateScorePercent, calculateQuizXP } from '@alfanumrik/lib/scoring';
 import { validateQuestions as validateQuestionsP6 } from '@alfanumrik/lib/quiz/question-validation';
 import { shuffle } from '@alfanumrik/lib/shuffle';
 
@@ -298,92 +297,19 @@ export async function submitQuizSession(
     });
   }
 
-  // ── Path 2: Manual session insert (degraded — no adaptive state update) ──
-  // Note: This path does NOT update BKT, IRT theta, or mastery.
-  // Those updates are handled by DB triggers on quiz_responses INSERT.
-  // If the trigger-based approach is relied on, ensure quiz_responses are
-  // inserted individually even on this fallback path.
-  const total = responses.length;
-  const correct = responses.filter(r => r.is_correct).length;
-  const scorePct = calculateScorePercent(correct, total);
-  const xpEarned = calculateQuizXP(correct, scorePct);
-
-  try {
-    const { data: session, error: sessErr } = await supabase
-      .from('quiz_sessions')
-      .insert({
-        student_id: studentId,
-        subject,
-        grade,
-        total_questions: total,
-        correct_answers: correct,
-        wrong_answers: total - correct,
-        score_percent: scorePct,
-        score: xpEarned,
-        time_taken_seconds: timeTakenSeconds,
-        total_answered: total,
-        is_completed: true,
-        completed_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single();
-
-    if (sessErr) {
-      logger.error('quiz_domain_submit_session_insert_failed', {
-        error: new Error(sessErr.message),
-        studentId,
-        subject,
-      });
-      // Both paths failed — return explicit failure
-      return fail(
-        'Quiz submission failed: RPC error and session insert error. Results not saved.',
-        'DB_ERROR'
-      );
-    }
-
-    logger.warn('quiz_domain_submit_used_fallback', {
-      studentId,
-      subject,
-      grade,
-      sessionId: session?.id,
-      note: 'BKT/IRT/XP not updated — RPC was unavailable',
-    });
-
-    // XP update via atomic RPC (separate from submission RPC)
-    try {
-      await supabase.rpc('atomic_quiz_profile_update', {
-        p_student_id: studentId,
-        p_subject: subject,
-        p_xp: xpEarned,
-        p_total: total,
-        p_correct: correct,
-        p_time_seconds: timeTakenSeconds,
-      });
-    } catch (xpErr) {
-      // Log but do not fail — session was already saved
-      logger.error('quiz_domain_submit_xp_update_failed', {
-        error: xpErr instanceof Error ? xpErr : new Error(String(xpErr)),
-        studentId,
-        subject,
-        note: 'XP not awarded — manual reconciliation needed',
-      });
-    }
-
-    return ok({
-      session_id: session?.id ?? '',
-      total,
-      correct,
-      score_percent: scorePct,
-      xp_earned: xpEarned,
-    });
-  } catch (e) {
-    logger.error('quiz_domain_submit_all_paths_failed', {
-      error: e instanceof Error ? e : new Error(String(e)),
-      studentId,
-      subject,
-    });
-    return fail('Quiz submission failed: all paths exhausted', 'DB_ERROR');
-  }
+  // ── Path 2: REMOVED (audit M5, 2026-08-14) ──────────────────────────────
+  // The old fallback did a NON-ATOMIC split-write: a manual `quiz_sessions`
+  // INSERT followed by a SEPARATE `atomic_quiz_profile_update` RPC. If a
+  // process died between the two, a session row existed with no XP/profile/
+  // ledger write (authoritative-state loss). Quiz submission MUST be atomic
+  // via a single RPC (product invariant P4). This module has zero production
+  // callers (verified 2026-08-14), so the fallback is fail-closed: when the
+  // authoritative RPC fails, return an explicit failure — never a partial,
+  // unrecoverable write.
+  return fail(
+    'Quiz submission failed: scoring RPC unavailable. Results not saved.',
+    'DB_ERROR'
+  );
 }
 
 // ── IRT theta fetch ───────────────────────────────────────────────────────────

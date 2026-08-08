@@ -345,6 +345,12 @@ function shapeResponse(r: QuizV2Result) {
     flagged: !!r.flagged,
     idempotent_replay: !!r.idempotent_replay,
     marking_authenticity_path: 'oracle_v2' as const,
+    // M1 (audit 2026-08-14): surface xp_capped so the web cap banner
+    // (QuizResults.tsx reads `xp_capped === true`) shows exactly like the
+    // /v2 route does. Before this, the two mirrored routes drifted — /v2
+    // returned xp_capped but this route dropped it, so the web route never
+    // showed the daily-XP-cap banner.
+    ...(r.xp_capped !== undefined ? { xp_capped: !!r.xp_capped } : {}),
     // Pass through the questions array if present so the client can render the
     // review screen without a second round-trip. Stable schema set by the RPC.
     questions: r.questions ?? [],
