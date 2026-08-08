@@ -125,7 +125,7 @@ export const POST = withRoute(async (request: NextRequest) => {
   const admin = getSupabaseAdmin();
   const { data: studentRow } = await admin
     .from('students')
-    .select('id')
+    .select('id, account_status')
     .eq('auth_user_id', auth.userId)
     .eq('is_active', true)
     .is('deleted_at', null)
@@ -133,6 +133,12 @@ export const POST = withRoute(async (request: NextRequest) => {
 
   if (!studentRow?.id) {
     return v2Error('No student profile linked to this account', 403, 'NO_STUDENT_PROFILE');
+  }
+  // M1 (audit 2026-08-14): parity with /api/quiz/submit — a suspended student
+  // must be blocked here too. The web route has this gate; /v2/quiz/submit was
+  // missing it, so a suspended student could still grade quizzes via mobile.
+  if (studentRow.account_status === 'suspended') {
+    return v2Error('Account suspended', 403, 'ACCOUNT_SUSPENDED');
   }
   if (studentRow.id !== body.studentId) {
     logger.warn('v2.quiz.submit: studentId mismatch', {
@@ -297,7 +303,7 @@ export const POST = withRoute(async (request: NextRequest) => {
       p_session_id: body.sessionId,
       p_student_id: body.studentId,
       p_subject: body.subject ?? 'unknown',
-      p_grade: body.grade ?? '0',
+      p_grade: body.grade ?? 'unknown',
       p_topic: body.topic ?? null,
       p_chapter: body.chapter ?? null,
       p_responses: rpcResponses,

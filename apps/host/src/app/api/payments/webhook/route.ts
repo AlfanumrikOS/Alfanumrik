@@ -858,7 +858,13 @@ export async function POST(request: NextRequest) {
     if (eventType === 'payment.failed') {
       const payment = event.payload.payment.entity;
       const notes = payment.notes ?? {};
-      logger.info('Webhook: payment.failed', { paymentId: payment.id, reason: payment.error_description });
+      // M2 (audit 2026-08-14): log the stable Razorpay error_code, never the
+      // free-text error_description (may contain card details — see the PostHog
+      // note below). Keeps the failure triage signal without PII.
+      logger.info('Webhook: payment.failed', {
+        paymentId: payment.id,
+        errorCode: typeof payment.error_code === 'string' ? payment.error_code : null,
+      });
 
       const resolved = await resolveStudent(admin, {
         notesStudentId: notes.student_id,
@@ -895,7 +901,10 @@ export async function POST(request: NextRequest) {
         amount: Math.round((payment.amount || 0) / 100),
         status: 'failed',
         payment_method: 'razorpay',
-        notes: { source: 'webhook', error: payment.error_description },
+        // M2 (audit 2026-08-14): store the stable error_code in notes, NOT the
+        // free-text error_description (may contain card details). The failure
+        // reason stays triage-able via the enum; PII stays out of the ledger.
+        notes: { source: 'webhook', error_code: typeof payment.error_code === 'string' ? payment.error_code : null },
       });
       if (failInsertErr && !failInsertErr.message.includes('duplicate')) {
         logger.error('Webhook: failed payment insert error', { error: failInsertErr.message });

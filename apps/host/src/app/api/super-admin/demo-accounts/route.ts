@@ -4,6 +4,8 @@ import { validateBody } from '@alfanumrik/lib/validation';
 import { z } from 'zod';
 import { DEMO_PERSONAS, DEMO_ROLES, DEMO_STREAMS, PERSONA_PROFILES, normalisePersona, streamRequiredForGrade, type DemoRole, type DemoStream } from '@alfanumrik/lib/demo/personas';
 import { generateSecurePassword } from '@alfanumrik/lib/crypto/password';
+import { logger } from '@alfanumrik/lib/logger';
+import { redactPIIInText } from '@alfanumrik/lib/ops-events-redactor';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -304,7 +306,13 @@ async function provisionDemoSchool(adminAuthUserId: string, adminName: string): 
 
   if (!schoolRes.ok) {
     const body = await schoolRes.text();
-    console.error('[demo-accounts] Failed to provision demo school:', body);
+    // L3 (audit 2026-08-14): route the raw response body through the shared
+    // PII redactor before it reaches Vercel logs — a Supabase error response can
+    // echo the request payload (e.g. `Demo School — <admin name>`). logger.error
+    // redacts by KEY; free-text bodies need redactPIIInText.
+    logger.error('[demo-accounts] Failed to provision demo school', {
+      detail: redactPIIInText(body).text.slice(0, 280),
+    });
     return { ok: false, code: 'school_insert_failed', details: body.slice(0, 280) };
   }
 
