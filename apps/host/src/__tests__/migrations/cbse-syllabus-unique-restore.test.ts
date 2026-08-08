@@ -70,5 +70,21 @@ describe.skipIf(!MIGRATION_PRESENT)(
       expect(addIdx).toBeGreaterThan(-1);
       expect(sql.slice(0, addIdx)).toMatch(/IF\s+v_existing_count\s*=\s*0\s+THEN/i);
     });
+
+    it('provides the idempotent SECURITY DEFINER helper RPC (20260814000002)', () => {
+      const rpcSql = fs.readFileSync(
+        resolveRepo(
+          'supabase/migrations/20260814000002_ensure_cbse_syllabus_unique_constraint_rpc.sql',
+        )!,
+        'utf-8',
+      );
+      expect(rpcSql).toMatch(/ensure_cbse_syllabus_unique_constraint/i);
+      expect(rpcSql).toMatch(/SECURITY\s+DEFINER/i);
+      expect(rpcSql).toMatch(/SET\s+search_path\s*=\s*public,\s*pg_catalog/i);
+      expect(rpcSql).toMatch(/cbse_syllabus_board_grade_subject_code_chapter_number_key/i);
+      // Least-privilege: service_role only, never anon/authenticated.
+      expect(rpcSql).toMatch(/REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.ensure_cbse_syllabus_unique_constraint\(\)\s+FROM\s+PUBLIC,\s*anon/i);
+      expect(rpcSql).toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.ensure_cbse_syllabus_unique_constraint\(\)\s+TO\s+service_role/i);
+    });
   },
 );

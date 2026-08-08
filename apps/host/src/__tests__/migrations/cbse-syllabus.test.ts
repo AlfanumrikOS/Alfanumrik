@@ -5,17 +5,6 @@ import { hasSupabaseIntegrationEnv } from '../helpers/integration';
 const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
 
 describeIntegration('cbse_syllabus migration', () => {
-  it('DIAGNOSTIC: dump unique constraints on cbse_syllabus from information_schema', async () => {
-    const { data, error } = await supabaseAdmin
-      .from('information_schema.table_constraints')
-      .select('constraint_name, constraint_type')
-      .eq('table_schema', 'public')
-      .eq('table_name', 'cbse_syllabus');
-    // eslint-disable-next-line no-console
-    console.log('cbse_syllabus_constraints', JSON.stringify({ data, error }));
-    expect(error).toBeNull();
-  });
-
   it('table exists with expected columns and CHECK constraints', async () => {
     const { data: raw } = await supabaseAdmin.from('cbse_syllabus').select('*').limit(0);
     expect(raw).toBeDefined();
@@ -53,6 +42,14 @@ describeIntegration('cbse_syllabus migration', () => {
   //  2. the setup INSERT is retried a bounded number of times and its error
   //     is asserted fail-fast with a diagnostic (never silently ignored),
   //  3. cleanup runs in afterAll regardless of assertion outcome.
+  //
+  // Self-healing invariant (2026-08-08): the integration lane hits the shared
+  // staging project (STAGING_SUPABASE_URL), which is a DIFFERENT database from
+  // the one Sync Migrations to Staging pushes to. So the cbse_syllabus UNIQUE
+  // constraint — present in the baseline and restored by 20260814000001 on the
+  // sync target — is absent here. beforeAll calls the idempotent SECURITY
+  // DEFINER helper (20260814000002) to restore the invariant on whatever DB
+  // this test runs against, so the duplicate-insert assertion is deterministic.
   const UNIQUE_ROW = {
     board: 'CBSE', grade: '10', subject_code: 'science',
     subject_display: 'Science', chapter_number: 99, chapter_title: 'Dup',
@@ -60,6 +57,8 @@ describeIntegration('cbse_syllabus migration', () => {
 
   beforeAll(async () => {
     await supabaseAdmin.from('cbse_syllabus').delete().match(UNIQUE_ROW);
+    const { error } = await supabaseAdmin.rpc('ensure_cbse_syllabus_unique_constraint');
+    expect(error, `ensure_cbse_syllabus_unique_constraint RPC failed: ${error?.message}`).toBeNull();
   });
 
   afterAll(async () => {
