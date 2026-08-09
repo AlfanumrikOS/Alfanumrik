@@ -41,7 +41,15 @@ vi.mock('next/dynamic', () => ({
     // rely on the component-level test asserting presence/absence generically
     // via a shared testid, disambiguated by rendering the loader's source.
     const src = loader.toString();
-    const testId = src.includes('DesktopSidebar') ? 'stub-desktop-sidebar' : 'stub-mobile-bottom-nav';
+    // Three nav tiers are mounted from GlobalAppLayout since 2026-08-09:
+    // DesktopSidebar (1024+), TabletNavRail (768–1023, net-new) and
+    // MobileBottomNav (<768). Each needs its own testid or getByTestId below
+    // would match two elements and throw.
+    const testId = src.includes('DesktopSidebar')
+      ? 'stub-desktop-sidebar'
+      : src.includes('TabletNavRail')
+        ? 'stub-tablet-nav-rail'
+        : 'stub-mobile-bottom-nav';
     return function DynamicStub() {
       return <div data-testid={testId} />;
     };

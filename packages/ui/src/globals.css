@@ -196,9 +196,58 @@
 
   /* Layout */
   --sidebar-width: 240px;
+  /* Tablet (768–1023px) navigation rail. The third presentation tier of the
+     ONE student navigation config: bottom bar < 768, rail 768–1023, persistent
+     sidebar >= 1024. 96px fits an icon over a two-word English label
+     ("Progress") and every Hindi label at the 12px type-scale floor without
+     wrapping. Consumed by .nav-rail-tablet and the .app-shell offset. */
+  --nav-rail-width: 96px;
   --header-height: 60px;
   --content-max: 720px;
   --content-max-wide: 1080px;
+
+  /* ─── Focus ring ──────────────────────────────────────────
+     Was hardcoded as `outline: 2px solid var(--orange)` in the two
+     :focus-visible blocks below and re-hardcoded per component elsewhere.
+     Tokenised so a surface can retint the ring (e.g. on a dark/accent
+     background where orange-on-orange is invisible) by overriding
+     --focus-ring-color in its own scope rather than restating the rule.
+     Keep the width/offset >= 2px — thinner rings fail WCAG 2.2 SC 2.4.13. */
+  --focus-ring-color:  var(--orange);
+  --focus-ring-width:  2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-radius: 4px;
+  /* Shorthand for `outline: var(--focus-ring)`. */
+  --focus-ring: var(--focus-ring-width) solid var(--focus-ring-color);
+
+  /* ─── Motion: duration scale ──────────────────────────────
+     --ease-atlas was the only motion token in the system, so every
+     component hardcoded its own duration (150ms/180ms/200ms/220ms/260ms
+     all appear in this file for the same class of interaction). These five
+     stops are the durations already in use, deduplicated:
+       instant — state flips that must feel like no animation at all
+       fast    — press/hover feedback on a control the finger is on
+       base    — the default for anything that moves or resizes
+       slow    — sheets, drawers, nav bars entering/leaving
+       slower  — full-screen or celebratory transitions
+     The existing global `@media (prefers-reduced-motion: reduce)` rule
+     (`*, *::before, *::after { transition-duration: 0.01ms !important }`)
+     already neutralises these; the same media block also re-declares the
+     tokens themselves to 0.01ms so any JS reading getComputedStyle sees the
+     reduced value rather than the animated one. */
+  --duration-instant: 80ms;
+  --duration-fast:    140ms;
+  --duration-base:    200ms;
+  --duration-slow:    320ms;
+  --duration-slower:  480ms;
+
+  /* ─── Motion: easing ──────────────────────────────────────
+     --ease-atlas (the brand's overshoot-free decelerate curve) is kept as-is
+     and aliased to --ease-emphasized so existing call sites keep working. */
+  --ease-standard:  cubic-bezier(.2, 0, 0, 1);      /* symmetric, in-and-out */
+  --ease-out:       cubic-bezier(0, 0, .2, 1);      /* entering / revealing  */
+  --ease-in:        cubic-bezier(.4, 0, 1, 1);      /* leaving / dismissing  */
+  --ease-emphasized: var(--ease-atlas);              /* brand decelerate      */
 
   /* ─── Z-index tokens ──────────────────────────────────────
      Canonical z-index ladder so stacking never collides.
@@ -770,6 +819,16 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
 
 /* ─── Reduced Motion (vestibular disorder accessibility) ──── */
 @media (prefers-reduced-motion: reduce) {
+  /* Collapse the duration token scale itself, so anything authored as
+     `transition: X var(--duration-base)` is reduced at the token level too
+     (not only by the blanket !important rule below). */
+  :root {
+    --duration-instant: 0.01ms;
+    --duration-fast:    0.01ms;
+    --duration-base:    0.01ms;
+    --duration-slow:    0.01ms;
+    --duration-slower:  0.01ms;
+  }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
@@ -801,6 +860,7 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
 
 /* ─── Focus Screen (quiz active, Foxy guided session) ────── */
 .focus-screen .bottom-nav-mobile { display: none !important; }
+.focus-screen .nav-rail-tablet { display: none !important; }
 .focus-screen .sidebar-nav { display: none !important; }
 .focus-screen { padding-bottom: 0 !important; }
 
@@ -826,20 +886,24 @@ input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
   top: 0;
 }
 
-/* ─── Focus Visible (keyboard nav accessibility) ──────────── */
+/* ─── Focus Visible (keyboard nav accessibility) ────────────
+   Both blocks now read the --focus-ring-* tokens (:root). The computed
+   values are unchanged (2px solid var(--orange), 2px offset, 4px radius) —
+   this only moves the constants into the token layer so a surface can
+   retint the ring locally. */
 /* Fallback for browsers that don't support :focus-visible (Safari < 15.4) */
 @supports not selector(:focus-visible) {
   :focus {
-    outline: 2px solid var(--orange);
-    outline-offset: 2px;
-    border-radius: 4px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-ring-offset);
+    border-radius: var(--focus-ring-radius);
   }
 }
 
 :focus-visible {
-  outline: 2px solid var(--orange);
-  outline-offset: 2px;
-  border-radius: 4px;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--focus-ring-radius);
 }
 
 /* ─── Selection Color (brand orange) ─────────────────────── */
@@ -944,14 +1008,50 @@ select.input-base option { background: var(--surface-1); color: var(--text-1); }
   border-radius: inherit;
 }
 
-/* ─── Desktop-only: Hide bottom nav, show sidebar ─────────── */
+/* ─── Navigation tier switch (2026-08-09) ──────────────────────────────────
+   ONE navigation config, three presentations. All three components are
+   mounted at every width (GlobalAppLayout) and CSS decides which is visible,
+   so resizing never re-mounts navigation and there is no JS breakpoint
+   listener to desync from the media query.
+
+     < 768px        bottom bar   .bottom-nav-mobile
+     768–1023.98px  rail         .nav-rail-tablet     (net-new)
+     >= 1024px      sidebar      .sidebar-nav
+
+   Exactly one is displayed in every band, so exactly one navigation landmark
+   is in the accessibility tree (display:none removes the others). */
 @media (min-width: 1024px) {
   .bottom-nav-mobile { display: none !important; }
+  .nav-rail-tablet   { display: none !important; }
   .sidebar-nav { display: flex !important; }
 }
 
-@media (max-width: 1023px) {
-  .sidebar-nav { display: none !important; }
+/* Tablet band — rail replaces the bottom bar. */
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  .sidebar-nav       { display: none !important; }
+  .bottom-nav-mobile { display: none !important; }
+  .nav-rail-tablet   { display: flex !important; }
+  /* The rail is a gutter, not an overlay: inset the shell so it can never
+     cover page content or a primary action. */
+  @supports selector(:has(*)) {
+    body:has(.nav-rail-tablet) .app-shell {
+      margin-left: var(--nav-rail-width);
+      width: calc(100% - var(--nav-rail-width));
+    }
+  }
+  /* Fallback for browsers without :has() (Safari < 15.4, Firefox < 121) —
+     TabletNavRail sets .has-nav-rail on <body>. */
+  body.has-nav-rail .app-shell {
+    margin-left: var(--nav-rail-width);
+    width: calc(100% - var(--nav-rail-width));
+  }
+  /* No fixed bottom bar in this band, so no bottom clearance is needed. */
+  .pb-nav { padding-bottom: 0 !important; }
+}
+
+@media (max-width: 767.98px) {
+  .sidebar-nav     { display: none !important; }
+  .nav-rail-tablet { display: none !important; }
   .bottom-nav-mobile { display: block; }
   .app-shell { margin-left: 0; width: 100%; }
 }
@@ -1159,7 +1259,7 @@ img, video, iframe, canvas, svg {
 
 /* ─── Print Safety ───────────────────────────────────────── */
 @media print {
-  .bottom-nav-mobile, .sidebar-nav { display: none !important; }
+  .bottom-nav-mobile, .nav-rail-tablet, .sidebar-nav { display: none !important; }
   .pb-nav { padding-bottom: 0 !important; }
   body { background: #fff; }
 }
@@ -2016,7 +2116,12 @@ body.foxy-body-lock {
   .app-shell-v2 > .app-shell-content {
     padding-inline: var(--space-fluid-6);
     padding-top: var(--space-fluid-6);
-    padding-bottom: calc(var(--shell-nav-h-notched) + var(--space-fluid-6));
+    /* 2026-08-09: the GLOBAL bottom bar (.bottom-nav-mobile) is hidden from
+       768px up now that the tablet rail exists, so reserving a nav-height
+       gutter here left a dead band at the bottom of every tablet page. The
+       per-page AppShell nav slot (.app-shell-nav, a different element) is
+       still handled by the data-variant rules just below. */
+    padding-bottom: var(--space-fluid-6);
   }
   /* Bottom nav stays on tablet only when no rail is present.
      If .app-shell-v2 has a rail child, suppress the bottom nav. */
@@ -2852,6 +2957,70 @@ body.foxy-body-lock {
    is set. Pure CSS, no JS indicator. */
 .bottom-nav-mobile__slot {
   position: relative;
+  /* 2026-08-09 — the slot box moved out of Tailwind utilities and into this
+     rule so the 44x44 floor is enforced by ONE declaration instead of by a
+     `.touchable` class whose `display:inline-flex` fought the sibling `flex
+     flex-col` utility (whichever won depended on stylesheet order).
+     `flex: 1 1 0` + `min-width: var(--tap-min)` means five slots share the
+     row evenly and can never fall under the tap floor: 5 x 44 = 220px, which
+     fits the 360px baseline viewport with ~140px to spare. */
+  flex: 1 1 0;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 2px 6px;
+  background: transparent;
+  border: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--duration-fast) var(--ease-emphasized);
+}
+.bottom-nav-mobile__slot:active:not(:disabled) { transform: scale(0.96); }
+.bottom-nav-mobile__slot:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+  border-radius: var(--radius-atlas);
+}
+.bottom-nav-mobile__icon {
+  position: relative;
+  display: inline-block;
+  font-size: 21px;
+  line-height: 1;
+  transition: transform var(--duration-base) var(--ease-emphasized);
+}
+.bottom-nav-mobile__label {
+  /* --text-2xs is the design system's hard 12px floor; the label must stay
+     legible, so the SLOT flexes rather than the type shrinking. Hindi labels
+     run 20–30% longer than English, so no-wrap + ellipsis guarantees a
+     single line at 360px in both languages instead of a two-line slot that
+     would push the bar taller than the safe-area allowance. */
+  font-size: var(--text-2xs);
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bottom-nav-mobile__badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 2px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  background: #F59E0B;
+  color: #fff;
+  border: 1.5px solid var(--bg);
 }
 .bottom-nav-mobile__slot::after {
   content: '';
@@ -2871,6 +3040,168 @@ body.foxy-body-lock {
 @media (prefers-reduced-motion: reduce) {
   .bottom-nav-mobile { transition: none !important; }
   .bottom-nav-mobile__slot::after { transition: none !important; }
+  .bottom-nav-mobile__slot,
+  .bottom-nav-mobile__icon,
+  .nav-rail-tablet__slot { transition: none !important; }
+}
+
+/* ─── Tablet navigation rail (768–1023.98px) ───────────────────────────────
+   Tier 2 of the ONE student navigation. Same five slots, same order, same
+   labels as the bottom bar and the sidebar — vertical chrome instead of
+   horizontal. Visibility is owned by the tier-switch media queries near the
+   top of this file; these rules are pure appearance + the 44px tap floor.
+
+   It is a FIXED GUTTER, not an overlay: the tier-switch block insets
+   `.app-shell` by --nav-rail-width in this band, so the rail can never sit on
+   top of page content or a primary action. Full-height with its own scroll,
+   so a software keyboard or landscape orientation cannot clip a slot out of
+   reach. */
+.nav-rail-tablet {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: var(--z-nav);
+  width: var(--nav-rail-width);
+  /* display is set by the tier-switch media query (flex in-band, none out). */
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-1);
+  padding-top: calc(var(--space-3) + var(--safe-top));
+  padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+  padding-left: calc(var(--space-1) + var(--safe-left));
+  background: rgb(var(--bg-rgb));
+  border-right: 1px solid var(--line);
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.04);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.nav-rail-tablet__brand {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-atlas);
+  cursor: pointer;
+}
+.nav-rail-tablet__brand:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-atlas);
+}
+
+.nav-rail-tablet__slots {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.nav-rail-tablet__slot {
+  position: relative;
+  /* 56px (--tap-large) not 44px: a rail slot is a comfortable vertical
+     target and the extra 12px is free here, unlike the bottom bar where the
+     bar height is constrained by thumb reach + safe area. */
+  min-height: var(--tap-large);
+  min-width: var(--tap-min);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: var(--space-2) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-atlas);
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.nav-rail-tablet__slot[data-active="true"] {
+  background: rgb(var(--orange-rgb) / 0.08);
+  color: var(--accent);
+}
+/* Leading-edge active marker — the rail's equivalent of the bottom bar's
+   sliding underline. */
+.nav-rail-tablet__slot::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  transform: translateY(-50%);
+  transition: height var(--duration-base) var(--ease-emphasized);
+}
+.nav-rail-tablet__slot[data-active="true"]::before { height: 22px; }
+@media (hover: hover) {
+  .nav-rail-tablet__slot:hover:not([data-active="true"]) {
+    background: var(--surface-2);
+    color: var(--ink-2);
+  }
+}
+.nav-rail-tablet__slot:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+  border-radius: var(--radius-atlas);
+}
+
+.nav-rail-tablet__icon {
+  position: relative;
+  display: inline-block;
+  font-size: 22px;
+  line-height: 1;
+}
+.nav-rail-tablet__label {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.1;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav-rail-tablet__slot[data-active="true"] .nav-rail-tablet__label { font-weight: 700; }
+/* The shared overflow sheet sits beside the rail in the tablet band rather
+   than on top of it — the student keeps their place in the navigation while
+   the overflow is open. A no-op at every other width. */
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  .nav-more-sheet {
+    left: var(--nav-rail-width) !important;
+    border-top-left-radius: 0;
+  }
+}
+
+.nav-rail-tablet__badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 2px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  background: #F59E0B;
+  color: #fff;
+  border: 1.5px solid var(--bg);
 }
 
 /* ─── Refreshed dashboard header (AppShell header content) ──────

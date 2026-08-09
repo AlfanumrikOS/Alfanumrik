@@ -23,6 +23,14 @@ const MobileBottomNav = dynamic(
   () => import('./MobileBottomNav').then((m) => m.MobileBottomNav),
   { ssr: false },
 );
+// Tier 2 of the same navigation config (768–1023px). Mounted alongside the
+// other two and gated purely by CSS, so which tier is visible is a media
+// query, not a JS breakpoint listener — no hydration flash, no re-mount on
+// resize, and the browser back/forward cache keeps working unchanged.
+const TabletNavRail = dynamic(
+  () => import('./TabletNavRail').then((m) => m.TabletNavRail),
+  { ssr: false },
+);
 
 export function GlobalAppLayout({ children }: { children: React.ReactNode }) {
   return <GlobalAppLayoutContent>{children}</GlobalAppLayoutContent>;
@@ -96,6 +104,7 @@ function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
         and ensuring ultra-fast route transitions without UI flashing.
       */}
       {showNav && <DesktopSidebar />}
+      {showNav && <TabletNavRail />}
       {showNav && <MobileBottomNav />}
       {/*
         The skip-link target has one persistent owner. V3 RoleShell owns the
