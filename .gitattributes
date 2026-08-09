@@ -20,3 +20,53 @@ supabase/migrations/00000000000000_baseline_from_prod.sql -text
 # are never applied (Supabase CLI only runs the immediate migrations root) and
 # never read by tests. Leave their line endings untouched.
 supabase/migrations/_legacy/** -text
+
+# ─────────────────────────────────────────────────────────────
+# Shell scripts: LF is a CORRECTNESS requirement, not a style preference.
+#
+# `core.autocrlf=true` (the default on Windows installs) was rewriting every
+# .sh to CRLF at CHECKOUT time. Their index blobs are all LF already, so this
+# was invisible in `git diff` -- `git ls-files --eol` read `i/lf w/crlf`.
+#
+# For the .claude/hooks/*.sh enforcement hooks that is fatal, not cosmetic:
+# Claude Code execs them directly, so `#!/usr/bin/env bash\r` makes the kernel
+# look for an interpreter literally named `bash\r`, which does not exist. Every
+# hook dies before evaluating a single rule and P14 enforcement silently drops
+# to zero. This has already happened once in this repo.
+#
+# There was no *.sh rule here, which is exactly why the CRLF kept coming back
+# after each fresh checkout. Pin it.
+*.sh text eol=lf
+
+# Pre-existing CRLF blob, excluded to keep this a config-only change (same
+# precedent as the SQL exclusions above -- pinning it would queue a
+# renormalization diff unrelated to the hook fix). This one IS a genuine
+# latent bug: a CRLF shell script breaks under a Linux CI runner. Flagged to
+# the mobile agent as a follow-up rather than renormalized here.
+mobile/build_apk.sh -text
+
+# Python hooks: `verify_before_stop.py` is launched as `python <path>` and
+# `verify-bash-guard.py` as `python3 <path>`, so CRLF is NOT fatal for them
+# today the way it is for a shebang-execed .sh. But both are mode 100755 and
+# both carry `#!/usr/bin/env python3`, so the identical failure is one
+# invocation-style change away. The exposure is latent, the fix is free, and
+# every .py index blob is already LF except the one excluded below.
+*.py text eol=lf
+
+# Pre-existing CRLF blob; excluded for the same config-only-change reason.
+python/services/ai/business/quiz_generator/handler.py -text
+
+# ─────────────────────────────────────────────────────────────
+# CR-detector fixtures -- MUST NOT be normalized.
+#
+# `crlf-positive.sh` is deliberately CRLF-infected. It is the POSITIVE control
+# that proves the CR detector in verify-hook-patterns.sh can actually fire.
+# The `*.sh text eol=lf` rule above would strip its CRs on `git add`, silently
+# turning the positive fixture into a second negative fixture -- at which point
+# the self-test passes vacuously and we are back to a detector nobody has
+# verified. `-text` disables all EOL conversion for this path.
+#
+# This rule MUST stay after `*.sh text eol=lf` (last matching rule wins).
+# Verify with: git check-attr text -- .claude/hooks/__fixtures__/crlf-positive.sh
+# Expected:    text: unset
+.claude/hooks/__fixtures__/** -text
