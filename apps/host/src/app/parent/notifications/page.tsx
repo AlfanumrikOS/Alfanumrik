@@ -172,7 +172,7 @@ function ParentNotificationsContent() {
           disabled={unreadCount === 0 || marking}
           aria-label={t(isHi, 'Mark all as read', 'सभी को पढ़ा हुआ चिह्नित करें')}
           data-testid="mark-all-read"
-          className="self-start rounded-md border border-surface-3 bg-surface-1 px-3 py-1.5 text-[12px] font-medium text-foreground hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50 md:self-auto"
+          className="min-h-[44px] self-start rounded-md border border-surface-3 bg-surface-1 px-3 py-1.5 text-[12px] font-medium text-foreground hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50 md:self-auto"
         >
           {marking
             ? t(isHi, 'Marking…', 'चिह्नित कर रहे हैं…')

@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase, getFeatureFlags } from '@alfanumrik/lib/supabase';
+import { logger } from '@alfanumrik/lib/logger';
 import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import { useRealtimeRevalidator } from '@alfanumrik/lib/hooks/useRealtimeRevalidator';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
@@ -490,6 +491,10 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedChildIdx, setSelectedChildIdx] = useState(0);
   const [perfScores, setPerfScores] = useState<PerfScoreRow[]>([]);
+  // True when the performance-score read FAILED. Keeps "no subject chips
+  // because the read broke" distinct from "no subject chips because this child
+  // has no scores yet".
+  const [perfScoresError, setPerfScoresError] = useState(false);
   const [labStreak, setLabStreak] = useState<number | null>(null);
   const loadSequence = useRef(0);
 
@@ -503,20 +508,33 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
   // Treat childId as a hint only. Resolve it against the guardian-scoped child
   // list before it can influence a data request; replace unknown ids with the
   // verified primary child.
+  //
+  // `allChildren` is fetched fire-and-forget by the parent page, so this effect
+  // can run while `children` is still the single-element fallback
+  // `[initialStudent]`. Resolving against that stub rewrote the URL to the
+  // primary child and DESTROYED a legitimate ?childId= selection carried in
+  // from /parent/reports or /parent/children before the real list arrived.
+  // Wait for the authoritative list before overriding the URL. The security
+  // posture is unchanged — the id is still never used for a data request until
+  // it has been matched against a guardian-scoped child, and the server
+  // re-verifies the guardian↔student link on every parent-portal action.
+  const childListSettled = allChildren.length > 0;
   useEffect(() => {
+    if (requestedChildId && !childListSettled) return;
     const scopedChild = resolveLinkedChild(children, requestedChildId, initialStudent.id);
     if (!scopedChild) return;
     const nextIndex = children.findIndex((child) => child.id === scopedChild.id);
     if (nextIndex >= 0 && nextIndex !== selectedChildIdx) {
       setDash(null);
       setPerfScores([]);
+      setPerfScoresError(false);
       setLabStreak(null);
       setSelectedChildIdx(nextIndex);
     }
     if (requestedChildId !== scopedChild.id) {
       router.replace(replaceParentChildId('/parent', searchParams, scopedChild.id));
     }
-  }, [children, initialStudent.id, requestedChildId, router, searchParams, selectedChildIdx]);
+  }, [children, childListSettled, initialStudent.id, requestedChildId, router, searchParams, selectedChildIdx]);
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
@@ -552,37 +570,52 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
       if (sequence === loadSequence.current) setLoading(false);
     }
 
-    // Fetch Performance Scores for this child (RLS handles parent access via guardian_student_links)
-    try {
-      const { data: psData } = await supabase
-        .from('performance_scores')
-        .select('subject, overall_score, level_name')
-        .eq('student_id', student.id);
-      if (sequence !== loadSequence.current) return;
-      if (psData && psData.length > 0) {
-        setPerfScores(psData.map((r: Record<string, unknown>) => ({
-          subject: String(r.subject || ''),
-          overall_score: Number(r.overall_score ?? 0),
-          level_name: String(r.level_name || getLevelFromScore(Number(r.overall_score ?? 0))),
-        })));
-      } else {
-        setPerfScores([]);
-      }
-    } catch {
+    // Fetch Performance Scores for this child (RLS handles parent access via
+    // guardian_student_links).
+    //
+    // The PostgREST builder RESOLVES with { data, error } — it never rejects —
+    // so the try/catch here was dead code and `data` alone could not tell a
+    // failed read from a child with no scores. An empty array drives the
+    // "Strong / Needs help" subject chips off the glance home entirely, so a
+    // broken read silently removed the single most decision-relevant element
+    // on the page. Check `error` and surface it instead.
+    const { data: psData, error: psErr } = await supabase
+      .from('performance_scores')
+      .select('subject, overall_score, level_name')
+      .eq('student_id', student.id);
+    if (sequence !== loadSequence.current) return;
+    if (psErr) {
+      // P13: reason only — never the student id or the returned rows.
+      logger.warn('parent.dashboard.performance_scores_failed', { reason: psErr.message });
+      setPerfScoresError(true);
       setPerfScores([]);
+    } else {
+      setPerfScoresError(false);
+      setPerfScores((psData ?? []).map((r: Record<string, unknown>) => ({
+        subject: String(r.subject || ''),
+        overall_score: Number(r.overall_score ?? 0),
+        level_name: String(r.level_name || getLevelFromScore(Number(r.overall_score ?? 0))),
+      })));
     }
 
-    // Fetch STEM lab streak (RLS handles parent access via student_lab_streaks_guardian_select)
-    try {
-      const { data: streakRow } = await supabase
-        .from('student_lab_streaks')
-        .select('current_streak')
-        .eq('student_id', student.id)
-        .maybeSingle();
-      if (sequence !== loadSequence.current) return;
-      setLabStreak(streakRow ? Number(streakRow.current_streak ?? 0) : 0);
-    } catch {
+    // Fetch STEM lab streak (RLS handles parent access via
+    // student_lab_streaks_guardian_select).
+    //
+    // Same builder semantics. The old code mapped a FAILED read to streak 0 —
+    // a number we could not stand behind. `null` means "unknown" and the
+    // glance home already omits the row for null, so a broken read no longer
+    // asserts "no STEM streak".
+    const { data: streakRow, error: streakErr } = await supabase
+      .from('student_lab_streaks')
+      .select('current_streak')
+      .eq('student_id', student.id)
+      .maybeSingle();
+    if (sequence !== loadSequence.current) return;
+    if (streakErr) {
+      logger.warn('parent.dashboard.lab_streak_failed', { reason: streakErr.message });
       setLabStreak(null);
+    } else {
+      setLabStreak(streakRow ? Number(streakRow.current_streak ?? 0) : 0);
     }
   }, [student.id, student.name, guardian.id, isHi]);
 
@@ -709,6 +742,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
             bktMastery={dash.bktMastery}
             insights={dash.insights}
             perfScores={perfScores}
+            perfScoresError={perfScoresError}
             labStreak={labStreak}
             student={student}
             guardianId={guardian.id}

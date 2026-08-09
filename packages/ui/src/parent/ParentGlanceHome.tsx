@@ -115,6 +115,15 @@ export interface ParentGlanceHomeProps {
   insights?: string[];
   /** Already-fetched performance scores (RLS-scoped) — read-only here. */
   perfScores: PerfScoreRow[];
+  /**
+   * True when the performance-score READ FAILED (as opposed to the child
+   * genuinely having no scores). Without this, a broken read and an empty
+   * result both produced `perfScores: []`, which silently removed the
+   * "Strong / Needs help" subject chips — the parent just sees fewer facts and
+   * has no way to know one is missing. Optional so existing call sites and
+   * tests keep compiling.
+   */
+  perfScoresError?: boolean;
   /** Already-fetched STEM lab streak — read-only here. */
   labStreak: number | null;
   /** Selected child (for studentId, name). */
@@ -208,6 +217,7 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
     bktMastery,
     insights,
     perfScores,
+    perfScoresError,
     labStreak,
     student,
     guardianId,
@@ -353,13 +363,13 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
         <div className="flex gap-2">
           <button
             onClick={onRefresh}
-            className="min-h-[36px] px-3 py-1.5 bg-transparent text-orange-500 border border-orange-200 rounded-md text-xs cursor-pointer"
+            className="min-h-[44px] px-3 py-1.5 bg-transparent text-orange-500 border border-orange-200 rounded-md text-xs cursor-pointer"
           >
             {t(isHi, 'Refresh', 'रिफ्रेश')}
           </button>
           <button
             onClick={onLogout}
-            className="min-h-[36px] px-3 py-1.5 bg-transparent text-gray-500 border border-orange-200 rounded-md text-xs cursor-pointer"
+            className="min-h-[44px] px-3 py-1.5 bg-transparent text-gray-500 border border-orange-200 rounded-md text-xs cursor-pointer"
           >
             {t(isHi, 'Logout', 'लॉग आउट')}
           </button>
@@ -404,8 +414,23 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
                   : ''}
               </p>
 
+              {/* Subject-score read failed — say so. Letting the chips just
+                  vanish reads as "there is nothing to say about subjects". */}
+              {perfScoresError && (
+                <p
+                  role="status"
+                  className="mt-3 mb-0 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5"
+                >
+                  {t(
+                    isHi,
+                    "Subject scores couldn't be loaded — tap Refresh to retry.",
+                    'विषय स्कोर लोड नहीं हो सके — फिर से लोड करने के लिए रिफ्रेश दबाएँ।',
+                  )}
+                </p>
+              )}
+
               {/* One improving + one needs-help subject (existing perfScores). */}
-              {subjectPair && (
+              {!perfScoresError && subjectPair && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[12px] text-emerald-700">
                     <span aria-hidden="true">&#x2B06;</span>
