@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { WelcomeV2Provider, useWelcomeV2 } from '../WelcomeV2Context';
+import { THEME_BOOTSTRAP_SCRIPT } from '../theme-bootstrap';
 import NavV3 from './NavV3';
 import HeroV3 from './HeroV3';
 import TrustStripV3 from './TrustStripV3';
@@ -44,14 +45,7 @@ const AlfaBotMount = dynamic(
   { ssr: false, loading: () => null },
 );
 
-/**
- * Inline blocking script that runs BEFORE first paint (copied from
- * WelcomeV2.tsx). The landing surface is locked to light regardless of
- * localStorage / matchMedia — the v3 stylesheet ships no dark styles, but
- * the attribute keeps any global body[data-theme] selectors resolving to
- * their light branch.
- */
-const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var r=document.currentScript&&document.currentScript.parentElement;if(r&&r.setAttribute){r.setAttribute('data-theme','light');}}catch(e){}})();`;
+/* Pre-paint light-theme lock: shared literal in ../theme-bootstrap. */
 
 function ThemedShell() {
   const { isHi } = useWelcomeV2();

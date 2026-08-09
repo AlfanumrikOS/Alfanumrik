@@ -2801,43 +2801,11 @@ body.foxy-body-lock {
   text-align: right;
 }
 
-/* ─── Breadcrumb subnav (used on /foxy, /learn, /progress) ──────
-   Renders inside the AppShell content slot just under the header.
-   Use --text-xs and --ink-3 to keep it whisper-quiet. */
-.app-breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--space-fluid-3) 0;
-  font-family: var(--font-display);
-  font-size: var(--text-xs);
-  color: var(--ink-3);
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-.app-breadcrumbs__back {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 6px 10px 6px 6px;
-  border-radius: var(--radius-atlas);
-  background: transparent;
-  border: 0;
-  color: var(--ink-2);
-  cursor: pointer;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--text-xs);
-}
-.app-breadcrumbs__back:hover { background: var(--cream-2); }
-.app-breadcrumbs__back:active { transform: scale(0.97); }
-.app-breadcrumbs__separator { color: var(--ink-4); }
-.app-breadcrumbs__current {
-  color: var(--ink);
-  font-weight: 600;
-}
+/* The .app-breadcrumbs* rule set was removed on 2026-08-09 together with
+   packages/ui/src/responsive/Breadcrumbs.tsx, its only consumer. The comment
+   here used to claim it was "used on /foxy, /learn, /progress" — it never
+   was; no page ever rendered that component. The live breadcrumb surface is
+   packages/ui/src/Breadcrumbs.tsx, which is self-contained (inline styles). */
 
 /* ─── Refreshed bottom nav for mobile (BottomNavComponent) ──────
    Replaces the old "background fill on active" with an orange

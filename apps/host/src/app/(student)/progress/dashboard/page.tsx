@@ -15,8 +15,12 @@ import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import type { EngagementSnapshot } from '@/app/api/student/engagement/route';
 
+// Canonical XP ring (packages/ui/src/xp/XPProgressRing). It derives level /
+// level-name / XP-in-level from the SAME @alfanumrik/lib/xp-config helpers
+// this page's API route already uses, so every displayed number is identical
+// to the server-computed one (P1/P2) — see the prop mapping at the call site.
 const XPProgressRing = dynamic(
-  () => import('@alfanumrik/ui/engagement/XPProgressRing').then((m) => m.XPProgressRing),
+  () => import('@alfanumrik/ui/xp/XPProgressRing'),
   { ssr: false }
 );
 const StreakFlame = dynamic(
@@ -92,12 +96,12 @@ export default function EngagementDashboardPage() {
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
             {chrome.xp}
           </h2>
-          <XPProgressRing
-            xpInLevel={data.xp.xpInLevel}
-            xpToNext={data.xp.xpToNext}
-            level={data.xp.level}
-            levelName={data.xp.levelName}
-          />
+          {/* data.xp.total is students.total_xp verbatim. The ring recomputes
+              level = calculateLevel(total) and current/needed = xpToNextLevel(total),
+              which is exactly how /api/student/engagement built data.xp.level and
+              data.xp.xpInLevel — same helpers, same inputs, same numbers. It also
+              localizes the level name (P7), which the previous ring did not. */}
+          <XPProgressRing totalXp={data.xp.total} size="lg" isHi={isHi} />
         </div>
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-900">
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">

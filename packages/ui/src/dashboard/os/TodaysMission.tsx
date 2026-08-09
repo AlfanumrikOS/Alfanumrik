@@ -50,14 +50,19 @@ import { todayCopy, deepLinkToHref } from '@alfanumrik/lib/today/copy';
 import { ALWAYS_NATIVE_SCRIPT } from '@alfanumrik/lib/today/render';
 import { PremiumCard, GlowButton } from '@alfanumrik/ui/ui';
 import type { TodayQueueItem } from '@alfanumrik/lib/today/types';
-
-/* Stable warm-orange tints. Warm tints route through --accent-warm-rgb, the
-   shared warm channel (burnt orange 232,88,28, declared in :root). */
-const WARM_06 = 'rgb(var(--accent-warm-rgb) / 0.06)';
-const WARM_10 = 'rgb(var(--accent-warm-rgb) / 0.10)';
-const WARM_15 = 'rgb(var(--accent-warm-rgb) / 0.15)';
-const WARM_25 = 'rgb(var(--accent-warm-rgb) / 0.25)';
-const WARM = 'var(--accent-warm, #E8581C)';
+/* Warm channel + AA-verified accent pairing — one shared ladder for the whole
+   dashboard (this file used to declare its own copy). */
+import {
+  WARM,
+  WARM_06,
+  WARM_10,
+  WARM_15,
+  WARM_25,
+  ACCENT_SURFACE,
+  ACCENT_FROM,
+  ACCENT_TO,
+  ON_ACCENT,
+} from '@alfanumrik/ui/dashboard/os/palette';
 
 interface TodaysMissionProps {
   isHi: boolean;
@@ -143,8 +148,12 @@ export default function TodaysMission({
         }}
       />
       <div className="relative" aria-label={isHi ? 'आज का मिशन' : "Today's mission"}>
+        {/* Section eyebrow — same treatment as every other dashboard card
+            (text-fluid-2xs / bold / uppercase / tracking-widest). Only the
+            colour differs: the hero owns the warm brand signal. Was an
+            11 px one-off below the design system's documented 12 px floor. */}
         <p
-          className="text-[11px] font-bold uppercase tracking-[0.16em] mb-2"
+          className="text-fluid-2xs font-bold uppercase tracking-widest mb-2"
           style={{ color: WARM }}
         >
           <span aria-hidden="true" className="streak-flame mr-1.5">●</span>
@@ -157,8 +166,12 @@ export default function TodaysMission({
           )}
         </p>
 
+        {/* Hero headline. One fluid step (--text-2xl, 24 → 30 px) replaces the
+            `text-2xl md:text-[1.7rem]` breakpoint pair — the size now scales
+            smoothly from a 360 px phone instead of snapping at md, and it is
+            the same scale every other card on the page reads from. */}
         <h1
-          className="text-2xl md:text-[1.7rem] font-bold leading-[1.15] tracking-[-0.01em]"
+          className="text-fluid-2xl font-bold leading-tight tracking-tight"
           style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
         >
           {heroTitle
@@ -199,15 +212,21 @@ export default function TodaysMission({
                 >
                   {isHi ? 'डायग्नोस्टिक शुरू करें' : 'Start your diagnostic'}
                 </p>
-                <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
+                <p className="text-fluid-xs mb-4" style={{ color: 'var(--text-3)' }}>
                   {isHi
                     ? '10 मिनट · Foxy आपका पर्सनलाइज्ड प्लान बनाएगा'
                     : '10 min · Foxy will personalise your study plan'}
                 </p>
+                {/* AA-verified accent pairing. This used to paint white on a
+                    gradient that STARTS at bare #E8581C — 3.59:1, a documented
+                    fail. ACCENT_SURFACE's stops (#CB4710 → #C2440F) are the
+                    contrast-checked ones and ON_ACCENT is their only legal
+                    foreground. */}
                 <span
-                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
+                  className="inline-flex items-center justify-center gap-1.5 min-h-tap-min px-5 py-2.5 rounded-xl text-fluid-sm font-bold"
                   style={{
-                    background: `linear-gradient(135deg, ${WARM}, var(--accent-warm-strong, #C2440F))`,
+                    background: ACCENT_SURFACE,
+                    color: ON_ACCENT,
                     boxShadow: 'var(--shadow-glow)',
                   }}
                 >
@@ -216,26 +235,34 @@ export default function TodaysMission({
               </button>
             ) : (
               <>
-                {/* Primary action */}
+                {/* PRIMARY action. This is the one thing the page wants the
+                    student to tap, and it used to be a flat 6% wash with a 1 px
+                    hairline — nearly indistinguishable from the secondary rows
+                    below, which are a flat grey wash with a 1 px hairline.
+                    It now carries the same warm gradient + 1.5 px accent edge as
+                    the cold-start card (one primary treatment on the surface),
+                    and terminates in a filled accent chevron so the affordance
+                    reads as a button rather than a list row. Destination and
+                    copy are untouched. */}
                 <button
                   type="button"
                   onClick={() => router.push(deepLinkToHref(queueData.primary.deepLink))}
-                  className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-3 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+                  className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-3 min-h-tap-comfort transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
                   style={{
-                    background: WARM_06,
-                    border: `1px solid ${WARM_15}`,
+                    background: `linear-gradient(135deg, ${WARM_10}, ${WARM_06})`,
+                    border: `1.5px solid ${WARM_25}`,
                     boxShadow: 'var(--shadow-sm)',
                   }}
                   data-testid="mission-primary-action"
                 >
-                  <span className="text-2xl" aria-hidden="true">
+                  <span className="text-2xl shrink-0" aria-hidden="true">
                     {todayIcon(queueData.primary.iconHint)}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>
+                    <p className="text-fluid-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>
                       {todayCopy(queueData.primary.labelKey, isHi)}
                     </p>
-                    <p className="text-xs truncate" style={{ color: 'var(--text-3)' }}>
+                    <p className="text-fluid-xs truncate" style={{ color: 'var(--text-3)' }}>
                       {todayCopy(queueData.primary.subtitleKey, isHi, {
                         subject: displaySubjectName((queueData.primary.meta?.subjectCode as string) ?? subjectCode),
                         chapterTitle: chapterSuffix(queueData.primary, isHi),
@@ -246,11 +273,17 @@ export default function TodaysMission({
                         n: String(queueData.primary.estMinutes),
                       })}
                     </p>
-                    <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+                    <p className="text-fluid-xs" style={{ color: 'var(--text-3)' }}>
                       ~{queueData.primary.estMinutes} {isHi ? 'मिनट' : 'min'}
                     </p>
                   </div>
-                  <span className="text-sm" style={{ color: 'var(--text-3)' }}>→</span>
+                  <span
+                    className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full text-fluid-sm font-bold"
+                    style={{ background: ACCENT_SURFACE, color: ON_ACCENT }}
+                    aria-hidden="true"
+                  >
+                    →
+                  </span>
                 </button>
 
                 {/* Secondary actions (up to 2 more) — collapsed behind ONE
@@ -268,8 +301,8 @@ export default function TodaysMission({
                       aria-expanded={showAlternatives}
                       aria-controls="mission-alternatives"
                       data-testid="mission-alternatives-toggle"
-                      className="self-start inline-flex items-center gap-1.5 rounded-lg px-2 text-xs font-semibold transition-colors hover:opacity-80 focus:outline-none focus-visible:ring-2"
-                      style={{ color: 'var(--text-3)', minHeight: 44 }}
+                      className="self-start inline-flex items-center gap-1.5 min-h-tap-min rounded-lg px-2 text-fluid-xs font-semibold transition-colors hover:opacity-80 focus:outline-none focus-visible:ring-2"
+                      style={{ color: 'var(--text-3)' }}
                     >
                       {isHi ? 'कुछ और?' : 'Something else?'}
                       <span
@@ -293,18 +326,18 @@ export default function TodaysMission({
                           key={item.rank}
                           type="button"
                           onClick={() => router.push(deepLinkToHref(item.deepLink))}
-                          className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-2.5 transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+                          className="w-full text-left flex items-center gap-3 rounded-2xl px-4 py-2.5 min-h-tap-min transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
                           style={{
                             background: 'var(--surface-2)',
                             border: '1px solid var(--border)',
                           }}
                         >
-                          <span className="text-lg" aria-hidden="true">{todayIcon(item.iconHint)}</span>
+                          <span className="text-lg shrink-0" aria-hidden="true">{todayIcon(item.iconHint)}</span>
                           <div className="flex-1 min-w-0">
-                            <span className="text-xs font-semibold truncate block" style={{ color: 'var(--text-2)' }}>
+                            <span className="text-fluid-xs font-semibold truncate block" style={{ color: 'var(--text-2)' }}>
                               {todayCopy(item.labelKey, isHi)}
                             </span>
-                            <span className="text-[10px] truncate block" style={{ color: 'var(--text-3)' }}>
+                            <span className="text-fluid-2xs truncate block" style={{ color: 'var(--text-3)' }}>
                               {todayCopy(item.subtitleKey, isHi, {
                                 subject: displaySubjectName((item.meta?.subjectCode as string) ?? subjectCode),
                                 chapterTitle: chapterSuffix(item, isHi),
@@ -316,7 +349,7 @@ export default function TodaysMission({
                               })}
                             </span>
                           </div>
-                          <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                          <span className="text-fluid-2xs shrink-0 font-data tabular-nums" style={{ color: 'var(--text-3)' }}>
                             ~{item.estMinutes}m
                           </span>
                         </button>
@@ -350,26 +383,31 @@ export default function TodaysMission({
             role="status"
           >
             <div className="text-3xl mb-2" aria-hidden="true">🦊</div>
-            <p className="text-base font-bold" style={{ color: 'var(--text-1)' }}>
+            <p className="text-fluid-base font-bold" style={{ color: 'var(--text-1)' }}>
               {isHi
                 ? 'तुम्हारा सीखने का रास्ता तैयार हो रहा है'
                 : 'Your learning path is getting ready'}
             </p>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+            <p className="text-fluid-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
               {isHi
                 ? 'शुरू करने के लिए एक पाठ चुनो।'
                 : 'Pick a lesson to begin.'}
             </p>
-            {/* The single fallback action. GlowButton paints from --orange /
-                --orange-light, which are NOT the warm channel this surface uses.
-                We scope-override those two tokens to the stable warm channel on
-                this wrapper ONLY, so the button renders burnt-orange (with its
-                CSS-only shimmer) without touching GlowButton or the globals. */}
+            {/* The single fallback action. GlowButton paints a
+                `--orange → --orange-light` gradient with WHITE text, and those
+                two tokens are not the warm channel this surface uses. We
+                scope-override them on this wrapper ONLY, so the button renders
+                burnt-orange (with its CSS-only shimmer) without touching
+                GlowButton or the globals.
+                The override now points at the CTA stops (ACCENT_FROM/ACCENT_TO,
+                #CB4710 → #C2440F) rather than bare --accent-warm: white on
+                #E8581C is 3.59:1 and fails AA, which is exactly what this
+                override used to produce. */}
             <div
               className="mt-3"
               style={{
-                ['--orange' as string]: 'var(--accent-warm, #E8581C)',
-                ['--orange-light' as string]: 'var(--accent-warm-strong, #C2440F)',
+                ['--orange' as string]: ACCENT_FROM,
+                ['--orange-light' as string]: ACCENT_TO,
               }}
             >
               <GlowButton
@@ -390,7 +428,7 @@ export default function TodaysMission({
               <button
                 type="button"
                 onClick={() => retryQueue()}
-                className="mt-2 text-xs font-semibold underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 rounded"
+                className="mt-2 inline-flex items-center min-h-tap-min text-fluid-xs font-semibold underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 rounded"
                 style={{ color: 'var(--text-3)' }}
                 data-testid="mission-empty-retry"
               >

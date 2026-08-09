@@ -84,8 +84,9 @@ export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: 
 
   return (
     <section aria-label={isHi ? 'विषय रोडमैप' : 'Subject roadmaps'}>
+      {/* Section eyebrow — the ONE shared treatment across every dashboard card. */}
       <h2
-        className="text-sm font-bold uppercase tracking-wider mb-3"
+        className="text-fluid-2xs font-bold uppercase tracking-widest mb-3"
         style={{ color: 'var(--text-3)' }}
       >
         {isHi ? 'विषय रोडमैप' : 'Subject roadmaps'}
@@ -93,7 +94,7 @@ export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: 
 
       {error && !isLoading ? (
         <div
-          className="rounded-2xl p-4 text-center text-sm"
+          className="rounded-2xl p-4 text-center text-fluid-sm"
           style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-3)' }}
           role="status"
         >
@@ -103,7 +104,7 @@ export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: 
         </div>
       ) : groups.length === 0 ? (
         <div
-          className="rounded-2xl p-4 text-center text-sm"
+          className="rounded-2xl p-4 text-center text-fluid-sm"
           style={{ background: 'var(--surface-2)', border: '1px dashed var(--border)', color: 'var(--text-3)' }}
         >
           {isHi
@@ -179,28 +180,27 @@ export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: 
                   aria-expanded={isOpen}
                   aria-controls={panelId}
                   data-testid="roadmap-subject-toggle"
-                  className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+                  className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 min-h-tap-large text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
                   style={{
                     background: 'var(--surface-1)',
                     border: '1px solid var(--border)',
                     boxShadow: 'var(--shadow-sm)',
-                    minHeight: 56,
                   }}
                 >
                   <span className="text-xl shrink-0" aria-hidden="true">{g.icon}</span>
                   <span className="flex-1 min-w-0">
                     <span
-                      className="block text-sm font-bold truncate"
+                      className="block text-fluid-sm font-bold truncate"
                       style={{ color: 'var(--text-1)', fontFamily: 'var(--font-display)' }}
                     >
                       {g.subject}
                     </span>
-                    <span className="block text-xs truncate" style={{ color: 'var(--text-3)' }}>
+                    <span className="block text-fluid-xs truncate" style={{ color: 'var(--text-3)' }}>
                       {summary}
                     </span>
                   </span>
                   <span
-                    className="text-xs shrink-0"
+                    className="text-fluid-xs shrink-0"
                     aria-hidden="true"
                     style={{
                       color: 'var(--text-3)',

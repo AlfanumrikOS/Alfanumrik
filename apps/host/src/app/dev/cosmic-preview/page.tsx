@@ -29,14 +29,28 @@ import {
   Chip,
   CosmicButton,
   PillButton,
-  IconButton,
   MasteryRing,
-  ProgressBar,
   HeatCell,
   MascotBubble,
   Starfield,
   HDisplay,
 } from '@alfanumrik/ui/cosmic';
+// IconButton and ProgressBar are NOT cosmic components any more — the cosmic
+// twins were deleted 2026-08-09 in favour of the canonical primitives, so this
+// preview shows the real thing rather than a look-alike.
+//
+// P10 — DELIBERATE DEEP IMPORTS, do not "tidy" these back into the barrel.
+// `@alfanumrik/ui/ui/primitives` is a 25-component barrel (Dialog, Drawer,
+// BottomSheet, Toast, Table, Tabs, Avatar, the overlay/focus-trap foundation…).
+// `packages/ui/package.json` declares no `sideEffects` field, so webpack must
+// assume every re-export is side-effectful and cannot drop the unused ones:
+// pulling the barrel for two components dragged the whole set into this route's
+// client-reference manifest and broke the P10 ratchet (132.6 → 138.6 kB).
+// Importing the two modules directly keeps the graph to IconButton +
+// ProgressBar + tokens.ts + cn(). The barrel stays the documented convention
+// for real product surfaces; this page is the one that measured the cost.
+import { IconButton } from '@alfanumrik/ui/ui/primitives/IconButton';
+import { ProgressBar } from '@alfanumrik/ui/ui/primitives/ProgressBar';
 
 type CosmicRole = 'student' | 'parent' | 'teacher' | 'school';
 
@@ -166,7 +180,7 @@ export default function CosmicPreviewPage() {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <CosmicButton>{t('primary')}</CosmicButton>
             <CosmicButton variant="ghost">{t('ghost')}</CosmicButton>
-            <IconButton aria-label="settings">⚙</IconButton>
+            <IconButton label="settings" icon="⚙" />
           </div>
         </CardElev>
 
@@ -208,9 +222,12 @@ export default function CosmicPreviewPage() {
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)' }}>
             {t('bars')}
           </div>
-          <ProgressBar percent={28} label={t('daily')} />
-          <ProgressBar percent={64} label={t('daily')} />
-          <ProgressBar percent={92} label={t('daily')} />
+          {/* ariaLabel (not label) keeps these as bare bars, matching what the
+              deleted cosmic ProgressBar rendered — it exposed `label` via
+              aria-label only and never drew it. */}
+          <ProgressBar value={28} ariaLabel={t('daily')} />
+          <ProgressBar value={64} ariaLabel={t('daily')} />
+          <ProgressBar value={92} ariaLabel={t('daily')} />
         </CardElev>
 
         {/* Heatmap */}

@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { WelcomeV2Provider, useWelcomeV2 } from '../../WelcomeV2Context';
 import Breadcrumbs from '../../../Breadcrumbs';
+import { THEME_BOOTSTRAP_SCRIPT } from '../../theme-bootstrap';
 import NavV3, { type NavV3Link } from '../NavV3';
 import FooterV3 from '../FooterV3';
 import s from '../welcome-v3.module.css';
@@ -30,7 +31,7 @@ import s from '../welcome-v3.module.css';
  * → For Parents).
  */
 
-const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var r=document.currentScript&&document.currentScript.parentElement;if(r&&r.setAttribute){r.setAttribute('data-theme','light');}}catch(e){}})();`;
+/* Pre-paint light-theme lock: shared literal in ../../theme-bootstrap. */
 
 /**
  * Default nav set for deep marketing pages: section anchors point BACK at

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { WelcomeV2Provider, useWelcomeV2 } from './WelcomeV2Context';
+import { THEME_BOOTSTRAP_SCRIPT } from './theme-bootstrap';
 import NavV2 from './NavV2';
 import HeroV2 from './HeroV2';
 import StatsV2 from './StatsV2';
@@ -29,19 +30,9 @@ const AlfaBotMount = dynamic(
   { ssr: false, loading: () => null },
 );
 
-/**
- * Inline blocking script that runs BEFORE first paint.
- *
- * 2026-05-11: dark mode removed from the landing page per user direction.
- * The landing surface always renders light regardless of localStorage /
- * matchMedia. The dark CSS in welcome-v2.module.css is left in place for
- * potential future re-enable; this script + the useEffect below short-
- * circuit theme resolution to 'light' so those selectors never apply.
- *
- * Stringified inside a <script dangerouslySetInnerHTML> so React injects it
- * as raw markup.
- */
-const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var r=document.currentScript&&document.currentScript.parentElement;if(r&&r.setAttribute){r.setAttribute('data-theme','light');}}catch(e){}})();`;
+/* The pre-paint light-theme lock lives in ./theme-bootstrap (shared by all
+   four landing shells); the useEffect below is this page's post-hydration
+   re-assertion. */
 
 function ThemedShell() {
   const { isHi } = useWelcomeV2();
