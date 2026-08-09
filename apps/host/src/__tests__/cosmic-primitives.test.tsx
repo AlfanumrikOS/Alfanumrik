@@ -9,9 +9,11 @@
  *   1. FoxyMark renders the legacy "classic" geometric fox by DEFAULT, so every
  *      existing call site (flag OFF) is byte-identical to today. The "cosmic"
  *      variant only renders the SVG when explicitly asked for.
- *   2. MasteryRing / ProgressBar treat `percent` as a display-only input: they
- *      CLAMP to [0,100] and coerce non-finite input to 0, and they expose the
- *      value via aria-valuenow WITHOUT deriving it from any quiz math.
+ *   2. MasteryRing (cosmic) and the canonical ProgressBar primitive treat their
+ *      value as a display-only input: they CLAMP to [0,100] and coerce
+ *      non-finite input to 0, and they expose it via aria-valuenow WITHOUT
+ *      deriving it from any quiz math. (The cosmic ProgressBar twin was deleted
+ *      2026-08-09; its guarantees moved to the surviving primitive below.)
  *
  * We deliberately do not test third-party libs (clsx/tailwind-merge) or CSS
  * rendering — JSDOM doesn't apply the html[data-design="cosmic"] scope, which
@@ -21,7 +23,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { FoxyMark } from '@alfanumrik/ui/landing/FoxyMark';
 import { MasteryRing } from '@alfanumrik/ui/cosmic/MasteryRing';
-import { ProgressBar } from '@alfanumrik/ui/cosmic/ProgressBar';
+import { ProgressBar } from '@alfanumrik/ui/ui/primitives';
 
 describe('FoxyMark — variant default (flag-OFF pixel identity)', () => {
   it('renders the classic geometric fox by default (no variant prop)', () => {
@@ -109,35 +111,46 @@ describe('MasteryRing — display-only, defensive value handling (P1 is NOT here
   });
 });
 
-describe('ProgressBar — display-only, defensive value handling', () => {
-  it('exposes an in-range percent via aria-valuenow and a clamped fill width', () => {
-    const { container } = render(<ProgressBar percent={40} label="Daily goal" />);
+/**
+ * ProgressBar — these cases used to pin the cosmic ProgressBar, which was
+ * deleted on 2026-08-09 as a duplicate of the canonical primitive. The
+ * guarantees are the valuable part, so they were re-pointed at the SURVIVOR
+ * rather than deleted with the loser. Doing so surfaced a real defect: the
+ * primitive had no isFinite guard, so a NaN `value` rendered literal "NaN%"
+ * as the fill width and aria-valuenow="NaN". The guard was ported over.
+ */
+describe('ProgressBar (canonical primitive) — display-only, defensive value handling', () => {
+  const fillOf = (bar: Element) =>
+    bar.querySelector('div') as HTMLElement | null;
+
+  it('exposes an in-range value via aria-valuenow and a matching fill width', () => {
+    const { container } = render(<ProgressBar value={40} ariaLabel="Daily goal" />);
     const bar = container.querySelector('[role="progressbar"]');
     expect(bar!.getAttribute('aria-valuenow')).toBe('40');
     expect(bar!.getAttribute('aria-label')).toBe('Daily goal');
-    const fill = bar!.querySelector('span') as HTMLElement | null;
+    const fill = fillOf(bar!);
     expect(fill).not.toBeNull();
     expect(fill!.style.width).toBe('40%');
   });
 
-  it('clamps the fill width to 100% for an over-range percent', () => {
-    const { container } = render(<ProgressBar percent={250} />);
+  it('clamps the fill width to 100% for an over-range value', () => {
+    const { container } = render(<ProgressBar value={250} />);
     const bar = container.querySelector('[role="progressbar"]')!;
     expect(bar.getAttribute('aria-valuenow')).toBe('100');
-    expect((bar.querySelector('span') as HTMLElement).style.width).toBe('100%');
+    expect(fillOf(bar)!.style.width).toBe('100%');
   });
 
-  it('clamps the fill width to 0% for a negative percent', () => {
-    const { container } = render(<ProgressBar percent={-10} />);
+  it('clamps the fill width to 0% for a negative value', () => {
+    const { container } = render(<ProgressBar value={-10} />);
     const bar = container.querySelector('[role="progressbar"]')!;
     expect(bar.getAttribute('aria-valuenow')).toBe('0');
-    expect((bar.querySelector('span') as HTMLElement).style.width).toBe('0%');
+    expect(fillOf(bar)!.style.width).toBe('0%');
   });
 
-  it('coerces non-finite percent to a 0% fill (never "NaN%")', () => {
-    const { container } = render(<ProgressBar percent={Number.NaN} />);
+  it('coerces non-finite value to a 0% fill (never "NaN%")', () => {
+    const { container } = render(<ProgressBar value={Number.NaN} />);
     const bar = container.querySelector('[role="progressbar"]')!;
     expect(bar.getAttribute('aria-valuenow')).toBe('0');
-    expect((bar.querySelector('span') as HTMLElement).style.width).toBe('0%');
+    expect(fillOf(bar)!.style.width).toBe('0%');
   });
 });

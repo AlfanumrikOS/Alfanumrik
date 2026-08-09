@@ -57,6 +57,13 @@ import PendingLinkApproval, { type PendingLink } from '@alfanumrik/ui/dashboard/
 // button on first paint; the FoxyPanel module is dynamic-imported (ssr:false)
 // only when the student taps. First-load JS delta ≈ 0.
 import FoxyPanelLauncher from '@alfanumrik/ui/foxy-launcher/FoxyPanelLauncher';
+import {
+  WARM_08,
+  WARM_18,
+  WARM_STRONG,
+  ACCENT_SURFACE,
+  ON_ACCENT,
+} from '@alfanumrik/ui/dashboard/os/palette';
 
 export default function StudentOSDashboard() {
   const router = useRouter();
@@ -172,7 +179,7 @@ export default function StudentOSDashboard() {
         role="alert"
       >
         <p
-          className="text-base font-semibold max-w-xs"
+          className="text-fluid-base font-semibold max-w-xs"
           style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
         >
           {isHi
@@ -184,8 +191,14 @@ export default function StudentOSDashboard() {
           onClick={() => void handleRetry()}
           disabled={retrying}
           aria-busy={retrying}
-          className="text-sm font-bold px-5 py-2.5 rounded-full transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60"
-          style={{ background: 'var(--accent-warm, #E8581C)', color: '#fff', minHeight: 44 }}
+          className="inline-flex items-center justify-center min-h-tap-min text-fluid-sm font-bold px-5 py-2.5 rounded-full transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-70"
+          style={{
+            // AA-verified CTA pairing. This was #fff on bare --accent-warm
+            // (#E8581C) = 3.59:1 — a fail, on the one control that recovers a
+            // student whose profile did not load.
+            background: ACCENT_SURFACE,
+            color: ON_ACCENT,
+          }}
         >
           {retrying
             ? isHi
@@ -215,48 +228,84 @@ export default function StudentOSDashboard() {
   for (const s of allowedSubjects) subjectCodeByName[s.name] = s.code;
 
   // Compact header rail — greeting + streak + demoted XP + language toggle.
+  //
+  // TWO ROWS on purpose. All four of these used to share one 360 px row, which
+  // left the greeting column ~130 px wide: the English sub-line ("What will you
+  // master today?") wrapped to three lines and the Hindi greeting truncated
+  // mid-word. Identity now owns row 1 and the glanceable stats own row 2, so
+  // neither has to shrink.
+  //
+  // `pe-14` on row 1 reserves the slot that AppShell's one-handed-mode toggle
+  // occupies. That control is `position: absolute; top: 8px; right: ~16px;
+  // 36x36` (globals.css .app-shell-onehand-toggle) and is hidden from 768px up,
+  // so on a phone it was landing directly on top of the language toggle — two
+  // live controls in the same pixels. `md:pe-0` gives the space back once the
+  // toggle is display:none.
+  //
+  // `dashboard-header-row` / `dashboard-header-greeting` are the hooks
+  // globals.css already defines for the compact-on-scroll header (it tightens
+  // the row padding and hides the greeting). The dashboard had never opted in,
+  // so the header animated down to --shell-header-h-compact with its full-size
+  // content still inside it.
   const headerRail = (
-    <div className="flex items-center gap-3 px-4 py-4 w-full">
-      <div className="flex-1 min-w-0">
+    <div className="dashboard-header-row w-full px-4 py-3">
+      <div className="dashboard-header-greeting pe-14 md:pe-0">
         <p
-          className="text-xl font-extrabold truncate"
+          className="text-fluid-xl font-extrabold truncate"
           style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
         >
           {isHi ? `नमस्ते, ${firstName}` : `Hi, ${firstName}`}
         </p>
-        <p className="text-sm" style={{ color: 'var(--text-3)' }}>
+        <p className="text-fluid-sm truncate" style={{ color: 'var(--text-3)' }}>
           {isHi ? 'आज क्या सीखें?' : 'What will you master today?'}
         </p>
       </div>
 
-      <StreakBadge count={streak} compact />
+      <div className="mt-2 flex items-center gap-2">
+        <StreakBadge count={streak} compact />
 
-      {/* XP demoted to a small glanceable warm chip. Warm tints route through
-          the stable --accent-warm channel. */}
-      <span
-        className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full"
-        style={{
-          background: 'rgb(var(--accent-warm-rgb) / 0.08)',
-          color: 'var(--accent-warm, #E8581C)',
-          border: '1px solid rgb(var(--accent-warm-rgb) / 0.18)',
-        }}
-        aria-label={isHi ? `कुल ${totalXp} XP` : `${totalXp} total XP`}
-      >
-        <span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, ui-monospace, monospace)' }}>
-          {totalXp.toLocaleString('en-IN')}
+        {/* XP demoted to a small glanceable warm chip. Warm tints route through
+            the stable --accent-warm channel. The number is set in `font-data`
+            (Sora — the design system's declared numeric voice); it used to ask
+            for `--font-mono`, a token only declared inside the
+            html[data-design="cosmic"] scope that this surface removes, so it
+            was silently falling back to the OS monospace face. */}
+        <span
+          className="inline-flex items-center gap-1 text-fluid-2xs font-bold px-2.5 py-1 rounded-full"
+          style={{
+            background: WARM_08,
+            // WARM_STRONG, not WARM: #E8581C on this tint is ~3.5:1 and fails
+            // AA for a bold 12px label; #C2440F clears 4.5:1 on the same wash.
+            color: WARM_STRONG,
+            border: `1px solid ${WARM_18}`,
+          }}
+          aria-label={isHi ? `कुल ${totalXp} XP` : `${totalXp} total XP`}
+        >
+          <span className="font-data tabular-nums">
+            {totalXp.toLocaleString('en-IN')}
+          </span>
+          {/* "XP" is content (P7: never translated), not decoration — it was
+              dimmed to 70%, which reads ~2.9:1 on the warm chip. */}
+          <span>XP</span>
         </span>
-        <span style={{ opacity: 0.7 }}>XP</span>
-      </span>
 
-      <button
-        type="button"
-        onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}
-        aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
-        className="text-xs font-bold px-2.5 py-1 rounded-full transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-        style={{ background: 'var(--surface-2)', color: 'var(--text-2)', minHeight: 44 }}
-      >
-        {isHi ? 'EN' : 'हि'}
-      </button>
+        {/* 44x44 in BOTH axes. It carried `minHeight: 44` but only `px-2.5`
+            horizontally, so the actual tap box was ~38x44 — under the minimum
+            on the narrow axis. */}
+        <button
+          type="button"
+          onClick={() => setLanguage(language === 'hi' ? 'en' : 'hi')}
+          aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
+          className="ms-auto inline-flex items-center justify-center min-w-tap-min min-h-tap-min px-3 text-fluid-xs font-bold rounded-full transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+          style={{
+            background: 'var(--surface-2)',
+            color: 'var(--text-2)',
+            border: '1px solid var(--border)',
+          }}
+        >
+          {isHi ? 'EN' : 'हि'}
+        </button>
+      </div>
     </div>
   );
 
@@ -310,9 +359,20 @@ export default function StudentOSDashboard() {
             studentId={student.id}
             studentName={student.name}
             style={{
-              background: 'rgb(var(--accent-warm-rgb) / 0.08)',
-              color: 'var(--accent-warm, #E8581C)',
-              border: '1px solid rgb(var(--accent-warm-rgb) / 0.18)',
+              // Deliberately the SECONDARY treatment: a tinted outline pill
+              // against the hero's filled accent action, so the two CTAs sitting
+              // 8px apart are not competing. WARM_STRONG keeps the label legible
+              // on the wash (bare --accent-warm is ~3.5:1 here).
+              background: WARM_08,
+              color: WARM_STRONG,
+              border: `1px solid ${WARM_18}`,
+              // FoxyPanelLauncher's default CTA class is `px-4 py-2 text-sm`,
+              // which computes to a ~36px tall button — under the 44px minimum
+              // on a phone. The launcher spreads this style onto that button,
+              // so the floor can be applied from here without touching the
+              // shared component. (A durable fix belongs in the launcher — see
+              // the handoff note.)
+              minHeight: 'var(--tap-min)',
             }}
           />
         </div>

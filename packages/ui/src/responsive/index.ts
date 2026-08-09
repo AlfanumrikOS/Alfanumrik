@@ -17,5 +17,10 @@ export type { AppShellProps, AppShellVariant } from './AppShell';
 export { Touchable } from './Touchable';
 export type { TouchableProps, TouchableSize } from './Touchable';
 
-export { Breadcrumbs } from './Breadcrumbs';
-export type { BreadcrumbsProps } from './Breadcrumbs';
+// responsive/Breadcrumbs was removed on 2026-08-09 for the same reason as
+// MobileNav above: it was a second component NAMED "Breadcrumbs" that no page
+// ever rendered (only its own test imported it), colliding with the live
+// packages/ui/src/Breadcrumbs.tsx used by /careers, /press, /refunds,
+// /research, PricingV3 and MarketingShell. Its `.app-breadcrumbs*` CSS was
+// dropped from globals.css in the same change. If an in-app back-nav crumb is
+// wanted later, extend the surviving Breadcrumbs rather than reviving a twin.

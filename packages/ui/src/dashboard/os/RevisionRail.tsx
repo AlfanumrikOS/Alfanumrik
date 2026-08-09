@@ -13,6 +13,7 @@
 
 import dynamic from 'next/dynamic';
 import { useReviewCards } from '@alfanumrik/lib/swr';
+import { WARM, WARM_10 } from '@alfanumrik/ui/dashboard/os/palette';
 
 const ReviewsDueCard = dynamic(() => import('@alfanumrik/ui/dashboard/ReviewsDueCard'), {
   ssr: false,
@@ -42,21 +43,20 @@ export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
       aria-label={isHi ? 'दोहराव' : 'Revision'}
     >
       <div className="flex items-center justify-between mb-3">
+        {/* Section eyebrow — the ONE shared treatment across every dashboard
+            card (was text-sm/tracking-wider here, text-xs/tracking-widest on
+            MasterySnapshot and an 11px one-off on the hero: three different
+            eyebrows on one screen). */}
         <h2
-          className="text-sm font-bold uppercase tracking-wider"
+          className="text-fluid-2xs font-bold uppercase tracking-widest"
           style={{ color: 'var(--text-3)' }}
         >
           {isHi ? 'दोहराव' : 'Revision'}
         </h2>
         {dueCount > 0 && (
           <span
-            className="text-xs font-bold px-2 py-0.5 rounded-full"
-            style={{
-              // Warm tint via the stable channel (declared in :root).
-              background: 'rgb(var(--accent-warm-rgb) / 0.10)',
-              color: 'var(--accent-warm, #E8581C)',
-              fontVariantNumeric: 'tabular-nums',
-            }}
+            className="text-fluid-2xs font-bold font-data tabular-nums px-2 py-0.5 rounded-full shrink-0"
+            style={{ background: WARM_10, color: WARM }}
           >
             {dueCount}
           </span>
@@ -64,7 +64,7 @@ export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
       </div>
 
       {error && !isLoading ? (
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }} role="status">
+        <p className="text-fluid-xs leading-relaxed" style={{ color: 'var(--text-3)' }} role="status">
           {isHi
             ? 'अभी लोड नहीं हो पाया — रीफ़्रेश करके फिर देखो।'
             : "Couldn't load right now — pull to refresh."}
@@ -78,7 +78,7 @@ export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
               (fetch resolved, no error, empty array). Never let a failed or
               in-flight fetch look like the student is all caught up. */}
           {!error && loaded && dueCount === 0 && (
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
+            <p className="text-fluid-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
               {isHi
                 ? 'अभी कोई दोहराव बाकी नहीं — बढ़िया! नए पाठ पर ध्यान दो।'
                 : 'Nothing due right now — nice work. Focus on a fresh lesson.'}

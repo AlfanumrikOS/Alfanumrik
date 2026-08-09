@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { LineChart, CHART_PALETTE, type ChartSeries } from '@alfanumrik/ui/admin-ui/charts';
 
 // jsdom doesn't lay out — ResponsiveContainer measures parent via
@@ -38,7 +38,11 @@ describe('LineChart', () => {
     expect(screen.getByRole('status').textContent).toContain('Nothing to chart yet');
   });
 
-  it('renders one Line per series with token-driven palette colors', () => {
+  // The Recharts render body is behind `next/dynamic` (P10 — recharts is ~94.5 kB
+  // gzipped and used to sit on the eager first-load graph of 101 routes), so the
+  // chart mounts one microtask after render. The empty-state path above stays
+  // synchronous; only the populated path needs to await the dynamic chunk.
+  it('renders one Line per series with token-driven palette colors', async () => {
     const series: ChartSeries[] = [
       {
         name: 'Active',
@@ -65,8 +69,10 @@ describe('LineChart', () => {
     );
 
     // One <path class="recharts-line-curve"> per series.
+    await waitFor(() =>
+      expect(container.querySelectorAll('.recharts-line-curve').length).toBe(2)
+    );
     const curves = container.querySelectorAll('.recharts-line-curve');
-    expect(curves.length).toBe(2);
 
     // Stroke colors come from CHART_PALETTE — token-driven (CSS vars).
     expect(curves[0].getAttribute('stroke')).toBe(CHART_PALETTE[0]);

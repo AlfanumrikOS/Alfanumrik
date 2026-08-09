@@ -17,11 +17,16 @@ export {
   type CosmicButtonProps,
   PillButton,
   type PillButtonProps,
-  IconButton,
-  type IconButtonProps,
 } from './CosmicButton';
 export { MasteryRing, type MasteryRingProps } from './MasteryRing';
-export { ProgressBar, type ProgressBarProps } from './ProgressBar';
+
+// Removed 2026-08-09 — name collisions with the canonical primitive library:
+//   IconButton  → use { IconButton } from '@alfanumrik/ui/ui/primitives'
+//                 (required `label`, >= 44px at every size, loading state).
+//   ProgressBar → use { ProgressBar } from '@alfanumrik/ui/ui/primitives'
+//                 (token-driven tone/size, optional label + value read-out).
+// Neither cosmic copy had a production caller; both existed only to be shown
+// on /dev/cosmic-preview. Do not re-add a cosmic twin — extend the primitive.
 export { HeatCell, type HeatCellProps } from './HeatCell';
 export { MascotBubble, type MascotBubbleProps } from './MascotBubble';
 export { Starfield, type StarfieldProps } from './Starfield';
