@@ -92,12 +92,73 @@ def load_transcript_entries(transcript_path):
         pass
     return entries
 
+# Transcript entry types that are bookkeeping, not conversation turns.
+# `last-prompt` in particular echoes the human's prompt text, so a naive
+# "does this look like a prompt?" test would mistake it for a real turn.
+META_ENTRY_TYPES = frozenset((
+    "last-prompt",
+    "agent-setting",
+    "mode",
+    "permission-mode",
+    "queue-operation",
+    "file-history-snapshot",
+    "attachment",
+    "system",
+    "summary",
+))
+
+def _content_blocks(entry):
+    """Best-effort extraction of an entry's content blocks, tolerant of
+    schema drift (content may sit on the entry or on entry['message'], and
+    may be a plain string rather than a block list)."""
+    for container in (entry.get("message"), entry):
+        if isinstance(container, dict):
+            content = container.get("content")
+            if isinstance(content, list):
+                return [b for b in content if isinstance(b, dict)]
+            if isinstance(content, str):
+                # Plain prose. No blocks, and definitely no tool_result.
+                return []
+    return []
+
+def is_human_turn(entry):
+    """True only for an entry that represents a HUMAN actually speaking.
+
+    WHY THIS IS NOT `type == "user"`:
+    the transcript records tool RESULTS as `type: "user"` entries too (they
+    carry `tool_result` content blocks). Every assistant turn therefore ends
+    `assistant(tool_use)` -> `user(tool_result)`, so keying the turn boundary
+    off `type == "user"` alone always landed on the final tool_result and
+    returned a slice containing ZERO tool_use blocks. collect_evidence() then
+    reported build_run/test_run False unconditionally and this hook blocked
+    every truthful report — observed blocking 3 consecutive accurate reports
+    backed by real `npm run build` / `npm run type-check` runs (exit 0).
+
+    Two further shapes must NOT be mistaken for a human turn:
+      * meta entry types (META_ENTRY_TYPES) — bookkeeping records;
+      * `isMeta: True` user entries — this hook's OWN block reason is
+        re-injected as one of these, so counting it as a turn boundary
+        truncated away the very evidence the retry was meant to supply and
+        made the false positive self-sustaining across retries.
+    """
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("type") in META_ENTRY_TYPES:
+        return False
+    if entry.get("isMeta") is True:
+        return False
+    if not (entry.get("type") == "user" or entry.get("role") == "user"):
+        return False
+    return not any(b.get("type") == "tool_result" for b in _content_blocks(entry))
+
 def entries_since_last_user_turn(entries):
     last_user_idx = None
     for i, e in enumerate(entries):
-        if e.get("type") == "user" or e.get("role") == "user":
+        if is_human_turn(e):
             last_user_idx = i
     if last_user_idx is None:
+        # No identifiable human turn (truncated/compacted transcript) —
+        # fall back to the whole transcript, as before.
         return entries
     return entries[last_user_idx:]
 
