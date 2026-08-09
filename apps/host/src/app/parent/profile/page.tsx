@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { logger } from '@alfanumrik/lib/logger';
 import { CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 
 // Parent-dashboard RCA Task 3.3 (2026-07-20): rebuilt on Tailwind utility
@@ -61,15 +62,24 @@ export default function ParentProfilePage() {
       showToast(tp('Please enter a valid phone number', 'कृपया सही फ़ोन नंबर दर्ज करें'), true); return;
     }
     setSaving(true);
-    try {
-      await supabase.from('guardians').update({
-        name: trimmedName,
-        phone: trimmedPhone || null,
-      }).eq('id', guardian.id);
+    // The PostgREST builder RESOLVES with { data, error } — it never rejects —
+    // so the previous catch was dead code and a FAILED save still showed
+    // "Profile updated!" and closed the form. The parent then believes the
+    // phone number school/teacher notifications go to has been updated when it
+    // has not. Check `error` explicitly.
+    const { error: saveErr } = await supabase.from('guardians').update({
+      name: trimmedName,
+      phone: trimmedPhone || null,
+    }).eq('id', guardian.id);
+    if (saveErr) {
+      // P13: reason only — never the name, phone, or guardian id.
+      logger.warn('parent.profile.save_failed', { reason: saveErr.message });
+      showToast(tp('Could not save. Please try again.', 'सहेजा नहीं जा सका। कृपया फिर से कोशिश करें।'), true);
+    } else {
       showToast(tp('Profile updated!', 'प्रोफ़ाइल अपडेट हो गई!'), false);
       setEditing(false);
       setTimeout(() => setToast(''), 3000);
-    } catch { showToast(tp('Failed to save', 'सहेजने में विफल'), true); }
+    }
     setSaving(false);
   };
 
@@ -84,7 +94,7 @@ export default function ParentProfilePage() {
       <div className="relative bg-gradient-to-br from-orange-500 to-orange-600 px-5 pb-7 pt-8 text-white">
         <button
           onClick={() => router.push('/parent')}
-          className="absolute left-4 top-4 rounded-lg bg-white/20 px-3 py-1.5 text-[13px] font-semibold text-white"
+          className="absolute left-4 top-4 min-h-[44px] rounded-lg bg-white/20 px-3 py-1.5 text-[13px] font-semibold text-white"
         >
           &larr; {tp('Dashboard', 'डैशबोर्ड')}
         </button>
@@ -131,7 +141,7 @@ export default function ParentProfilePage() {
 
             <button
               onClick={startEdit}
-              className="mt-2 rounded-[10px] border-[1.5px] border-orange-500 bg-surface-1 px-6 py-2.5 text-[13px] font-semibold text-orange-600"
+              className="mt-2 min-h-[44px] rounded-[10px] border-[1.5px] border-orange-500 bg-surface-1 px-6 py-2.5 text-[13px] font-semibold text-orange-600"
             >
               {tp('Edit Profile', 'प्रोफ़ाइल संपादित करें')}
             </button>
@@ -162,13 +172,13 @@ export default function ParentProfilePage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded-[10px] border-none bg-orange-500 px-6 py-2.5 text-[13px] font-semibold text-white disabled:opacity-60"
+                className="min-h-[44px] rounded-[10px] border-none bg-orange-500 px-6 py-2.5 text-[13px] font-semibold text-white disabled:opacity-60"
               >
                 {saving ? tp('Saving...', 'सहेज रहे हैं...') : tp('Save', 'सहेजें')}
               </button>
               <button
                 onClick={() => setEditing(false)}
-                className="rounded-[10px] border-[1.5px] border-surface-3 bg-surface-1 px-6 py-2.5 text-[13px] font-semibold text-muted-foreground"
+                className="min-h-[44px] rounded-[10px] border-[1.5px] border-surface-3 bg-surface-1 px-6 py-2.5 text-[13px] font-semibold text-muted-foreground"
               >
                 {tp('Cancel', 'रद्द करें')}
               </button>

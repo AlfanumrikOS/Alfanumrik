@@ -24,6 +24,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { TeacherDataError } from '../_components/TeacherDataError';
 
 const LIST_POLL_MS = 30_000;
 const PANEL_POLL_MS = 15_000;
@@ -119,7 +120,17 @@ function TeacherMessagesContent() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // ── Thread list ──
-  const { data: threadsData, mutate: mutateThreads } = useSWR<ThreadsResponse>(
+  // `error` and `isLoading` are read (they used to be discarded): with
+  // `shouldRetryOnError: false`, a 401/500 left `threadsData` undefined
+  // forever, which the list rendered as "No conversations yet. Visit a student
+  // page to start one." — indistinguishable from a teacher with no parents
+  // messaging them, and it silently hid every waiting parent message.
+  const {
+    data: threadsData,
+    error: threadsError,
+    isLoading: threadsLoading,
+    mutate: mutateThreads,
+  } = useSWR<ThreadsResponse>(
     '/api/teacher/messages/threads',
     fetcher,
     { refreshInterval: LIST_POLL_MS, revalidateOnFocus: true, shouldRetryOnError: false },
@@ -136,7 +147,12 @@ function TeacherMessagesContent() {
   const selectedThread = threads.find((t) => t.id === selectedThreadId) ?? null;
 
   // ── Message panel ──
-  const { data: messagesData, mutate: mutateMessages } = useSWR<MessagesResponse>(
+  const {
+    data: messagesData,
+    error: messagesError,
+    isLoading: messagesLoading,
+    mutate: mutateMessages,
+  } = useSWR<MessagesResponse>(
     selectedThreadId ? `/api/teacher/messages/threads/${selectedThreadId}/messages` : null,
     fetcher,
     { refreshInterval: PANEL_POLL_MS, revalidateOnFocus: true, shouldRetryOnError: false },
@@ -221,7 +237,32 @@ function TeacherMessagesContent() {
           </p>
         </header>
         <ul className="flex-1 divide-y divide-[#EDE6DC] overflow-y-auto">
-          {threads.length === 0 ? (
+          {threadsLoading && !threadsData ? (
+            <li className="p-4" role="status" aria-busy="true">
+              <span className="sr-only">
+                {tt(isHi, 'Loading conversations…', 'बातचीत लोड हो रही है…')}
+              </span>
+              <div className="flex flex-col gap-3" aria-hidden="true">
+                {[0, 1, 2].map((i) => (
+                  <div
+                    key={i}
+                    className="h-14 rounded-md animate-pulse motion-reduce:animate-none"
+                    style={{ background: 'var(--surface-2)' }}
+                  />
+                ))}
+              </div>
+            </li>
+          ) : threadsError ? (
+            <li className="p-4">
+              <TeacherDataError
+                isHi={isHi}
+                titleEn="Couldn't load your conversations"
+                titleHi="आपकी बातचीत लोड नहीं हो सकी"
+                onRetry={() => { void mutateThreads(); }}
+                testId="messages-threads-error"
+              />
+            </li>
+          ) : threads.length === 0 ? (
             <li className="p-6 text-center text-sm text-[#7D7264]">
               {tt(isHi, 'No conversations yet. Visit a student page to start one.', 'अभी तक कोई बातचीत नहीं। शुरू करने के लिए छात्र पृष्ठ पर जाएँ।')}
             </li>
@@ -340,7 +381,33 @@ function TeacherMessagesContent() {
             </header>
 
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
-              {messages.length === 0 ? (
+              {messagesLoading && !messagesData ? (
+                <div role="status" aria-busy="true">
+                  <span className="sr-only">
+                    {tt(isHi, 'Loading messages…', 'संदेश लोड हो रहे हैं…')}
+                  </span>
+                  <div className="flex flex-col gap-3" aria-hidden="true">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="h-12 rounded-2xl animate-pulse motion-reduce:animate-none"
+                        style={{ background: 'var(--surface-2)' }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : messagesError ? (
+                /* "No messages yet — say hello." over a failed read hides a
+                   parent's unread message behind an invitation to start the
+                   conversation. */
+                <TeacherDataError
+                  isHi={isHi}
+                  titleEn="Couldn't load this conversation"
+                  titleHi="यह बातचीत लोड नहीं हो सकी"
+                  onRetry={() => { void mutateMessages(); }}
+                  testId="messages-panel-error"
+                />
+              ) : messages.length === 0 ? (
                 <p className="py-8 text-center text-sm text-[#7D7264]">
                   {tt(isHi, 'No messages yet — say hello.', 'अभी तक कोई संदेश नहीं — नमस्ते कहें।')}
                 </p>

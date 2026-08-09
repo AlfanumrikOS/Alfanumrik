@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { logger } from '@alfanumrik/lib/logger';
 import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { track } from '@alfanumrik/lib/analytics';
 import ChildDataErasureSection from '@alfanumrik/ui/parent/ChildDataErasureSection';
@@ -1029,6 +1030,16 @@ export default function ParentChildrenPage() {
     try {
       const res = await api('get_child_dashboard', { guardian_id: guardian.id });
 
+      // usePortalAction only THROWS on non-2xx. The parent-portal Edge Function
+      // also returns HTTP 200 carrying `{ error }` (e.g. 'Student not found').
+      // That body matched none of the normalizers below, so childrenList stayed
+      // [] and the page rendered "No children linked yet" — telling a paying
+      // parent their child is not linked when the read had actually failed.
+      // Treat a 200-with-error exactly like a thrown failure.
+      if (res && res.error) {
+        throw new Error(String(res.error));
+      }
+
       // The API may return a single child or a list — normalize to array
       let childrenList: ChildData[] = [];
 
@@ -1038,13 +1049,17 @@ export default function ParentChildrenPage() {
         childrenList = res.students.map(normalizeChild);
       } else if (res && res.student) {
         childrenList = [normalizeChild(res)];
-      } else if (res && !res.error) {
+      } else if (res) {
         childrenList = [normalizeChild(res)];
       }
 
       setChildren(childrenList);
     } catch (err) {
-      console.error('Failed to fetch children:', err);
+      // P13: log the reason only — the raw error object could carry child
+      // identifiers from the Edge Function payload.
+      logger.warn('parent.children.load_failed', {
+        reason: err instanceof Error ? err.message : 'unknown',
+      });
       // A failed/timed-out fetch is NOT "no children linked" — surface a real
       // error state instead of the empty state (which invites re-linking).
       setChildren([]);
@@ -1084,16 +1099,24 @@ export default function ParentChildrenPage() {
   const handleUnlinkConfirm = async () => {
     if (!unlinkTarget || !guardian) return;
     setUnlinkLoading(true);
-    try {
-      await supabase
-        .from('guardian_student_links')
-        .update({ status: 'revoked' })
-        .eq('student_id', unlinkTarget.id)
-        .eq('guardian_id', guardian.id);
+    // The PostgREST builder RESOLVES with { data, error } — it never rejects —
+    // so the previous catch was dead code and a FAILED unlink closed the modal
+    // as if it had succeeded. Check `error` explicitly and keep the modal open
+    // with a real message when the write did not land.
+    const { error: unlinkErr } = await supabase
+      .from('guardian_student_links')
+      .update({ status: 'revoked' })
+      .eq('student_id', unlinkTarget.id)
+      .eq('guardian_id', guardian.id);
+    if (unlinkErr) {
+      // P13: reason only — never the child id or name.
+      logger.warn('parent.children.unlink_failed', { reason: unlinkErr.message });
+      setLoadError(
+        t(isHi, 'Could not unlink this child. Please try again.', 'इस बच्चे को अलग नहीं किया जा सका। कृपया फिर से कोशिश करें।'),
+      );
+    } else {
       setUnlinkTarget(null);
       await fetchChildren();
-    } catch (err) {
-      console.error('Failed to unlink child:', err);
     }
     setUnlinkLoading(false);
   };

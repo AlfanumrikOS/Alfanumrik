@@ -77,16 +77,50 @@ export async function getStudentSnapshot(studentId: string) {
   return buildFallbackStudentSnapshot({ profilesResult, masteredResult, inProgressResult, quizzesResult });
 }
 
-/* TODO(backend): the same swallow-and-return-empty defect still exists in the
- * other read helpers in this file (getBoardPapers, getCompetitions,
- * getCompetitionLeaderboard, getHallOfFame, getTopicDiagrams,
- * getChapterQuestions, getReviewCards, getLeaderboard, getFeatureFlags,
- * getStudentNotifications, getUserRole, getTeacherDashboard, getClassDetail,
- * getAssignmentReport, getGuardianDashboard, getCurriculumBrowser,
- * getUnreadNotifications, getPendingParentLinks, getChapterTopics,
- * getQuestionHistoryStats, getNCERTCoverageReport). None of them currently
- * feeds a surface that turns emptiness into a reassuring CLAIM, which is why
- * they are out of scope here; convert them as their surfaces gain one. */
+/* ── Read helpers NOT yet converted to ServiceResult ──────────────────────────
+ * Every helper named below still collapses a failed read into `[]` / `null` /
+ * a zero-filled object, i.e. it still carries the ambiguity described above.
+ * They are UNCONVERTED, not exonerated.
+ *
+ * The criterion that ordered the work is NOT "does this feed a reassuring
+ * surface". An earlier revision of this comment asserted that none of the
+ * remaining helpers did — that claim was FALSE when it was written:
+ * getStudentNotifications fed /notifications' "No notifications yet" the whole
+ * time it sat on the deferred list. The real criterion is:
+ *
+ *   Does any LIVE caller render this helper's empty result as an ASSERTION —
+ *   a sentence that becomes false the moment the read fails — rather than by
+ *   omitting a section?
+ *
+ * Converted because a live caller asserts (each carries its own note below):
+ *   getLeaderboard, getCompetitions, getCompetitionLeaderboard, getHallOfFame,
+ *   getStudentNotifications, getReviewCards, getChapterTopics,
+ *   getChapterQuestions.
+ *
+ * Still unconverted, reason verified caller-by-caller (2026-08-09):
+ *
+ *   NO LIVE CALLER — exported but imported by nothing except `typeof` smoke
+ *   tests, so no surface can assert anything from them yet. Convert when a
+ *   caller appears; do NOT read "no caller" as "safe":
+ *     getBoardPapers, getUserRole, getTeacherDashboard, getClassDetail,
+ *     getAssignmentReport, getGuardianDashboard, getCurriculumBrowser,
+ *     getUnreadNotifications, getNCERTCoverageReport, getQuestionHistoryStats.
+ *
+ *   OMITS A SECTION rather than asserting anything:
+ *     getFeatureFlags     — a failed read leaves every flag false, so gated
+ *                           features stay hidden; nothing is claimed about the
+ *                           student. ~30 call sites all read `flags?.x === true`;
+ *                           converting them is its own change.
+ *     getTopicDiagrams    — deferred Phase-2 enrichment on the chapter page; an
+ *                           empty list renders no diagram strip at all.
+ *     getPendingParentLinks — an empty list renders no consent card. Its
+ *                           fail-soft is deliberate and documented at the
+ *                           helper (P15: a hiccup must never block the
+ *                           dashboard).
+ *
+ * Already honest, hence absent from both lists: getMasteryOverview reports
+ * `coverage: 'not_tracked'` on failure, and getStudentSnapshot's fallback
+ * builder returns null (never 0) for each count whose query errored. */
 
 /* ── Student learning profiles ──
  * Query shape is load-bearing: /progress derives XP, accuracy and session
@@ -524,27 +558,40 @@ export async function submitQuizResults(studentId: string, subject: string, grad
 // learner state is updated exclusively server-side inside the submit RPC
 // chain (update_learner_state_post_quiz).
 
-export async function getLeaderboard(period = 'weekly', limit = 20) {
+/**
+ * /leaderboard's rankings tab renders an empty result as "No rankings yet" —
+ * an assertion about the cohort that is false after a failed read. Same defect
+ * class as /progress's all-clear, so a failure is now reported.
+ *
+ * The RPC → direct-query ladder is a DEGRADATION path, not a failure path
+ * (identical to getStudyPlan): an RPC error still falls through to the direct
+ * query exactly as before, and only a failure of the FALLBACK is reported.
+ *
+ * P2: the row mapping below is untouched — same columns, same order, same
+ * rank/total_xp derivation.
+ */
+export async function getLeaderboard(period = 'weekly', limit = 20): Promise<ServiceResult<any[]>> {
   try {
     const { data, error } = await supabase.rpc('get_leaderboard', { p_period: period, p_limit: limit });
-    if (!error && data) return data;
+    if (!error && data) return ok(data);
   } catch { /* RPC may not exist */ }
 
   // Fallback: direct query
   const since = new Date();
   since.setDate(since.getDate() - (period === 'monthly' ? 30 : 7));
-  const { data } = await supabase.from('students')
+  const { data, error } = await supabase.from('students')
     .select('id, name, xp_total, streak_days, avatar_url, grade, school_name, city, board')
     .eq('is_active', true)
     .gte('last_active', since.toISOString())
     .order('xp_total', { ascending: false })
     .limit(limit);
-  return (data ?? []).map((s, i) => ({
+  if (error) return fail(`getLeaderboard: ${error.message}`, 'DB_ERROR');
+  return ok((data ?? []).map((s, i) => ({
     rank: i + 1, student_id: s.id, name: s.name,
     total_xp: s.xp_total ?? 0, streak: s.streak_days ?? 0,
     avatar_url: s.avatar_url, grade: s.grade,
     school: s.school_name, city: s.city, board: s.board,
-  }));
+  })));
 }
 
 /**
@@ -589,40 +636,54 @@ export async function getStudyPlan(studentId: string): Promise<ServiceResult<any
   return ok({ has_plan: true, plan, tasks: tasks ?? [] });
 }
 
-export async function getReviewCards(studentId: string, limit = 10) {
+/**
+ * RevisionRail (the Alfa-OS dashboard rail) renders an empty result as
+ * "Nothing due right now — nice work." — a claim about the student's revision
+ * debt that is false after a failed read. It already HAS an error branch; that
+ * branch was unreachable while this helper resolved failures to `[]`, because
+ * SWR only sets `error` when the fetcher rejects. Reporting the failure here is
+ * what makes it reachable (see useReviewCards in swr.tsx).
+ *
+ * The RPC → spaced_repetition_cards → concept_mastery ladder is a DEGRADATION
+ * path: an RPC error still falls through exactly as before. Only a failure of
+ * a fallback query is reported.
+ */
+export async function getReviewCards(studentId: string, limit = 10): Promise<ServiceResult<any[]>> {
   try {
     const { data, error } = await supabase.rpc('get_review_cards', { p_student_id: studentId, p_limit: limit });
-    if (!error && data) return data;
+    if (!error && data) return ok(data);
   } catch { /* RPC may not exist */ }
 
   // Fallback: use spaced_repetition_cards if available, else concept_mastery
   const today = new Date().toISOString().split('T')[0]; // next_review_date is DATE type
-  const { data: cards } = await supabase.from('spaced_repetition_cards')
+  const { data: cards, error: cardsError } = await supabase.from('spaced_repetition_cards')
     .select('id, student_id, subject, topic, chapter_title, front_text, back_text, hint, source, ease_factor, interval_days, streak, repetition_count, total_reviews, correct_reviews, next_review_date, last_review_date, created_at')
     .eq('student_id', studentId)
     .lte('next_review_date', today)
     .order('next_review_date')
     .limit(limit);
+  if (cardsError) return fail(`getReviewCards: ${cardsError.message}`, 'DB_ERROR');
   if (cards && cards.length > 0) {
     // Display hardening: quiz-review cards write `topic` as the machine
     // composite dedupe key (subject:chapter:question_id). When chapter_title
     // is missing (legacy rows), humaneCardLabel converts the composite key to
     // `subject · Chapter N` and passes human-readable topics (Foxy cards)
     // through untouched — a student must never see the raw key/uuid.
-    return cards.map(c => ({
+    return ok(cards.map(c => ({
       ...c,
       topic: c.topic,
       chapter_title: c.chapter_title || humaneCardLabel(c.topic),
-    }));
+    })));
   }
   // Final fallback: concept_mastery (limited columns)
-  const { data } = await supabase.from('concept_mastery')
+  const { data, error: masteryError } = await supabase.from('concept_mastery')
     .select('id, topic_id, ease_factor, mastery_probability, consecutive_correct, next_review_at')
     .eq('student_id', studentId)
     .lte('next_review_at', new Date().toISOString())
     .order('next_review_at')
     .limit(limit);
-  return (data ?? []).map(cm => ({ ...cm, topic: cm.topic_id, front_text: '', back_text: '' }));
+  if (masteryError) return fail(`getReviewCards: ${masteryError.message}`, 'DB_ERROR');
+  return ok((data ?? []).map(cm => ({ ...cm, topic: cm.topic_id, front_text: '', back_text: '' })));
 }
 
 export const sendToFoxy = chatWithFoxy;
@@ -763,11 +824,15 @@ export async function generateStudyPlan(studentId: string, subject?: string, dai
   return data;
 }
 
-/* ── Competitions & Olympiads ── */
-export async function getCompetitions(studentId: string, status?: string) {
+/* ── Competitions & Olympiads ──
+ * All three reads below feed /leaderboard tabs whose empty state is an
+ * assertion, not an omission: "No competitions right now", "No scores yet.
+ * Take a quiz to compete!", and the Hall of Fame's "Finish in the Top 3 …".
+ * Each of those is false when the read failed, so failure is reported. */
+export async function getCompetitions(studentId: string, status?: string): Promise<ServiceResult<any[]>> {
   const { data, error } = await supabase.rpc('get_competitions', { p_student_id: studentId, p_status: status || null });
-  if (error) console.error('getCompetitions:', error.message);
-  return data ?? [];
+  if (error) return fail(`getCompetitions: ${error.message}`, 'DB_ERROR');
+  return ok(data ?? []);
 }
 
 export async function joinCompetition(studentId: string, competitionId: string) {
@@ -776,25 +841,47 @@ export async function joinCompetition(studentId: string, competitionId: string) 
   return data;
 }
 
-export async function getCompetitionLeaderboard(competitionId: string, limit = 50) {
+export async function getCompetitionLeaderboard(competitionId: string, limit = 50): Promise<ServiceResult<any[]>> {
   const { data, error } = await supabase.rpc('get_competition_leaderboard', { p_competition_id: competitionId, p_limit: limit });
-  if (error) console.error('getCompetitionLeaderboard:', error.message);
-  return data ?? [];
+  if (error) return fail(`getCompetitionLeaderboard: ${error.message}`, 'DB_ERROR');
+  return ok(data ?? []);
 }
 
-export async function getHallOfFame(limit = 30) {
+export async function getHallOfFame(limit = 30): Promise<ServiceResult<any[]>> {
   const { data, error } = await supabase.rpc('get_hall_of_fame', { p_limit: limit });
-  if (error) console.error('getHallOfFame:', error.message);
-  return data ?? [];
+  if (error) return fail(`getHallOfFame: ${error.message}`, 'DB_ERROR');
+  return ok(data ?? []);
 }
 
-/* ── Notifications (Duolingo-style) ── */
-export async function getStudentNotifications(studentId: string, limit = 30) {
+/* ── Notifications (Duolingo-style) ──
+ * Confirmed instance of the /progress defect, found by quality review after the
+ * first half of this sweep shipped: /notifications rendered "No notifications
+ * yet" / "अभी तक कोई सूचना नहीं" whenever this RPC failed, and the page's own
+ * `catch` was dead code because supabase.rpc() resolves rather than rejects.
+ * Both failure modes — a resolved `{ error }` and a thrown exception — are now
+ * reported. Query shape is unchanged: same RPC, same params. */
+export interface StudentNotificationsPayload {
+  unread_count: number;
+  notifications: any[];
+}
+
+export async function getStudentNotifications(
+  studentId: string,
+  limit = 30,
+): Promise<ServiceResult<StudentNotificationsPayload>> {
   try {
     const { data, error } = await supabase.rpc('get_student_notifications', { p_student_id: studentId, p_limit: limit });
-    if (!error && data) return data;
-  } catch { /* RPC may not exist */ }
-  return { unread_count: 0, notifications: [] };
+    if (error) return fail(`getStudentNotifications: ${error.message}`, 'DB_ERROR');
+    // A JSONB RPC answering NULL has nothing to report — that is a genuine
+    // "no notifications", not a failure, so the empty path stays reachable and
+    // stays DISTINCT from the failure above.
+    return ok((data as StudentNotificationsPayload | null) ?? { unread_count: 0, notifications: [] });
+  } catch (e) {
+    return fail(
+      `getStudentNotifications: ${e instanceof Error ? e.message : String(e)}`,
+      'EXTERNAL_FAILURE',
+    );
+  }
 }
 
 export async function generateNotifications(studentId: string) {
@@ -936,7 +1023,22 @@ export async function upsertBloomProgression(data: {
 }
 
 /* ── Chapter topics (for /learn/[subject]/[chapter] page) ── */
-export async function getChapterTopics(subject: string, grade: string, chapterNumber: number) {
+/**
+ * /learn/[subject]/[chapter] renders an empty result as "No concepts found for
+ * this chapter yet" + "Ask Foxy to teach you this chapter" — an assertion about
+ * what NCERT content exists, which is false when the RAG read failed. The page
+ * already has a retryable "Couldn't load this chapter" branch; reporting the
+ * failure here is what routes a failed read to it instead of to the empty copy.
+ *
+ * The RAG read is the source of truth and IS reported. The curriculum_topics
+ * read below stays a soft degradation: it only supplies a legacy topic id to
+ * match against, so losing it changes no rendered sentence.
+ */
+export async function getChapterTopics(
+  subject: string,
+  grade: string,
+  chapterNumber: number,
+): Promise<ServiceResult<any[]>> {
   // Voyage RAG source of truth. curriculum_topics is legacy and will be removed
   // after chapter_concepts + rag_content_chunks fully supersede it.
   const ragGrade = grade.startsWith('Grade') ? grade : `Grade ${grade}`;
@@ -957,7 +1059,7 @@ export async function getChapterTopics(subject: string, grade: string, chapterNu
       .maybeSingle()
   ]);
 
-  if (ragResult.error) console.error('getChapterTopics (RAG):', ragResult.error.message);
+  if (ragResult.error) return fail(`getChapterTopics: ${ragResult.error.message}`, 'DB_ERROR');
   const data = ragResult.data;
 
   const normalisedGrade = grade.replace(/^Grade\s*/i, '').trim();
@@ -972,6 +1074,9 @@ export async function getChapterTopics(subject: string, grade: string, chapterNu
       .eq('grade', normalisedGrade)
       .eq('chapter_number', chapterNumber);
     if (ctErr) {
+      // Soft degradation on purpose: curriculum_topics only contributes a
+      // legacy id for RAG concepts to match against. Losing it cannot turn a
+      // populated chapter into an empty one, so it is not escalated to fail().
       console.error('getChapterTopics (curriculum_topics):', ctErr.message);
     } else if (ctData) {
       curriculumTopics = ctData;
@@ -1063,11 +1168,14 @@ export async function getChapterTopics(subject: string, grade: string, chapterNu
     };
   });
 
-  return result.sort((a, b) => a.display_order - b.display_order);
+  return ok(result.sort((a, b) => a.display_order - b.display_order));
 }
 
-/* ── Questions filtered by chapter (for chapter quiz + quick-check) ── */
-export async function getChapterQuestions(subject: string, grade: string, chapterNumber: number, count = 20, difficulty?: number | null) {
+/* ── Questions filtered by chapter (for chapter quiz + quick-check) ──
+ * Empty renders as "No quiz questions found for this chapter." on
+ * /learn/[subject]/[chapter] — an assertion about the question bank, false when
+ * the read failed. P1/P6: the select list, filters and shuffle are unchanged. */
+export async function getChapterQuestions(subject: string, grade: string, chapterNumber: number, count = 20, difficulty?: number | null): Promise<ServiceResult<any[]>> {
   let query = supabase.from('question_bank')
     .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
     .eq('subject', subject)
@@ -1077,10 +1185,10 @@ export async function getChapterQuestions(subject: string, grade: string, chapte
     .limit(Math.min(count, 50));
   if (difficulty != null) query = query.eq('difficulty', difficulty);
   const { data, error } = await query;
-  if (error) console.error('getChapterQuestions:', error.message);
+  if (error) return fail(`getChapterQuestions: ${error.message}`, 'DB_ERROR');
   // Fisher-Yates via the canonical shuffle (was a biased, non-transitive
   // `.sort(() => Math.random() - 0.5)` that also mutated `data` in place).
-  return shuffle(data ?? []);
+  return ok(shuffle(data ?? []));
 }
 
 /* ── Distinct chapters for a subject/grade (for quiz chapter selector) ──

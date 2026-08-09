@@ -95,6 +95,17 @@ const COPY = {
     practiceMode: /practice mode/i,
     startQuiz: /start .*quiz/i,
   },
+  // Second half of the frontend-honesty sweep (2026-08-09).
+  notifications: {
+    error: 'Failed to load notifications',
+    empty: 'No notifications yet',
+    retry: /retry/i,
+  },
+  leaderboard: {
+    error: 'Failed to load data',
+    empty: 'No rankings yet',
+    retry: /retry/i,
+  },
 } as const;
 
 /** The nine viewports the student surfaces must survive. */
@@ -700,6 +711,104 @@ test.describe('QuizSetup — chapter picker', () => {
 
     await expect(page.getByText(COPY.quizSetup.empty)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(COPY.quizSetup.notice)).toHaveCount(0);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * /notifications and /leaderboard — second half of the sweep (2026-08-09)
+ *
+ * The TODO(backend) that deferred the remaining supabase.ts read helpers said
+ * "None of them currently feeds a surface that turns emptiness into a
+ * reassuring CLAIM." Quality review disproved that: getStudentNotifications
+ * fed "No notifications yet" after a failed RPC, and getLeaderboard fed
+ * "No rankings yet". Both helpers now return ServiceResult and both pages gate
+ * their reassuring empty on the absence of an error.
+ *
+ * The unit layer (notifications-mark-all-read-failure.test.tsx,
+ * leaderboard-data-load-error.test.tsx) can only assert the DECLARED
+ * min-h/min-w classes — JSDOM loads no stylesheet. This is the layer that
+ * measures the control as laid out, which is what caught /progress at 42px.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+test.describe('/notifications — inbox load', () => {
+  test('a failed read never claims the student has no notifications', async ({ page }) => {
+    await installStudentBackend(page, {
+      rpcs: { get_student_notifications: { kind: 'fail' } },
+    });
+    await gotoAuthed(page, '/notifications');
+
+    await expect(
+      page.getByRole('alert').filter({ hasText: COPY.notifications.error }),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(COPY.notifications.empty)).toHaveCount(0);
+  });
+
+  test('the inbox-failure retry control is a real 44px target', async ({ page }) => {
+    await installStudentBackend(page, {
+      rpcs: { get_student_notifications: { kind: 'fail' } },
+    });
+    await gotoAuthed(page, '/notifications');
+    await expect(page.getByText(COPY.notifications.error)).toBeVisible({ timeout: 20_000 });
+
+    const box = await boxOf(page, COPY.notifications.retry);
+    expect(box.height, 'notifications retry height').toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX);
+    expect(box.width, 'notifications retry width').toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX);
+  });
+
+  test('a successful read of a genuinely empty inbox does render the empty state', async ({
+    page,
+  }) => {
+    await installStudentBackend(page, {
+      rpcs: {
+        get_student_notifications: { kind: 'ok', body: { unread_count: 0, notifications: [] } },
+      },
+    });
+    await gotoAuthed(page, '/notifications');
+
+    await expect(page.getByText(COPY.notifications.empty)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(COPY.notifications.error)).toHaveCount(0);
+  });
+});
+
+test.describe('/leaderboard — rankings load', () => {
+  test('a failed read never claims there are no rankings', async ({ page }) => {
+    // getLeaderboard degrades RPC → students table, so BOTH must fail for the
+    // read to be a failure rather than a fallback.
+    await installStudentBackend(page, {
+      rpcs: { get_leaderboard: { kind: 'fail' } },
+      tables: { students: { kind: 'fail' } },
+    });
+    await gotoAuthed(page, '/leaderboard');
+
+    await expect(
+      page.getByRole('alert').filter({ hasText: COPY.leaderboard.error }),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(COPY.leaderboard.empty)).toHaveCount(0);
+  });
+
+  test('the rankings-failure retry control is a real 44px target', async ({ page }) => {
+    await installStudentBackend(page, {
+      rpcs: { get_leaderboard: { kind: 'fail' } },
+      tables: { students: { kind: 'fail' } },
+    });
+    await gotoAuthed(page, '/leaderboard');
+    await expect(page.getByText(COPY.leaderboard.error)).toBeVisible({ timeout: 20_000 });
+
+    const box = await boxOf(page, COPY.leaderboard.retry);
+    expect(box.height, 'leaderboard retry height').toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX);
+    expect(box.width, 'leaderboard retry width').toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX);
+  });
+
+  test('a successful read of a genuinely empty board does render the empty state', async ({
+    page,
+  }) => {
+    await installStudentBackend(page, {
+      rpcs: { get_leaderboard: { kind: 'ok', body: [] } },
+    });
+    await gotoAuthed(page, '/leaderboard');
+
+    await expect(page.getByText(COPY.leaderboard.empty)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(COPY.leaderboard.error)).toHaveCount(0);
   });
 });
 

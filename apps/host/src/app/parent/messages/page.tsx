@@ -422,7 +422,7 @@ function ParentMessagesContent() {
                 <button
                   type="submit"
                   disabled={sending || draftBody.trim().length === 0}
-                  className="rounded-md bg-orange-500 px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-[44px] rounded-md bg-orange-500 px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {sending ? tt(isHi, 'Sending…', 'भेज रहे…') : tt(isHi, 'Send', 'भेजें')}
                 </button>

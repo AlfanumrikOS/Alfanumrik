@@ -10,6 +10,7 @@ import { usePulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { StudentPulse } from '@alfanumrik/ui/pulse';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
+import { TeacherDataError } from '../_components/TeacherDataError';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -809,45 +810,35 @@ function LegacyTeacherStudentsPage() {
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: '#fff' }}>
           {'👨‍🎓'} {tt(isHi, 'My Students', 'मेरे छात्र')}
         </h1>
-        <p style={{ margin: '6px 0 0', fontSize: 14, color: 'rgba(255,255,255,0.75)' }}>
-          {tt(isHi,
-            `${allStudents.length} student${allStudents.length !== 1 ? 's' : ''} across ${classes.length} class${classes.length !== 1 ? 'es' : ''}`,
-            `${classes.length} कक्षाओं में ${allStudents.length} छात्र`
-          )}
-        </p>
+        {/* Roster counts are only claimed when the roster actually loaded. On a
+            failed read `classes`/`allStudents` are both empty, and this line
+            used to announce a confident "0 students across 0 classes" directly
+            above the error banner. */}
+        {!error && (
+          <p style={{ margin: '6px 0 0', fontSize: 14, color: 'rgba(255,255,255,0.75)' }}>
+            {tt(isHi,
+              `${allStudents.length} student${allStudents.length !== 1 ? 's' : ''} across ${classes.length} class${classes.length !== 1 ? 'es' : ''}`,
+              `${classes.length} कक्षाओं में ${allStudents.length} छात्र`
+            )}
+          </p>
+        )}
       </header>
 
-      {/* Error */}
+      {/* Error — replaces (never accompanies) the "No Classes Yet" empty state
+          below. `usePortalAction` REJECTS on a failed Edge call, but the empty
+          states were gated on `!loading` alone, so a 500 rendered the
+          first-run "No Classes Yet / Create a class from the Dashboard" screen
+          to a teacher who has classes full of students. */}
       {error && (
-        <div
-          style={{
-            backgroundColor: 'var(--danger-light)',
-            border: '1px solid var(--danger)',
-            borderRadius: 10,
-            padding: '14px 18px',
-            marginBottom: 16,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <span style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</span>
-          <button
-            onClick={load}
-            style={{
-              padding: '6px 14px',
-              backgroundColor: 'var(--danger)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {tt(isHi, 'Retry', 'पुनः प्रयास')}
-          </button>
-        </div>
+        <TeacherDataError
+          isHi={isHi}
+          titleEn="Couldn't load your students"
+          titleHi="आपके छात्र लोड नहीं हो सके"
+          detail={error}
+          onRetry={load}
+          variant="banner"
+          testId="students-load-error"
+        />
       )}
 
       {/* Search & Filters */}
@@ -987,8 +978,9 @@ function LegacyTeacherStudentsPage() {
         </div>
       )}
 
-      {/* Empty States */}
-      {classes.length === 0 && !loading && (
+      {/* Empty States — gated on `!error` so a failed read can never present
+          as a first-run "you have nothing yet" screen. */}
+      {classes.length === 0 && !loading && !error && (
         <div
           style={{
             backgroundColor: '#FFFFFF',
@@ -1022,7 +1014,7 @@ function LegacyTeacherStudentsPage() {
         </div>
       )}
 
-      {classes.length > 0 && allStudents.length === 0 && !loading && (
+      {classes.length > 0 && allStudents.length === 0 && !loading && !error && (
         <div
           style={{
             backgroundColor: '#FFFFFF',

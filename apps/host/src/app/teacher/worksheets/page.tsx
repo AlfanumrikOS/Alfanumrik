@@ -8,6 +8,7 @@ import { supabase } from '@alfanumrik/lib/supabase';
 import { VALID_GRADES } from '@alfanumrik/lib/identity';
 import { posthogCapture } from '@alfanumrik/lib/posthog-client';
 import { shuffle } from '@alfanumrik/lib/shuffle';
+import { TeacherDataError } from '../_components/TeacherDataError';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -49,12 +50,30 @@ interface GeneratedQuestion {
 
 // No hardcoded question bank -- questions are fetched from the question_bank table.
 
+/**
+ * Result of the question_bank read.
+ *
+ * Previously this returned `GeneratedQuestion[] | null` and destructured only
+ * `{ data }`, discarding the PostgREST `error` entirely. The builder RESOLVES
+ * with `{ data, error }` (it never rejects), so the surrounding `try/catch`
+ * only ever caught the `JSON.parse` below — a failed read fell straight
+ * through to `return null`, which the caller treats as "this grade/subject has
+ * no questions" and answers by generating a worksheet made entirely of
+ * DEFAULT_BANK placeholders ("Sample MCQ question for this topic. (a) Option A
+ * …"). The teacher then PRINTS and hands that out. Failure and genuine-empty
+ * must therefore be different values.
+ */
+type QuestionBankRead =
+  | { status: 'ok'; questions: GeneratedQuestion[] }
+  | { status: 'empty' }
+  | { status: 'error'; message: string };
+
 async function fetchQuestionsFromBank(
   subject: string,
   grade: string,
   count: number,
   difficulty?: string,
-): Promise<GeneratedQuestion[] | null> {
+): Promise<QuestionBankRead> {
   try {
     let query = supabase
       .from('question_bank')
@@ -69,8 +88,9 @@ async function fetchQuestionsFromBank(
       query = query.eq('difficulty', difficultyNum);
     }
 
-    const { data } = await query;
-    if (!data || data.length === 0) return null;
+    const { data, error } = await query;
+    if (error) return { status: 'error', message: error.message };
+    if (!data || data.length === 0) return { status: 'empty' };
 
     // Shuffle and take requested count.
     // Fisher-Yates via the canonical `shuffle` helper: the old
@@ -80,24 +100,29 @@ async function fetchQuestionsFromBank(
     // decided WHICH questions a teacher's worksheet got. `shuffle` is
     // non-mutating, so we reassign rather than rely on an in-place side effect.
     const shuffled = shuffle(data).slice(0, count);
-    return shuffled.map(q => {
-      const opts = Array.isArray(q.options)
-        ? q.options
-        : typeof q.options === 'string'
-          ? JSON.parse(q.options)
-          : [];
-      return {
-        type: 'MCQ',
-        question:
-          q.question_text +
-          '\n' +
-          (opts as string[]).map((o: string, i: number) => `(${String.fromCharCode(97 + i)}) ${o}`).join('  '),
-        answer: opts[q.correct_answer_index] || 'See explanation',
-        explanation: q.explanation || '',
-      };
-    });
-  } catch {
-    return null;
+    return {
+      status: 'ok',
+      questions: shuffled.map(q => {
+        const opts = Array.isArray(q.options)
+          ? q.options
+          : typeof q.options === 'string'
+            ? JSON.parse(q.options)
+            : [];
+        return {
+          type: 'MCQ',
+          question:
+            q.question_text +
+            '\n' +
+            (opts as string[]).map((o: string, i: number) => `(${String.fromCharCode(97 + i)}) ${o}`).join('  '),
+          answer: opts[q.correct_answer_index] || 'See explanation',
+          explanation: q.explanation || '',
+        };
+      }),
+    };
+  } catch (e) {
+    // Reachable for a malformed `options` JSON payload. Still a failure, not
+    // an empty bank.
+    return { status: 'error', message: e instanceof Error ? e.message : 'question_bank read failed' };
   }
 }
 
@@ -142,6 +167,9 @@ export default function TeacherWorksheetsPage() {
   // silently push placeholders. Now we flag it so the UI can show a retry banner
   // and we can fire a PostHog event for visibility.
   const [poolExhausted, setPoolExhausted] = useState(false);
+  // The question_bank READ failed (as opposed to returning nothing). We stop
+  // rather than silently print a worksheet of DEFAULT_BANK placeholders.
+  const [bankReadError, setBankReadError] = useState('');
 
   useEffect(() => {
     if (!authLoading && (!isLoggedIn || (activeRole !== 'teacher' && !teacher))) router.replace('/login');
@@ -162,15 +190,35 @@ export default function TeacherWorksheetsPage() {
     if (selectedTypes.length === 0) return;
     setIsGenerating(true);
     setPoolExhausted(false);
+    setBankReadError('');
     let placeholdersUsed = 0;
 
     // Fetch questions from the question_bank table
-    const dbQuestions = await fetchQuestionsFromBank(
+    const bankRead = await fetchQuestionsFromBank(
       subject,
       grade,
       questionCount,
       difficulty.toLowerCase(),
     );
+
+    // A FAILED read is not an empty bank. Falling through here would print a
+    // worksheet whose every question is a DEFAULT_BANK placeholder, with only
+    // an 11px "Sample questions" chip (hidden in print view) to say so.
+    if (bankRead.status === 'error') {
+      setBankReadError(bankRead.message);
+      setIsGenerating(false);
+      posthogCapture('teacher_worksheets_load_failed', {
+        teacher_id_present: Boolean(teacher?.id),
+        subject,
+        grade,
+        requested_count: questionCount,
+        placeholders_used: 0,
+        reason: 'question_bank_read_error',
+      });
+      return;
+    }
+
+    const dbQuestions = bankRead.status === 'ok' ? bankRead.questions : null;
 
     let questions: GeneratedQuestion[];
     let source: 'db' | 'fallback';
@@ -407,6 +455,23 @@ export default function TeacherWorksheetsPage() {
                 }}>
                 {isGenerating ? tt(isHi, 'Generating...', 'बना रहे हैं...') : tt(isHi, 'Generate Worksheet', 'वर्कशीट बनाएं')}
               </button>
+
+              {/* question_bank READ failure. Distinct from the "no questions
+                  for this grade/subject" path below, which still produces the
+                  sample worksheet with its existing chip + banner. */}
+              {bankReadError && !isGenerating && (
+                <div style={{ marginTop: 12 }}>
+                  <TeacherDataError
+                    isHi={isHi}
+                    titleEn="Couldn't reach the CBSE question bank"
+                    titleHi="CBSE प्रश्न बैंक तक नहीं पहुंच सके"
+                    detail={bankReadError}
+                    onRetry={generateWorksheet}
+                    variant="banner"
+                    testId="worksheets-bank-error"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Recent Worksheets */}

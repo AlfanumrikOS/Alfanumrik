@@ -27,14 +27,14 @@ export default function ParentError({ error, reset }: { error: Error & { digest?
         <div className="flex gap-3 justify-center">
           <button
             onClick={reset}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
+            className="min-h-[44px] px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
             style={{ background: 'var(--orange)' }}
           >
             {isHi ? 'फिर से कोशिश करो' : 'Retry'}
           </button>
           <button
             onClick={() => { window.location.href = '/parent'; }}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold"
+            className="min-h-[44px] px-6 py-2.5 rounded-xl text-sm font-semibold"
             style={{ color: 'var(--text-2)', border: '1.5px solid var(--border)' }}
           >
             {isHi ? 'होम' : 'Home'}
