@@ -414,11 +414,25 @@ jobs:
   # ── Step 1c: Apply Database Migrations ──
   # Pushes changed SQL migrations in `supabase/migrations/` to the production
   # database BEFORE the Vercel deploy goes live, so the new web build never hits
-  # a DB without the schema/seed it expects. Non-migration deploys intentionally
-  # skip `supabase db push`: production can contain operator-applied emergency
-  # migration versions that are not in this repo yet, and `db push --include-all`
-  # fails on that remote-ledger drift even when the current release has no schema
-  # changes.
+  # a DB without the schema/seed it expects.
+  #
+  # WHY `--include-all` EXISTS: production can contain operator-applied
+  # emergency migration versions that reached the remote ledger out of band.
+  # Without `--include-all` the CLI refuses to apply committed files that sort
+  # BEFORE the newest remote version. Note what that flag does and does not do:
+  # it makes out-of-order LOCAL files applicable; it does NOT reconcile
+  # REMOTE-only versions, which still abort the push outright.
+  #
+  # WHY BOTH PATHS NOW TOUCH THE DATABASE (Wave 1, 2026-08-09): this job used to
+  # skip `supabase db push` entirely when a push carried no SQL, print
+  # "skipped", and report success. A "frontend-only" release could therefore
+  # ship application code against a database whose state nobody had verified,
+  # and remote-ledger drift stayed invisible until the next migration-bearing
+  # deploy — exactly the failure mode behind the out-of-band versions
+  # 20260808085345 / 20260808085349 / 20260808085419, which sat undetected while
+  # deploys reported green. Both paths now end in the SAME read-only
+  # migration-history parity check, so out-of-band drift is surfaced HERE, on
+  # the release that follows it, instead of being silently tolerated.
   migrations:
     name: Apply Database Migrations
     runs-on: ubuntu-latest
@@ -426,6 +440,9 @@ jobs:
     environment: production
     outputs:
       production_migrations_changed: ${{ steps.migration-diff.outputs.changed }}
+      production_migration_versions: ${{ steps.migration-diff.outputs.versions }}
+      migration_parity: ${{ steps.parity.outputs.migration_parity }}
+      migration_target_environment: ${{ steps.parity.outputs.target_environment }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -435,6 +452,14 @@ jobs:
         id: migration-diff
         run: |
           MIGRATION_FILES=$(git diff --name-only HEAD~1 HEAD -- 'supabase/migrations/' || true)
+          # 14-digit versions carried by THIS release, used to bind the release
+          # record to the migration set. Top-level only — `_legacy/` is out of
+          # scope for `supabase db push`, mirroring how scripts/lint-migrations.js
+          # scopes the chain.
+          VERSIONS=$(printf '%s\n' "$MIGRATION_FILES" \
+            | sed -nE 's#^supabase/migrations/([0-9]{14})_[^/]*\.sql$#\1#p' \
+            | sort -u | paste -sd, -)
+          echo "versions=${VERSIONS}" >> "$GITHUB_OUTPUT"
           if [ -n "$MIGRATION_FILES" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "### Production migrations detected" >> "$GITHUB_STEP_SUMMARY"
@@ -443,11 +468,12 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "| Production migrations | None in this push; skipped db push |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Production migrations | None in this push; db push skipped, migration-history parity still verified below |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # Unconditional: the parity check below runs on BOTH the changed and the
+      # unchanged path, so the CLI must always be present.
       - uses: supabase/setup-cli@v2
-        if: steps.migration-diff.outputs.changed == 'true'
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
@@ -459,6 +485,108 @@ jobs:
         run: |
           supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
           supabase db push --linked --include-all
+
+      # ── Migration-history parity check (runs on BOTH paths) ──
+      # READ-ONLY. Compares the committed migration set against the remote
+      # `supabase_migrations.schema_migrations` ledger, read through the
+      # Supabase CLI's own view of it (`supabase migration list --linked`), so
+      # this check sees exactly what `supabase db push` would see. No new
+      # secret: it reuses SUPABASE_ACCESS_TOKEN / SUPABASE_DB_PASSWORD /
+      # SUPABASE_PROJECT_REF, which the push step above already uses.
+      #
+      # On the changed==true path it runs AFTER the push, so a green push must
+      # leave the two ledgers in parity. On the changed==false path it is the
+      # only database interaction, and it is what stops a frontend-only release
+      # from bypassing database-state verification.
+      - name: Verify migration-history parity
+        id: parity
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          LC_ALL: C
+        run: |
+          echo "target_environment=production" >> "$GITHUB_OUTPUT"
+
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
+
+          # LOCAL: committed, top-level supabase/migrations/*.sql only.
+          # -maxdepth 1 is what excludes `_legacy/`, matching both the Supabase
+          # CLI's own scope and scripts/lint-migrations.js.
+          LOCAL_VERSIONS=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
+            | sed -nE 's#^([0-9]{14})_.*\.sql$#\1#p' \
+            | sort -u)
+
+          # REMOTE: the "Remote" column of the CLI ledger view. Parsed
+          # positionally (field 2 of a pipe-delimited row) and filtered to
+          # 14-digit versions, so header/separator/progress lines drop out.
+          if ! REMOTE_RAW=$(supabase migration list --linked 2>&1); then
+            echo "::error::Could not read remote migration history — cannot prove database state for this release."
+            printf '%s\n' "$REMOTE_RAW"
+            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          REMOTE_VERSIONS=$(printf '%s\n' "$REMOTE_RAW" \
+            | awk -F'|' 'NF>=2 { v=$2; gsub(/[^0-9]/, "", v); if (length(v) == 14) print v }' \
+            | sort -u)
+
+          LOCAL_COUNT=$(printf '%s\n' "$LOCAL_VERSIONS" | sed '/^$/d' | wc -l)
+          REMOTE_COUNT=$(printf '%s\n' "$REMOTE_VERSIONS" | sed '/^$/d' | wc -l)
+          echo "Committed migration versions: $LOCAL_COUNT"
+          echo "Remote ledger versions:       $REMOTE_COUNT"
+
+          # Non-vacuity: an empty side means the scan or the parse broke, not
+          # that the ledgers agree. Fail rather than pass for the wrong reason.
+          if [ "$LOCAL_COUNT" -eq 0 ]; then
+            echo "::error::Found 0 committed migration versions under supabase/migrations/ — the parity scan is broken, not clean."
+            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          if [ "$REMOTE_COUNT" -eq 0 ]; then
+            echo "::error::Parsed 0 remote migration versions from 'supabase migration list --linked' — the ledger read is broken, not clean."
+            printf '%s\n' "$REMOTE_RAW"
+            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          COMMITTED_NOT_REMOTE=$(comm -23 <(printf '%s\n' "$LOCAL_VERSIONS" | sed '/^$/d') <(printf '%s\n' "$REMOTE_VERSIONS" | sed '/^$/d'))
+          REMOTE_NOT_COMMITTED=$(comm -13 <(printf '%s\n' "$LOCAL_VERSIONS" | sed '/^$/d') <(printf '%s\n' "$REMOTE_VERSIONS" | sed '/^$/d'))
+
+          if [ -n "$COMMITTED_NOT_REMOTE" ] || [ -n "$REMOTE_NOT_COMMITTED" ]; then
+            {
+              echo ""
+              echo "### Migration history parity: DRIFT"
+              echo ""
+              echo "Target environment: \`production\` (linked Supabase project)."
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "$COMMITTED_NOT_REMOTE" ]; then
+              {
+                echo "**Committed but NOT applied on remote** — this release would ship application code ahead of its schema:"
+                echo '```'
+                printf '%s\n' "$COMMITTED_NOT_REMOTE"
+                echo '```'
+                echo "Remediation: re-run this job after fixing whatever blocked the push, or apply the pending versions deliberately with \`supabase db push --linked --include-all\`."
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            if [ -n "$REMOTE_NOT_COMMITTED" ]; then
+              {
+                echo "**Applied on remote but NOT committed** — out-of-band drift. This is exactly what aborts \`supabase db push --include-all\`, and surfacing it here is the point of this check:"
+                echo '```'
+                printf '%s\n' "$REMOTE_NOT_COMMITTED"
+                echo '```'
+                echo "Remediation: recover each version into a committed, idempotent migration file that reproduces what the operator applied — the same recovery performed for 20260808085345 / 20260808085349 / 20260808085419 (see \`docs/runbooks/production-release-gating.md\`). If a remote row is genuinely bogus, clear it deliberately with \`supabase migration repair --status reverted <version>\`; never hand-edit the ledger."
+                echo ""
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "::error::Migration history parity FAILED — committed migrations and the production ledger disagree. See the job summary for the offending versions."
+            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "migration_parity=verified" >> "$GITHUB_OUTPUT"
+          echo "| Migration history parity | verified ($LOCAL_COUNT committed == $REMOTE_COUNT remote) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "Migration history parity verified against production."
 
   # ── Step 2: Deploy to Vercel Production (requires approval) ──
   # NOTE: Vercel's native GitHub App handles auto-deploys on push to main.
@@ -1256,7 +1384,11 @@ jobs:
   release:
     name: Create Release & Summary
     runs-on: ubuntu-latest
-    needs: [health-check, post-deploy-verify]
+    # `migrations` is in `needs` so the release RECORD can be bound to the
+    # migration set it shipped against (app SHA + versions + parity + target
+    # environment). It adds no new skip risk: `migrations` is unconditional,
+    # and health-check already refuses to run unless it succeeded.
+    needs: [health-check, post-deploy-verify, migrations]
     # The optional CLI `deploy` job (gated on vars.USE_CLI_DEPLOY) is intentionally
     # NOT in `needs`: in default operation Vercel's GitHub App handles the web
     # deploy and `deploy` is skipped. A skipped `needs` dependency would cascade
@@ -1306,6 +1438,21 @@ jobs:
             const tagName = `v${version}`;
             const releaseName = `v${version}`;
 
+            // Bind the release record to the database state it shipped against.
+            // A release note that names only the app SHA cannot answer "was the
+            // schema ahead of, behind, or level with this code?" months later.
+            const migrationsChanged = '${{ needs.migrations.outputs.production_migrations_changed }}' || 'unknown';
+            const migrationVersions = '${{ needs.migrations.outputs.production_migration_versions }}' || 'none';
+            const migrationParity = '${{ needs.migrations.outputs.migration_parity }}' || 'unknown';
+            const targetEnvironment = '${{ needs.migrations.outputs.migration_target_environment }}' || 'unknown';
+            const migrationNotes = [
+              `**App commit:** \`${sha}\``,
+              `**Target environment:** ${targetEnvironment}`,
+              `**Migrations changed in this release:** ${migrationsChanged}`,
+              `**Migration versions applied:** ${migrationVersions}`,
+              `**Migration history parity:** ${migrationParity}`,
+            ];
+
             // Check if tag already exists
             try {
               await github.rest.git.getRef({
@@ -1330,6 +1477,9 @@ jobs:
                   `**Commit:** \`${sha}\``,
                   `**Deployed to:** ${process.env.PRODUCTION_DOMAIN}`,
                   '',
+                  '### Database state',
+                  ...migrationNotes,
+                  '',
                   '_Automatically released by the production deploy workflow._',
                 ].join('\n'),
                 draft: false,
@@ -1350,6 +1500,9 @@ jobs:
                     `**Commit:** \`${sha}\``,
                     `**Deployed to:** ${process.env.PRODUCTION_DOMAIN}`,
                     '',
+                    '### Database state',
+                    ...migrationNotes,
+                    '',
                     '_Automatically released by the production deploy workflow._',
                   ].join('\n'),
                   draft: false,
@@ -1361,6 +1514,10 @@ jobs:
             }
 
       - name: Post deployment summary
+        env:
+          # Via env (not direct interpolation) so an empty version list renders
+          # as "none" instead of collapsing the table cell.
+          MIGRATION_VERSIONS_SUMMARY: ${{ needs.migrations.outputs.production_migration_versions }}
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## Production Deployment Summary
@@ -1368,9 +1525,13 @@ jobs:
           | Detail | Value |
           |--------|-------|
           | **Version** | \`v${{ steps.version.outputs.version }}\` |
-          | **Commit** | \`${GITHUB_SHA:0:7}\` |
+          | **App commit** | \`${GITHUB_SHA}\` |
           | **Branch** | \`main\` |
           | **Deploy URL** | ${{ env.PRODUCTION_DOMAIN }} |
+          | **Target environment** | ${{ needs.migrations.outputs.migration_target_environment }} |
+          | **Migrations changed** | ${{ needs.migrations.outputs.production_migrations_changed }} |
+          | **Migration versions applied** | \`${MIGRATION_VERSIONS_SUMMARY:-none}\` |
+          | **Migration history parity** | ${{ needs.migrations.outputs.migration_parity }} |
           | **Health Check** | Passed |
           | **Post-Deploy Verify** | Passed |
           | **Deployed at** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
@@ -1384,7 +1545,7 @@ jobs:
   production-release-completion-gate:
     name: Production Release Completion Gate
     runs-on: ubuntu-latest
-    needs: [health-check, post-deploy-verify, release]
+    needs: [health-check, post-deploy-verify, release, migrations, deploy-functions]
     if: ${{ always() }}
     steps:
       - name: Enforce terminal production release outcomes
@@ -1401,6 +1562,12 @@ jobs:
           HEALTH_VERIFIED_NOOP_BASE_SHA: ${{ needs.health-check.outputs.verified_noop_base_sha }}
           POST_CONTENT_VERIFIED_NOOP: ${{ needs.post-deploy-verify.outputs.content_verified_noop }}
           POST_VERIFIED_NOOP_BASE_SHA: ${{ needs.post-deploy-verify.outputs.verified_noop_base_sha }}
+          MIGRATIONS_RESULT: ${{ needs.migrations.result }}
+          MIGRATION_PARITY: ${{ needs.migrations.outputs.migration_parity }}
+          MIGRATION_TARGET_ENVIRONMENT: ${{ needs.migrations.outputs.migration_target_environment }}
+          MIGRATIONS_CHANGED: ${{ needs.migrations.outputs.production_migrations_changed }}
+          MIGRATION_VERSIONS: ${{ needs.migrations.outputs.production_migration_versions }}
+          DEPLOY_FUNCTIONS_RESULT: ${{ needs.deploy-functions.result }}
         run: |
           FAILED=0
 
@@ -1422,6 +1589,21 @@ jobs:
           require_equal "Post-deploy verified SHA" "$POST_VERIFIED_GITHUB_SHA" "$EXPECTED_SHA"
           require_equal "Release result" "$RELEASE_RESULT" "success"
 
+          # ── Database-state gate (Wave 1, 2026-08-09) ──
+          # Database success is a prerequisite for calling a production release
+          # complete. `require_equal` is a STRING comparison, which is precisely
+          # why the migration lane is asserted as the literal 'success': GitHub
+          # reports a skipped job as 'skipped' and a cancelled one as
+          # 'cancelled', and both otherwise read as green to a downstream job.
+          # Only 'success' passes here.
+          require_equal "Migrations job result" "$MIGRATIONS_RESULT" "success"
+          # Proves the migration lane actually verified database state rather
+          # than short-circuiting: an unrun, crashed, or skipped parity step
+          # leaves this output empty, and empty != 'verified'.
+          require_equal "Migration history parity" "$MIGRATION_PARITY" "verified"
+          require_equal "Migration target environment" "$MIGRATION_TARGET_ENVIRONMENT" "production"
+          require_equal "Edge Functions deploy result" "$DEPLOY_FUNCTIONS_RESULT" "success"
+
           # Audit trail only — informational, never gates this job. The gate
           # above already requires exact_sha_verified/verified_github_sha to
           # equal $EXPECTED_SHA regardless of how health-check/post-deploy-verify
@@ -1432,6 +1614,9 @@ jobs:
           if [ "$HEALTH_CONTENT_VERIFIED_NOOP" = "true" ] || [ "$POST_CONTENT_VERIFIED_NOOP" = "true" ]; then
             echo "::notice::This release was verified via the no-op-deploy escape hatch (health-check base=${HEALTH_VERIFIED_NOOP_BASE_SHA:-<n/a>}, post-deploy-verify base=${POST_VERIFIED_NOOP_BASE_SHA:-<n/a>}), not a literal exact-SHA match on production."
           fi
+
+          # Audit trail only — the gating assertions above already cover this.
+          echo "::notice::Database state for $EXPECTED_SHA — migrations changed: ${MIGRATIONS_CHANGED:-<unknown>}; versions in this release: ${MIGRATION_VERSIONS:-none}; history parity: ${MIGRATION_PARITY:-<unknown>}; target environment: ${MIGRATION_TARGET_ENVIRONMENT:-<unknown>}."
 
           if [ "$FAILED" -ne 0 ]; then
             echo "Production release completion evidence is incomplete."
