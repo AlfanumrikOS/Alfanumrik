@@ -52,8 +52,15 @@ interface CompResult {
 
 interface Props {
   schoolId: string;
-  /** Active student count for seat-cap UX. Same as the parent's currentSeats.active. */
-  seatsUsed: number;
+  /**
+   * Active student count for seat-cap UX. Same as the parent's
+   * currentSeats.active. `null` when the parent has no seat snapshot to stand
+   * behind (read failed, or none taken yet) — the label renders a dash rather
+   * than a fabricated "0 active students". The floor/guard arithmetic keeps
+   * treating an unknown count as 0, exactly as it did before, so nothing about
+   * the client-side seat guard is loosened (the server enforces regardless).
+   */
+  seatsUsed: number | null;
   /** True when ff_school_self_service_billing_v1 evaluated true for this admin. */
   flagOn: boolean;
   isHi: boolean;
@@ -93,6 +100,12 @@ export default function ManageSubscriptionSection({
   authToken,
   onChange,
 }: Props) {
+  // Arithmetic floor for the seat guard. An UNKNOWN active count is treated as
+  // 0 here — identical to the behavior before `seatsUsed` became nullable — so
+  // this change makes no client-side guard stricter or looser. Only the LABEL
+  // distinguishes unknown from zero.
+  const seatsFloor = seatsUsed ?? 0;
+
   const changeDialog = useRef<HTMLDialogElement | null>(null);
   const cancelDialog = useRef<HTMLDialogElement | null>(null);
 
@@ -131,9 +144,9 @@ export default function ManageSubscriptionSection({
         setSub(data ?? null);
         if (data) {
           setFormPlan(data.plan && PAID_PLANS.some((p) => p.code === data.plan) ? data.plan : 'starter');
-          setFormSeats(Math.max(seatsUsed, data.seats_purchased ?? 50));
+          setFormSeats(Math.max(seatsFloor, data.seats_purchased ?? 50));
         } else {
-          setFormSeats(Math.max(seatsUsed, 50));
+          setFormSeats(Math.max(seatsFloor, 50));
         }
       })
       .catch(() => {
@@ -145,7 +158,7 @@ export default function ManageSubscriptionSection({
     return () => {
       cancelled = true;
     };
-  }, [flagOn, authToken, schoolId, seatsUsed]);
+  }, [flagOn, authToken, schoolId, seatsFloor]);
 
   if (!flagOn) return null;
 
@@ -159,12 +172,12 @@ export default function ManageSubscriptionSection({
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      if (formSeats < seatsUsed) {
+      if (formSeats < seatsFloor) {
         setErrorMsg(
           t(
             isHi,
-            `Cannot reduce to ${formSeats} seats — you have ${seatsUsed} active students.`,
-            `${formSeats} सीट तक कम नहीं कर सकते — आपके पास ${seatsUsed} सक्रिय छात्र हैं।`,
+            `Cannot reduce to ${formSeats} seats — you have ${seatsFloor} active students.`,
+            `${formSeats} सीट तक कम नहीं कर सकते — आपके पास ${seatsFloor} सक्रिय छात्र हैं।`,
           ),
         );
         setSubmitting(false);
@@ -452,7 +465,7 @@ export default function ManageSubscriptionSection({
               </span>
               <input
                 type="number"
-                min={Math.max(1, seatsUsed)}
+                min={Math.max(1, seatsFloor)}
                 max={5000}
                 value={formSeats}
                 onChange={(e) => setFormSeats(Number(e.target.value))}
@@ -461,7 +474,7 @@ export default function ManageSubscriptionSection({
                 data-testid="school-billing-seats-input"
               />
               <span className="text-[11px] text-[var(--text-3)] mt-1 inline-block">
-                {t(isHi, 'Active students', 'सक्रिय छात्र')}: {seatsUsed}
+                {t(isHi, 'Active students', 'सक्रिय छात्र')}: {seatsUsed ?? '—'}
               </span>
             </label>
 

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
-import { StatCard, StatusBadge, DetailDrawer } from '@alfanumrik/ui/admin-ui';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
+import { StatCard, StatusBadge, DetailDrawer, AdminErrorState } from '@alfanumrik/ui/admin-ui';
 import { PRICING, yearlyPerMonth } from '@alfanumrik/lib/plans';
 import PaymentOpsTab from './_components/PaymentOpsTab';
 
@@ -32,6 +34,7 @@ const C = {
 
 function SubscriptionsContent() {
   const { apiFetch } = useAdmin();
+  const { isHi } = useAuth();
   const [activeTab, setActiveTab] = useState<'revenue' | 'ops'>('revenue');
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -45,22 +48,59 @@ function SubscriptionsContent() {
   const [lookupResult, setLookupResult] = useState<UserRecord | null>(null);
   const [overrideMsg, setOverrideMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [overrideLoading, setOverrideLoading] = useState(false);
+  /* Failure-as-empty guards. `fetchAnalytics` had NO try/catch at all (a network
+     drop became an unhandled rejection) and no failure state, so the entire
+     revenue KPI block — Est. MRR, Est. ARR, Paid Plans, Conversion Rate — was
+     gated behind `analytics &&` and simply VANISHED on a failed read, with no
+     banner and no retry. An operator scrolling past sees a page that looks
+     structurally fine and silently omits every money figure. `fetchUsers`
+     swallowed its failure into `users: []` + `userTotal: 0`, rendering
+     "No students found". Both outcomes are now tracked. */
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
 
   const fetchAnalytics = useCallback(async () => {
-    const res = await apiFetch('/api/super-admin/analytics');
-    if (res.ok) setAnalytics(await res.json());
+    setAnalyticsError(null);
+    try {
+      const res = await apiFetch('/api/super-admin/analytics');
+      if (!res.ok) {
+        // P13: status code only — no student or plan identifiers.
+        logger.warn('super-admin subscription analytics read failed', { reason: `HTTP ${res.status}` });
+        setAnalyticsError(`HTTP ${res.status}`);
+        return;
+      }
+      setAnalytics(await readAdminJson(res));
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : 'Network error';
+      logger.warn('super-admin subscription analytics read failed', { reason });
+      setAnalyticsError(reason);
+    }
   }, [apiFetch]);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
+    setUsersError(null);
     try {
       const p = new URLSearchParams({ role: 'student', page: String(userPage), limit: '25' });
       // Phase F.6 (2026-05-17): users API now accepts plan filter server-side.
       if (filterPlan) p.set('plan', filterPlan);
       const res = await apiFetch(`/api/super-admin/users?${p}`);
-      if (res.ok) { const d = await res.json(); setUsers(d.data || []); setUserTotal(d.total || 0); }
-    } catch { /* */ }
-    setLoading(false);
+      if (!res.ok) {
+        logger.warn('super-admin subscription roster read failed', { reason: `HTTP ${res.status}` });
+        setUsersError(`HTTP ${res.status}`);
+        return;
+      }
+      const d = await readAdminJson(res);
+      setUsers(d.data || []);
+      setUserTotal(d.total || 0);
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : 'Network error';
+      logger.warn('super-admin subscription roster read failed', { reason });
+      setUsersError(reason);
+    } finally {
+      setLoading(false);
+    }
   }, [apiFetch, userPage, filterPlan]);
 
   useEffect(() => { fetchAnalytics(); fetchUsers(); }, [fetchAnalytics, fetchUsers]);
@@ -93,12 +133,24 @@ function SubscriptionsContent() {
   const lookupUser = async () => {
     if (!lookupEmail.trim()) return;
     setLoading(true);
-    const res = await apiFetch(`/api/super-admin/users?role=student&search=${encodeURIComponent(lookupEmail)}&limit=1`);
-    if (res.ok) {
-      const d = await res.json();
+    setLookupError(null);
+    try {
+      const res = await apiFetch(`/api/super-admin/users?role=student&search=${encodeURIComponent(lookupEmail)}&limit=1`);
+      if (!res.ok) {
+        // P13: never log the search term — it is a student name or email.
+        logger.warn('super-admin entitlement lookup failed', { reason: `HTTP ${res.status}` });
+        setLookupError(`HTTP ${res.status}`);
+        return;
+      }
+      const d = await readAdminJson(res);
       setLookupResult(d.data?.[0] || null);
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : 'Network error';
+      logger.warn('super-admin entitlement lookup failed', { reason });
+      setLookupError(reason);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const plans = ['free', 'starter_monthly', 'starter_yearly', 'pro_monthly', 'pro_yearly', 'ultimate_monthly', 'ultimate_yearly'];
@@ -138,6 +190,20 @@ function SubscriptionsContent() {
       {activeTab === 'ops' && <PaymentOpsTab />}
 
       {activeTab === 'revenue' && <>
+      {/* Revenue read failed — say so where the money figures WOULD have been,
+          instead of silently omitting the whole KPI block. */}
+      {analyticsError && !analytics && (
+        <AdminErrorState
+          onRetry={fetchAnalytics}
+          title={isHi ? 'राजस्व आँकड़े लोड नहीं हो सके' : 'Couldn’t load revenue figures'}
+          message={analyticsError}
+          isHi={isHi}
+        />
+      )}
+      {analyticsError && analytics && (
+        <AdminErrorState compact onRetry={fetchAnalytics} message={analyticsError} isHi={isHi} />
+      )}
+
       {/* KPI Cards */}
       {analytics && (() => {
         // Monthly revenue estimation using centralized PRICING from @alfanumrik/lib/plans
@@ -249,7 +315,21 @@ function SubscriptionsContent() {
               )}
             </div>
           )}
-          {lookupEmail && !lookupResult && !loading && (
+          {/* A failed lookup must never read as "this student does not exist" —
+              an operator acts on that by telling the customer they have no
+              account. */}
+          {lookupError && !loading && (
+            <div className="mt-2">
+              <AdminErrorState
+                compact
+                onRetry={lookupUser}
+                title={isHi ? 'खोज पूरी नहीं हो सकी' : 'Lookup didn’t complete'}
+                message={lookupError}
+                isHi={isHi}
+              />
+            </div>
+          )}
+          {lookupEmail && !lookupResult && !lookupError && !loading && (
             <div className="mt-2 text-xs text-muted-foreground">No student found matching that search.</div>
           )}
         </div>
@@ -270,6 +350,11 @@ function SubscriptionsContent() {
         ))}
       </div>
 
+      {/* Failed refresh with last-known-good rows still on screen. */}
+      {usersError && users.length > 0 && (
+        <AdminErrorState compact onRetry={fetchUsers} message={usersError} isHi={isHi} />
+      )}
+
       <div className="overflow-hidden rounded-lg border border-surface-3">
         <table className="w-full border-collapse text-[13px]">
           <thead>
@@ -285,7 +370,21 @@ function SubscriptionsContent() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={7} className="border-b border-surface-2 px-3.5 py-6 text-center text-muted-foreground">Loading...</td></tr>}
-            {!loading && users.filter(u => !filterPlan || (u.subscription_plan || 'free') === filterPlan).length === 0 && (
+            {/* Failed roster read — never "No students found", which would read
+                as a real (and alarming) zero-subscriber platform. */}
+            {!loading && usersError && users.length === 0 && (
+              <tr>
+                <td colSpan={7} className="border-b border-surface-2 p-0">
+                  <AdminErrorState
+                    onRetry={fetchUsers}
+                    title={isHi ? 'छात्र सूची लोड नहीं हो सकी' : 'Couldn’t load the student list'}
+                    message={usersError}
+                    isHi={isHi}
+                  />
+                </td>
+              </tr>
+            )}
+            {!loading && !usersError && users.filter(u => !filterPlan || (u.subscription_plan || 'free') === filterPlan).length === 0 && (
               <tr><td colSpan={7} className="border-b border-surface-2 px-3.5 py-6 text-center text-muted-foreground">No students found</td></tr>
             )}
             {!loading && users.filter(u => !filterPlan || (u.subscription_plan || 'free') === filterPlan).map(u => (

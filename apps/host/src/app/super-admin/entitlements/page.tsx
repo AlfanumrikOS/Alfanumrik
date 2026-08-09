@@ -29,6 +29,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
 import { StatusBadge } from '@alfanumrik/ui/admin-ui';
 import {
   ENTITLEMENT_CATALOG,
@@ -206,6 +207,14 @@ function EntitlementsContent() {
   /* ----- school picker ----- */
   const [schools, setSchools] = useState<SchoolOption[]>([]);
   const [schoolsLoading, setSchoolsLoading] = useState(true);
+  /* The picker fetch was "best-effort" with a bare `catch`, so a failed read
+     produced a dropdown containing only the "— choose a school —" placeholder.
+     That is indistinguishable from a deployment with no schools, and it is the
+     gate in front of every entitlement on this page: an operator concludes the
+     school isn't onboarded and stops, rather than retrying. Best-effort is
+     fine; SILENT best-effort is not. */
+  const [schoolsError, setSchoolsError] = useState<string | null>(null);
+  const [schoolsReloadKey, setSchoolsReloadKey] = useState(0);
   const [schoolId, setSchoolId] = useState<string>('');
 
   /* ----- panel data ----- */
@@ -224,19 +233,28 @@ function EntitlementsContent() {
     let cancelled = false;
     (async () => {
       setSchoolsLoading(true);
+      if (!cancelled) setSchoolsError(null);
       try {
         const res = await apiFetch('/api/super-admin/institutions?page=1&limit=100');
-        if (res.ok) {
-          const body = await res.json();
-          if (!cancelled) {
-            const opts: SchoolOption[] = (body.data || []).map(
-              (s: { id: string; name: string }) => ({ id: s.id, name: s.name }),
-            );
-            setSchools(opts);
-          }
+        if (!res.ok) {
+          // P13: status code only — no school names or ids.
+          logger.warn('super-admin entitlements school list read failed', { reason: `HTTP ${res.status}` });
+          if (!cancelled) setSchoolsError(`HTTP ${res.status}`);
+          return;
         }
-      } catch {
-        /* picker is best-effort; the operator can still paste a UUID via the URL */
+        const body = await readAdminJson(res);
+        if (!cancelled) {
+          const opts: SchoolOption[] = (body.data || []).map(
+            (s: { id: string; name: string }) => ({ id: s.id, name: s.name }),
+          );
+          setSchools(opts);
+        }
+      } catch (e) {
+        /* picker is best-effort; the operator can still paste a UUID via the
+           URL — but they have to be TOLD the list is incomplete first. */
+        const reason = e instanceof Error ? e.message : 'Network error';
+        logger.warn('super-admin entitlements school list read failed', { reason });
+        if (!cancelled) setSchoolsError(reason);
       } finally {
         if (!cancelled) setSchoolsLoading(false);
       }
@@ -244,7 +262,7 @@ function EntitlementsContent() {
     return () => {
       cancelled = true;
     };
-  }, [apiFetch]);
+  }, [apiFetch, schoolsReloadKey]);
 
   /* ----- load the entitlement set for the selected school ----- */
   const loadPanel = useCallback(
@@ -463,6 +481,21 @@ function EntitlementsContent() {
             </option>
           ))}
         </select>
+        {schoolsError && (
+          <p role="alert" className="mt-1.5 text-[11px] text-danger">
+            {isHi
+              ? `स्कूल सूची लोड नहीं हुई (${schoolsError}) — यह सूची अधूरी है, खाली नहीं।`
+              : `Couldn’t load the school list (${schoolsError}) — this list is incomplete, not empty.`}{' '}
+            <button
+              type="button"
+              onClick={() => setSchoolsReloadKey(k => k + 1)}
+              className="underline"
+              style={{ minHeight: 44, minWidth: 44 }}
+            >
+              {isHi ? 'पुनः प्रयास करें' : 'Retry'}
+            </button>
+          </p>
+        )}
       </div>
 
       {/* ---- empty: no school chosen yet ---- */}

@@ -111,7 +111,14 @@ export default function SafeguardingQueue({ isHi }: { isHi: boolean }) {
 
   const fetchRows = useCallback(async () => {
     const token = await getToken();
-    if (!token) return;
+    // `loadingRows` starts true, so bailing here left a permanently spinning
+    // skeleton on a safeguarding queue — the same stuck-skeleton defect fixed on
+    // /teacher/submissions. Fail visibly and retryably instead.
+    if (!token) {
+      setLoadingRows(false);
+      setApiError(t(isHi, 'Your session has expired. Please sign in again.', 'आपका सेशन समाप्त हो गया। कृपया दोबारा साइन इन करें।'));
+      return;
+    }
     setLoadingRows(true);
     setApiError(null);
     try {

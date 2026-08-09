@@ -214,7 +214,17 @@ export default function SchoolAdminEscalationsPage() {
 
   const fetchEscalations = useCallback(async () => {
     const token = await getToken();
-    if (!token) return;
+    // No session token = the read never happened. Bailing silently left
+    // `escalations` at [] with no error and no loading flag, so the page then
+    // asserted "No escalations" — telling an admin nothing had been escalated
+    // when in fact nothing had been READ.
+    if (!token) {
+      setLoadingEscalations(false);
+      setApiError(
+        t(isHi, 'Your session has expired. Please sign in again.', 'आपका सेशन समाप्त हो गया। कृपया दोबारा साइन इन करें।'),
+      );
+      return;
+    }
     setLoadingEscalations(true);
     setApiError(null);
     try {
@@ -355,7 +365,9 @@ export default function SchoolAdminEscalationsPage() {
           </section>
         )}
 
-        {!loadingEscalations && escalations.length === 0 && (
+        {/* Genuine-empty only: never claim "nothing was escalated" off a read
+            we could not complete. */}
+        {!loadingEscalations && !apiError && escalations.length === 0 && (
           <EmptyState
             icon="🚩"
             title={t(isHi, 'No escalations', 'कोई एस्केलेशन नहीं')}

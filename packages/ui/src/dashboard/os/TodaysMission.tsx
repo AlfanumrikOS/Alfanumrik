@@ -258,11 +258,19 @@ export default function TodaysMission({
                   <span className="text-2xl shrink-0" aria-hidden="true">
                     {todayIcon(queueData.primary.iconHint)}
                   </span>
+                  {/* No `truncate` on the label/subtitle pair. This column is
+                      161px wide at 360px, and the Hindi subtitle
+                      "अपने स्तर पर Science · बल तथा गति के नियम का अभ्यास"
+                      measured 250px in Chromium — the student was shown
+                      "अपने स्तर पर Science · बल…" and lost the chapter the
+                      card is actually about. The English string is the same
+                      shape once a chapter title is interpolated. Wrapping
+                      costs one line; an ellipsis costs the meaning. */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-fluid-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>
+                    <p className="text-fluid-sm font-bold" style={{ color: 'var(--text-1)' }}>
                       {todayCopy(queueData.primary.labelKey, isHi)}
                     </p>
-                    <p className="text-fluid-xs truncate" style={{ color: 'var(--text-3)' }}>
+                    <p className="text-fluid-xs" style={{ color: 'var(--text-3)' }}>
                       {todayCopy(queueData.primary.subtitleKey, isHi, {
                         subject: displaySubjectName((queueData.primary.meta?.subjectCode as string) ?? subjectCode),
                         chapterTitle: chapterSuffix(queueData.primary, isHi),
