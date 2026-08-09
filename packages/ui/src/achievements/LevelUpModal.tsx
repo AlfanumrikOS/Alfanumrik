@@ -164,9 +164,9 @@ export default function LevelUpModal({
           (where --orange remaps to violet). Premium soft purple glow.
           Runtime opacity/transform stay inline (Tailwind can't express them). */}
       <div
-        className="inline-flex items-center gap-2 rounded-full px-5 py-2 mb-5 text-sm font-bold text-white"
+        className="inline-flex items-center gap-2 rounded-full px-5 py-2 mb-5 text-sm font-bold text-on-accent"
         style={{
-          background: 'linear-gradient(135deg, var(--purple), var(--accent-warm))',
+          background: 'linear-gradient(135deg, var(--purple), var(--accent-warm-strong))',
           boxShadow: '0 6px 28px rgb(var(--purple-rgb) / 0.38)',
           /* Tailwind cannot express runtime-conditional transitions — inline required */
           opacity: phase === 'enter' ? 0 : 1,

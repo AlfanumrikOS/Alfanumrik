@@ -59,8 +59,8 @@ export function MessageInput({
           </span>
           <button
             onClick={onNewConversation}
-            className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold text-white transition-all active:scale-95"
-            style={{ background: 'var(--accent-warm)' }}
+            className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-bold text-on-accent transition-all active:scale-95"
+            style={{ background: 'var(--accent-warm-strong)' }}
           >
             {isHi ? 'नई चैट' : 'New Chat'}
           </button>

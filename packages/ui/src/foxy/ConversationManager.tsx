@@ -163,10 +163,10 @@ export function ConversationManager({
             onNewChat();
             if (window.innerWidth < 1024) onClose();
           }}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.97]"
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-on-surface-accent transition-all active:scale-[0.97]"
           style={{
             // Warm-channel Foxy chrome (stays burnt-orange under cosmic). Wave 6.
-            background: 'linear-gradient(135deg, var(--accent-warm), rgb(var(--marigold-rgb)))',
+            background: 'var(--surface-accent)',
           }}
         >
           <span>+</span>

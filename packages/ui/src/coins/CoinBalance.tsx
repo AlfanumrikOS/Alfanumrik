@@ -51,7 +51,9 @@ export default function CoinBalance({ balance, recentEarning, isHi }: CoinBalanc
           width: 20,
           height: 20,
           background: 'linear-gradient(135deg, var(--gold), color-mix(in srgb, var(--gold) 70%, #000))',
-          color: '#FFFFFF',
+          // DD-16: #fff on this gold gradient is 2.03:1 at the light stop and
+          // 4.00:1 at the dark stop — sub-AA on both. Ink clears both (9.14:1 / 4.63:1).
+          color: 'var(--text-1)',
           fontSize: 11,
         }}
         aria-hidden="true"

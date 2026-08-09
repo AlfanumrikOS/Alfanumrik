@@ -110,8 +110,8 @@ export default function ChapterRefreshSection() {
           </p>
           <button
             onClick={() => router.push(`/learn/${encodeURIComponent(fromQuizSubject as string)}/${fromQuizChapter}?mode=read&from=refresh`)}
-            className="mt-3 w-full py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ background: 'var(--orange, #E8581C)' }}
+            className="mt-3 w-full py-2.5 rounded-xl text-sm font-bold text-on-accent"
+            style={{ background: 'var(--accent-warm-strong)' }}
           >
             📖 {isHi ? 'अध्याय दोबारा पढ़ो' : 'Re-read this chapter'} →
           </button>

@@ -449,8 +449,10 @@ export default function SettingsPage() {
       {/* ─── Toast notification ─── */}
       {toast && (
         <div
-          className="fixed top-16 left-1/2 -translate-x-1/2 z-50 max-w-xs w-[90vw] px-4 py-3 rounded-2xl text-sm font-medium shadow-lg text-white text-center transition-all"
-          style={{ background: toast.ok ? '#16A34A' : '#DC2626' }}
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-50 max-w-xs w-[90vw] px-4 py-3 rounded-2xl text-sm font-medium shadow-lg text-center transition-all"
+          // DD-16: #fff on the success green is 3.30:1 (sub-AA); ink is 5.62:1.
+          // The error red keeps --on-accent (4.83:1 AA).
+          style={{ background: toast.ok ? '#16A34A' : '#DC2626', color: toast.ok ? 'var(--text-1)' : 'var(--on-accent)' }}
           role="status"
         >
           {toast.msg}
@@ -467,8 +469,8 @@ export default function SettingsPage() {
         >
           {/* Avatar circle */}
           <div
-            className="w-14 h-14 rounded-full flex items-center justify-center text-white text-lg font-bold shrink-0 select-none"
-            style={{ background: 'linear-gradient(135deg, var(--orange, #E8581C), var(--purple, #7C3AED))' }}
+            className="w-14 h-14 rounded-full flex items-center justify-center text-on-accent text-lg font-bold shrink-0 select-none"
+            style={{ background: 'linear-gradient(135deg, var(--accent-warm-strong), var(--purple, #7C3AED))' }}
             aria-hidden="true"
           >
             {initials}
@@ -504,7 +506,7 @@ export default function SettingsPage() {
               language === 'en' ? (
                 <span
                   className="text-xs font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--orange, #E8581C)', color: '#fff' }}
+                  style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}
                 >
                   {isHi ? 'चुना गया' : 'Selected'}
                 </span>
@@ -518,7 +520,7 @@ export default function SettingsPage() {
               language === 'hi' ? (
                 <span
                   className="text-xs font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--orange, #E8581C)', color: '#fff' }}
+                  style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}
                 >
                   चुना गया
                 </span>
@@ -731,8 +733,8 @@ export default function SettingsPage() {
               <button
                 onClick={handleInlinePasswordChange}
                 disabled={pwLoading || !currentPassword || !newPassword || !confirmNewPassword}
-                className="w-full rounded-lg py-2.5 text-sm font-bold text-white transition-opacity disabled:opacity-50"
-                style={{ background: 'var(--orange, #E8581C)' }}
+                className="w-full rounded-lg py-2.5 text-sm font-bold text-on-accent transition-opacity disabled:opacity-50"
+                style={{ background: 'var(--accent-warm-strong)' }}
               >
                 {pwLoading
                   ? (isHi ? 'अपडेट हो रहा है…' : 'Updating…')

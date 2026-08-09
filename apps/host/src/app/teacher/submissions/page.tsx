@@ -597,8 +597,8 @@ function SubmissionDetailView({
             style={{
               marginLeft: 'auto',
               padding: '8px 18px',
-              background: saving ? '#C2410C' : '#E8581C',
-              color: '#fff',
+              background: saving ? '#C2410C' : 'var(--accent-warm-strong)',
+              color: 'var(--on-accent)',
               border: 'none',
               borderRadius: 8,
               fontSize: 13,

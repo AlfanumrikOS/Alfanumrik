@@ -60,8 +60,8 @@ export default function Error({
           onClick={reset}
           style={{
             padding: '10px 24px',
-            backgroundColor: 'var(--orange, #E8581C)',
-            color: '#fff',
+            backgroundColor: 'var(--accent-warm-strong)',
+            color: 'var(--on-accent)',
             border: 'none',
             borderRadius: 10,
             fontSize: 14,

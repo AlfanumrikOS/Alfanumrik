@@ -13,7 +13,7 @@ export default function DiveHistoryError({
       <button
         onClick={reset}
         className="rounded-lg px-4 py-2 text-sm font-medium"
-        style={{ background: 'var(--primary)', color: 'white' }}
+        style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}
       >
         Try again
       </button>

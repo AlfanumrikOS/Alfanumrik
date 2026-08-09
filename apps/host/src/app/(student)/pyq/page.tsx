@@ -243,7 +243,7 @@ export default function PYQPage() {
               fullWidth
               disabled={loading}
               onClick={startPractice}
-              style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '1rem' }}
+              style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', borderRadius: '1rem' }}
             >
               {loading
                 ? (isHi ? 'लोड हो रहा है…' : 'Loading questions…')
@@ -268,7 +268,7 @@ export default function PYQPage() {
             ? 'इस विषय के लिए पिछले साल के प्रश्न जल्द उपलब्ध होंगे।'
             : 'Previous year questions for this subject are coming soon.'}
         </p>
-        <Button onClick={() => router.push('/quiz?subject=' + (selectedSubject ?? ''))} style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '1rem' }}>
+        <Button onClick={() => router.push('/quiz?subject=' + (selectedSubject ?? ''))} style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', borderRadius: '1rem' }}>
           {isHi ? 'प्रश्न बैंक से अभ्यास करें' : 'Practice from Question Bank'}
         </Button>
         <button onClick={restart} className="text-sm underline" style={{ color: 'var(--text-2)' }}>
@@ -413,7 +413,7 @@ export default function PYQPage() {
 
           {/* Next Button */}
           {isAnswered && (
-            <Button fullWidth onClick={goNext} style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '1rem' }}>
+            <Button fullWidth onClick={goNext} style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', borderRadius: '1rem' }}>
               {currentIdx + 1 >= questions.length
                 ? (isHi ? 'परिणाम देखें →' : 'See Results →')
                 : (isHi ? 'अगला प्रश्न →' : 'Next Question →')}
@@ -448,7 +448,7 @@ export default function PYQPage() {
         </Card>
 
         <div className="flex flex-col gap-3 w-full max-w-sm">
-          <Button fullWidth onClick={startPractice} style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '1rem' }}>
+          <Button fullWidth onClick={startPractice} style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', borderRadius: '1rem' }}>
             {isHi ? 'फिर से कोशिश करें' : 'Try Again'}
           </Button>
           <Button fullWidth variant="ghost" onClick={restart}>

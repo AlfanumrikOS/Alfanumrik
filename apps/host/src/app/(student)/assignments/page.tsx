@@ -286,8 +286,8 @@ export default function StudentAssignmentsPage() {
                       onClick={() => startAssignment(a)}
                       style={{
                         width: '100%', padding: '10px 0', minHeight: 44,
-                        background: 'linear-gradient(135deg, var(--orange, #E8581C), #C2410C)',
-                        color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                        background: 'var(--surface-accent)',
+                        color: 'var(--on-surface-accent)', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer',
                       }}
                     >
                       {tt(isHi, 'Start Assignment', 'असाइनमेंट शुरू करें')}

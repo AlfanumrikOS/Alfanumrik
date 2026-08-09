@@ -121,8 +121,8 @@ export default function SubjectStep({
         type="button"
         disabled={value.length === 0}
         onClick={onNext}
-        className="w-full mt-6 py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"
-        style={{ background: 'var(--orange)' }}
+        className="w-full mt-6 py-3 rounded-xl text-sm font-bold text-on-accent transition-all disabled:opacity-40"
+        style={{ background: 'var(--accent-warm-strong)' }}
       >
         {isHi ? 'आगे बढ़ो' : 'Continue'}
       </button>

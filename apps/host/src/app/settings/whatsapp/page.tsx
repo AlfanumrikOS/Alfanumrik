@@ -298,8 +298,8 @@ export default function WhatsAppConnectPage() {
           <button
             onClick={startLink}
             disabled={busy}
-            className="w-full rounded-2xl py-3.5 text-base font-bold text-white transition-opacity disabled:opacity-60"
-            style={{ background: 'var(--orange, #E8581C)' }}
+            className="w-full rounded-2xl py-3.5 text-base font-bold text-on-accent transition-opacity disabled:opacity-60"
+            style={{ background: 'var(--accent-warm-strong)' }}
           >
             {busy
               ? t(isHi, 'Connecting…', 'कनेक्ट हो रहा है…')
@@ -328,7 +328,7 @@ export default function WhatsAppConnectPage() {
               href={state.data.deep_link}
               target="_blank"
               rel="noopener noreferrer"
-              className="block w-full rounded-2xl py-3.5 text-center text-base font-bold text-white"
+              className="block w-full rounded-2xl py-3.5 text-center text-base font-bold text-foreground"
               style={{ background: '#25D366' }}
             >
               {t(isHi, 'Open WhatsApp', 'WhatsApp खोलें')}
@@ -394,8 +394,8 @@ export default function WhatsAppConnectPage() {
             </p>
             <button
               onClick={startLink}
-              className="w-full rounded-2xl py-3 text-sm font-bold text-white"
-              style={{ background: 'var(--orange, #E8581C)' }}
+              className="w-full rounded-2xl py-3 text-sm font-bold text-on-accent"
+              style={{ background: 'var(--accent-warm-strong)' }}
             >
               {t(isHi, 'Get a new code', 'नया code पाएं')}
             </button>
@@ -471,8 +471,8 @@ export default function WhatsAppConnectPage() {
             </p>
             <button
               onClick={startLink}
-              className="w-full rounded-2xl py-3 text-sm font-bold text-white"
-              style={{ background: 'var(--orange, #E8581C)' }}
+              className="w-full rounded-2xl py-3 text-sm font-bold text-on-accent"
+              style={{ background: 'var(--accent-warm-strong)' }}
             >
               {t(isHi, 'Try again', 'फिर कोशिश करें')}
             </button>

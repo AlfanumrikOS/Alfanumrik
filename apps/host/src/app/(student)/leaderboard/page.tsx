@@ -531,8 +531,8 @@ export default function LeaderboardPage() {
                   style={
                     period === p.id
                       ? {
-                          background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
-                          color: '#fff',
+                          background: 'var(--surface-accent)',
+                          color: 'var(--on-surface-accent)',
                           boxShadow: '0 3px 12px rgb(var(--accent-warm-rgb) / 0.28)',
                         }
                       : { background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }
@@ -1160,8 +1160,8 @@ export default function LeaderboardPage() {
                   style={
                     period === p.id
                       ? {
-                          background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
-                          color: '#fff',
+                          background: 'var(--surface-accent)',
+                          color: 'var(--on-surface-accent)',
                           boxShadow: '0 3px 12px rgb(var(--accent-warm-rgb) / 0.28)',
                         }
                       : { background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }

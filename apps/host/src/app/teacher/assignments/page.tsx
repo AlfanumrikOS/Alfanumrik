@@ -333,7 +333,7 @@ function AssignmentsPageContent() {
           </p>
           <button
             onClick={() => { resetForm(); setShowModal(true); }}
-            style={{ padding: '12px 28px', background: 'linear-gradient(135deg, var(--orange), #C2410C)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '12px 28px', background: 'var(--surface-accent)', color: 'var(--on-surface-accent)', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
           >
             {tt(isHi, 'Create First Assignment', 'पहला असाइनमेंट बनाएं')}
           </button>
@@ -439,8 +439,8 @@ function AssignmentsPageContent() {
         style={{
           position: 'fixed', bottom: 28, right: 28,
           width: 56, height: 56, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #E8581C, #C2410C)',
-          color: '#fff', border: 'none', fontSize: 28, fontWeight: 300,
+          background: 'var(--surface-accent)',
+          color: 'var(--on-surface-accent)', border: 'none', fontSize: 28, fontWeight: 300,
           cursor: 'pointer', boxShadow: '0 4px 20px rgba(232,88,28,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 50, transition: 'transform 0.2s, box-shadow 0.2s',
@@ -628,8 +628,11 @@ function AssignmentsPageContent() {
                 disabled={submitting || !formTitle.trim() || !formClass || subjects.length === 0}
                 style={{
                   flex: 1, padding: '11px 16px',
-                  background: submitting || !formTitle.trim() || !formClass || subjects.length === 0 ? '#EDE6DC' : 'linear-gradient(135deg, #E8581C, #C2410C)',
-                  color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+                  background: submitting || !formTitle.trim() || !formClass || subjects.length === 0 ? '#EDE6DC' : 'var(--surface-accent)',
+                  // DD-16: the disabled fill is --surface-3-light; #fff on it is
+                  // 1.18:1 (invisible). Ink on disabled, --on-surface-accent on the CTA.
+                  color: submitting || !formTitle.trim() || !formClass || subjects.length === 0 ? 'var(--text-2)' : 'var(--on-surface-accent)',
+                  border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
                   cursor: submitting || !formTitle.trim() || !formClass || subjects.length === 0 ? 'default' : 'pointer',
                   opacity: submitting || !formTitle.trim() || !formClass || subjects.length === 0 ? 0.5 : 1,
                 }}

@@ -217,8 +217,8 @@ function CellEditModal({
             onClick={submit}
             disabled={saving}
             style={{
-              padding: '8px 18px', background: saving ? '#C2410C' : 'var(--orange)',
-              color: '#fff', border: 'none', borderRadius: 8, fontSize: 13,
+              padding: '8px 18px', background: saving ? '#C2410C' : 'var(--accent-warm-strong)',
+              color: 'var(--on-accent)', border: 'none', borderRadius: 8, fontSize: 13,
               fontWeight: 600, cursor: saving ? 'wait' : 'pointer',
             }}
           >
@@ -367,7 +367,7 @@ function ClassDepthView({
         <button
           onClick={onRetry}
           style={{
-            padding: '8px 16px', background: 'var(--orange)', color: '#fff', border: 'none',
+            padding: '8px 16px', background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', border: 'none',
             borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
           }}
         >
@@ -696,7 +696,7 @@ export default function TeacherGradeBookPage() {
             <button
               onClick={() => router.push('/teacher/classes')}
               style={{
-                padding: '8px 18px', background: 'var(--orange)', color: '#fff', border: 'none',
+                padding: '8px 18px', background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', border: 'none',
                 borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
               }}
             >

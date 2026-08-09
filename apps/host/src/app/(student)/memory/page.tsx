@@ -204,8 +204,8 @@ export default function MemoryPage() {
           </p>
           <Link
             href="/dashboard"
-            className="inline-block px-5 py-3 min-h-[44px] rounded-xl text-sm font-bold text-white"
-            style={{ background: 'var(--orange, #F97316)' }}
+            className="inline-block px-5 py-3 min-h-[44px] rounded-xl text-sm font-bold text-on-accent"
+            style={{ background: 'var(--accent-warm-strong)' }}
           >
             {isHi ? 'डैशबोर्ड पर जाओ' : 'Back to dashboard'}
           </Link>
@@ -273,7 +273,9 @@ export default function MemoryPage() {
                 className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-xl text-xs font-bold transition-all active:scale-[0.96]"
                 style={
                   isSelected
-                    ? { background: s.color || 'var(--orange)', color: '#fff', border: '1.5px solid transparent' }
+                    // DD-16: fallback was --orange (#fff = 3.59:1, sub-AA). s.color is
+                    // DB-supplied — residual DD-16 item, see the inventory.
+                    ? { background: s.color || 'var(--accent-warm-strong)', color: 'var(--on-accent)', border: '1.5px solid transparent' }
                     : { background: 'var(--surface-1)', color: 'var(--text-2)', border: '1.5px solid var(--border)' }
                 }
               >
@@ -295,8 +297,8 @@ export default function MemoryPage() {
           <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>{apiError}</p>
           <button
             onClick={fetchMemory}
-            className="px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-bold text-white transition-all active:scale-95"
-            style={{ background: 'var(--orange, #F97316)' }}
+            className="px-5 py-2.5 min-h-[44px] rounded-xl text-sm font-bold text-on-accent transition-all active:scale-95"
+            style={{ background: 'var(--accent-warm-strong)' }}
           >
             {isHi ? 'दोबारा कोशिश करें' : 'Retry'}
           </button>

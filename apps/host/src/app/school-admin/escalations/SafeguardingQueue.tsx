@@ -236,7 +236,7 @@ export default function SafeguardingQueue({ isHi }: { isHi: boolean }) {
               className="flex-shrink-0 px-3 py-2 min-h-[44px] rounded-xl text-xs font-bold transition-all active:scale-[0.97]"
               style={
                 status === s
-                  ? { background: 'var(--orange, #F97316)', color: '#fff' }
+                  ? { background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }
                   : { background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }
               }
             >

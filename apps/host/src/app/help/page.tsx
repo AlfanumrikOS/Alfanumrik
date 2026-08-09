@@ -379,10 +379,13 @@ export default function HelpPage() {
           <button onClick={() => setView('chat')} className="w-full rounded-2xl p-5 flex items-center gap-4 transition-all active:scale-[0.98]" style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)', boxShadow: '0 4px 20px rgba(232,88,28,0.25)' }}>
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }}>🦊</div>
             <div className="text-left flex-1">
-              <div className="text-base font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'Foxy सपोर्ट से बात करें' : 'Chat with Foxy Support'}</div>
-              <div className="text-xs text-white" style={{ opacity: 0.8 }}>{isHi ? 'AI बॉट तुरंत आपकी मदद करेगा' : 'Get instant help from our AI support bot'}</div>
+              {/* DD-16: the card fill is an --orange -> #F5A623 gradient; #fff is
+                  3.59:1 at the warm stop and 2.03:1 at the gold stop (both sub-AA).
+                  Ink clears both (5.16:1 / 9.14:1). */}
+              <div className="text-base font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'Foxy सपोर्ट से बात करें' : 'Chat with Foxy Support'}</div>
+              <div className="text-xs text-foreground" style={{ opacity: 0.8 }}>{isHi ? 'AI बॉट तुरंत आपकी मदद करेगा' : 'Get instant help from our AI support bot'}</div>
             </div>
-            <span className="text-white text-xl">→</span>
+            <span className="text-foreground text-xl">→</span>
           </button>
 
           {/* Quick Fixes */}
@@ -663,7 +666,7 @@ export default function HelpPage() {
                 <p className="text-xs mb-5" style={{ color: 'var(--text-3)' }}>
                   {isHi ? 'मदद चाहिए? सपोर्ट टिकट भेजें।' : 'Need help? Submit a support request.'}
                 </p>
-                <button onClick={() => setView('ticket')} className="text-xs font-bold px-4 py-2 rounded-xl" style={{ background: 'var(--orange)', color: '#fff' }}>
+                <button onClick={() => setView('ticket')} className="text-xs font-bold px-4 py-2 rounded-xl" style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}>
                   {isHi ? '📝 टिकट भेजें' : '📝 Submit a Ticket'}
                 </button>
               </div>

@@ -778,7 +778,7 @@ interface AvatarProps {
 export function Avatar({ name, size = 36 }: AvatarProps) {
   return (
     <div
-      className="rounded-full flex items-center justify-center font-bold text-white flex-shrink-0"
+      className="rounded-full flex items-center justify-center font-bold text-foreground flex-shrink-0"
       style={{
         width: size,
         height: size,
@@ -1412,8 +1412,8 @@ export function GlowButton({
     <button
       className={`group relative inline-flex items-center justify-center overflow-hidden font-bold transition-transform active:scale-[0.98] ${BTN_FOCUS} ${sizeMap[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
       style={{
-        background: 'linear-gradient(135deg, var(--orange) 0%, var(--orange-light) 100%)',
-        color: '#fff',
+        background: 'var(--surface-accent)',
+        color: 'var(--on-surface-accent)',
         border: '1px solid color-mix(in srgb, var(--orange) 70%, #000)',
         boxShadow: isDisabled ? 'none' : 'var(--shadow-glow)',
         opacity: isDisabled ? 0.6 : 1,

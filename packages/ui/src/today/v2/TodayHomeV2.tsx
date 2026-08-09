@@ -100,7 +100,7 @@ function ResumeHero({
           type="button"
           onClick={() => router.push(deepLinkToHref(item.deepLink))}
           className="flex-[2] rounded-xl text-sm font-bold"
-          style={{ background: 'var(--orange)', color: '#fff', minHeight: 48 }}
+          style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', minHeight: 48 }}
           data-testid="today-v2-resume-continue"
         >
           {isHi ? 'यहीं से जारी रखें' : 'Pick up here'}
@@ -198,7 +198,7 @@ function FocusHero({
         type="button"
         onClick={() => router.push(deepLinkToHref(item.deepLink))}
         className="w-full rounded-xl text-sm font-bold mt-4"
-        style={{ background: 'var(--orange)', color: '#fff', minHeight: 48 }}
+        style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', minHeight: 48 }}
         data-testid="today-v2-focus-continue"
       >
         {isHi ? 'शुरू करें' : 'Start'} · {minutesBadge}

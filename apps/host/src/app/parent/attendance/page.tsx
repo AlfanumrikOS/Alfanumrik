@@ -513,14 +513,19 @@ export default function ParentAttendancePage() {
                   onClick={() => { setSelectedChildIdx(idx); }}
                   className={[
                     'flex items-center gap-2 px-3 py-2 rounded-2xl text-[13px] font-semibold whitespace-nowrap border min-h-[44px] transition-all',
+                    // DD-16: #fff on orange-500 is 3.03:1 and on #E8581C is 3.59:1 —
+                    // both sub-AA. --accent-warm-strong + --on-accent is 5.09:1.
                     active
-                      ? 'bg-orange-500 text-white border-orange-500'
+                      ? 'bg-[var(--accent-warm-strong)] text-on-accent border-[var(--accent-warm-strong)]'
                       : 'bg-white text-gray-700 border-orange-200 hover:bg-orange-50',
                   ].join(' ')}
                 >
                   <span
-                    className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-[11px] font-bold"
-                    style={{ background: active ? 'rgba(255,255,255,0.3)' : '#E8581C' }}
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold"
+                    style={{
+                      background: active ? 'var(--surface-1)' : 'var(--accent-warm-strong)',
+                      color: active ? 'var(--text-1)' : 'var(--on-accent)',
+                    }}
                     aria-hidden="true"
                   >
                     {child.name.charAt(0).toUpperCase()}
@@ -528,7 +533,7 @@ export default function ParentAttendancePage() {
                   {child.name.split(' ')[0]}
                   {child.grade && (
                     <span
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${active ? 'bg-white/25 text-white' : 'bg-orange-100 text-orange-600'}`}
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${active ? 'bg-black/25 text-on-accent' : 'bg-orange-100 text-orange-600'}`}
                     >
                       {tt(isHi, 'G', 'क')}{child.grade}
                     </span>

@@ -378,7 +378,9 @@ function Toast({ message, kind, onDone }: { message: string; kind: 'success' | '
         left: '50%',
         transform: 'translateX(-50%)',
         backgroundColor: kind === 'success' ? '#16A34A' : '#DC2626',
-        color: '#fff',
+        // DD-16: #fff on the success green is 3.30:1 (sub-AA); ink is 5.62:1.
+        // The error red keeps --on-accent (4.83:1 AA).
+        color: kind === 'success' ? 'var(--text-1)' : 'var(--on-accent)',
         padding: '12px 24px',
         borderRadius: 12,
         fontSize: 14,

@@ -155,8 +155,8 @@ export default function BuildYourOwnDeckSection({ onCardCreated }: BuildYourOwnD
               onClick={handleSubmit}
               disabled={!canSubmit}
               data-testid="refresh-byod-submit"
-              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40"
-              style={{ background: 'var(--orange, #E8581C)' }}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-on-accent disabled:opacity-40"
+              style={{ background: 'var(--accent-warm-strong)' }}
             >
               {submitting ? (isHi ? 'जोड़ रहा है...' : 'Adding...') : (isHi ? 'मेरे डेक में जोड़ो' : 'Add to my deck')}
             </button>

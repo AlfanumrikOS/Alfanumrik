@@ -402,7 +402,7 @@ export default function ExperimentCelebration({
             </div>
             {result.streak.is_new_record && result.streak.current > 1 && (
               <span
-                className="ml-2 text-[10px] sm:text-xs px-2 py-1 rounded-full font-bold text-white shadow-md whitespace-nowrap"
+                className="ml-2 text-[10px] sm:text-xs px-2 py-1 rounded-full font-bold text-foreground shadow-md whitespace-nowrap"
                 style={{ background: 'linear-gradient(to right, var(--gold), var(--accent-warm))' }}
               >
                 {L.newRecord}
@@ -481,7 +481,7 @@ export default function ExperimentCelebration({
                     </div>
                     {bonusCoins > 0 && (
                       <span
-                        className="text-xs px-2.5 py-1 rounded-full font-bold text-white shadow whitespace-nowrap"
+                        className="text-xs px-2.5 py-1 rounded-full font-bold text-foreground shadow whitespace-nowrap"
                         style={{ background: 'var(--gold)' }}
                       >
                         🪙 {L.bonusCoins(bonusCoins)}
@@ -515,9 +515,9 @@ export default function ExperimentCelebration({
           <button
             ref={continueBtnRef}
             onClick={onClose}
-            className="w-full py-3 text-white rounded-xl text-sm font-semibold transition-all active:scale-[0.98] min-h-[44px]"
+            className="w-full py-3 text-on-surface-accent rounded-xl text-sm font-semibold transition-all active:scale-[0.98] min-h-[44px]"
             style={{
-              background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
+              background: 'var(--surface-accent)',
               boxShadow: '0 4px 18px rgb(var(--accent-warm-rgb) / 0.28)',
             }}
           >

@@ -110,7 +110,7 @@ function LinkRow({
             onClick={() => handleAction('approve')}
             disabled={loading}
             aria-label={t(isHi, 'Approve', 'स्वीकार करें')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-none text-white transition-opacity ${loading ? 'opacity-50 cursor-default' : 'cursor-pointer'}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-none text-foreground transition-opacity ${loading ? 'opacity-50 cursor-default' : 'cursor-pointer'}`}
             style={{ backgroundColor: '#16A34A' }}
           >
             {loading ? (

@@ -415,7 +415,7 @@ const card: React.CSSProperties = {
 const primaryBtn: React.CSSProperties = {
   display: 'inline-block', padding: '10px 20px', borderRadius: 10,
   fontSize: 13, fontWeight: 700, textDecoration: 'none',
-  background: 'var(--orange, #E8581C)', color: '#fff',
+  background: 'var(--accent-warm-strong)', color: 'var(--on-accent)',
 };
 
 const ghostBtn: React.CSSProperties = {
@@ -432,5 +432,5 @@ const dangerBtn: React.CSSProperties = {
 const linkBtn: React.CSSProperties = {
   display: 'inline-block', marginTop: 12, padding: '10px 20px', borderRadius: 10,
   fontSize: 13, fontWeight: 700, textDecoration: 'none',
-  background: 'var(--orange, #E8581C)', color: '#fff',
+  background: 'var(--accent-warm-strong)', color: 'var(--on-accent)',
 };

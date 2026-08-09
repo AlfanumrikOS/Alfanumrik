@@ -32,7 +32,7 @@ const STATUS_COLORS = {
 } as const;
 
 const PRIMARY_CLS = 'rounded-xl px-5 py-2 text-sm font-bold';
-const PRIMARY_STYLE = { background: 'linear-gradient(135deg, var(--orange), var(--orange-light, #FB923C))', color: '#fff' };
+const PRIMARY_STYLE = { background: 'var(--surface-accent)', color: 'var(--on-surface-accent)' };
 const NAV_CLS = 'rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40';
 const NAV_STYLE = { background: 'var(--surface-2)', border: '1px solid var(--border)' };
 const CARD_STYLE = { background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' };
