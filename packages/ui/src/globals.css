@@ -4270,8 +4270,8 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
 /* ─── Alfa OS flagship redesign (ff_student_os_v1) ──────────────────────────
    CSS-only motion for the OS dashboard + Foxy workspace. Uses the existing
    --ease-atlas curve and a per-node --stagger-i index (set inline by SkillTree
-   / RoadmapNode) — no animation library, no framer-motion (protects P10).
-   prefers-reduced-motion fully disables the reveal. */
+   / RoadmapNode). CSS-only is the DEFAULT (protects P10); framer-motion is
+   permitted since 2026-08-09, never shared-graph. Reduced-motion kills reveal. */
 @keyframes osReveal {
   0%   { opacity: 0; transform: translateY(10px); }
   100% { opacity: 1; transform: translateY(0); }
@@ -4307,7 +4307,7 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
 
 /* Wave 2 (Alfa Momentum): tasteful staggered reveal for the secondary dashboard
    cards (mastery snapshot, board score). Each card sets --reveal-i inline; the
-   hero (--os-mission) leads, these follow. CSS-only, no library (protects P10). */
+   hero (--os-mission) leads, these follow. CSS-only by default (protects P10). */
 .os-reveal-card {
   animation: osReveal 0.44s var(--ease-atlas, cubic-bezier(.22,1,.36,1)) both;
   animation-delay: calc(0.06s + min(var(--reveal-i, 0), 6) * 0.07s);
