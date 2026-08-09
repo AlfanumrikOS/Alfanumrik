@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { WelcomeV2Provider, useWelcomeV2 } from '../WelcomeV2Context';
 import Breadcrumbs from '../../Breadcrumbs';
+import { THEME_BOOTSTRAP_SCRIPT } from '../theme-bootstrap';
 import NavV3, { type NavV3Link } from './NavV3';
 import PricingHeroV3, { type BillingCycle } from './PricingHeroV3';
 import PricingPlansV3 from './PricingPlansV3';
@@ -35,7 +36,7 @@ import s from './welcome-v3.module.css';
  *    cards swap Monthly/Yearly prices in step.
  */
 
-const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var r=document.currentScript&&document.currentScript.parentElement;if(r&&r.setAttribute){r.setAttribute('data-theme','light');}}catch(e){}})();`;
+/* Pre-paint light-theme lock: shared literal in ../theme-bootstrap. */
 
 /** Preview contract: welcome-section anchors cross-link; plans/FAQ are local. */
 const PRICING_NAV_LINKS: readonly NavV3Link[] = [

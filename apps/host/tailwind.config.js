@@ -40,6 +40,13 @@ module.exports = {
         display: ['Sora', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
         data: ['Sora', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
       },
+      // NO `fontSize` block here, deliberately. The fluid type scale already
+      // exists and already works: the `--text-2xs … --text-display` clamp()
+      // tokens are declared in the globals.css `:root`, and the matching
+      // `.text-fluid-*` utilities are hand-written further down that same file
+      // (search "Fluid type utility classes"). Re-declaring them here would
+      // emit a byte-identical duplicate of every one of those rules. Use
+      // `text-fluid-*`; do not add a second, parallel scale.
       colors: {
         brand: {
           // Repointed to the runtime token so `bg-brand-orange` follows the
@@ -96,6 +103,18 @@ module.exports = {
         'mastery-mid': 'var(--mastery-mid)',
         'mastery-high': 'var(--mastery-high)',
         'level-up': 'var(--level-up)',
+        // ── AA-safe status foreground (Wave C) ───────────────────────────────
+        // `--green` (:root) is #16A34A, which is 3.30:1 on --surface-1 (#FFFFFF)
+        // — it FAILS WCAG AA 4.5:1 as normal-size text. The dashboard components
+        // were already *documenting* #15803D (5.01:1) as their intended mastered
+        // colour, but that value is only declared inside the
+        // `html[data-design="cosmic"][data-theme="light"]` scope, which the
+        // student dashboard never enters (useCosmicLightSurface REMOVES
+        // data-design). So the shipped pixels were the failing #16A34A.
+        // `--green-strong` is the AA-safe text/icon green; it is not yet
+        // declared in globals.css (owner: whoever owns the :root token block),
+        // so the fallback carries it. Registered here so the value has one home.
+        'success-strong': 'var(--green-strong, #15803D)',
       },
       boxShadow: {
         'sm': 'var(--shadow-sm)',
@@ -126,6 +145,16 @@ module.exports = {
         'sp-8': 'var(--space-8)',
         'sp-12': 'var(--space-12)',
         'sp-16': 'var(--space-16)',
+        // ── Touch-target minimums (Wave C) ───────────────────────────────────
+        // The `--tap-*` tokens have been declared in globals.css since the
+        // responsive pass but were never reachable from Tailwind, so components
+        // kept re-hardcoding `style={{ minHeight: 44 }}`. Exposing them here
+        // makes `min-h-tap-min` / `min-w-tap-min` the one way to express a
+        // touch target. Zero pre-existing `*-tap-*` usages → no blast radius.
+        'tap-min': 'var(--tap-min)',          /* 44px — Apple HIG minimum */
+        'tap-comfort': 'var(--tap-comfort)',  /* 48px — Material / India market */
+        'tap-large': 'var(--tap-large)',      /* 56px */
+        'tap-hero': 'var(--tap-hero)',        /* 72px */
       },
       keyframes: {
         // Keep existing keyframes from globals.css working via Tailwind

@@ -8,40 +8,23 @@
  * + empty-state fallback identical to LineChart/BarChart.
  *
  * Donut data is flat (not series-shaped) since each slice is a category.
+ *
+ * P10 (2026-08-09): the Recharts render body lives in ./DonutChartImpl and is
+ * loaded through `next/dynamic`. The outer div reserves the full `height` up
+ * front, so the chart swapping in causes zero layout shift.
  */
 
-import {
-  PieChart as RechartsPieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
-import { CHART_PALETTE } from './LineChart';
+import dynamic from 'next/dynamic';
+import { isDonutEmpty, type DonutChartProps } from './chart-shared';
 
-export interface DonutSlice {
-  /** Display name (used in legend + tooltip). */
-  name: string;
-  /** Slice value — share is computed against the sum. */
-  value: number;
-}
+export type { DonutSlice, DonutChartProps } from './chart-shared';
 
-export interface DonutChartProps {
-  data: DonutSlice[];
-  /** Pixel height of the chart (defaults to 240). */
-  height?: number;
-  /** Override empty-state copy. */
-  emptyLabel?: string;
-  /** Inner radius (% of outer) — controls donut hole size. Defaults 60%. */
-  innerRadiusPct?: number;
-}
-
-function isEmpty(data: DonutSlice[]): boolean {
-  if (!data || data.length === 0) return true;
-  // All-zero values render an invisible chart — treat as empty.
-  return data.every((d) => !d.value || d.value <= 0);
-}
+const DonutChartImpl = dynamic(() => import('./DonutChartImpl'), {
+  ssr: false,
+  // Space is reserved by the wrapper div below — no spinner, no copy (any copy
+  // here would need a Hindi twin, P7).
+  loading: () => null,
+});
 
 export function DonutChart({
   data,
@@ -49,7 +32,7 @@ export function DonutChart({
   emptyLabel = 'No data to display',
   innerRadiusPct = 60,
 }: DonutChartProps) {
-  if (isEmpty(data)) {
+  if (isDonutEmpty(data)) {
     return (
       <div
         className="flex items-center justify-center text-sm text-muted-foreground"
@@ -63,37 +46,9 @@ export function DonutChart({
   }
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <RechartsPieChart>
-        <Pie
-          data={data}
-          dataKey="value"
-          nameKey="name"
-          innerRadius={`${innerRadiusPct}%`}
-          outerRadius="80%"
-          paddingAngle={2}
-          isAnimationActive={false}
-        >
-          {data.map((slice, i) => (
-            <Cell
-              key={slice.name}
-              fill={CHART_PALETTE[i % CHART_PALETTE.length]}
-              stroke="var(--surface-1)"
-              strokeWidth={2}
-            />
-          ))}
-        </Pie>
-        <Tooltip
-          contentStyle={{
-            background: 'var(--surface-1)',
-            border: '1px solid var(--surface-3)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--text-1)',
-          }}
-        />
-        <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-2)' }} />
-      </RechartsPieChart>
-    </ResponsiveContainer>
+    <div style={{ height }}>
+      <DonutChartImpl data={data} height={height} innerRadiusPct={innerRadiusPct} />
+    </div>
   );
 }
 

@@ -10,7 +10,7 @@
  *
  * Visual hierarchy:
  *   1. Proportion bar  — instant distribution glance (no interaction needed)
- *   2. Count number    — hero stat, text-2xl, tabular mono, colour-coded
+ *   2. Count number    — hero stat, fluid --text-2xl step, tabular Sora, colour-coded
  *   3. Label           — clear, never truncated
  *   4. Review now CTA  — the panel's ONE link, only on Needs Revision when
  *                        count > 0
@@ -34,6 +34,12 @@ import {
   type MasteryOverviewRow,
   type BucketCounts,
 } from '@alfanumrik/lib/dashboard/mastery-buckets';
+import {
+  MASTERY_STRONG,
+  MASTERY_LEARNING,
+  MASTERY_REVISE,
+  tint,
+} from '@alfanumrik/ui/dashboard/os/palette';
 
 interface MasterySnapshotProps {
   isHi: boolean;
@@ -49,12 +55,11 @@ interface BucketDef {
   ctaEn?: string;
   ctaHi?: string;
   /**
-   * Semantic colour token (NOT a literal hex). On the cosmic-light dashboard
-   * these resolve to the scoped, saturated mastery palette:
-   *   mastered      → --green   (#15803D)
-   *   learning      → --accent-warm (#E8581C, the stable warm channel)
-   *   needsRevision → --purple  (#7C3AED, deliberate violet accent)
-   * See the cosmic-light block in globals.css for the scoped re-declarations.
+   * Semantic colour token from the shared dashboard palette (never a literal).
+   *   mastered      → MASTERY_STRONG   (AA-safe green — see palette.ts for why
+   *                                     this is NOT `--green`)
+   *   learning      → MASTERY_LEARNING (the stable warm channel)
+   *   needsRevision → MASTERY_REVISE   (deliberate violet accent)
    */
   color: string;
 }
@@ -65,14 +70,14 @@ const BUCKETS: BucketDef[] = [
     glyph: '✓',
     labelEn: 'Mastered',
     labelHi: 'महारत हासिल',
-    color: 'var(--green, #15803D)',
+    color: MASTERY_STRONG,
   },
   {
     key: 'learning',
     glyph: '◑',
     labelEn: 'Learning',
     labelHi: 'सीख रहे हैं',
-    color: 'var(--accent-warm, #E8581C)',
+    color: MASTERY_LEARNING,
   },
   {
     key: 'needsRevision',
@@ -81,15 +86,9 @@ const BUCKETS: BucketDef[] = [
     labelHi: 'दोहराना जरूरी',
     ctaEn: 'Review now →',
     ctaHi: 'अभी दोहराओ →',
-    color: 'var(--purple, #7C3AED)',
+    color: MASTERY_REVISE,
   },
 ];
-
-/** color-mix alpha helper — works for both var() tokens and hex, so the bg
- *  tints and left-accent borders stay tied to the semantic colour token. */
-function tint(color: string, pct: number): string {
-  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
-}
 
 export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProps) {
   const { data, isLoading, error, coverage } = useMasteryOverview(studentId);
@@ -108,7 +107,7 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
         aria-label={isHi ? 'महारत लोड हो रही है' : 'Loading mastery'}
       >
         <div className="flex items-center justify-between mb-3">
-          <Skeleton width="50%" height={11} />
+          <Skeleton width="50%" height={12} />
           <Skeleton width="22%" height={20} rounded="rounded-full" />
         </div>
         <Skeleton height={6} className="mb-4 rounded-full" />
@@ -153,15 +152,17 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
     >
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-3">
+        {/* Section eyebrow — the ONE shared treatment across every dashboard
+            card (see RevisionRail / SubjectRoadmaps / BoardScoreWidget). */}
         <h2
-          className="text-xs font-bold uppercase tracking-widest"
+          className="text-fluid-2xs font-bold uppercase tracking-widest"
           style={{ color: 'var(--text-3)' }}
         >
           {isHi ? 'महारत' : 'Mastery'}
         </h2>
         {total > 0 && (
           <span
-            className="text-xs font-semibold px-2 py-0.5 rounded-full"
+            className="text-fluid-2xs font-semibold font-data tabular-nums px-2 py-0.5 rounded-full shrink-0"
             style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
           >
             {total}&thinsp;{isHi ? 'विषय' : 'topics'}
@@ -172,7 +173,7 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
       {/* ── Error state ── */}
       {error && !isLoading ? (
         <div
-          className="rounded-xl p-3 text-center text-sm"
+          className="rounded-xl p-3 text-center text-fluid-sm"
           style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
           role="status"
         >
@@ -193,10 +194,10 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
             style={{ background: 'var(--surface-2)', border: '1px dashed var(--border)' }}
           >
             <div className="text-2xl mb-2" aria-hidden="true">📭</div>
-            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
+            <p className="text-fluid-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
               {isHi ? 'अभी यहाँ कुछ नहीं है' : 'Nothing to show here yet'}
             </p>
-            <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+            <p className="text-fluid-xs" style={{ color: 'var(--text-3)' }}>
               {isHi
                 ? 'आपकी कक्षा के लिए महारत अभी उपलब्ध नहीं है — जल्द देखें।'
                 : "Mastery for your grade isn't set up yet — check back soon."}
@@ -209,14 +210,14 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
             style={{ background: 'var(--surface-2)', border: '1px dashed var(--border)' }}
           >
             <div className="text-2xl mb-2" aria-hidden="true">🎯</div>
-            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
+            <p className="text-fluid-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
               {isHi ? 'अभी तक कोई क्विज़ नहीं' : 'No quizzes yet'}
             </p>
             {/* Guidance copy only — no CTA here. The action for a student with
                 zero quizzes is the TodaysMission hero on the same screen; a
                 second /quiz link would be the redundant twin of the contextual
                 "Review now →" below. */}
-            <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+            <p className="text-fluid-xs" style={{ color: 'var(--text-3)' }}>
               {isHi
                 ? 'पहली क्विज़ दो और महारत यहाँ देखो।'
                 : 'Take a quiz to see your mastery here.'}
@@ -235,11 +236,11 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
           */}
           <div className="flex items-center gap-3 mb-4">
             {showRing && (
-              <StatRing value={masteredPct} size={56} strokeWidth={6} color="var(--green, #15803D)">
+              <StatRing value={masteredPct} size={56} strokeWidth={6} color={MASTERY_STRONG}>
                 <div className="text-center leading-none">
                   <span
-                    className="block text-sm font-extrabold tabular-nums"
-                    style={{ color: 'var(--green, #15803D)' }}
+                    className="block text-fluid-sm font-extrabold font-data tabular-nums"
+                    style={{ color: MASTERY_STRONG }}
                   >
                     {masteredPct}%
                   </span>
@@ -247,7 +248,7 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
               </StatRing>
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
+              <p className="text-fluid-xs font-semibold" style={{ color: 'var(--text-2)' }}>
                 {isHi ? 'महारत हासिल' : 'Mastered'}
               </p>
               {/*
@@ -282,7 +283,11 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
           {/*
             Stat rows — vertical list so labels never truncate at any container width.
             Left border accent (3 px solid) carries the per-bucket colour identity.
-            Hero count is 1.5 rem (24 px) for immediate scannability in the narrow rail.
+            Count uses the fluid --text-2xl step (24 → 30 px) for immediate
+            scannability in the narrow rail.
+            Vertical padding now comes off the shared 4 px spacing scale
+            (Tailwind py-*) instead of inline pixel literals; the `hasCta` row is
+            tighter because its CTA already carries a 44 px tap box of its own.
             Responsive by nature: the row fills the container width automatically.
           */}
           <div className="flex flex-col gap-2" role="list">
@@ -293,44 +298,55 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
               return (
                 <div
                   key={b.key}
-                  className="flex items-center gap-3 rounded-xl px-3 transition-colors"
+                  className={`flex items-center gap-3 rounded-xl px-3 transition-colors ${
+                    hasCta ? 'pt-2 pb-1' : 'py-2.5'
+                  }`}
                   style={{
                     background: tint(b.color, 6),
                     borderLeft: `3px solid ${b.color}`,
-                    paddingTop: hasCta ? '8px' : '10px',
-                    paddingBottom: hasCta ? '8px' : '10px',
                   }}
                   role="listitem"
                   aria-label={`${label}: ${value} ${isHi ? 'विषय' : 'topics'}`}
                 >
-                  {/* Hero count number — primary data point */}
+                  {/* Hero count number — primary data point.
+                      `font-data` is the design system's declared numeric voice
+                      (Sora). It used to read `var(--font-mono, …)`, but
+                      `--font-mono` is only declared inside the
+                      html[data-design="cosmic"] scope — which this surface
+                      removes — so these three numbers were silently rendering
+                      in the OS default monospace, the only monospaced type on
+                      the whole dashboard. */}
                   <span
-                    className="shrink-0 font-extrabold tabular-nums leading-none"
-                    style={{
-                      color: b.color,
-                      fontSize: '1.5rem',
-                      lineHeight: 1,
-                      minWidth: '2rem',
-                      textAlign: 'right',
-                      fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-                    }}
+                    className="shrink-0 text-fluid-2xl font-extrabold font-data tabular-nums leading-none text-right"
+                    style={{ color: b.color, minWidth: '2ch' }}
                     aria-hidden="true"
                   >
                     {value}
                   </span>
 
-                  {/* Label + optional CTA */}
+                  {/* Label + optional CTA. The glyph is a tinted chip in the
+                      bucket's own hue: it is what makes the three segments of
+                      the proportion bar above decodable without relying on
+                      colour perception (WCAG 1.4.1), and it matches the status
+                      chip idiom BoardScoreWidget already uses. */}
                   <div className="flex-1 min-w-0">
                     <p
-                      className="text-sm font-semibold leading-snug"
+                      className="flex items-center gap-2 text-fluid-sm font-semibold leading-snug"
                       style={{ color: 'var(--text-1)' }}
                     >
-                      {b.glyph}&ensp;{label}
+                      <span
+                        className="inline-flex shrink-0 items-center justify-center w-5 h-5 rounded-full text-fluid-2xs font-bold leading-none"
+                        style={{ background: tint(b.color, 14), color: b.color }}
+                        aria-hidden="true"
+                      >
+                        {b.glyph}
+                      </span>
+                      <span className="min-w-0">{label}</span>
                     </p>
                     {hasCta && (
                       <a
                         href="/quiz"
-                        className="text-xs font-semibold mt-0.5 inline-block transition-opacity hover:opacity-70"
+                        className="inline-flex items-center min-h-tap-min text-fluid-xs font-semibold transition-opacity hover:opacity-70 focus:outline-none focus-visible:ring-2 rounded"
                         style={{ color: b.color }}
                       >
                         {isHi ? b.ctaHi : b.ctaEn}

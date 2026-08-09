@@ -26,16 +26,19 @@ import { useState, useEffect } from 'react';
 import useSWR from 'swr';
 import { StatRing, Skeleton } from '@alfanumrik/ui/ui';
 import { authedFetch } from '@alfanumrik/lib/authed-fetch';
-
-/* color-mix alpha helper — keeps tints tied to semantic tokens (works for both
-   var() tokens and hex). */
-function tint(color: string, pct: number): string {
-  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
-}
-
-/* Stable warm-orange tints — the shared warm channel, declared in :root. */
-const WARM = 'var(--accent-warm, #E8581C)';
-const WARM_STRONG = 'var(--accent-warm-strong, #C2440F)';
+/* Shared dashboard palette. `tint()` and the warm ladder used to be declared
+   locally here AND in MasterySnapshot — same helper, two copies, free to drift. */
+import {
+  WARM,
+  WARM_10,
+  ACCENT_SURFACE,
+  ON_ACCENT,
+  MASTERY_STRONG,
+  MASTERY_LEARNING,
+  MASTERY_REVISE,
+  STATUS_CRITICAL,
+  tint,
+} from '@alfanumrik/ui/dashboard/os/palette';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -85,10 +88,10 @@ interface BoardScorePrediction {
 // Semantic status palette (no literal brand hex): strong→green, moderate→warm
 // (stable channel), weak→purple (deliberate violet accent), critical→danger.
 const STATUS_CFG = {
-  strong:   { icon: '✓', en: 'Strong',   hi: 'मजबूत',  color: 'var(--green, #15803D)' },
-  moderate: { icon: '≈', en: 'Moderate', hi: 'मध्यम',  color: 'var(--accent-warm, #E8581C)' },
-  weak:     { icon: '!', en: 'Weak',     hi: 'कमजोर',  color: 'var(--purple, #7C3AED)' },
-  critical: { icon: '✕', en: 'Critical', hi: 'गंभीर',  color: 'var(--danger, #DC2626)' },
+  strong:   { icon: '✓', en: 'Strong',   hi: 'मजबूत',  color: MASTERY_STRONG },
+  moderate: { icon: '≈', en: 'Moderate', hi: 'मध्यम',  color: MASTERY_LEARNING },
+  weak:     { icon: '!', en: 'Weak',     hi: 'कमजोर',  color: MASTERY_REVISE },
+  critical: { icon: '✕', en: 'Critical', hi: 'गंभीर',  color: STATUS_CRITICAL },
 } as const;
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
@@ -229,7 +232,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
         style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
         aria-label={T.title}
       >
-        <h2 className="text-sm font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>
+        <h2 className="text-fluid-2xs font-bold uppercase tracking-widest mb-3" style={{ color: 'var(--text-3)' }}>
           {T.title}
         </h2>
         <div
@@ -237,8 +240,8 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
           style={{ border: '1px dashed var(--border)' }}
         >
           <span className="text-3xl" aria-hidden="true">🚀</span>
-          <p className="text-sm font-bold mt-2" style={{ color: 'var(--text-2)' }}>{T.comingSoon}</p>
-          <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-3)' }}>{T.comingSoonDesc}</p>
+          <p className="text-fluid-sm font-bold mt-2" style={{ color: 'var(--text-2)' }}>{T.comingSoon}</p>
+          <p className="text-fluid-xs mt-1 leading-relaxed" style={{ color: 'var(--text-3)' }}>{T.comingSoonDesc}</p>
         </div>
       </section>
     );
@@ -253,16 +256,16 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
         style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
         aria-label={T.title}
       >
-        <h2 className="text-sm font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text-3)' }}>
+        <h2 className="text-fluid-2xs font-bold uppercase tracking-widest mb-3" style={{ color: 'var(--text-3)' }}>
           {T.title}
         </h2>
         <div className="rounded-2xl p-4 text-center" style={{ background: 'var(--surface-2)' }}>
-          <p className="text-sm font-semibold" style={{ color: 'var(--text-2)' }}>{T.errorTitle}</p>
-          <p className="text-xs mt-1 mb-3" style={{ color: 'var(--text-3)' }}>{T.errorDesc}</p>
+          <p className="text-fluid-sm font-semibold" style={{ color: 'var(--text-2)' }}>{T.errorTitle}</p>
+          <p className="text-fluid-xs mt-1 mb-3" style={{ color: 'var(--text-3)' }}>{T.errorDesc}</p>
           <button
             type="button"
             onClick={() => void mutate()}
-            className="text-xs font-bold underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 rounded"
+            className="inline-flex items-center min-h-tap-min text-fluid-xs font-bold underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 rounded"
             style={{ color: WARM }}
           >
             {T.retry}
@@ -281,17 +284,17 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
         style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
         aria-label={T.title}
       >
-        <h2 className="text-sm font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-3)' }}>
+        <h2 className="text-fluid-2xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--text-3)' }}>
           {T.title}
         </h2>
-        <p className="text-xs mb-4" style={{ color: 'var(--text-3)', opacity: 0.7 }}>{T.subtitle}</p>
+        <p className="text-fluid-xs mb-4" style={{ color: 'var(--text-3)' }}>{T.subtitle}</p>
         <div
           className="rounded-2xl p-5 text-center"
           style={{ border: '1px dashed var(--border)' }}
         >
           <span className="text-3xl" aria-hidden="true">📊</span>
-          <p className="text-sm font-bold mt-2" style={{ color: 'var(--text-2)' }}>{T.noData}</p>
-          <p className="text-xs mt-1 leading-relaxed max-w-xs mx-auto" style={{ color: 'var(--text-3)' }}>
+          <p className="text-fluid-sm font-bold mt-2" style={{ color: 'var(--text-2)' }}>{T.noData}</p>
+          <p className="text-fluid-xs mt-1 leading-relaxed max-w-xs mx-auto" style={{ color: 'var(--text-3)' }}>
             {T.noDataDesc}
           </p>
         </div>
@@ -321,9 +324,9 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
 
   // Gauge colour — semantic tokens (mastered green / warm / danger).
   const gaugeColor =
-    sel.predicted_pct >= 75 ? 'var(--green, #15803D)'
-    : sel.predicted_pct >= 50 ? WARM
-    : 'var(--danger, #DC2626)';
+    sel.predicted_pct >= 75 ? MASTERY_STRONG
+    : sel.predicted_pct >= 50 ? MASTERY_LEARNING
+    : STATUS_CRITICAL;
 
   // Chapter list — sorted by chapter_number (keys are stringified numbers)
   const chapterEntries = Object.entries(sel.chapter_scores ?? {})
@@ -344,16 +347,20 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h2 className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+          <h2 className="text-fluid-2xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>
             {T.title}
           </h2>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)', opacity: 0.7 }}>
+          {/* No extra opacity dimmer. --text-3 is ALREADY the muted tier
+              (6.13:1 on the card); knocking it to 70% took this subtitle to
+              3.16:1, i.e. below AA, for no hierarchy the token was not already
+              expressing. */}
+          <p className="text-fluid-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
             {T.subtitle}
           </p>
         </div>
         <span
-          className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
-          style={{ background: tint('var(--green, #15803D)', 12), color: 'var(--green, #15803D)' }}
+          className="text-fluid-2xs font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+          style={{ background: tint(MASTERY_STRONG, 12), color: MASTERY_STRONG }}
         >
           CBSE
         </span>
@@ -372,7 +379,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
         <StatRing value={gaugeValue} size={84} strokeWidth={7} color={gaugeColor}>
           <div className="text-center leading-none" style={{ fontFamily: 'var(--font-display)' }}>
             <span
-              className="block text-base font-extrabold tabular-nums"
+              className="block text-fluid-base font-extrabold font-data tabular-nums"
               style={{ color: gaugeColor }}
             >
               {gaugeValue}%
@@ -382,25 +389,25 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
 
         <div className="flex-1 min-w-0">
           <div
-            className="text-xl font-bold leading-tight"
+            className="text-fluid-xl font-bold font-data leading-tight"
             style={{ color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums' }}
           >
             {Math.round(sel.predicted_score)}
             {subjectMax > 0 && (
-              <span className="text-sm font-normal ml-0.5" style={{ color: 'var(--text-3)' }}>
+              <span className="text-fluid-sm font-normal ml-0.5" style={{ color: 'var(--text-3)' }}>
                 /{subjectMax}
               </span>
             )}
           </div>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{T.predicted}</p>
-          <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--text-3)' }}>
+          <p className="text-fluid-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{T.predicted}</p>
+          <p className="text-fluid-xs mt-1.5 font-medium" style={{ color: 'var(--text-3)' }}>
             {T.confidence}:{' '}
             <span style={{ fontVariantNumeric: 'tabular-nums' }}>
               {Math.round(sel.confidence_band_low)}–{Math.round(sel.confidence_band_high)}%
             </span>
           </p>
           {sel.coverage_pct < 60 && (
-            <p className="text-xs mt-1 font-semibold" style={{ color: WARM }}>
+            <p className="text-fluid-xs mt-1 font-semibold" style={{ color: WARM }}>
               {T.lowCoverage}
             </p>
           )}
@@ -425,11 +432,13 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
                   setSelectedIdx(i);
                   setShowDetails(false);
                 }}
-                className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                className="inline-flex items-center min-h-tap-min text-fluid-xs font-semibold px-4 py-1.5 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                 style={{
-                  background: active ? WARM : 'var(--surface-2)',
-                  color: active ? '#fff' : 'var(--text-2)',
-                  border: `1px solid ${active ? WARM : 'var(--border)'}`,
+                  // Selected tab now uses the AA-verified CTA pairing. It was
+                  // white on bare --accent-warm (#E8581C) = 3.59:1, a fail.
+                  background: active ? ACCENT_SURFACE : 'var(--surface-2)',
+                  color: active ? ON_ACCENT : 'var(--text-2)',
+                  border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
                 }}
               >
                 {p.subject_label || p.subject_code}
@@ -441,7 +450,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
 
       {/* ── Coverage bar ────────────────────────────────────────────────────── */}
       <div className="mb-4">
-        <div className="flex justify-between text-xs mb-1.5" style={{ color: 'var(--text-3)' }}>
+        <div className="flex justify-between gap-2 text-fluid-xs mb-1.5" style={{ color: 'var(--text-3)' }}>
           <span>{T.coverage}</span>
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>
             {Math.round(sel.coverage_pct)}%
@@ -461,7 +470,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
             className="h-full rounded-full"
             style={{
               width: `${sel.coverage_pct}%`,
-              background: sel.coverage_pct >= 60 ? 'var(--green, #15803D)' : WARM,
+              background: sel.coverage_pct >= 60 ? MASTERY_STRONG : MASTERY_LEARNING,
               transition: 'width 1s cubic-bezier(0.4,0,0.2,1)',
             }}
           />
@@ -482,25 +491,20 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
             aria-expanded={showDetails}
             aria-controls="board-score-details"
             data-testid="board-score-details-toggle"
-            className="w-full flex items-center justify-between rounded-2xl px-4 py-3 text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
+            className="w-full flex items-center justify-between gap-2 rounded-2xl px-4 py-3 min-h-tap-comfort text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2"
             style={{
               background: 'var(--surface-2)',
               border: '1px solid var(--border)',
-              minHeight: 48,
             }}
           >
-            <span className="text-sm font-bold" style={{ color: 'var(--text-2)' }}>
+            <span className="text-fluid-sm font-bold" style={{ color: 'var(--text-2)' }}>
               {showDetails ? T.hideAnalysis : T.viewAnalysis}
             </span>
             <span className="flex items-center gap-2">
               {chapterEntries.length > 0 && (
                 <span
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{
-                    background: 'rgb(var(--accent-warm-rgb) / 0.10)',
-                    color: WARM,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
+                  className="text-fluid-2xs font-bold font-data tabular-nums px-2 py-0.5 rounded-full whitespace-nowrap"
+                  style={{ background: WARM_10, color: WARM }}
                 >
                   {chapterEntries.length} {T.chapters}
                 </span>
@@ -525,7 +529,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
               {chapterEntries.length > 0 && (
                 <div>
                   <h3
-                    className="text-xs font-bold uppercase tracking-wider mb-2"
+                    className="text-fluid-2xs font-bold uppercase tracking-widest mb-2"
                     style={{ color: 'var(--text-3)' }}
                   >
                     {T.chapterBd}
@@ -547,26 +551,26 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
                           {/* Row: icon + name + marks + badge */}
                           <div className="flex items-center gap-2 mb-1.5">
                             <span
-                              className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold flex-shrink-0"
+                              className="inline-flex items-center justify-center w-5 h-5 rounded-full text-fluid-2xs font-bold flex-shrink-0"
                               style={{ background: tint(cfg.color, 14), color: cfg.color }}
                               aria-hidden="true"
                             >
                               {cfg.icon}
                             </span>
                             <span
-                              className="text-xs font-semibold flex-1 truncate"
+                              className="text-fluid-xs font-semibold flex-1 truncate"
                               style={{ color: 'var(--text-1)' }}
                             >
                               {ch.chapter_name}
                             </span>
                             <span
-                              className="text-xs font-bold flex-shrink-0"
+                              className="text-fluid-xs font-bold font-data flex-shrink-0 whitespace-nowrap"
                               style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}
                             >
                               {Math.round(ch.predicted_marks)}/{ch.marks_allocated}m
                             </span>
                             <span
-                              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                              className="text-fluid-2xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap"
                               style={{ background: tint(cfg.color, 13), color: cfg.color }}
                             >
                               {isHi ? cfg.hi : cfg.en}
@@ -598,7 +602,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
               {sel.recovery_plan && sel.recovery_plan.length > 0 && (
                 <div>
                   <h3
-                    className="text-xs font-bold uppercase tracking-wider mb-2"
+                    className="text-fluid-2xs font-bold uppercase tracking-widest mb-2"
                     style={{ color: 'var(--text-3)' }}
                   >
                     {T.recovery}
@@ -618,25 +622,22 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
                           role="listitem"
                         >
                           <span
-                            className="flex-shrink-0 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center"
-                            style={{
-                              background: `linear-gradient(135deg, ${WARM}, ${WARM_STRONG})`,
-                              color: '#fff',
-                            }}
+                            className="flex-shrink-0 w-5 h-5 rounded-full text-fluid-2xs font-bold font-data flex items-center justify-center"
+                            style={{ background: ACCENT_SURFACE, color: ON_ACCENT }}
                             aria-hidden="true"
                           >
                             {i + 1}
                           </span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold leading-snug" style={{ color: 'var(--text-1)' }}>
+                            <p className="text-fluid-xs font-semibold leading-snug" style={{ color: 'var(--text-1)' }}>
                               {item.chapter_name}
                             </p>
-                            <p className="text-xs mt-0.5 leading-snug" style={{ color: 'var(--text-3)' }}>
+                            <p className="text-fluid-xs mt-0.5 leading-snug" style={{ color: 'var(--text-3)' }}>
                               {item.action_label}
                             </p>
                           </div>
                           <span
-                            className="flex-shrink-0 text-xs font-bold"
+                            className="flex-shrink-0 text-fluid-xs font-bold font-data whitespace-nowrap"
                             style={{ color: cfg.color, fontVariantNumeric: 'tabular-nums' }}
                             aria-label={`${Math.round(item.recoverable_marks)} recoverable marks`}
                           >

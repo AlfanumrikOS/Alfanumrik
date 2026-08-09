@@ -40,7 +40,13 @@ export function ProgressBar({
   ariaLabel,
   className,
 }: ProgressBarProps) {
-  const pct = Math.min(100, Math.max(0, Math.round(value)));
+  // Non-finite input coerces to 0 BEFORE clamping. Without the isFinite guard
+  // a NaN `value` survives Math.round/max/min and renders literal "NaN%" as the
+  // fill width and aria-valuenow. This guard came from the cosmic ProgressBar
+  // that this primitive replaced (deleted 2026-08-09) — it is display-only
+  // defensiveness and derives no number (P1/P2 stay in the assessment domain).
+  const safe = Number.isFinite(value) ? value : 0;
+  const pct = Math.min(100, Math.max(0, Math.round(safe)));
 
   return (
     <div className={className}>
