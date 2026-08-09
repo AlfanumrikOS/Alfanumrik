@@ -1,4 +1,4 @@
-﻿-- Migration: 20260814000000_answer_key_oracle_closure_and_v1_gate.sql
+-- Migration: 20260814000000_answer_key_oracle_closure_and_v1_gate.sql
 -- Audit remediation (2026-08-14) — closes findings from the backend+DB audit:
 --
 --   C1 (Critical): get_question_answer_key() was an UNGUARDED SECURITY DEFINER
