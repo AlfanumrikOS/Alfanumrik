@@ -337,7 +337,7 @@ function ParentConsentContent() {
         <button
           onClick={handleSubmit}
           disabled={submitting || !attested}
-          className="rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-[44px] rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting
             ? t(isHi, 'Submitting…', 'जमा कर रहे हैं…')

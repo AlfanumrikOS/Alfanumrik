@@ -673,7 +673,16 @@ export default function CommandCenter() {
   // exactly as it did before this change.
   const pulseClassId =
     effectiveClassId && !effectiveClassId.startsWith('grade-') ? effectiveClassId : undefined;
-  const { data: classPulse } = useClassPulse(pulseClassId);
+  // `error` is now read. Pulse contributes at-risk students that legacy
+  // `get_alerts` never produces a row for, so when this read fails the union
+  // below silently SHRINKS: students Pulse had flagged vanish from the rail
+  // and the "At-risk" tile under-counts. If legacy alerts also came back
+  // empty, the rail rendered "No at-risk students detected." — a verdict about
+  // a class the page only half-read. `pulseDegraded` keeps that reassuring
+  // verdict off the screen and says so instead.
+  const { data: classPulse, error: classPulseError, mutate: mutateClassPulse } =
+    useClassPulse(pulseClassId);
+  const pulseDegraded = !!pulseClassId && !!classPulseError;
 
   // ONE at-risk determination per student — the UNION of legacy `get_alerts`
   // and Pulse's three signals, each contributing a traceable reason string
@@ -1147,9 +1156,12 @@ export default function CommandCenter() {
           value={activeClass?.avg_mastery != null ? `${activeClass.avg_mastery}%` : '—'}
           accentColor="var(--purple)"
         />
+        {/* An at-risk COUNT is only shown when both contributing sources
+            resolved. A Pulse failure makes the union incomplete, so the
+            number would be an undercount presented as a fact. */}
         <StatCard
           label={tt(isHi, 'At-risk', 'जोखिम में')}
-          value={alertsLoading || alertsError ? '—' : mergedAlerts.length}
+          value={alertsLoading || alertsError || pulseDegraded ? '—' : mergedAlerts.length}
           accentColor={criticalCount > 0 ? 'var(--danger, #DC2626)' : 'var(--warning, #F5A623)'}
         />
         <StatCard
@@ -1392,7 +1404,7 @@ export default function CommandCenter() {
           {/* Risk breakdown donut — the reconciled (T7) at-risk determination,
               grouped by severity, against the roster. Rendered only once the
               alerts rail has resolved (no partial/loading donut). */}
-          {!alertsLoading && !alertsError && rosterSize > 0 && (
+          {!alertsLoading && !alertsError && !pulseDegraded && rosterSize > 0 && (
             <div className="mt-3" data-testid="risk-breakdown-donut">
               <DonutChart data={riskBreakdownData} height={160} />
             </div>
@@ -1419,6 +1431,32 @@ export default function CommandCenter() {
                   onClick={() => void mutateAlerts()}
                   className="min-h-11 rounded-lg px-4 py-2 text-[13px] font-semibold"
                   style={{ border: '1px solid var(--danger, #DC2626)' }}
+                >
+                  {tt(isHi, 'Try again', 'फिर से कोशिश करें')}
+                </button>
+              </div>
+            ) : mergedAlerts.length === 0 && pulseDegraded ? (
+              /* Legacy alerts came back empty, but the Pulse half of the
+                 at-risk union failed. "No at-risk students detected" here
+                 would be a green light issued on half the evidence. */
+              <div
+                data-testid="alerts-partial"
+                role="alert"
+                className="text-center py-8"
+                style={{ color: 'var(--warning, #F5A623)' }}
+              >
+                <p className="text-[13px] font-semibold mb-3">
+                  {tt(
+                    isHi,
+                    "Part of the at-risk check didn't load — this list may be incomplete.",
+                    'जोखिम जांच का एक हिस्सा लोड नहीं हुआ — यह सूची अधूरी हो सकती है।',
+                  )}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void mutateClassPulse()}
+                  className="min-h-11 rounded-lg px-4 py-2 text-[13px] font-semibold"
+                  style={{ border: '1px solid var(--warning, #F5A623)' }}
                 >
                   {tt(isHi, 'Try again', 'फिर से कोशिश करें')}
                 </button>
@@ -1520,7 +1558,9 @@ export default function CommandCenter() {
 // ── Class Rankings Widget ──────────────────────────────────────────────
 // Top 5 this week. Collapsible. 5-min refresh. P7: bilingual. P13: name+XP only.
 function ClassRankingsWidget({ classId, isHi }: { classId: string; isHi: boolean }) {
-  const { data, isLoading } = useClassLeaderboard(classId, true);
+  // `error` is now read: without it a failed leaderboard read rendered
+  // "No data yet", which reads as "nobody in this class earned XP".
+  const { data, error, isLoading, mutate } = useClassLeaderboard(classId, true);
   const [open, setOpen] = useState(true);
   const rankColor = (r: number) =>
     r === 1 ? '#FFD700' : r === 2 ? '#C0C0C0' : r === 3 ? '#CD7F32' : 'var(--surface-2)';
@@ -1537,7 +1577,27 @@ function ClassRankingsWidget({ classId, isHi }: { classId: string; isHi: boolean
           {isLoading && (
             <div className="h-24 rounded-lg animate-pulse" style={{ background: 'var(--surface-2)' }} aria-hidden="true" />
           )}
-          {!isLoading && (!data?.items || data.items.length === 0) && (
+          {!isLoading && error && (
+            <div
+              data-testid="class-rankings-error"
+              role="alert"
+              className="text-center py-4"
+              style={{ color: 'var(--danger, #DC2626)' }}
+            >
+              <p className="text-[13px] font-semibold mb-3">
+                {isHi ? 'रैंकिंग लोड नहीं हो सकी' : "Couldn't load rankings"}
+              </p>
+              <button
+                type="button"
+                onClick={() => void mutate()}
+                className="min-h-11 rounded-lg px-4 py-2 text-[13px] font-semibold"
+                style={{ border: '1px solid var(--danger, #DC2626)' }}
+              >
+                {isHi ? 'फिर से कोशिश करें' : 'Try again'}
+              </button>
+            </div>
+          )}
+          {!isLoading && !error && (!data?.items || data.items.length === 0) && (
             <p className="text-[13px] text-center py-4" style={{ color: 'var(--text-3)' }}>
               {isHi ? 'अभी कोई डेटा नहीं' : 'No data yet'}
             </p>

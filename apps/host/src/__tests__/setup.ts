@@ -180,8 +180,78 @@ if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.startsWith('sk-tes
 }
 
 import '@testing-library/jest-dom/vitest';
+import { configure as configureTestingLibrary } from '@testing-library/react';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
+
+// ── testing-library async polling budget ─────────────────────────────────────
+//
+// ⚠️  DO NOT "TIDY" THIS BACK TO THE DEFAULT. The default is 1000 ms and it is
+// demonstrably too tight for this suite. Read the measurements before touching.
+//
+// WHAT THIS DOES — AND WHAT IT DOES NOT DO.
+// `asyncUtilTimeout` is the wall-clock budget `waitFor`,
+// `waitForElementToBeRemoved`, and every `findBy*` / `findAllBy*` query get to
+// POLL before they give up. It is a deadline, not an assertion. Nothing here
+// weakens, relaxes, or skips a single expectation: every `expect()` inside a
+// `waitFor` callback still has to become literally true, and every synchronous
+// `getBy*` assertion that follows a `waitFor` is completely unaffected (those
+// never poll — they pass or throw on the first tick). Raising this number can
+// only change WHEN a test fails, never WHETHER a true assertion is required.
+//
+// WHY 5000 ms — the measurement, not a vibe.
+// A component-render timing study on `/parent/reports` (the page behind
+// `src/__tests__/parent/parent-reports-design-system-refactor.test.tsx`) was run
+// on one machine, alternating that page's source between commit 819a5e71a
+// (pre-Wave-B) and the then-current HEAD (post-Wave-B), three samples each —
+// time from `render()` to the asserted value appearing in the DOM:
+//
+//     pre-Wave-B  (819a5e71a) : 544 / 979 / 549 ms
+//     post-Wave-B (HEAD)      : 573 / 609 / 625 ms
+//
+// The 979 ms reading is the whole argument. Against a 1000 ms default that is a
+// 21 ms margin — a 2% margin on a JSDOM render, which is noise, not headroom.
+// This test was ALREADY inside the failure band before the refactor that got
+// blamed for it; the newer code is in fact marginally faster. The failure mode
+// was never a product regression, it was a harness deadline calibrated with no
+// margin at all.
+//
+// The render is genuinely two sequential round trips and cannot be collapsed
+// into one. Milestone trace at HEAD: `get_children` fires @205 ms → the child's
+// name paints @359 ms → `get_child_dashboard` fires @382 ms → the asserted
+// value paints @595 ms. The second request exists to enforce the cross-child
+// data boundary (`resolveLinkedChild` re-checks the requested child against the
+// server-filtered list); short-circuiting it to make the test faster would
+// create a real authorization hole. So the latency is load-bearing.
+//
+// Under 4 concurrent vitest shards on one box the same CPU starvation also took
+// out `src/__tests__/app/parent-reports-data-load-error.test.tsx` (6 of its 11
+// tests), `src/__tests__/school-admin/escalations-safeguarding-tab.test.tsx`
+// (2), and `src/__tests__/components/offline/OfflineBoundary.test.tsx` (1) —
+// all clustered in the same sub-second band. This is a suite-wide
+// calibration problem, which is why the fix is global here rather than a
+// per-call-site `{ timeout }` sprinkle.
+//
+// 5000 ms is ~5x the worst measured render (979 ms), which puts the deadline
+// far outside the observed scheduling-jitter distribution instead of at its
+// edge. It is also the value several suites had already reached for
+// independently (e.g. `src/__tests__/foxy/learning-action-chained.test.tsx`),
+// so it standardises an existing local convention rather than inventing one.
+//
+// WHY NOT HIGHER. This is a real cost, paid only on failure: a component that
+// genuinely hangs now burns 5 s per waiting assertion instead of 1 s. 5000 ms
+// keeps that bounded and — critically — keeps it well under vitest's
+// `testTimeout` (120000 ms in vitest.config.ts), so a hung component still
+// fails through `waitFor`'s own error, which prints the "Unable to find an
+// element with the text: …" message plus a DOM dump. Push this past
+// `testTimeout` and you lose that diagnostic entirely: the test dies as an
+// anonymous vitest timeout with no DOM. Diagnostics are the reason for the
+// ceiling, not just speed.
+//
+// The correct fix if this ever proves insufficient is to make the render
+// faster or the test's waiting explicit — NOT `test.retry`, which converts a
+// deterministic red into an intermittent green and hides real flakes.
+configureTestingLibrary({ asyncUtilTimeout: 5000 });
 
 // ── Monorepo static-test path shim ───────────────────────────────────────────
 // `npm test --workspaces` runs the host Vitest process with cwd=apps/host.

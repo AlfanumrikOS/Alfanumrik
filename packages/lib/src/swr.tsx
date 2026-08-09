@@ -116,11 +116,15 @@ export function useStudyPlan(studentId: string | undefined) {
   );
 }
 
-/* ── Review Cards (spaced repetition) ── */
+/* ── Review Cards (spaced repetition) ──
+ * RevisionRail asserts "Nothing due right now — nice work." on an empty array,
+ * so a failed read MUST NOT arrive here as one. unwrapOrThrow puts the failure
+ * on SWR's `error` channel, which is the condition RevisionRail's (previously
+ * unreachable) error branch already tests. */
 export function useReviewCards(studentId: string | undefined, limit = 20) {
   return useSWR(
     studentId ? `review/${studentId}/${limit}` : null,
-    () => getReviewCards(studentId!, limit),
+    () => unwrapOrThrow(getReviewCards(studentId!, limit)),
     DEFAULT_CONFIG
   );
 }
@@ -145,11 +149,14 @@ export function useLeaderboard(period = 'weekly', limit = 50) {
   );
 }
 
-/* ── Notifications ── */
+/* ── Notifications ──
+ * Same contract as useReviewCards: a failed read reaches consumers as SWR
+ * `error`, never as `{ unread_count: 0, notifications: [] }` — which any
+ * consumer would render as "No notifications yet". */
 export function useNotifications(studentId: string | undefined, limit = 50) {
   return useSWR(
     studentId ? `notifications/${studentId}` : null,
-    () => getStudentNotifications(studentId!, limit),
+    () => unwrapOrThrow(getStudentNotifications(studentId!, limit)),
     DEFAULT_CONFIG
   );
 }

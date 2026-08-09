@@ -272,8 +272,12 @@ export default function LabLeaderboardPage() {
               <p className="text-[10px] sm:text-[11px] uppercase tracking-wide m-0" style={{ color: '#7D7264' }}>
                 {s.label}
               </p>
+              {/* An em-dash on failure as well as while loading: `totals`
+                  falls back to a literal {0,0,0}, so after an error these
+                  tiles used to read a confident "0 students / 0 active this
+                  week" beside the error banner. */}
               <p className="text-2xl sm:text-3xl font-bold mt-1 m-0" style={{ color: s.accent }}>
-                {loading ? '—' : s.value}
+                {loading || errorMsg ? '—' : s.value}
               </p>
             </div>
           ))}
@@ -293,6 +297,20 @@ export default function LabLeaderboardPage() {
                   style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)', animationDelay: `${i * 80}ms` }}
                 />
               ))}
+            </div>
+          ) : errorMsg ? (
+            /* The two sibling empty states below already gate on `!errorMsg`;
+               this one did not, so a failed read reported "No experiments
+               completed in the past 7 days" — a factual claim about student
+               activity derived from a request that never returned. The error
+               card + retry above the fold owns the recovery, so this slot just
+               declines to claim anything. */
+            <div className="rounded-xl p-4 text-center text-sm italic" style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)', color: '#7D7264' }}>
+              {tt(
+                isHi,
+                'Weekly activity is unavailable right now.',
+                'साप्ताहिक गतिविधि अभी उपलब्ध नहीं है।',
+              )}
             </div>
           ) : podium.length === 0 ? (
             <div className="rounded-xl p-4 text-center text-sm italic" style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)', color: '#7D7264' }}>

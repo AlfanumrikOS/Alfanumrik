@@ -107,15 +107,30 @@ export default function NotificationsPage() {
     if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
+  // getStudentNotifications used to resolve `{ unread_count: 0, notifications: [] }`
+  // for BOTH a genuine empty inbox and a failed RPC, and the `catch` below it
+  // was dead code (supabase.rpc() resolves, it does not reject). Net effect: a
+  // 500 rendered "No notifications yet" — the same lie /progress told with
+  // "No knowledge gaps detected!". The helper now returns ServiceResult, so the
+  // two outcomes are structurally different and this function must pick one.
   const load = useCallback(async () => {
     if (!student) return;
     setLoading(true);
     setFetchError(null);
-    try {
-      const data = await getStudentNotifications(student.id, 50);
-      setNotifications(data?.notifications ?? []);
-      setUnreadCount(data?.unread_count ?? 0);
-    } catch (e) { console.error('Failed to load notifications:', e); setNotifications([]); setFetchError(isHi ? 'सूचनाएं लोड नहीं हो सकीं' : 'Failed to load notifications'); }
+    const result = await getStudentNotifications(student.id, 50);
+    if (!result.ok) {
+      // P13: reason string only — no student id, no row payload.
+      logger.warn('notifications: get_student_notifications failed', { reason: result.error });
+      // Last-known-good is preserved on purpose: a failed REFRESH must not
+      // blank a list the student is already reading. On a first load there is
+      // nothing to preserve, the list stays empty, and the error card renders
+      // INSTEAD of the "No notifications yet" empty state (never alongside it).
+      setFetchError(isHi ? 'सूचनाएं लोड नहीं हो सकीं' : 'Failed to load notifications');
+      setLoading(false);
+      return;
+    }
+    setNotifications(result.data.notifications ?? []);
+    setUnreadCount(result.data.unread_count ?? 0);
     setLoading(false);
   }, [student, isHi]);
 
@@ -208,10 +223,20 @@ export default function NotificationsPage() {
 
       <main className="app-container py-4 space-y-4">
         {fetchError && (
-          <div className="mx-4 mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 flex items-center gap-2">
+          <div
+            role="alert"
+            className="mx-4 mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 flex items-center gap-2"
+          >
             <span aria-hidden="true">⚠️</span>
             <span>{fetchError}</span>
-            <button onClick={() => load()} className="ml-auto text-red-700 underline">
+            {/* min-h/min-w pinned locally: the bare underlined link laid out
+                well under the 44px touch floor (WCAG 2.5.8) this repo requires
+                — the same measurement miss #1485 caught on /progress at 42px.
+                inline-flex centres the label so the extra box is padding. */}
+            <button
+              onClick={() => load()}
+              className="ml-auto inline-flex items-center justify-center min-h-[44px] min-w-[44px] px-3 text-red-700 underline"
+            >
               {isHi ? 'पुनः प्रयास' : 'Retry'}
             </button>
           </div>
@@ -222,16 +247,22 @@ export default function NotificationsPage() {
             <p className="text-sm text-[var(--text-3)]">{isHi ? 'लोड हो रहा है...' : 'Loading notifications...'}</p>
           </div>
         ) : notifications.length === 0 ? (
-          <EmptyState
-            icon="🔔"
-            title={isHi ? 'अभी तक कोई सूचना नहीं' : 'No notifications yet'}
-            description={isHi ? 'क्विज़ लो और हम तुम्हें अपडेट करते रहेंगे' : 'Start quizzing and we\'ll keep you updated'}
-            action={
-              <Button onClick={() => router.push('/quiz')}>
-                ⚡ {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
-              </Button>
-            }
-          />
+          /* "No notifications yet" is a CLAIM about this student's inbox, so it
+             is gated on a settled, successful read. When fetchError is set the
+             error card above is the whole answer — the reassuring copy must be
+             absent, not merely accompanied. */
+          fetchError ? null : (
+            <EmptyState
+              icon="🔔"
+              title={isHi ? 'अभी तक कोई सूचना नहीं' : 'No notifications yet'}
+              description={isHi ? 'क्विज़ लो और हम तुम्हें अपडेट करते रहेंगे' : 'Start quizzing and we\'ll keep you updated'}
+              action={
+                <Button onClick={() => router.push('/quiz')}>
+                  ⚡ {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
+                </Button>
+              }
+            />
+          )
         ) : (
           groups.map(group => (
             <div key={group.label}>

@@ -25,6 +25,7 @@ import { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
 import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { useParentChildScope } from '@alfanumrik/lib/parent/use-parent-child-scope';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
@@ -103,18 +104,30 @@ export default function ProgressPanel() {
 
   const loadSynthesis = useCallback(async () => {
     if (!student) return;
+    setSynthesisErr('');
     try {
       const res = await fetch(
         `/api/synthesis/parent-share?student_id=${encodeURIComponent(student.id)}`,
         { credentials: 'same-origin' },
       );
-      if (!res.ok) {
+      // 404 = no synthesis has been generated for this child yet (genuine
+      // empty — the card is correctly absent). Any other non-OK status is a
+      // FAILURE and used to be swallowed into the same silent null, so a 500
+      // looked identical to "no monthly summary exists".
+      if (res.status === 404) {
         setSynthesis(null);
+        return;
+      }
+      if (!res.ok) {
+        logger.warn('parent.progress.synthesis_failed', { reason: `http_${res.status}` });
+        setSynthesis(null);
+        setSynthesisErr(t(isHi, "Couldn't load monthly summary.", 'मासिक सारांश लोड नहीं हो सका।'));
         return;
       }
       const body = await res.json();
       setSynthesis(body?.share ?? body ?? null);
     } catch {
+      setSynthesis(null);
       setSynthesisErr(t(isHi, "Couldn't load monthly summary.", 'मासिक सारांश लोड नहीं हो सका।'));
     }
   }, [student, isHi]);
@@ -145,7 +158,7 @@ export default function ProgressPanel() {
         <button
           type="button"
           onClick={retry}
-          className="mt-2 py-2 px-4 rounded-lg text-sm font-semibold border-none cursor-pointer"
+          className="mt-2 min-h-[44px] py-2 px-4 rounded-lg text-sm font-semibold border-none cursor-pointer"
           style={{ background: 'var(--orange)', color: 'white' }}
         >
           {t(isHi, 'Retry', 'पुनः प्रयास')}

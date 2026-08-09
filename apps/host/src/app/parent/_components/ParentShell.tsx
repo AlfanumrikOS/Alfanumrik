@@ -241,7 +241,7 @@ export default function ParentShell({ children }: { children: React.ReactNode })
             )}
             <button
               onClick={handleLogout}
-              className="w-full rounded-md border border-surface-3 bg-surface-1 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
+              className="min-h-[44px] w-full rounded-md border border-surface-3 bg-surface-1 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
             >
               {isHi ? 'लॉगआउट' : 'Logout'}
             </button>

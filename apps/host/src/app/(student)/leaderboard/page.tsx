@@ -7,6 +7,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@alfanumrik/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, Avatar, EmptyState, PremiumCard, GlowButton } from '@alfanumrik/ui/ui';
 import { BarChart } from '@alfanumrik/ui/admin-ui';
+import { logger } from '@alfanumrik/lib/logger';
 import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import { getScoreColor } from '@alfanumrik/lib/score-colors';
 import type { LeaderboardEntry } from '@alfanumrik/lib/types';
@@ -143,11 +144,15 @@ export default function LeaderboardPage() {
 
   const classId = (student as any)?.class_id ?? null;
   const isClassTabActive = tab === 'class';
-  const { data: classData, isLoading: classLoading } = useSWR<{ items: ClassLeaderEntry[] } | null>(
+  const { data: classData, isLoading: classLoading, error: classError } = useSWR<{ items: ClassLeaderEntry[] } | null>(
     classId && isClassTabActive ? `/api/v1/leaderboard/class/${classId}?period=${period}` : null,
     async (url: string) => {
       const res = await fetch(url, { credentials: 'same-origin' });
-      if (!res.ok) return null;
+      // 404 = this class has no board yet (genuine nothing). Every other
+      // non-2xx is a failure and must reach SWR's `error` channel — returning
+      // null for all of them rendered "No class rankings yet" after a 500.
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`class leaderboard: HTTP ${res.status}`);
       return res.json() as Promise<{ items: ClassLeaderEntry[] }>;
     },
     { refreshInterval: 60000 },
@@ -174,8 +179,15 @@ export default function LeaderboardPage() {
     setFetchError(null);
     try {
       // Step 1: Load XP-based rankings (existing system, always works)
-      const xpData = await getLeaderboard(period, 50);
-      const xpEntries: PerformanceRankEntry[] = Array.isArray(xpData) ? xpData : [];
+      // A failed read must NOT arrive here as []; "No rankings yet" is an
+      // assertion about the cohort, and rendering it after a 500 is the same
+      // lie /progress told with "No knowledge gaps detected!". getLeaderboard
+      // returns ServiceResult, so a failure is thrown into the catch below,
+      // which sets fetchError — the condition every empty state on this page
+      // is now gated on.
+      const xpResult = await getLeaderboard(period, 50);
+      if (!xpResult.ok) throw new Error(xpResult.error);
+      const xpEntries: PerformanceRankEntry[] = Array.isArray(xpResult.data) ? xpResult.data : [];
 
       // Step 2: Try to enrich with Performance Scores from performance_scores table
       // For "All Time" use current performance_scores; for weekly/monthly use score_history
@@ -259,7 +271,13 @@ export default function LeaderboardPage() {
         setEntries(xpEntries);
         setUsePerformanceScores(false);
       }
-    } catch (e) { console.error('Failed to load rankings:', e); setEntries([]); setUsePerformanceScores(false); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
+    } catch (e) {
+      // P13: reason only — no student id, no row payload.
+      logger.warn('leaderboard: rankings load failed', {
+        reason: e instanceof Error ? e.message : 'unknown error',
+      });
+      setEntries([]); setUsePerformanceScores(false); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data');
+    }
     setLoading(false);
   }, [period, isHi]);
 
@@ -269,8 +287,9 @@ export default function LeaderboardPage() {
     setLoading(true);
     setFetchError(null);
     try {
-      const data = await getCompetitions(student.id);
-      setCompetitions(Array.isArray(data) ? data : []);
+      const result = await getCompetitions(student.id);
+      if (!result.ok) throw new Error(result.error);
+      setCompetitions(Array.isArray(result.data) ? result.data : []);
     } catch { setCompetitions([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
   }, [student, isHi]);
@@ -280,19 +299,25 @@ export default function LeaderboardPage() {
     setLoading(true);
     setFetchError(null);
     try {
-      const data = await getHallOfFame(30);
-      setFame(Array.isArray(data) ? data : []);
+      const result = await getHallOfFame(30);
+      if (!result.ok) throw new Error(result.error);
+      setFame(Array.isArray(result.data) ? result.data : []);
     } catch { setFame([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
   }, [isHi]);
 
   // Load my titles
+  // The `error` field is destructured deliberately: the postgrest builder
+  // RESOLVES with { data, error }, so without this the catch was dead code and
+  // a failed read rendered "No titles yet" — the same defect the ServiceResult
+  // helpers above fix, just with the query inlined here instead.
   const loadTitles = useCallback(async () => {
     if (!student) return;
     setLoading(true);
     setFetchError(null);
     try {
-      const { data } = await supabase.from('student_titles').select('*').eq('student_id', student.id).eq('is_active', true).order('earned_at', { ascending: false }).limit(50);
+      const { data, error } = await supabase.from('student_titles').select('*').eq('student_id', student.id).eq('is_active', true).order('earned_at', { ascending: false }).limit(50);
+      if (error) throw new Error(error.message);
       setTitles(data ?? []);
     } catch { setTitles([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
     setLoading(false);
@@ -304,12 +329,15 @@ export default function LeaderboardPage() {
     setLoading(true);
     setFetchError(null);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('challenge_streaks')
         .select('student_id, current_streak, best_streak, badges, students!inner(name, avatar_url)')
         .gte('current_streak', STREAK_VISIBILITY_THRESHOLD)
         .order('current_streak', { ascending: false })
         .limit(50);
+      // Same reason as loadTitles: without this check a failed read renders
+      // "No active streaks yet", which is a claim, not an omission.
+      if (error) throw new Error(error.message);
 
       if (data && data.length > 0) {
         const mapped: StreakLeaderEntry[] = data.map((row: any) => ({
@@ -338,12 +366,16 @@ export default function LeaderboardPage() {
         credentials: 'same-origin',
       });
       if (res.status === 404) {
+        // 404 = flag off or no profile. The ONLY non-2xx that is a genuine
+        // "nothing here" answer.
         setMasteryEntries([]);
       } else if (res.ok) {
         const body = (await res.json()) as { items?: MasteryLeaderEntry[] };
         setMasteryEntries(Array.isArray(body.items) ? body.items : []);
       } else {
-        setMasteryEntries([]);
+        // Every other non-2xx is a failure. Collapsing it into [] rendered
+        // "No mastery data yet" after a 500.
+        throw new Error(`mastery leaderboard: HTTP ${res.status}`);
       }
     } catch {
       setMasteryEntries([]);
@@ -368,6 +400,18 @@ export default function LeaderboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (student && tab === 'ranks') loadRanks(); }, [period, student?.id, tab, loadRanks]);
 
+  // Retry for the error card: re-runs whichever loader owns the visible tab, so
+  // one control recovers all six without the student switching tabs.
+  const reloadActiveTab = useCallback(() => {
+    if (tab === 'ranks') loadRanks();
+    else if (tab === 'compete') loadCompetitions();
+    else if (tab === 'fame') loadFame();
+    else if (tab === 'titles') loadTitles();
+    else if (tab === 'streaks') loadStreaks();
+    else if (tab === 'mastery') loadMastery();
+    else setFetchError(null);
+  }, [tab, loadRanks, loadCompetitions, loadFame, loadTitles, loadStreaks, loadMastery]);
+
   const handleJoin = async (compId: string) => {
     if (!student) return;
     setJoining(compId);
@@ -386,10 +430,18 @@ export default function LeaderboardPage() {
 
   const handleViewCompLeaderboard = async (comp: RPCRecord) => {
     setSelectedComp(comp);
+    setFetchError(null);
     try {
-      const data = await getCompetitionLeaderboard(comp.id, 50);
-      setCompLeaderboard(Array.isArray(data) ? data : []);
-    } catch { setCompLeaderboard([]); }
+      const result = await getCompetitionLeaderboard(comp.id, 50);
+      if (!result.ok) throw new Error(result.error);
+      setCompLeaderboard(Array.isArray(result.data) ? result.data : []);
+    } catch {
+      // "No scores yet. Take a quiz to compete!" would otherwise be shown to a
+      // student whose read just failed — it invites a wasted action based on a
+      // false premise.
+      setCompLeaderboard([]);
+      setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data');
+    }
   };
 
   if (isLoading || !student) return <LoadingFoxy />;
@@ -444,13 +496,25 @@ export default function LeaderboardPage() {
       <ContentElement className="app-container py-4 space-y-3">
         <SectionErrorBoundary section="Leaderboard">
 
+        {/* Failure state. Rendered INSTEAD of (never alongside) any of this
+            page's reassuring empty states — each of those is gated on
+            `!fetchError` below. Dismiss alone left the student with no way
+            back, so the primary control is now a Retry that re-runs the active
+            tab's loader; min-h/min-w pin it to the 44px touch floor (WCAG
+            2.5.8), which the bare text buttons did not meet. */}
         {fetchError && (
-          <div className="mx-4 mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 flex items-center gap-2">
+          <div role="alert" className="mx-4 mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 flex items-center gap-2">
             <span aria-hidden="true">⚠️</span>
             <span className="flex-1">{fetchError}</span>
             <button
+              onClick={reloadActiveTab}
+              className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] px-3 text-red-700 font-semibold underline"
+            >
+              🔄 {isHi ? 'फिर से कोशिश करो' : 'Retry'}
+            </button>
+            <button
               onClick={() => setFetchError(null)}
-              className="ml-auto text-red-700 font-bold"
+              className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] text-red-700 font-bold"
               aria-label={isHi ? 'बंद करें' : 'Dismiss'}
             >✕</button>
           </div>
@@ -552,6 +616,9 @@ export default function LeaderboardPage() {
             {loading ? (
               <TabLoader label={isHi ? 'लोड हो रहा है...' : 'Loading rankings...'} />
             ) : entries.length === 0 ? (
+              // Gated on !fetchError: after a failed read there is no basis for
+              // "No rankings yet", so the error card above is the whole answer.
+              fetchError ? null :
               <EmptyState
                 icon="🏆"
                 title={isHi ? 'अभी कोई रैंकिंग नहीं' : 'No rankings yet'}
@@ -638,6 +705,7 @@ export default function LeaderboardPage() {
             {loading ? (
               <TabLoader label={isHi ? 'प्रतियोगिताएँ लोड हो रही हैं...' : 'Loading competitions...'} />
             ) : competitions.length === 0 ? (
+              fetchError ? null :
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">🎯</div>
                 <h3 className="text-lg font-bold mb-2">{isHi ? 'अभी कोई प्रतियोगिता नहीं' : 'No competitions right now'}</h3>
@@ -788,6 +856,7 @@ export default function LeaderboardPage() {
             </Card>
 
             {compLeaderboard.length === 0 ? (
+              fetchError ? null :
               <div className="text-center py-8">
                 <div className="text-4xl mb-3">📊</div>
                 <p className="text-sm text-[var(--text-3)]">
@@ -839,6 +908,7 @@ export default function LeaderboardPage() {
             {loading ? (
               <TabLoader label={isHi ? 'गौरव गाथा लोड हो रही है...' : 'Loading Hall of Fame...'} />
             ) : fame.length === 0 ? (
+              fetchError ? null :
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">👑</div>
                 <h3 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -882,6 +952,7 @@ export default function LeaderboardPage() {
             {loading ? (
               <TabLoader label={isHi ? 'लोड हो रहा है...' : 'Loading...'} />
             ) : titles.length === 0 ? (
+              fetchError ? null :
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">🎖️</div>
                 <h3 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -940,6 +1011,7 @@ export default function LeaderboardPage() {
             {loading ? (
               <TabLoader label={isHi ? 'स्ट्रीक लोड हो रही हैं...' : 'Loading streaks...'} />
             ) : streakEntries.length === 0 ? (
+              fetchError ? null :
               <EmptyState
                 icon="🔥"
                 title={isHi ? 'अभी कोई सक्रिय स्ट्रीक नहीं' : 'No active streaks yet'}
@@ -1009,6 +1081,7 @@ export default function LeaderboardPage() {
             {loading ? (
               <TabLoader label={isHi ? 'लोड हो रहा है...' : 'Loading...'} />
             ) : masteryEntries.length === 0 ? (
+              fetchError ? null :
               <EmptyState
                 icon="🎯"
                 title={isHi ? 'अभी कोई डेटा नहीं' : 'No mastery data yet'}
@@ -1115,6 +1188,19 @@ export default function LeaderboardPage() {
                 {[...Array(5)].map((_, i) => (
                   <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: 'var(--surface-2)' }} />
                 ))}
+              </div>
+            ) : classError ? (
+              // This tab reads through SWR, not the shared fetchError, so it
+              // carries its own failure branch — same rule: an error replaces
+              // the reassuring empty, it never sits next to it.
+              <div role="alert" className="text-center py-12">
+                <div className="text-5xl mb-4">📡</div>
+                <p className="text-base font-semibold text-[var(--text-2)] mb-2">
+                  {isHi ? 'कक्षा रैंकिंग लोड नहीं हो सकी' : "Couldn't load class rankings"}
+                </p>
+                <p className="text-sm text-[var(--text-3)]">
+                  {isHi ? 'थोड़ी देर में फिर से देखो।' : 'Please check back in a moment.'}
+                </p>
               </div>
             ) : !classData?.items || classData.items.length === 0 ? (
               <EmptyState

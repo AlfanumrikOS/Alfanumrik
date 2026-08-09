@@ -21,6 +21,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
+import { TeacherDataError } from '../_components/TeacherDataError';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -136,11 +137,28 @@ function AssignmentListView({
   assignments,
   isHi,
   onSelect,
+  loadError,
+  onRetry,
 }: {
   assignments: AssignmentRow[];
   isHi: boolean;
   onSelect: (a: AssignmentRow) => void;
+  /** The assignments read failed — "No assignments yet" would be a lie. */
+  loadError?: string;
+  onRetry?: () => void;
 }) {
+  if (loadError && onRetry) {
+    return (
+      <TeacherDataError
+        isHi={isHi}
+        titleEn="Couldn't load your assignments"
+        titleHi="आपके असाइनमेंट लोड नहीं हो सके"
+        detail={loadError}
+        onRetry={onRetry}
+        testId="submissions-assignments-error"
+      />
+    );
+  }
   if (assignments.length === 0) {
     return (
       <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
@@ -203,6 +221,8 @@ function SubmissionListView({
   isHi,
   onBack,
   onSelect,
+  loadError,
+  onRetry,
 }: {
   assignment: AssignmentRow;
   rows: SubmissionRow[];
@@ -210,6 +230,10 @@ function SubmissionListView({
   isHi: boolean;
   onBack: () => void;
   onSelect: (r: SubmissionRow) => void;
+  /** The submissions read failed — the counts and the empty state are both
+   *  unsafe to render. */
+  loadError: string;
+  onRetry: () => void;
 }) {
   const submittedCount = rows.filter(r => r.status !== 'pending').length;
   const gradedCount = rows.filter(r => r.status === 'graded').length;
@@ -227,8 +251,15 @@ function SubmissionListView({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 12, color: '#7D7264' }}>
           {assignment.subject && <span>{assignment.subject}</span>}
           {assignment.grade && <span>· {tt(isHi, 'Grade', 'कक्षा')} {assignment.grade}</span>}
-          <span>· {submittedCount}/{rows.length} {tt(isHi, 'submitted', 'सबमिट')}</span>
-          <span>· {gradedCount} {tt(isHi, 'reviewed', 'समीक्षित')}</span>
+          {/* Submission counts are only claimed once the read has succeeded.
+              While loading or after a failure `rows` is [], which used to
+              render a confident "0/0 submitted · 0 reviewed". */}
+          {!loading && !loadError && (
+            <>
+              <span>· {submittedCount}/{rows.length} {tt(isHi, 'submitted', 'सबमिट')}</span>
+              <span>· {gradedCount} {tt(isHi, 'reviewed', 'समीक्षित')}</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -237,6 +268,18 @@ function SubmissionListView({
           <span className="sr-only">{tt(isHi, 'Loading submissions…', 'सबमिशन लोड हो रहे हैं…')}</span>
           <TeacherTableSkeleton rows={6} />
         </div>
+      ) : loadError ? (
+        /* A failed read must never render "No submissions yet — students will
+           appear here once they start the assignment", which tells a teacher
+           nobody has handed anything in. */
+        <TeacherDataError
+          isHi={isHi}
+          titleEn="Couldn't load submissions for this assignment"
+          titleHi="इस असाइनमेंट के सबमिशन लोड नहीं हो सके"
+          detail={loadError}
+          onRetry={onRetry}
+          testId="submissions-list-error"
+        />
       ) : rows.length === 0 ? (
         <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>📝</div>
@@ -306,6 +349,8 @@ function SubmissionDetailView({
   teacherId,
   onBack,
   onSaved,
+  loadError,
+  onRetry,
 }: {
   detail: SubmissionDetail | null;
   loading: boolean;
@@ -313,6 +358,11 @@ function SubmissionDetailView({
   teacherId: string;
   onBack: () => void;
   onSaved: () => void;
+  /** The detail read failed. Without this the `loading || !detail` guard
+   *  below rendered an aria-busy skeleton FOREVER — the request had already
+   *  settled, so nothing would ever replace it. */
+  loadError: string;
+  onRetry: () => void;
 }) {
   const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
   const [feedback, setFeedback] = useState('');
@@ -341,15 +391,26 @@ function SubmissionDetailView({
         >
           &larr; {tt(isHi, 'Back', 'वापस')}
         </button>
-        <div style={{ ...cardStyle, padding: 20 }} role="status" aria-busy="true">
-          <span className="sr-only">{tt(isHi, 'Loading submission…', 'सबमिशन लोड हो रहा है…')}</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Bone width="55%" height={18} />
-            <Bone width="35%" height={12} />
-            <Bone height={80} radius={12} />
-            <Bone height={44} radius={12} />
+        {!loading && loadError ? (
+          <TeacherDataError
+            isHi={isHi}
+            titleEn="Couldn't load this submission"
+            titleHi="यह सबमिशन लोड नहीं हो सका"
+            detail={loadError}
+            onRetry={onRetry}
+            testId="submission-detail-error"
+          />
+        ) : (
+          <div style={{ ...cardStyle, padding: 20 }} role="status" aria-busy="true">
+            <span className="sr-only">{tt(isHi, 'Loading submission…', 'सबमिशन लोड हो रहा है…')}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Bone width="55%" height={18} />
+              <Bone width="35%" height={12} />
+              <Bone height={80} radius={12} />
+              <Bone height={44} radius={12} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
@@ -585,6 +646,12 @@ function TeacherSubmissionsPageContent() {
   const [activeSub, setActiveSub] = useState<SubmissionRow | null>(null);
   const [detail, setDetail] = useState<SubmissionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // Failures were previously funnelled into the single page-level `error`
+  // banner while each VIEW carried on rendering its empty state over an empty
+  // array. Scoping them lets each view replace its own reassuring empty.
+  const [assignmentsError, setAssignmentsError] = useState('');
+  const [subsError, setSubsError] = useState('');
+  const [detailError, setDetailError] = useState('');
   // Fire the deep-link drill-in exactly once so backing out doesn't re-trigger.
   const deepLinkConsumed = useRef(false);
 
@@ -605,6 +672,7 @@ function TeacherSubmissionsPageContent() {
     if (!teacherId) return;
     setLoading(true);
     setError('');
+    setAssignmentsError('');
     try {
       // Column-name note (production incident, 2026-07-21): `assignments` has
       // no `type` column — it has `assignment_type`. Alias it to `type` here
@@ -619,7 +687,9 @@ function TeacherSubmissionsPageContent() {
       if (e) throw e;
       setAssignments((data as AssignmentRow[]) || []);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : tt(isHi, 'Failed to load assignments', 'असाइनमेंट लोड करने में विफल'));
+      const message = e instanceof Error ? e.message : tt(isHi, 'Failed to load assignments', 'असाइनमेंट लोड करने में विफल');
+      setError(message);
+      setAssignmentsError(message);
     } finally {
       setLoading(false);
     }
@@ -635,13 +705,16 @@ function TeacherSubmissionsPageContent() {
     setDetail(null);
     setSubRows([]);
     setSubsLoading(true);
+    setSubsError('');
     try {
       const data = await api('get_assignment_submissions', { teacher_id: teacherId, assignment_id: a.id });
       const rows: SubmissionRow[] = data?.submissions || [];
       setSubRows(rows);
       return rows;
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : tt(isHi, 'Failed to load submissions', 'सबमिशन लोड करने में विफल'));
+      const message = e instanceof Error ? e.message : tt(isHi, 'Failed to load submissions', 'सबमिशन लोड करने में विफल');
+      setError(message);
+      setSubsError(message);
       return [];
     } finally {
       setSubsLoading(false);
@@ -657,11 +730,14 @@ function TeacherSubmissionsPageContent() {
     setActiveSub(row as SubmissionRow);
     setDetail(null);
     setDetailLoading(true);
+    setDetailError('');
     try {
       const data = await api('get_submission_detail', { teacher_id: teacherId, submission_id: row.submission_id });
       setDetail(data as SubmissionDetail);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : tt(isHi, 'Failed to load submission detail', 'सबमिशन विवरण लोड करने में विफल'));
+      const message = e instanceof Error ? e.message : tt(isHi, 'Failed to load submission detail', 'सबमिशन विवरण लोड करने में विफल');
+      setError(message);
+      setDetailError(message);
     } finally {
       setDetailLoading(false);
     }
@@ -757,15 +833,24 @@ function TeacherSubmissionsPageContent() {
         )}
       </header>
 
+      {/* Page-level banner. The active view ALSO renders its own honest
+          failure surface in place of its empty state — the banner alone was
+          not enough, because "No submissions yet" is the louder signal. */}
       {error && (
-        <div style={{ ...cardStyle, borderColor: 'var(--danger)', color: 'var(--danger)', textAlign: 'center', fontSize: 14 }}>
+        <div role="alert" style={{ ...cardStyle, borderColor: 'var(--danger)', color: 'var(--danger)', textAlign: 'center', fontSize: 14 }}>
           {error}
         </div>
       )}
 
       {/* View routing */}
       {!selected && (
-        <AssignmentListView assignments={assignments} isHi={isHi} onSelect={openAssignment} />
+        <AssignmentListView
+          assignments={assignments}
+          isHi={isHi}
+          onSelect={openAssignment}
+          loadError={assignmentsError}
+          onRetry={loadAssignments}
+        />
       )}
       {selected && !activeSub && (
         <SubmissionListView
@@ -775,6 +860,8 @@ function TeacherSubmissionsPageContent() {
           isHi={isHi}
           onBack={() => setSelected(null)}
           onSelect={openSubmission}
+          loadError={subsError}
+          onRetry={() => { void openAssignment(selected); }}
         />
       )}
       {selected && activeSub && (
@@ -785,6 +872,8 @@ function TeacherSubmissionsPageContent() {
           teacherId={teacherId}
           onBack={() => { setActiveSub(null); setDetail(null); }}
           onSaved={handleSaved}
+          loadError={detailError}
+          onRetry={() => { void openSubmission(activeSub); }}
         />
       )}
 
