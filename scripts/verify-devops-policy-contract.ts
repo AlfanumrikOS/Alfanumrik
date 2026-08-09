@@ -304,6 +304,21 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
           && jobDependencies(completion).includes('health-check')
           && jobDependencies(completion).includes('post-deploy-verify')
           && jobDependencies(completion).includes('release')
+          // Wave 1 (2026-08-09): database state is a prerequisite for declaring
+          // a production release complete. The gate's step already asserts
+          // `needs.migrations.result == 'success'` and `migration_parity ==
+          // 'verified'`, but in GitHub Actions a `needs.<job>` reference to a job
+          // that is NOT a declared dependency evaluates to EMPTY rather than
+          // erroring. Without this membership requirement those migration
+          // assertions could be silently defanged by deleting one word from the
+          // `needs` list, with no other visible change to the workflow.
+          //
+          // Scoped deliberately to `migrations` only. `deploy-functions` is also
+          // in the gate's `needs` today, but the invariant encoded here is
+          // migration/database verification; Edge Functions are a separate
+          // deployment plane with their own rollback path, so pinning them here
+          // would over-constrain the policy beyond what it is meant to guarantee.
+          && jobDependencies(completion).includes('migrations')
           && includesAll(
             'if: ${{ always() }}',
             'EXPECTED_SHA: ${{ github.sha }}',
