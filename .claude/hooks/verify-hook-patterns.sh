@@ -48,6 +48,106 @@ fail() { printf '  \033[31mFAIL\033[0m: %s\n' "$*"; FAILURES=$((FAILURES + 1)); 
 pass() { CHECKS=$((CHECKS + 1)); }
 note() { [ "$VERBOSE" = "1" ] && printf '%s\n' "$*"; return 0; }
 
+# ── Byte-level CR detector ───────────────────────────────────
+# DO NOT rewrite this as `grep -q $'\r'`. That is what it used to be, and it
+# was VACUOUS on the platform this repo is developed on: under Git Bash on
+# Windows, grep reads its input in TEXT mode and strips CR before matching,
+# so `LC_ALL=C grep -c $'\r' guard.sh` returned 0 while `tr -dc '\r' < guard.sh
+# | wc -c` returned 261. Check [1] therefore printed "ok guard.sh (executable,
+# LF)" and the whole script self-reported "PASS - 95 checks" while all five
+# hooks were CRLF-infected -- the exact condition this file exists to catch.
+#
+# `tr -dc` over a `<` redirect reads raw bytes and is not defeated by text-mode
+# translation. Non-vacuity is proven on every run by the fixture self-test
+# below (--self-test), which asserts this function returns >0 on a deliberately
+# CRLF-infected fixture and 0 on a clean one.
+cr_count_of() { LC_ALL=C tr -dc '\r' < "$1" | wc -c | tr -d '[:space:]'; }
+
+FIXTURE_DIR="$HOOK_DIR/__fixtures__"
+
+# The single-file CRLF gate. Check [1] and the `--check-file` entry point below
+# both route through this one function, so the self-test cannot drift away from
+# what the real check does.
+#   returns 0 = clean (LF only)
+#   returns 1 = CR bytes present
+crlf_gate() {
+  local target="$1" label n
+  label="$(basename "$target")"
+  n="$(cr_count_of "$target")"
+  if [ "${n:-0}" -gt 0 ]; then
+    printf '  \033[31mFAIL\033[0m: %s has CR characters (%s CR bytes). The shebang resolves to '\''bash\\r'\'' and the hook cannot execute AT ALL. Convert to LF.\n' "$label" "$n"
+    return 1
+  fi
+  return 0
+}
+
+# Standalone single-file gate, so the detector's EXIT CODE can be asserted from
+# outside. This is what makes the self-test evidence instead of a self-report:
+#   --check-file <crlf file>  -> prints FAIL, exits 1
+#   --check-file <lf file>    -> prints ok,   exits 0
+if [ "${1:-}" = "--check-file" ]; then
+  target="${2:-}"
+  if [ -z "$target" ] || [ ! -f "$target" ]; then
+    echo "usage: $SELF --check-file <path>" >&2
+    exit 2
+  fi
+  if crlf_gate "$target"; then
+    printf '  ok  %s (LF, 0 CR bytes)\n' "$(basename "$target")"
+    exit 0
+  fi
+  exit 1
+fi
+
+# Drives the real gate against both fixtures AS SUBPROCESSES and asserts their
+# exit codes. Returns non-zero if either direction is wrong, so a detector that
+# can no longer fire fails loudly instead of quietly greenlighting a broken tree.
+run_detector_selftest() {
+  local rc=0 pos="$FIXTURE_DIR/crlf-positive.sh" neg="$FIXTURE_DIR/crlf-negative.sh"
+  local out code
+
+  if [ ! -f "$pos" ] || [ ! -f "$neg" ]; then
+    printf '  \033[31mFAIL\033[0m: CR detector fixtures missing under %s\n' "$FIXTURE_DIR"
+    return 1
+  fi
+
+  # POSITIVE: deliberately CRLF-infected -> gate MUST fail with exit 1.
+  out="$(bash "$HOOK_DIR/$SELF" --check-file "$pos" 2>&1)"; code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '  ok    POSITIVE fixture rejected (exit %s) -> detector fires\n' "$code"
+    printf '        %s\n' "$out"
+  else
+    printf '  \033[31mFAIL\033[0m: POSITIVE fixture PASSED the gate (exit 0). The CR detector is VACUOUS.\n'
+    printf '        If the fixture lost its CRLF, git normalization ate it: check\n'
+    printf '        `git check-attr text -- %s` reports "text: unset".\n' "$pos"
+    rc=1
+  fi
+
+  # NEGATIVE: clean LF-only -> gate MUST pass with exit 0.
+  out="$(bash "$HOOK_DIR/$SELF" --check-file "$neg" 2>&1)"; code=$?
+  if [ "$code" -eq 0 ]; then
+    printf '  ok    NEGATIVE fixture accepted (exit %s) -> no false positive\n' "$code"
+    printf '        %s\n' "$out"
+  else
+    printf '  \033[31mFAIL\033[0m: NEGATIVE fixture REJECTED (exit %s); it should be LF-only.\n' "$code"
+    printf '        %s\n' "$out"
+    rc=1
+  fi
+
+  return $rc
+}
+
+# Standalone entry point: `verify-hook-patterns.sh --self-test`
+# Proves the detector both ways without the (slow) full tree scan.
+if [ "${1:-}" = "--self-test" ]; then
+  echo "=== CR detector self-test (fixtures) ==="
+  if run_detector_selftest; then
+    printf '\033[32mPASS\033[0m - CR detector fires on CRLF, stays silent on LF.\n'
+    exit 0
+  fi
+  printf '\033[31mFAIL\033[0m - CR detector is not trustworthy; fix before relying on check [1].\n'
+  exit 1
+fi
+
 # Authoritative file universe: tracked files only. Untracked build output
 # must never be what keeps a pattern alive.
 FILE_LIST="$(mktemp)"
@@ -61,17 +161,46 @@ echo
 
 # ── [1] Executability and line endings ───────────────────────
 echo "--- [1] Hook executability and line endings ---"
+
+# Prove the CR detector can still fire BEFORE trusting a single "LF" verdict
+# below. A silent detector is worse than no detector: it manufactures
+# confidence. If this block fails, every "ok ... (executable, LF)" line that
+# follows is worthless.
+if ! run_detector_selftest; then
+  fail "CR detector failed its own fixture self-test - the LF verdicts below cannot be trusted."
+else
+  pass
+fi
+
 for hook in "$HOOK_DIR"/*.sh; do
   name="$(basename "$hook")"
-  [ "$name" = "$SELF" ] && continue
 
   if [ ! -x "$hook" ]; then fail "$name is not executable (chmod +x)"; else pass; fi
 
-  if LC_ALL=C grep -q $'\r' "$hook"; then
-    fail "$name has CR characters. The shebang resolves to 'bash\\r' and the hook cannot execute AT ALL. Convert to LF."
-  else
+  # Byte-level, not `grep $'\r'` -- see cr_count_of() for why that was vacuous.
+  # Routed through crlf_gate() so this and the fixture self-test are literally
+  # the same code path and cannot drift apart.
+  if crlf_gate "$hook"; then
     pass
     printf '  ok  %s (executable, LF)\n' "$name"
+  else
+    FAILURES=$((FAILURES + 1))
+  fi
+done
+
+# The Python hooks are launched via an explicit interpreter ("python <path>"),
+# so CRLF is not immediately fatal for them the way it is for a shebang-execed
+# .sh hook. Both are nonetheless mode 100755 with a `#!/usr/bin/env python3`
+# shebang, i.e. one invocation-style change away from the same failure. Report,
+# do not fail, so this stays an early warning rather than a new gate.
+for pyhook in "$HOOK_DIR"/*.py; do
+  [ -e "$pyhook" ] || continue
+  pyname="$(basename "$pyhook")"
+  pycr="$(cr_count_of "$pyhook")"
+  if [ "${pycr:-0}" -gt 0 ]; then
+    printf '  \033[33mWARN\033[0m: %s has %s CR bytes (not fatal today - invoked as "python <path>" - but it carries a python3 shebang and mode 755).\n' "$pyname" "$pycr"
+  else
+    printf '  ok  %s (LF)\n' "$pyname"
   fi
 done
 echo

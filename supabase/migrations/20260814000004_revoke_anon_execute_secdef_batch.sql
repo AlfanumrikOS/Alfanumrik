@@ -34,6 +34,14 @@
 -- PERFORM/SELECT call sites). Functions with live authenticated browser callers
 -- KEEP their authenticated grant (see B2 — the deliberate carve-out).
 --
+-- ⚠ A REPO SEARCH IS NOT A CALLER AUDIT. A deployed object can be invoked by
+-- things that have no representation in this repository at all — pg_cron jobs
+-- registered in `cron.job`, webhooks, and hand-run SQL. PART C documents a case
+-- where the repo grep said "zero references" while pg_cron was calling the object
+-- every ten seconds. Repo-side analysis is therefore paired throughout with a
+-- live-catalog check (proacl/aclexplode, pg_stat_statements, cron.job), recorded
+-- in the SAFETY VERIFICATION block below.
+--
 -- NOT IN SCOPE: public.security_reserve_quota — already correctly locked to
 -- service_role by 20260618000001. Left untouched on purpose.
 --
@@ -44,14 +52,59 @@
 -- DO blocks that look the target routines up in pg_proc first, because a bare
 -- REVOKE naming a signature that does not exist in the current environment
 -- raises 42883 and aborts the WHOLE transaction. Both blocks issue
--- `REVOKE ALL ON ROUTINE` (never `ON FUNCTION`): ROUTINE covers functions,
--- aggregates AND procedures, whereas `ON FUNCTION` raises 42809
--- ("… is a procedure") for any prokind='p' object. Since a DO block only fires
--- where the object actually exists, an `ON FUNCTION` failure there would land
--- on PRODUCTION ONLY and never on CI — hence ROUTINE unconditionally.
+-- `REVOKE ALL ON ROUTINE` (never `ON FUNCTION`). ROUTINE is the correct
+-- SUPERSET: it covers functions, aggregates AND procedures, whereas
+-- `ON FUNCTION` raises 42809 ("… is a procedure") for any prokind='p' object.
+-- LIVE-CATALOG CHECK (2026-08-14): NO routine targeted by this migration is a
+-- procedure today — every one of them reads prokind='f'. The 42809 hazard is
+-- therefore NOT present as written; do not read these blocks as evidence that a
+-- procedure exists here. ROUTINE is retained deliberately anyway because it is
+-- exactly equivalent to ON FUNCTION for a function (harmless), and it keeps the
+-- statement robust if any of these objects is ever recreated as a procedure
+-- out-of-band. That robustness is worth having precisely because a DO block only
+-- fires where the object actually exists, so an `ON FUNCTION` mismatch would
+-- land on PRODUCTION ONLY and never reproduce on CI.
 -- Each block ends with a RAISE NOTICE reporting how many routines it processed,
 -- so an operator can distinguish "correctly skipped on a fresh DB" (0) from
 -- "the loop silently never ran".
+--
+-- ─── SAFETY VERIFICATION (the revoke removes no privilege anyone needs) ───────
+-- Reproduced against the LIVE catalog on 2026-08-14, before this migration was
+-- written. The point of this block is that the revoke is not merely believed
+-- safe — it is shown to strip nothing any live caller depends on.
+--
+-- 1. ACL SHAPE. All six live-DB-only agent_* routines carry the identical proacl:
+--        {=X/postgres, postgres=X/postgres, anon=X/postgres,
+--         authenticated=X/postgres, service_role=X/postgres}
+--    Running `aclexplode` over that array confirms `postgres` and `service_role`
+--    each hold an EXPLICIT, separately-listed EXECUTE grant — their privilege
+--    does NOT derive from the PUBLIC (`=X`) entry. `postgres` is additionally the
+--    OWNER of all six. `REVOKE ... FROM PUBLIC, anon, authenticated` therefore
+--    deletes exactly the `=X`, `anon=X` and `authenticated=X` entries and CANNOT
+--    touch `postgres=X` or `service_role=X`.
+--
+-- 2. pg_cron IS UNAFFECTED. Jobs 24, 26 and 27 (enumerated in PART C) run with
+--    username=postgres — owner and explicit grantee — so the agent poll loop and
+--    the adaptive-intervention pipeline keep executing exactly as before.
+--
+-- 3. PER-TARGET CALLER VERIFICATION (each confirmed independently):
+--      * check_and_record_usage     — only live caller is service_role, which
+--                                     PART A re-grants explicitly.
+--      * submit_mock_test_attempt   — only live caller is service_role, which the
+--                                     PART B3 dynamic block re-grants for every
+--                                     overload it finds in pg_proc.
+--      * reset_demo_student         — no external caller at all; the sole call
+--                                     site is a SQL-internal PERFORM from
+--                                     reset_demo_account, which runs with the
+--                                     definer's privileges and is immune to
+--                                     EXECUTE grants, so nothing is re-granted.
+--      * atomic_quiz_profile_update — the live `authenticated` traffic resolves by
+--                                     arity to the 6-/7-arg overloads; this
+--                                     migration touches ONLY the zero-caller
+--                                     5-arg overload (B1).
+--      * check_quiz_answer          — has live authenticated browser traffic, so
+--                                     `authenticated` is deliberately PRESERVED
+--                                     (B2 carve-out); only `anon` is removed.
 
 BEGIN;
 
@@ -242,33 +295,72 @@ $revoke_submit_mock_test_attempt$;
 REVOKE ALL ON FUNCTION public.reset_demo_student(uuid) FROM PUBLIC, anon, authenticated;
 
 -- ═════════════════════════════════════════════════════════════════════════════
--- PART C — ZERO-CALLER FUNCTIONS THAT EXIST ONLY IN THE LIVE DATABASE
+-- PART C — ROUTINES THAT EXIST ONLY IN THE LIVE DATABASE (NO REPO SOURCE)
 --
--- The seven functions below were observed in the live database's pg_proc during
+-- The seven routines below were observed in the live database's pg_proc during
 -- the 2026-08-14 ACL forensics, but they are NOT defined by any migration in
 -- this repository — they were created out-of-band (hand-applied SQL) and their
--- source has never been reconciled into supabase/migrations/. They also have
--- ZERO references anywhere in the repo: no .ts, .tsx, .dart, or .sql call site,
--- and no entry in the generated database.types.ts `Functions` block.
+-- source has never been reconciled into supabase/migrations/. They also have no
+-- reference anywhere in the repo: no .ts, .tsx, .dart, or .sql call site, and no
+-- entry in the generated database.types.ts `Functions` block.
+--
+-- ⚠ CORRECTION (2026-08-14, reproduced against the live DB). An earlier draft of
+-- this header concluded from that repo grep that these routines were
+-- "zero-caller" / dead. THAT CONCLUSION WAS WRONG. The grep result is true of the
+-- REPOSITORY and false of the DATABASE: "no repository reference" is NOT evidence
+-- that a deployed object is dead. Three of the seven are invoked continuously by
+-- pg_cron jobs that exist only in the database:
+--   * job 24 `agent-timeout-sweep-every-minute` — schedule `30 seconds`,
+--     command `select public.agent_timeout_sweep();`, active, username=postgres
+--   * job 26 `agent-worker-tick-every-minute` — schedule `10 seconds`,
+--     command `select public.agent_worker_tick('cron-worker');`, active,
+--     username=postgres
+--   * job 27 `adaptive_intervention_pipeline_q15m` — schedule `*/15 * * * *`,
+--     command `select public.run_adaptive_intervention_pipeline(200, 0.65);`,
+--     active, username=postgres
+-- pg_stat_statements corroborates the volume: agent_worker_tick 63,017 calls;
+-- run_adaptive_intervention_pipeline 699 calls. The last 20 runs of jobs 24 and
+-- 26 all read `succeeded`, most recent 2026-08-09 11:32:28Z.
+--
+-- The other four (agent_claim_step, agent_complete_step, agent_enqueue_step,
+-- agent_heartbeat) are called INTERNALLY from the SECURITY DEFINER parents
+-- (agent_worker_tick / agent_timeout_sweep). An internal call executes with the
+-- definer's privileges, so those four are immune to EXECUTE grants entirely;
+-- their 1-4 pg_stat_statements calls are one-off manual pokes, not a live path.
+--
+-- INVOKED, BUT NOT PRODUCTIVE — two different claims, stated separately on
+-- purpose. agent_runs holds 2 rows and agent_steps 7 rows, both last written
+-- 2026-05-10 (3 months stale); agent_anomalies and agent_prompts are EMPTY. What
+-- is running is an idle poll loop over an empty queue. That makes the subsystem
+-- unproductive; it does NOT make it uncalled.
 --
 -- Because they do not exist on a fresh database built from this migration chain,
 -- a bare `REVOKE ALL ON FUNCTION public.agent_claim_step(...)` would raise
 -- `42883 function does not exist` and abort the whole transaction in CI, new
 -- staging, and DR restores. The DO block below therefore looks them up in
 -- pg_proc first and builds each REVOKE dynamically — a clean no-op where the
--- function is absent, and correct for every overload where it is present
+-- routine is absent, and correct for every overload where it is present
 -- (pg_get_function_identity_arguments renders the exact identity signature).
 --
--- The revoke is `ON ROUTINE`, NOT `ON FUNCTION`. Several of these out-of-band
--- objects (agent_worker_tick, agent_timeout_sweep, …) are plausibly PROCEDUREs,
--- and `REVOKE ... ON FUNCTION` raises 42809 against a procedure. Because the
--- loop only fires where the object exists, that failure would occur on
--- PRODUCTION ONLY and never reproduce in CI. ROUTINE covers functions,
--- aggregates and procedures alike, so the statement is prokind-agnostic.
+-- The revoke is `ON ROUTINE`, NOT `ON FUNCTION`. LIVE CATALOG: all six agent_*
+-- routines plus run_adaptive_intervention_pipeline read prokind='f' (plain
+-- FUNCTIONS), prosecdef=true, owner postgres — none of them is a procedure, so
+-- the 42809 hazard is NOT present today and must not be asserted. ROUTINE is
+-- kept deliberately because it is the correct superset (functions, aggregates,
+-- procedures), it behaves identically to ON FUNCTION against a function, and it
+-- keeps this statement robust if any of these objects is ever recreated
+-- out-of-band as a procedure — a failure that, since the loop only fires where
+-- the object exists, would land on PRODUCTION ONLY and never reproduce in CI.
 --
--- FOLLOW-UP (not closed here): these objects still need source reconciliation —
--- either a migration that defines them, or a migration that drops them after
--- user approval. Locking their ACL is the safe interim step.
+-- ⚠ WARNING — THESE ARE NOT DROPPABLE ON THIS EVIDENCE. Dropping any of them
+-- would break live pg_cron jobs 24, 26 and 27, which invoke them by name every
+-- 10s / 30s / 15min as `postgres`. Source reconciliation remains open, but any
+-- future disposition (define-in-chain vs. retire) requires a SEPARATE dependency
+-- audit covering, at minimum: pg_cron (`cron.job` + `cron.job_run_details`),
+-- external and webhook callers, and any other out-of-band invoker. A repo grep is
+-- INSUFFICIENT — a repo grep is exactly what produced the wrong "dead code"
+-- reading corrected above. Locking the ACL is the safe interim step and is all
+-- this migration does.
 -- ═════════════════════════════════════════════════════════════════════════════
 
 DO $revoke_live_only_functions$
@@ -312,8 +404,13 @@ COMMIT;
 --   submit_mock_test_attempt (every overload found in pg_proc at apply time —
 --   on a chain-built DB that is the single 6-arg version, the 5-arg having been
 --   dropped by 20260722097100:113)
--- Functions fully unreachable from PostgREST: atomic_quiz_profile_update 5-arg,
---   reset_demo_student, plus the 7 live-DB-only functions in PART C
+-- No longer reachable by anon/authenticated (the PostgREST client roles):
+--   atomic_quiz_profile_update 5-arg and reset_demo_student, which are left with
+--   no client-role grant at all; plus the 7 live-DB-only routines in PART C,
+--   which KEEP their pre-existing explicit postgres and service_role grants and
+--   therefore keep running — pg_cron jobs 24, 26 and 27 invoke three of them as
+--   `postgres` every 10s / 30s / 15min. Read the PART C warning before proposing
+--   to drop, rename or re-own any of them.
 -- Functions deliberately left callable by `authenticated`: check_quiz_answer
 --   (live /quiz per-question feedback path — see B2)
 -- Untouched on purpose: security_reserve_quota (already service_role-only,

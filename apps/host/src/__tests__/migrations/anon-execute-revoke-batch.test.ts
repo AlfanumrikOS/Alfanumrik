@@ -246,7 +246,58 @@ describe.skipIf(!MIGRATION_PRESENT)(
     });
 
     // ── PART C ──────────────────────────────────────────────────────────────
-    describe('C: live-DB-only zero-caller functions are revoked inside a DO block', () => {
+    /**
+     * ⚠ THESE ARE NOT "ZERO-CALLER" / DEAD FUNCTIONS. An earlier revision of
+     * this file labelled them that way; the claim is FALSE and must not be
+     * reintroduced. What is actually true is narrower: these seven routines
+     * have NO REPO SOURCE and no repo reference — no .ts/.tsx/.dart/.sql call
+     * site, no entry in the generated database.types.ts `Functions` block —
+     * because they were created out-of-band and exist only in the deployed
+     * database. "No repository reference" is NOT evidence that a deployed
+     * object is dead; a repo grep is not a caller audit.
+     *
+     * LIVE EVIDENCE (reproduced against the database 2026-08-14; mirrored in
+     * the migration's own PART C header). Three of the seven are invoked
+     * continuously by pg_cron jobs that exist only in the database:
+     *   - job 24 `agent-timeout-sweep-every-minute`, schedule `30 seconds`,
+     *     ACTIVE, username=postgres
+     *       -> `select public.agent_timeout_sweep();`
+     *   - job 26 `agent-worker-tick-every-minute`, schedule `10 seconds`,
+     *     ACTIVE, username=postgres
+     *       -> `select public.agent_worker_tick('cron-worker');`
+     *   - job 27 `adaptive_intervention_pipeline_q15m`, schedule every 15
+     *     minutes, ACTIVE, username=postgres
+     *       -> `select public.run_adaptive_intervention_pipeline(200, 0.65);`
+     * pg_stat_statements corroborates the volume: agent_worker_tick 63,017
+     * calls; run_adaptive_intervention_pipeline 699 calls.
+     *
+     * The other four (agent_claim_step, agent_complete_step,
+     * agent_enqueue_step, agent_heartbeat) are called INTERNALLY from those
+     * SECURITY DEFINER parents. An internal call runs with the definer's
+     * privileges, so those four are immune to EXECUTE grants entirely.
+     *
+     * INVOKED, BUT NOT PRODUCTIVE — two separate claims, stated separately on
+     * purpose. agent_runs holds 2 rows and agent_steps 7, both last written
+     * 2026-05-10; agent_anomalies and agent_prompts are empty. What runs is an
+     * idle poll loop over an empty queue. Unproductive is not uncalled, and
+     * none of these is droppable on this evidence.
+     *
+     * WHY REVOKING IS NONETHELESS SAFE: `postgres` (the OWNER) and
+     * `service_role` each hold an EXPLICIT, separately-listed EXECUTE grant in
+     * proacl (`postgres=X/postgres`, `service_role=X/postgres`) — their
+     * privilege does NOT derive from the PUBLIC `=X` entry, so
+     * `REVOKE ... FROM PUBLIC, anon, authenticated` cannot remove it. All
+     * three pg_cron jobs run as `postgres`. The revoke therefore strips only
+     * the client-reachable PostgREST roles and leaves every live caller
+     * running exactly as before.
+     */
+    describe('C: routines with NO REPO SOURCE (live-DB-only; several have live pg_cron callers)', () => {
+      /**
+       * LIVE_ONLY = defined only in the deployed database (no source in
+       * supabase/migrations/, no repo reference). The name is about where the
+       * DEFINITION lives, not about whether anything calls them — three of
+       * these have active pg_cron callers, per the block comment above.
+       */
       const LIVE_ONLY = [
         'run_adaptive_intervention_pipeline',
         'agent_claim_step',
@@ -263,7 +314,7 @@ describe.skipIf(!MIGRATION_PRESENT)(
         expect(doBlockMatch()).not.toBeNull();
       });
 
-      it('references all 7 zero-caller function names inside the DO block', () => {
+      it('references all 7 live-DB-only routine names inside the DO block', () => {
         const body = doBlockMatch()!;
         for (const name of LIVE_ONLY) {
           expect(body).toContain(name);
