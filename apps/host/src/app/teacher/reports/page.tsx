@@ -253,8 +253,12 @@ function StudentAnalysisTab({
   students: StudentListEntry[];
   teacherId: string;
   isHi: boolean;
-  /** The roster read failed — "No students found" would be a lie. */
-  listError: boolean;
+  /**
+   * The roster read failed — "No students found" would be a lie. Carries the
+   * failure detail so this tab owns the ONE error surface for that read; the
+   * page no longer renders a second banner above it.
+   */
+  listError: string | null;
   onRetryList: () => void;
 }) {
   const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
@@ -312,6 +316,7 @@ function StudentAnalysisTab({
             isHi={isHi}
             titleEn="Couldn't load your student list"
             titleHi="आपकी छात्र सूची लोड नहीं हो सकी"
+            detail={listError}
             onRetry={onRetryList}
             testId="reports-students-error"
           />
@@ -343,10 +348,18 @@ function StudentAnalysisTab({
         </div>
       )}
 
+      {/* The per-student report read failed. Same surface as every other
+          failure on this page (one pattern, 44px retry, role="alert") instead
+          of a bespoke red card that offered no way back. */}
       {error && (
-        <div style={{ ...cardStyle, borderColor: 'var(--danger)', color: 'var(--danger)', textAlign: 'center', fontSize: 14 }}>
-          {error}
-        </div>
+        <TeacherDataError
+          isHi={isHi}
+          titleEn="Couldn't load this student's report"
+          titleHi="इस छात्र की रिपोर्ट लोड नहीं हो सकी"
+          detail={error}
+          onRetry={() => loadProfile(selectedId)}
+          testId="reports-student-profile-error"
+        />
       )}
 
       {!loading && !error && profile && (
@@ -594,19 +607,24 @@ export default function TeacherReportsPage() {
 
   const [tab, setTab] = useState<'overview' | 'student' | 'trends'>('overview');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [overviewData, setOverviewData] = useState<OverviewData | null>(null);
   const [studentsList, setStudentsList] = useState<StudentListEntry[]>([]);
   const [trendsData, setTrendsData] = useState<TrendsData | null>(null);
-  // Per-source failure flags. Previously a single `Promise.all` meant ANY
-  // failure left all three tabs rendering their "no data" copy over a null
-  // payload — the Needs-Attention card said "All students are on track!" and
-  // four StatCards read a confident 0 / 0% / 0%. A teacher cannot tell that
-  // apart from a healthy class. Each source now settles on its own and its
-  // tab renders an honest failure surface instead of a reassuring empty.
-  const [overviewError, setOverviewError] = useState(false);
-  const [studentsError, setStudentsError] = useState(false);
-  const [trendsError, setTrendsError] = useState(false);
+  // Per-source failure detail (null = that source is healthy). Previously a
+  // single `Promise.all` meant ANY failure left all three tabs rendering their
+  // "no data" copy over a null payload — the Needs-Attention card said "All
+  // students are on track!" and four StatCards read a confident 0 / 0% / 0%. A
+  // teacher cannot tell that apart from a healthy class. Each source now
+  // settles on its own and its tab renders an honest failure surface instead
+  // of a reassuring empty.
+  //
+  // The message lives HERE, per source, rather than in a page-level banner:
+  // that banner carried its own Retry button, so a failed overview read put two
+  // competing "Retry" controls on screen for one failure. One condition, one
+  // surface, one retry — same consolidation `/teacher/students` already made.
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [studentsError, setStudentsError] = useState<string | null>(null);
+  const [trendsError, setTrendsError] = useState<string | null>(null);
 
   const teacherId = teacher?.id || '';
 
@@ -627,48 +645,43 @@ export default function TeacherReportsPage() {
   const loadData = useCallback(async () => {
     if (!teacherId) return;
     setLoading(true);
-    setError('');
     const [overview, students, trends] = await Promise.allSettled([
       api('get_class_overview', { teacher_id: teacherId }),
       api('get_students_list', { teacher_id: teacherId }),
       api('get_class_trends', { teacher_id: teacherId }),
     ]);
 
+    const reasonOf = (result: PromiseRejectedResult) =>
+      result.reason instanceof Error ? result.reason.message : 'Failed to load report data';
+
     if (overview.status === 'fulfilled') {
       setOverviewData(overview.value);
-      setOverviewError(false);
+      setOverviewError(null);
     } else {
-      setOverviewError(true);
+      setOverviewError(reasonOf(overview));
     }
 
     if (students.status === 'fulfilled') {
       setStudentsList(students.value?.students || students.value || []);
-      setStudentsError(false);
+      setStudentsError(null);
     } else {
-      setStudentsError(true);
+      setStudentsError(reasonOf(students));
     }
 
     if (trends.status === 'fulfilled') {
       setTrendsData(trends.value);
-      setTrendsError(false);
+      setTrendsError(null);
     } else {
-      setTrendsError(true);
+      setTrendsError(reasonOf(trends));
     }
 
-    const firstFailure = [overview, students, trends].find(
-      (r): r is PromiseRejectedResult => r.status === 'rejected',
-    );
-    if (firstFailure) {
-      const reason = firstFailure.reason;
-      setError(reason instanceof Error ? reason.message : 'Failed to load report data');
-    }
     setLoading(false);
   }, [api, teacherId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   // Loading state — shared warm-cream report skeleton.
-  if (authLoading || (loading && !error)) {
+  if (authLoading || loading) {
     return (
       <div
         style={pageStyle}
@@ -717,18 +730,8 @@ export default function TeacherReportsPage() {
         </button>
       </header>
 
-      {/* Error Banner */}
-      {error && (
-        <div style={{ ...cardStyle, borderColor: 'var(--danger)', color: 'var(--danger)', textAlign: 'center', fontSize: 14, marginBottom: 16 }}>
-          {error}
-          <button
-            onClick={loadData}
-            style={{ display: 'block', margin: '10px auto 0', padding: '6px 16px', backgroundColor: 'var(--orange)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
-          >
-            {tt(isHi, 'Retry', 'पुनः प्रयास')}
-          </button>
-        </div>
-      )}
+      {/* No page-level error banner: each failed source states its own case
+          (with its own single Retry) inside the tab it actually broke. */}
 
       {/* Tabs */}
       <div style={tabBarStyle}>
@@ -765,6 +768,7 @@ export default function TeacherReportsPage() {
             isHi={isHi}
             titleEn="Couldn't load the class overview"
             titleHi="कक्षा अवलोकन लोड नहीं हो सका"
+            detail={overviewError}
             onRetry={loadData}
             testId="reports-overview-error"
           />
@@ -789,6 +793,7 @@ export default function TeacherReportsPage() {
             isHi={isHi}
             titleEn="Couldn't load class trends"
             titleHi="कक्षा के रुझान लोड नहीं हो सके"
+            detail={trendsError}
             onRetry={loadData}
             testId="reports-trends-error"
           />
