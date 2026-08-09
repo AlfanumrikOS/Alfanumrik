@@ -25,6 +25,19 @@ interface SnapshotData {
 interface SystemSnapshotProps {
   data: SnapshotData | null;
   loading: boolean;
+  /**
+   * Set when the snapshot fetch failed. Required to keep a failed read
+   * distinguishable from a slow one: the caller used to swallow the failure
+   * (`if (res.ok) …` + bare `catch`), leaving `data` null forever, and this
+   * component's `!data` branch renders "Loading snapshot…" — so the AI-breaker
+   * / health / deploy strip sat in a permanent, retry-less pseudo-loading state
+   * that an operator reads as "still fetching" rather than "we are blind".
+   */
+  error?: string | null;
+  /** Re-runs the snapshot fetch. */
+  onRetry?: () => void;
+  /** Bilingual toggle (AuthContext.isHi). */
+  isHi?: boolean;
 }
 
 function StatusDot({ color }: { color: string }) {
@@ -79,7 +92,46 @@ function formatDeployTime(iso: string): string {
   }
 }
 
-export default function SystemSnapshot({ data, loading }: SystemSnapshotProps) {
+export default function SystemSnapshot({ data, loading, error, onRetry, isHi = false }: SystemSnapshotProps) {
+  // Failed read takes precedence over the loading shell. Asserts NO status:
+  // a strip that could not read breaker/health/deploy state has no colour it
+  // can honestly show, so it shows none rather than a reassuring grey or green.
+  if (!loading && error && !data) {
+    return (
+      <div
+        role="alert"
+        style={{
+          display: 'flex', gap: 12, padding: '10px 16px', marginBottom: 16,
+          background: colors.surface, border: `1px solid ${colors.danger}`,
+          borderRadius: 8, fontSize: 12, color: colors.danger,
+          alignItems: 'center', flexWrap: 'wrap',
+        }}
+      >
+        <span aria-hidden>&#9888;</span>
+        <span style={{ minWidth: 0, flex: '1 1 220px' }}>
+          {isHi
+            ? `सिस्टम स्नैपशॉट लोड नहीं हो सका (${error}) — ब्रेकर, हेल्थ और डिप्लॉय स्थिति अज्ञात है।`
+            : `Couldn’t load the system snapshot (${error}) — breaker, health and deploy state are unknown.`}
+        </span>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            style={{
+              minHeight: 44, minWidth: 44,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              padding: '0 14px', borderRadius: 6,
+              border: `1px solid ${colors.danger}`, background: 'transparent',
+              color: colors.danger, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            {isHi ? 'पुनः प्रयास करें' : 'Retry'}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   if (loading || !data) {
     return (
       <div style={{

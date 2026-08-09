@@ -130,7 +130,12 @@ function AnalyticsContent() {
       <div className="mb-6 grid grid-cols-4 gap-3">
         <StatCard
           label="Total Students"
-          value={stats?.totals?.students ?? 0}
+          // Residual partial-failure hole: the early return above only fires
+          // when v2 is missing, so /stats failing while /analytics-v2 succeeds
+          // reached this card with `stats === null` and rendered "0 Total
+          // Students" next to a populated dashboard. Em-dash on absent source;
+          // a real zero-student platform still renders 0.
+          value={stats?.totals?.students ?? '—'}
           icon="👥"
           accentColor={C.accent}
         />

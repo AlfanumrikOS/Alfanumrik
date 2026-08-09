@@ -20,7 +20,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { DataTable, StatusBadge, type Column } from '@alfanumrik/ui/admin-ui';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
+import { DataTable, StatusBadge, AdminErrorState, type Column } from '@alfanumrik/ui/admin-ui';
 import { track } from '@alfanumrik/lib/posthog/client';
 
 /* ------------------------------------------------------------------ */
@@ -128,6 +130,7 @@ function WhiteLabelDot({ status }: { status: WhiteLabelStatus }) {
 
 function HealthDashboardContent() {
   const { apiFetch } = useAdmin();
+  const { isHi } = useAuth();
 
   const [rows, setRows] = useState<SchoolHealthRow[]>([]);
   const [degraded, setDegraded] = useState(false);
@@ -145,6 +148,8 @@ function HealthDashboardContent() {
     try {
       const res = await apiFetch('/api/super-admin/health');
       if (!res.ok) {
+        // P13: status code only — no school names or identifiers in logs.
+        logger.warn('super-admin school-health read failed', { reason: `HTTP ${res.status}` });
         setError(`Failed to load health (HTTP ${res.status})`);
         setRows([]);
         return;
@@ -173,7 +178,9 @@ function HealthDashboardContent() {
         });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Network error');
+      const reason = err instanceof Error ? err.message : 'Network error';
+      logger.warn('super-admin school-health read failed', { reason });
+      setError(reason);
       setRows([]);
     } finally {
       setLoading(false);
@@ -196,6 +203,15 @@ function HealthDashboardContent() {
     return 0;
   });
 
+  /* Failure-as-empty guard. `rows` is emptied on every failed read, so before
+     this the page rendered "0 total schools, 0 active in last 7d" over a
+     "No schools onboarded yet" table whenever /api/super-admin/health 500'd —
+     i.e. the pilot-triage dashboard reported a healthy, idle platform at
+     exactly the moment it could not see the platform at all. The banner that
+     did exist was dismissible, so one click left the zeros standing alone.
+     A genuinely empty deployment still renders a real 0 and the real
+     "No schools onboarded yet" copy. */
+  const dataUnavailable = error !== null && rows.length === 0;
   const totalSchools = rows.length;
   const activeInLast7d = rows.filter(r => r.active_users_7d > 0).length;
 
@@ -289,20 +305,9 @@ function HealthDashboardContent() {
         </p>
       </div>
 
-      {/* Error banner */}
-      {error && (
-        <div
-          role="alert"
-          className="mb-4 flex items-center justify-between rounded-md bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-4 py-2.5 text-sm text-danger"
-        >
-          <span>{error}</span>
-          <button
-            onClick={() => setError(null)}
-            className="cursor-pointer border-none bg-transparent text-sm font-semibold text-danger"
-          >
-            x
-          </button>
-        </div>
+      {/* Failed refresh that still has last-known-good rows on screen. */}
+      {error && rows.length > 0 && (
+        <AdminErrorState compact onRetry={fetchHealth} message={error} isHi={isHi} />
       )}
 
       {/* Synthetic-monitor degraded banner — appears only when E.5 is missing.
@@ -337,20 +342,31 @@ function HealthDashboardContent() {
         </div>
       )}
 
-      {/* Summary count */}
+      {/* Summary count — em-dash, never 0, when the read failed. */}
       <div className="mb-3 text-sm text-foreground">
-        <strong>{totalSchools}</strong> total schools,{' '}
-        <strong>{activeInLast7d}</strong> active in last 7d
+        <strong>{dataUnavailable ? '—' : totalSchools}</strong> total schools,{' '}
+        <strong>{dataUnavailable ? '—' : activeInLast7d}</strong> active in last 7d
       </div>
 
-      {/* Data Table */}
-      <DataTable
-        columns={columns}
-        data={sortedRows}
-        keyField="id"
-        loading={loading}
-        emptyMessage="No schools onboarded yet"
-      />
+      {/* Data Table — the honest failure surface REPLACES the table when the
+          read failed with nothing cached, so "No schools onboarded yet" can
+          only ever mean the query succeeded and returned nothing. */}
+      {dataUnavailable ? (
+        <AdminErrorState
+          onRetry={fetchHealth}
+          title={isHi ? 'स्कूल हेल्थ लोड नहीं हो सकी' : 'Couldn’t load school health'}
+          message={error}
+          isHi={isHi}
+        />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={sortedRows}
+          keyField="id"
+          loading={loading}
+          emptyMessage="No schools onboarded yet"
+        />
+      )}
     </div>
   );
 }

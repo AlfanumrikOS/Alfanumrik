@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
 import FiltersBar, { type Filters, DEFAULT_FILTERS } from './_components/FiltersBar';
 import SystemSnapshot from './_components/SystemSnapshot';
 import EventRow, { type TimelineEvent } from './_components/EventRow';
@@ -64,6 +66,7 @@ interface SnapshotData {
 }
 
 function ObservabilityContent() {
+  const { isHi } = useAuth();
   const { apiFetch } = useAdmin();
 
   // State
@@ -76,6 +79,7 @@ function ObservabilityContent() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotData | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(true);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initRef = useRef(false);
 
@@ -99,13 +103,21 @@ function ObservabilityContent() {
   // Fetch snapshot
   const fetchSnapshot = useCallback(async () => {
     setSnapshotLoading(true);
+    setSnapshotError(null);
     try {
       const res = await apiFetch('/api/super-admin/observability/snapshot');
-      if (res.ok) {
-        setSnapshot(await res.json());
+      if (!res.ok) {
+        // Non-fatal for the event timeline, but NOT non-fatal for the operator:
+        // the strip must say it is blind rather than sit on "Loading snapshot…".
+        logger.warn('super-admin observability snapshot read failed', { reason: `HTTP ${res.status}` });
+        setSnapshotError(`HTTP ${res.status}`);
+        return;
       }
-    } catch {
-      // Snapshot errors are non-fatal
+      setSnapshot(await res.json());
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : 'Network error';
+      logger.warn('super-admin observability snapshot read failed', { reason });
+      setSnapshotError(reason);
     } finally {
       setSnapshotLoading(false);
     }
@@ -232,7 +244,13 @@ function ObservabilityContent() {
       </div>
 
       {/* System Snapshot Strip */}
-      <SystemSnapshot data={snapshot} loading={snapshotLoading} />
+      <SystemSnapshot
+        data={snapshot}
+        loading={snapshotLoading}
+        error={snapshotError}
+        onRetry={fetchSnapshot}
+        isHi={isHi}
+      />
 
       {/* Filters */}
       <FiltersBar
@@ -241,9 +259,12 @@ function ObservabilityContent() {
         onClear={() => setFilters(DEFAULT_FILTERS)}
       />
 
-      {/* Event count */}
+      {/* Event count — em-dash, never 0, when the events read failed. "0 events"
+          on an incident timeline is the most reassuring thing this page can say
+          and it was being said on the failure path. A genuine 0 still reads
+          "0 events". */}
       <div style={{ fontSize: 12, color: colors.text3, marginBottom: 6 }}>
-        {events.length} events{nextCursor ? '+' : ''}{' '}
+        {error && events.length === 0 ? '—' : `${events.length}`} events{nextCursor ? '+' : ''}{' '}
         {AUTO_REFRESH_RANGES.has(filters.range) && !filters.from && (
           <span style={{ fontSize: 10 }}>(auto-refresh 10s)</span>
         )}

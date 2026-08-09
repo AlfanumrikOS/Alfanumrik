@@ -111,7 +111,11 @@ export default function SchoolBillingPage() {
   const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [seatSnapshots, setSeatSnapshots] = useState<SeatSnapshot[]>([]);
-  const [currentSeats, setCurrentSeats] = useState({ active: 0, purchased: 0, utilization: 0 });
+  /* null = we have no seat snapshot to stand behind (read failed, or no snapshot
+     has been taken yet). Distinct from a genuine zero, which stays a zero. */
+  const [currentSeats, setCurrentSeats] = useState<
+    { active: number; purchased: number; utilization: number } | null
+  >(null);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,13 +126,23 @@ export default function SchoolBillingPage() {
   const [selfServiceFlagOn, setSelfServiceFlagOn] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
 
-  /* ── Fetch school details once the school admin identity resolves ── */
+  /* ── Fetch school details once the school admin identity resolves ──
+     The PostgREST builder RESOLVES with { data, error }; it never rejects. This
+     previously discarded `error` entirely, so a failed read left schoolInfo null,
+     which meant fetchBillingData never ran and the page rendered a full set of
+     fabricated defaults — "Standard" plan, 0 seats, ₹0 monthly cost, "No invoices
+     yet". Every one of those is a figure a principal could act on or report. */
   const fetchSchoolInfo = useCallback(async (sid: string) => {
-    const { data: school } = await supabase
+    const { data: school, error: schoolErr } = await supabase
       .from('schools')
       .select('id, name, max_students, subscription_plan')
       .eq('id', sid)
       .maybeSingle();
+
+    if (schoolErr) {
+      setError(schoolErr.message);
+      return;
+    }
 
     if (school) {
       setSchoolInfo({
@@ -146,19 +160,27 @@ export default function SchoolBillingPage() {
     setError(null);
 
     try {
-      // Fetch invoices via the school-admin API
+      // Fetch invoices via the school-admin API. A non-ok response RESOLVES —
+      // the old `if (invRes.ok)` happy path let a 403/500 render as "No invoices
+      // yet", which on a billing surface is an actionable lie.
       const invRes = await authedFetch('/api/school-admin/invoices?limit=50');
-      if (invRes.ok) {
-        const invJson = await invRes.json();
-        setInvoices(invJson.data?.invoices || []);
+      if (!invRes.ok) {
+        const body = await invRes.json().catch(() => ({}));
+        throw new Error(
+          typeof body?.error === 'string' && body.error
+            ? body.error
+            : `Request failed (${invRes.status})`,
+        );
       }
+      const invJson = await invRes.json();
+      setInvoices(invJson.data?.invoices || []);
 
-      // Fetch seat usage data via direct supabase query (scoped by school_id)
+      // Fetch seat usage data via direct supabase query (scoped by school_id).
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const sinceStr = thirtyDaysAgo.toISOString().split('T')[0];
 
-      const { data: snapshots } = await supabase
+      const { data: snapshots, error: seatErr } = await supabase
         .from('school_seat_usage')
         .select('snapshot_date, active_students, seats_purchased, utilization_pct')
         .eq('school_id', schoolId)
@@ -166,9 +188,14 @@ export default function SchoolBillingPage() {
         .order('snapshot_date', { ascending: false })
         .limit(30);
 
-      setSeatSnapshots(snapshots || []);
+      // `snapshots || []` used to make a failed read indistinguishable from a
+      // school that simply has no snapshot yet.
+      if (seatErr) throw new Error(seatErr.message);
 
-      // Current seat count (from school_seat_usage latest, or student count)
+      setSeatSnapshots(snapshots ?? []);
+
+      // Current seat count comes from the latest snapshot. With no snapshot the
+      // figure is UNKNOWN, not zero — leave it null so the tiles render a dash.
       if (snapshots && snapshots.length > 0) {
         const latest = snapshots[0];
         setCurrentSeats({
@@ -176,6 +203,8 @@ export default function SchoolBillingPage() {
           purchased: latest.seats_purchased,
           utilization: latest.utilization_pct,
         });
+      } else {
+        setCurrentSeats(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load billing data');
@@ -240,7 +269,11 @@ export default function SchoolBillingPage() {
     );
   }
 
-  /* ── Error state ── */
+  /* ── Error state ──
+     Reached by a failed school-profile read, a failed invoices read, or a failed
+     seat-usage read. None of those may render as "no invoices / no usage / ₹0".
+     Retry re-runs whichever read is still missing: if the school profile never
+     resolved, retrying the billing fetch alone would be a no-op. */
   if (error) {
     return (
       <div className="space-y-4">
@@ -249,7 +282,14 @@ export default function SchoolBillingPage() {
           <p className="text-sm text-[var(--text-2)] mb-4">{error}</p>
           <Button
             variant="primary"
-            onClick={() => schoolInfo && fetchBillingData(schoolInfo.school_id)}
+            onClick={() => {
+              setError(null);
+              if (schoolInfo) {
+                fetchBillingData(schoolInfo.school_id);
+              } else if (schoolId) {
+                fetchSchoolInfo(schoolId);
+              }
+            }}
           >
             {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
           </Button>
@@ -258,10 +298,15 @@ export default function SchoolBillingPage() {
     );
   }
 
-  /* ── Derived values ── */
+  /* ── Derived values ──
+     `planLabel` falls back to "Standard" only when the plan string is genuinely
+     absent on a school row we DID read; a failed read early-returns above. */
   const planLabel = (schoolInfo?.subscription_plan || 'Standard').replace(/^\w/, c => c.toUpperCase());
 
-  // Estimate monthly cost based on plan pricing
+  // Estimate monthly cost based on plan pricing.
+  // TODO(backend): this per-seat price table is hardcoded in the client and the
+  // rupee figure below is derived here rather than read from a billing source.
+  // Frontend does not own price data — flagged for backend/pricing review.
   const SEAT_PRICES: Record<string, number> = {
     basic: 99,
     standard: 199,
@@ -269,7 +314,8 @@ export default function SchoolBillingPage() {
     enterprise: 599,
   };
   const pricePerSeat = SEAT_PRICES[(schoolInfo?.subscription_plan || 'standard').toLowerCase()] || 199;
-  const monthlyCost = currentSeats.active * pricePerSeat;
+  // No seat snapshot ⇒ no seat count ⇒ no cost we can stand behind.
+  const monthlyCost = currentSeats ? currentSeats.active * pricePerSeat : null;
 
   // Next invoice date estimate (first of next month)
   const now = new Date();
@@ -290,7 +336,7 @@ export default function SchoolBillingPage() {
         {schoolInfo && (
           <ManageSubscriptionSection
             schoolId={schoolInfo.school_id}
-            seatsUsed={currentSeats.active}
+            seatsUsed={currentSeats?.active ?? null}
             flagOn={selfServiceFlagOn}
             isHi={isHi}
             authToken={authToken}
@@ -322,7 +368,9 @@ export default function SchoolBillingPage() {
                   {t(isHi, 'Seats Used', 'सीट उपयोग')}
                 </p>
                 <p className="text-lg font-bold mt-1" style={{ color: 'var(--orange)', fontFamily: 'var(--font-display)' }}>
-                  {currentSeats.active} / {schoolInfo?.max_students || currentSeats.purchased}
+                  {currentSeats
+                    ? `${currentSeats.active} / ${schoolInfo?.max_students || currentSeats.purchased}`
+                    : '—'}
                 </p>
               </div>
             </Card>
@@ -334,7 +382,9 @@ export default function SchoolBillingPage() {
                   {t(isHi, 'Monthly Cost', 'मासिक लागत')}
                 </p>
                 <p className="text-lg font-bold mt-1" style={{ color: '#16A34A', fontFamily: 'var(--font-display)' }}>
-                  {monthlyCost.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 })}
+                  {monthlyCost == null
+                    ? '—'
+                    : monthlyCost.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 })}
                 </p>
               </div>
             </Card>

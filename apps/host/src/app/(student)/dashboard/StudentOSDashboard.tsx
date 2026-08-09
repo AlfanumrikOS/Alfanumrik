@@ -229,34 +229,33 @@ export default function StudentOSDashboard() {
 
   // Compact header rail — greeting + streak + demoted XP + language toggle.
   //
-  // TWO ROWS on purpose. All four of these used to share one 360 px row, which
-  // left the greeting column ~130 px wide: the English sub-line ("What will you
-  // master today?") wrapped to three lines and the Hindi greeting truncated
-  // mid-word. Identity now owns row 1 and the glanceable stats own row 2, so
-  // neither has to shrink.
+  // LAYOUT LIVES IN CSS, NOT HERE. `.dashboard-header-row` stacks into two
+  // rows below 768px and reserves the inline-end slot that AppShell's
+  // absolutely-positioned one-handed-mode toggle occupies (globals.css). An
+  // earlier pass tried to do both from this file — two child <div>s plus
+  // `pe-14` on the first — and neither worked: the row was still
+  // `flex-direction: row`, so the children sat side by side and the padding
+  // only narrowed the greeting further. Browser measurement, not markup
+  // shape, is what settles whether this is two rows.
   //
-  // `pe-14` on row 1 reserves the slot that AppShell's one-handed-mode toggle
-  // occupies. That control is `position: absolute; top: 8px; right: ~16px;
-  // 36x36` (globals.css .app-shell-onehand-toggle) and is hidden from 768px up,
-  // so on a phone it was landing directly on top of the language toggle — two
-  // live controls in the same pixels. `md:pe-0` gives the space back once the
-  // toggle is display:none.
+  // No `px-4 py-3` either: `.dashboard-header-row` sets its own padding and
+  // globals.css is emitted after `@tailwind utilities`, so those utilities
+  // were dead classes that read as authoritative — and `px-4` would have
+  // out-ordered the toggle-slot reservation if the cascade ever flipped.
   //
-  // `dashboard-header-row` / `dashboard-header-greeting` are the hooks
-  // globals.css already defines for the compact-on-scroll header (it tightens
-  // the row padding and hides the greeting). The dashboard had never opted in,
-  // so the header animated down to --shell-header-h-compact with its full-size
-  // content still inside it.
+  // No `truncate` on the greeting lines: an ellipsis on a personal greeting
+  // is lost meaning, not a graceful degrade ("HI, …" at 320px; "नमस्ते, T…"
+  // in Hindi, which runs 20-30% longer). They wrap now.
   const headerRail = (
-    <div className="dashboard-header-row w-full px-4 py-3">
-      <div className="dashboard-header-greeting pe-14 md:pe-0">
+    <div className="dashboard-header-row w-full">
+      <div className="dashboard-header-greeting">
         <p
-          className="text-fluid-xl font-extrabold truncate"
+          className="text-fluid-xl font-extrabold"
           style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
         >
           {isHi ? `नमस्ते, ${firstName}` : `Hi, ${firstName}`}
         </p>
-        <p className="text-fluid-sm truncate" style={{ color: 'var(--text-3)' }}>
+        <p className="text-fluid-sm" style={{ color: 'var(--text-3)' }}>
           {isHi ? 'आज क्या सीखें?' : 'What will you master today?'}
         </p>
       </div>

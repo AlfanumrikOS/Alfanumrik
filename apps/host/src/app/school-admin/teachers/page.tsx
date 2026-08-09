@@ -400,7 +400,10 @@ export default function SchoolAdminTeachersPage() {
 
   /* ── State ── */
   const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [loadingTeachers, setLoadingTeachers] = useState(false);
+  /* Starts TRUE. The list fetch only begins in an effect after schoolId
+     resolves, so a `false` seed committed one frame of "No teachers yet" +
+     "Add your first teacher" before any read had been attempted. */
+  const [loadingTeachers, setLoadingTeachers] = useState(true);
   const [rpcError, setRpcError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
