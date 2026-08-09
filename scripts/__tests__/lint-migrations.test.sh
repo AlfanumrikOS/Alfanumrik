@@ -178,6 +178,63 @@ grep -q "20990101000007" /tmp/lint-mig-out.txt \
   || fail "failure message did not name the colliding version"
 rm "$TMP_ROOT/supabase/migrations/20990101000007_first_branch.sql" "$TMP_ROOT/supabase/migrations/20990101000007_second_branch.sql"
 
+# Case 8: leading UTF-8 BOM (EF BB BF) -- should fail even though the body is
+# real DDL. This is the 2026-08-09 incident: one BOM'd migration made
+# "supabase db push" die with SQLSTATE 42601 at statement 0 and blocked the
+# production deploy chain (including a merged CRITICAL security fix) for two
+# cycles. There is deliberately NO opt-out marker for this rule.
+echo "Case 8: UTF-8 BOM at byte 0"
+BOM_FIXTURE="$TMP_ROOT/supabase/migrations/20990101000008_bom_prefixed.sql"
+printf '\xEF\xBB\xBF' > "$BOM_FIXTURE"
+cat >> "$BOM_FIXTURE" <<'EOF'
+-- Body is perfectly valid DDL; the BOM alone is what breaks the deploy.
+CREATE TABLE IF NOT EXISTS test_bom_fixture (id uuid PRIMARY KEY);
+ALTER TABLE test_bom_fixture ENABLE ROW LEVEL SECURITY;
+EOF
+EXIT_CODE=$(run_linter)
+if [ "$EXIT_CODE" = "1" ]; then
+  pass "BOM-prefixed migration exits 1"
+else
+  fail "expected exit 1, got $EXIT_CODE"
+  cat /tmp/lint-mig-out.txt
+fi
+grep -q "20990101000008_bom_prefixed.sql" /tmp/lint-mig-out.txt \
+  && pass "failure message names the BOM'd file" \
+  || fail "failure message did not name the BOM'd file"
+grep -q "UTF-8 BOM" /tmp/lint-mig-out.txt \
+  && pass "failure message identifies the BOM as the cause" \
+  || fail "failure message did not mention the BOM"
+
+# Case 8b: the allow-placeholder marker must NOT rescue a BOM'd file.
+printf '\xEF\xBB\xBF' > "$BOM_FIXTURE"
+cat >> "$BOM_FIXTURE" <<'EOF'
+-- lint:allow-placeholder
+SELECT 1 WHERE false;
+EOF
+EXIT_CODE=$(run_linter)
+if [ "$EXIT_CODE" = "1" ]; then
+  pass "BOM rule has no opt-out (allow marker does not rescue it)"
+else
+  fail "expected exit 1 (BOM must not be opt-out-able), got $EXIT_CODE"
+  cat /tmp/lint-mig-out.txt
+fi
+rm "$BOM_FIXTURE"
+
+# Case 8c: same body WITHOUT the BOM must pass -- proves the rule keys on the
+# 3 leading bytes only and does not false-positive on clean files.
+cat > "$TMP_ROOT/supabase/migrations/20990101000008_no_bom.sql" <<'EOF'
+CREATE TABLE IF NOT EXISTS test_bom_fixture (id uuid PRIMARY KEY);
+ALTER TABLE test_bom_fixture ENABLE ROW LEVEL SECURITY;
+EOF
+EXIT_CODE=$(run_linter)
+if [ "$EXIT_CODE" = "0" ]; then
+  pass "identical body without a BOM passes"
+else
+  fail "expected exit 0, got $EXIT_CODE"
+  cat /tmp/lint-mig-out.txt
+fi
+rm "$TMP_ROOT/supabase/migrations/20990101000008_no_bom.sql"
+
 
 if [ "$FAIL_COUNT" = "0" ]; then
   echo "All assertions passed."
