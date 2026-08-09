@@ -3395,6 +3395,69 @@ body.foxy-body-lock {
 }
 .app-shell-v2 > .app-shell-header[data-compact="true"] .dashboard-header-greeting { display: none; }
 
+/* ── /learn/[subject]/[chapter] sticky header (phone-first) ────────────────
+   Measured at 360px in Chromium on 2026-08-10, BEFORE this block existed:
+
+     .learn-header-identity title span   x=108.7  w=420.8  right=529.5
+     "📋 Index" button                   x=529.5  w= 54.5  right=583.9
+     "📖 Read"  button                   x=591.9  w= 47.9  right=639.8
+     concept counter "1/5"               x=647.8  w= 17.5  right=665.3
+     .app-shell-onehand-toggle           x=299.8  w= 48    right=347.8
+
+   In a 360px viewport that is all three right-hand controls entirely
+   off-screen, and 960px² of the title painted underneath the one-handed
+   toggle. The Index button is the ONLY concept-to-concept navigation a phone
+   has (the sidebar is `hidden md:flex`), so the page shipped with its primary
+   in-chapter navigation unreachable on the target device.
+
+   Root cause was NOT the toggle: the identity column had no `min-w-0`, so its
+   `truncate` span could not shrink below its 421px content width and simply
+   pushed its siblings out of the box. `min-w-0` / `shrink-0` (in the page's
+   JSX) restore shrinking; the rules below add the two layout guarantees CSS
+   has to own.
+
+   1. padding-inline-end reserves the slot occupied by
+      .app-shell-onehand-toggle — position:absolute at
+      `right: var(--space-fluid-4)`, --tap-min square, phone-only. Identical
+      formula and rationale to .dashboard-header-row above. The reservation
+      lives on the ROW so it holds in every header state, including compact.
+   2. On phones the row WRAPS: identity owns line 1, the actions own line 2.
+      A single row cannot hold both at 360px — after the toggle reservation
+      the flexible title would be left ~47px ("Sci…"), and an ellipsis there
+      costs the one thing the header exists to say. */
+.learn-header-row { min-width: 0; }
+.learn-header-main { min-width: 0; }
+
+@media (max-width: 767px) {
+  .learn-header-row {
+    padding-inline-end: calc(var(--space-fluid-4) + var(--tap-min) + 8px);
+    /* Two rows cost height, so buy some back from the block padding. */
+    padding-block: var(--space-fluid-2);
+  }
+  .learn-header-main { flex-wrap: wrap; margin-bottom: 6px; }
+  /* Actions take a full line of their own and sit under the title, right
+     aligned so the thumb finds them in the same place the toggle is. */
+  .learn-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* Compact-on-scroll. AppShell hard-sets the compacted header to
+   --shell-header-h-compact (44px) and does NOT clip (`contain: layout` is not
+   `contain: paint`), so a header taller than 44px spills its content over the
+   page beneath — measured here as the back arrow, chapter title and the green
+   progress bar painting on top of the concept card's tab strip. `height: auto`
+   is scoped to this shell only (AppShell className="learn-shell"), so every
+   other AppShell surface keeps the 44px compaction unchanged. The padding
+   still tightens, which is what compaction is actually for. */
+.app-shell-v2.learn-shell > .app-shell-header[data-compact="true"] {
+  height: auto;
+}
+.app-shell-v2 > .app-shell-header[data-compact="true"] .learn-header-row {
+  padding-block: var(--space-fluid-2);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    COSMIC REDESIGN — Phase 0 foundation (2026-06-05)
 

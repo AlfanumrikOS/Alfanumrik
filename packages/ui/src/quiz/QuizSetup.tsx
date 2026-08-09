@@ -154,6 +154,23 @@ export default function QuizSetup({
   // Quick-start: subject + chapter already known → show a 1-confirm screen
   if (hasContext && !showFullSetup) {
     const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
+    // `hasContext` is derived from the PROPS (the URL the student arrived on)
+    // and never changes. `selectedChapter` is STATE, and the chapters effect
+    // above resets it to null on three real paths: the student's grade has not
+    // resolved yet, the chapter read failed, or the requested chapter is not in
+    // this student's allowed chapter list. When that happened this card printed
+    // the state straight into the copy — reproduced in Chromium at 360px on
+    // 2026-08-10 as the literal string "Chapter null", with "Start Ch null" on
+    // the CTA. A number the product cannot stand behind is never shown; say
+    // what is actually known instead, and hand the student a real next step.
+    const chapterKnown = selectedChapter != null;
+    const chapterNote = chaptersLoading
+      ? (isHi ? 'अध्याय जाँचा जा रहा है…' : 'Checking that chapter…')
+      : chaptersFailed
+        ? (isHi ? 'अध्याय सूची अभी लोड नहीं हो पाई' : "Couldn't load the chapter list just now")
+        : (isHi
+            ? `अध्याय ${initialChapter} इस विषय में अभी उपलब्ध नहीं है`
+            : `Chapter ${initialChapter} isn't available for this subject yet`);
     return (
       <div className="mesh-bg min-h-dvh pb-nav">
         <header className="page-header">
@@ -174,11 +191,16 @@ export default function QuizSetup({
             }}
           >
             <div className="text-4xl mb-2">{subMeta?.icon || '📖'}</div>
+            {/* P7: was `subMeta?.name` unconditionally, so a Hindi student read
+                "Science · अध्याय 9". Same `isHi ? nameHi || name` fallback the
+                library / memory / pyq / mock-exam surfaces already use. */}
             <div className="text-base font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>
-              {subMeta?.name}
+              {isHi ? subMeta?.nameHi || subMeta?.name : subMeta?.name}
             </div>
             <div className="text-sm text-[var(--text-3)] mb-1">
-              {isHi ? `अध्याय ${selectedChapter}` : `Chapter ${selectedChapter}`}
+              {chapterKnown
+                ? (isHi ? `अध्याय ${selectedChapter}` : `Chapter ${selectedChapter}`)
+                : chapterNote}
             </div>
             <div className="text-xs text-[var(--text-3)]">
               {questionCount} {isHi ? 'सवाल · स्मार्ट मोड' : 'questions · Smart mode'}
@@ -207,21 +229,34 @@ export default function QuizSetup({
             </div>
           </div>
 
-          {/* Start button */}
+          {/* Start button.
+              When the chapter could not be resolved, starting here would hand
+              the student a whole-SUBJECT quiz under a card they opened for one
+              chapter — a silent substitution. Send them to the full setup to
+              pick a chapter instead; nothing is taken away (the same screen
+              still offers subject-wide practice), and the swap is no longer
+              silent. */}
           <Button
             fullWidth
             color={subMeta?.color}
-            onClick={() => onStart({
-              subject: selectedSubject!,
-              difficulty: null,
-              questionCount,
-              quizMode: 'cognitive', // Smart mode by default
-              examTimeLimit,
-              chapterNumber: selectedChapter,
-              questionTypes: ['mcq'],
-            })}
+            onClick={() => {
+              if (!chapterKnown) { setShowFullSetup(true); return; }
+              onStart({
+                subject: selectedSubject!,
+                difficulty: null,
+                questionCount,
+                quizMode: 'cognitive', // Smart mode by default
+                examTimeLimit,
+                chapterNumber: selectedChapter,
+                questionTypes: ['mcq'],
+              });
+            }}
           >
-            {loading ? (isHi ? 'लोड हो रहा...' : 'Loading...') : `⚡ ${isHi ? 'क्विज़ शुरू करो' : 'Start Quiz'}`}
+            {loading || chaptersLoading
+              ? (isHi ? 'लोड हो रहा...' : 'Loading...')
+              : chapterKnown
+                ? `⚡ ${isHi ? 'क्विज़ शुरू करो' : 'Start Quiz'}`
+                : (isHi ? 'अध्याय चुनो' : 'Choose a chapter')}
           </Button>
 
           {/* Full setup link */}
