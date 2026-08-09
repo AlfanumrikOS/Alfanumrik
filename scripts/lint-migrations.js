@@ -18,6 +18,11 @@
  * anywhere in its top-of-file comment block (case-insensitive). The 10
  * audit-flagged placeholders carry this marker.
  *
+ * Additional deploy-breaking rules enforced over the same file set:
+ *   - duplicate 14-digit timestamp versions (schema_migrations PK collision)
+ *   - top-level DML against quota-state tables
+ *   - a leading UTF-8 BOM (Postgres 42601 at statement 0) — no opt-out
+ *
  * Exit codes:
  *   0 — clean (no unannotated placeholders found)
  *   1 — one or more files fail; offenders printed to stdout
@@ -260,6 +265,37 @@ function findDuplicateVersions(files) {
   return duplicates.sort((a, b) => (a.version < b.version ? -1 : 1));
 }
 
+// -- UTF-8 BOM guard --------------------------------------------------------
+//
+// PostgreSQL's parser has no concept of a byte-order mark. A migration file
+// saved with a UTF-8 BOM (bytes EF BB BF) therefore begins, as far as the
+// server is concerned, with three garbage characters BEFORE the first token,
+// and `supabase db push` aborts the ENTIRE chain at statement 0 with:
+//
+//   ERROR: syntax error at or near "<BOM>" (SQLSTATE 42601)
+//
+// Incident: 20260814000000_answer_key_oracle_closure_and_v1_gate.sql was
+// authored by a tool that emits a BOM by default (PowerShell Out-File /
+// Set-Content and several Windows editors do this silently). Nothing in PR CI
+// read the file's raw bytes -- Node's fs.readFileSync(path,'utf8') keeps the
+// BOM as an invisible U+FEFF, git renders it as a zero-width mark, and every
+// other rule in this file strips comments before matching -- so the file
+// looked perfectly clean right up until it broke the PRODUCTION deploy job.
+//
+// This rule reads each migration as a Buffer (the only way the BOM is actually
+// visible) and fails at PR time. There is deliberately NO opt-out marker: a
+// BOM is never legitimate in a file that Postgres must parse.
+function findBomFiles(files) {
+  const offenders = [];
+  for (const file of files) {
+    const buf = fs.readFileSync(file);
+    if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+      offenders.push(path.basename(file));
+    }
+  }
+  return offenders.sort();
+}
+
 function main() {
   const files = listMigrationFiles(MIGRATIONS_DIR);
   if (files.length === 0) {
@@ -284,7 +320,29 @@ function main() {
       console.log('the old filename by name.');
       process.exit(1);
     }
-  
+
+    const bomFiles = findBomFiles(files);
+    if (bomFiles.length > 0) {
+      console.log('');
+      console.log('FAIL: UTF-8 BOM (bytes EF BB BF) at the start of migration file(s).');
+      console.log('PostgreSQL does not skip byte-order marks: it parses them as a token and');
+      console.log('aborts `supabase db push` at statement 0 with');
+      console.log('  ERROR: syntax error at or near "<BOM>" (SQLSTATE 42601)');
+      console.log('which blocks EVERY migration in the chain, not just this one. This has');
+      console.log('already broken a production deploy once (20260814000000).');
+      console.log('');
+      for (const name of bomFiles) console.log('    - ' + name);
+      console.log('');
+      console.log('Fix (from the repo root), for each file above:');
+      console.log('  node -e "const f=process.argv[1],fs=require(\'fs\'),b=fs.readFileSync(f);' +
+        'if(b[0]===0xEF&&b[1]===0xBB&&b[2]===0xBF)fs.writeFileSync(f,b.subarray(3))" ' +
+        'supabase/migrations/<file>.sql');
+      console.log('Verify:  head -c 3 supabase/migrations/<file>.sql | od -An -tx1   # must NOT be ef bb bf');
+      console.log('');
+      console.log('There is no opt-out marker for this rule -- a BOM is never legitimate.');
+      process.exit(1);
+    }
+
     const failures = [];
   let allowedCount = 0;
   for (const file of files) {
@@ -321,6 +379,7 @@ if (require.main === module) {
 
 module.exports = {
   findDuplicateVersions,
+  findBomFiles,
   stripComments,
   normalizeBody,
   isPlaceholder,
