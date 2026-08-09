@@ -28,6 +28,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
+import { AdminErrorState } from '@alfanumrik/ui/admin-ui';
 
 const colors = {
   bg: '#FFFFFF',
@@ -102,7 +104,10 @@ function SubscribersInner() {
       }
       setRows(body.data.subscribers as SubscriberRow[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const reason = e instanceof Error ? e.message : String(e);
+      // P13: message only — subscriber rows carry no PII, and none is logged.
+      logger.warn('super-admin event-runtime subscribers read failed', { reason });
+      setError(reason);
     } finally {
       setLoading(false);
     }
@@ -138,24 +143,25 @@ function SubscribersInner() {
         </div>
       </div>
 
-      {error && (
-        <div
-          style={{
-            padding: 12,
-            marginBottom: 12,
-            border: `1px solid ${colors.danger}`,
-            borderLeft: `3px solid ${colors.danger}`,
-            borderRadius: 6,
-            fontSize: 13,
-            color: colors.danger,
-            background: colors.bg,
-          }}
-        >
-          {error}
-        </div>
+      {/* Failure-as-empty guard. The old banner had no retry, and — worse — the
+          table below it still rendered "No subscribers registered." over an
+          empty `rows`. On the console whose job is to prove the state-event
+          runtime has live consumers, that is the single most misleading
+          sentence available: it reads as a settled fact about the runtime when
+          it only ever meant "this fetch failed". A genuine empty registry still
+          renders that copy. */}
+      {error && rows.length > 0 && (
+        <AdminErrorState compact onRetry={() => void load()} message={error} isHi={isHi} />
       )}
 
-      {loading ? (
+      {!loading && error && rows.length === 0 ? (
+        <AdminErrorState
+          onRetry={() => void load()}
+          title={isHi ? 'सब्सक्राइबर लोड नहीं हो सके' : 'Couldn’t load subscribers'}
+          message={error}
+          isHi={isHi}
+        />
+      ) : loading ? (
         <div style={{ padding: 24, color: colors.text2 }}>Loading…</div>
       ) : (
         <div

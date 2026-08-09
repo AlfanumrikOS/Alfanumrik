@@ -2309,12 +2309,19 @@ body.foxy-body-lock {
 }
 
 /* ─── One-handed mode toggle button (phone-only) ─────────────── */
+/* SIZE: --tap-min (44px), not the 36px it shipped with. Measured in Chromium
+   on 2026-08-09 at 36x36 — under the Apple HIG / --tap-min floor this repo
+   asserts, on a control that only ever exists on a phone. Any surface that
+   places its own control in the header's top-right must reserve
+   `--space-fluid-4 + --tap-min` of inline-end space (see
+   .dashboard-header-row below); this button is position:absolute and reserves
+   nothing on its own. */
 .app-shell-onehand-toggle {
   position: absolute;
   top: calc(var(--safe-top) + 8px);
   right: var(--space-fluid-4);
-  width: 36px;
-  height: 36px;
+  width: var(--tap-min);
+  height: var(--tap-min);
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -2332,6 +2339,13 @@ body.foxy-body-lock {
   background: var(--orange);
   color: white;
   border-color: var(--orange);
+}
+/* The compact-on-scroll header is --shell-header-h-compact (44px) tall, which
+   is exactly --tap-min: keeping the 8px top offset there would hang the
+   control past the header's bottom border and over the page content beneath
+   it. Sit it flush instead. */
+.app-shell-v2 > .app-shell-header[data-compact="true"] .app-shell-onehand-toggle {
+  top: var(--safe-top);
 }
 @media (min-width: 768px) {
   .app-shell-onehand-toggle { display: none; }
@@ -2880,6 +2894,38 @@ body.foxy-body-lock {
   min-width: 0;
   overflow: hidden;
 }
+
+/* ── Phone layout: two real rows, and a reserved slot for the overlay ──
+   Below 768px this row STACKS. In a single row the identity column
+   collapsed to 115px at 320px / 155px at 360px, which clipped both greeting
+   lines ("HI, …" — the student's own name gone) and, in Hindi, truncated
+   "नमस्ते, <name>" mid-word. Identity owns row 1, the glanceable stats own
+   row 2, and neither has to shrink. flex-direction was previously declared
+   `row` here and only *believed* to be two rows because the markup had two
+   children — the DOM shape was never the layout.
+
+   padding-inline-end reserves the slot occupied by
+   .app-shell-onehand-toggle, which is position:absolute at
+   `top: safe-top + 8px; right: var(--space-fluid-4)` and --tap-min square,
+   and which exists ONLY below 768px. It was painting directly on top of the
+   language toggle (993px² of overlap at 320px, measured) and, being later in
+   paint order, swallowed its taps — a student on a phone could not switch
+   between English and Hindi at all.
+
+   The reservation lives on the ROW, not on one of its children, so it holds
+   in EVERY header state — including the compact-on-scroll state, where the
+   greeting child is display:none and the stats row rises to the top of the
+   header, directly into the toggle's band. A child-level reservation (the
+   `pe-14` this replaces) cannot make that guarantee, and one placed on the
+   greeting made no difference at all while the row was still one row. */
+@media (max-width: 767px) {
+  .dashboard-header-row {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding-inline-end: calc(var(--space-fluid-4) + var(--tap-min) + 8px);
+  }
+}
 @media (min-width: 768px) {
   .dashboard-header-row { padding: var(--space-fluid-4) var(--space-fluid-6); }
 }
@@ -2902,14 +2948,21 @@ body.foxy-body-lock {
   background: var(--accent);
   margin-bottom: 2px;
 }
+/* The identity block of the dashboard header (greeting + sub-line).
+   This was authored as a 12px UPPERCASE letter-spaced KICKER and then reused
+   as a container for the personal greeting. `text-transform` and
+   `letter-spacing` INHERIT, and the <p>s inside override only `font-size` —
+   so the student's own name rendered "HI, TEST" at 20px bold. Nothing in the
+   JSX says uppercase, which is why source review could not see it. A personal
+   greeting keeps the casing the component wrote; the kicker treatment is gone
+   (this class has no other consumer). `font-size` is dropped with it: both
+   children set their own, so it only lay in wait for a third. */
 .dashboard-header-greeting {
   font-family: var(--font-display);
-  font-size: var(--text-2xs);
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--ink-3);
   margin: 0;
+  min-width: 0;
 }
 .dashboard-header-actions {
   display: inline-flex;

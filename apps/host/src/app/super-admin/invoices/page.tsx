@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
-import { StatCard, StatusBadge, DataTable, type Column } from '@alfanumrik/ui/admin-ui';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
+import { StatCard, StatusBadge, DataTable, AdminErrorState, type Column } from '@alfanumrik/ui/admin-ui';
 
 /* ─────────────────────────────────────────────────────────────
    TYPES
@@ -71,6 +73,7 @@ function formatPeriod(start: string, end: string): string {
 ───────────────────────────────────────────────────────────── */
 function InvoicesContent() {
   const { apiFetch } = useAdmin();
+  const { isHi } = useAuth();
 
   /* State */
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -79,6 +82,14 @@ function InvoicesContent() {
   const [loading, setLoading] = useState(false);
   const [filterStatus, setFilterStatus] = useState('');
   const [searchSchool, setSearchSchool] = useState('');
+  /* Failure-as-empty guard: before this, `fetchInvoices` did `if (res.ok) {…}`
+     with a bare `catch { }`, so a 500 / auth failure / network drop left the
+     page rendering "Total Revenue ₹0", "0 Total Invoices" and "No invoices
+     found" — an operator reading that concludes billing is simply idle. The
+     read outcome is now tracked so a failed read can never wear the same
+     pixels as a genuinely empty invoice book. */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [schoolsError, setSchoolsError] = useState<string | null>(null);
 
   /* Generate modal state */
   const [showModal, setShowModal] = useState(false);
@@ -95,28 +106,46 @@ function InvoicesContent() {
   /* ── Fetch invoices ── */
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const p = new URLSearchParams({ page: String(page), limit: '25' });
       if (filterStatus) p.set('status', filterStatus);
       const res = await apiFetch(`/api/super-admin/invoices?${p}`);
-      if (res.ok) {
-        const json = await res.json();
-        setInvoices(json.data?.invoices || []);
-        setTotal(json.data?.pagination?.total || 0);
+      if (!res.ok) {
+        // P13: only the status code is logged — no invoice/school identifiers.
+        logger.warn('super-admin invoices read failed', { reason: `HTTP ${res.status}` });
+        setLoadError(`HTTP ${res.status}`);
+        return;
       }
-    } catch { /* */ }
-    setLoading(false);
+      const json = await readAdminJson(res);
+      setInvoices(json.data?.invoices || []);
+      setTotal(json.data?.pagination?.total || 0);
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : 'Network error';
+      logger.warn('super-admin invoices read failed', { reason });
+      setLoadError(reason);
+    } finally {
+      setLoading(false);
+    }
   }, [apiFetch, page, filterStatus]);
 
   /* ── Fetch schools for modal ── */
   const fetchSchools = useCallback(async () => {
+    setSchoolsError(null);
     try {
       const res = await apiFetch('/api/super-admin/institutions?limit=100');
-      if (res.ok) {
-        const json = await res.json();
-        setSchools((json.data || []).map((s: Record<string, unknown>) => ({ id: s.id, name: s.name })));
+      if (!res.ok) {
+        logger.warn('super-admin invoices school list read failed', { reason: `HTTP ${res.status}` });
+        setSchoolsError(`HTTP ${res.status}`);
+        return;
       }
-    } catch { /* */ }
+      const json = await readAdminJson(res);
+      setSchools((json.data || []).map((s: Record<string, unknown>) => ({ id: s.id, name: s.name })));
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : 'Network error';
+      logger.warn('super-admin invoices school list read failed', { reason });
+      setSchoolsError(reason);
+    }
   }, [apiFetch]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
@@ -168,7 +197,14 @@ function InvoicesContent() {
     setActionLoading(null);
   };
 
-  /* ── Computed stats ── */
+  /* ── Computed stats ──
+     `dataUnavailable` is the read-failed-and-nothing-cached case. Every KPI
+     below degrades to an em-dash there, because a derived count over a list we
+     never received is not a number anyone can stand behind. A genuinely empty
+     invoice book still renders a real 0 / ₹0 — that distinction is the whole
+     point of this guard. A failed REFRESH that still has last-known-good rows
+     keeps showing those rows behind a compact staleness banner instead. */
+  const dataUnavailable = loadError !== null && invoices.length === 0;
   const totalInvoices = total;
   const pending = invoices.filter(i => i.status === 'generated' || i.status === 'sent').length;
   const paidThisMonth = invoices.filter(i => {
@@ -297,14 +333,25 @@ function InvoicesContent() {
         </button>
       </div>
 
-      {/* Stat Cards */}
+      {/* Partial-failure banner — a refresh failed but last-known-good rows are
+          still on screen. Full-surface failure is handled below, in place of
+          the table. */}
+      {loadError && invoices.length > 0 && (
+        <AdminErrorState compact onRetry={fetchInvoices} message={loadError} isHi={isHi} />
+      )}
+
+      {/* Stat Cards — em-dash, never 0, when the read failed (see dataUnavailable). */}
       <div className="mb-6 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-        <StatCard label="Total Invoices" value={totalInvoices} accentColor={C.accent} />
-        <StatCard label="Pending" value={pending} accentColor={C.warning} />
-        <StatCard label="Paid This Month" value={paidThisMonth} accentColor={C.success} />
+        <StatCard label="Total Invoices" value={dataUnavailable ? '—' : totalInvoices} accentColor={C.accent} />
+        <StatCard label="Pending" value={dataUnavailable ? '—' : pending} accentColor={C.warning} />
+        <StatCard label="Paid This Month" value={dataUnavailable ? '—' : paidThisMonth} accentColor={C.success} />
         <StatCard
           label="Total Revenue"
-          value={`${totalRevenue.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 })}`}
+          value={
+            dataUnavailable
+              ? '—'
+              : `${totalRevenue.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 })}`
+          }
           accentColor={C.success}
           icon="₹"
         />
@@ -331,14 +378,25 @@ function InvoicesContent() {
         />
       </div>
 
-      {/* Table */}
-      <DataTable<Invoice>
-        columns={columns}
-        data={displayed}
-        keyField="id"
-        loading={loading}
-        emptyMessage="No invoices found"
-      />
+      {/* Table — on a failed read with nothing cached the honest failure surface
+          REPLACES the table entirely, so "No invoices found" can only ever mean
+          the query succeeded and returned nothing. */}
+      {dataUnavailable ? (
+        <AdminErrorState
+          onRetry={fetchInvoices}
+          title={isHi ? 'इनवॉइस लोड नहीं हो सके' : 'Couldn’t load invoices'}
+          message={loadError}
+          isHi={isHi}
+        />
+      ) : (
+        <DataTable<Invoice>
+          columns={columns}
+          data={displayed}
+          keyField="id"
+          loading={loading}
+          emptyMessage="No invoices found"
+        />
+      )}
 
       {/* Pagination */}
       <div className="mt-3.5 flex items-center justify-center gap-2">
@@ -378,6 +436,23 @@ function InvoicesContent() {
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
+              {/* An empty picker used to be indistinguishable from "this
+                  deployment has no schools". Say which one it is. */}
+              {schoolsError && (
+                <p role="alert" className="mt-1.5 text-[11px] text-danger">
+                  {isHi
+                    ? `स्कूल सूची लोड नहीं हुई (${schoolsError}) — यह सूची अधूरी है।`
+                    : `Couldn’t load the school list (${schoolsError}) — this list is incomplete.`}{' '}
+                  <button
+                    type="button"
+                    onClick={fetchSchools}
+                    className="underline"
+                    style={{ minHeight: 44, minWidth: 44 }}
+                  >
+                    {isHi ? 'पुनः प्रयास करें' : 'Retry'}
+                  </button>
+                </p>
+              )}
             </div>
 
             {/* Period start */}

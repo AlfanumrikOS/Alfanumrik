@@ -45,6 +45,7 @@ import {
   type StatusBadgeVariant,
 } from '@alfanumrik/ui/admin-ui';
 import { LineChart, BarChart, type ChartSeries } from '@alfanumrik/ui/admin-ui/charts';
+import { AdminErrorState } from '@alfanumrik/ui/admin-ui';
 
 /* Dynamic-imported so the Leadership content stays out of this route's
    first-load chunk set (P10 fold-in — see the header comment). */
@@ -292,6 +293,8 @@ export default function SchoolAdminReportsPage() {
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [studentSearchResults, setStudentSearchResults] = useState<StudentSearchResult[]>([]);
   const [studentSearchLoading, setStudentSearchLoading] = useState(false);
+  /* Distinguishes "searched OK, nobody matched" from "the search failed". */
+  const [studentSearchError, setStudentSearchError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentData, setStudentData] = useState<StudentDetailData | null>(null);
   const [studentLoading, setStudentLoading] = useState(false);
@@ -383,22 +386,33 @@ export default function SchoolAdminReportsPage() {
   const searchStudents = useCallback(async (query: string) => {
     if (!schoolId || query.trim().length < 2) {
       setStudentSearchResults([]);
+      setStudentSearchError(null);
       return;
     }
     setStudentSearchLoading(true);
+    setStudentSearchError(null);
     try {
       const qs = new URLSearchParams({ type: 'student_search', query: query.trim() });
       const res = await authedFetch(`/api/school-admin/reports?${qs.toString()}`);
-      if (res.ok) {
-        const json = await res.json();
-        setStudentSearchResults((json.data ?? []) as StudentSearchResult[]);
+      // A non-ok response RESOLVES. Treating it as "no results" told an admin a
+      // student is not enrolled at their school when the search simply failed.
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body?.error === 'string' && body.error ? body.error : `Request failed (${res.status})`,
+        );
       }
-    } catch {
-      // Search failure is non-critical; silently show empty results
+      const json = await res.json();
+      setStudentSearchResults((json.data ?? []) as StudentSearchResult[]);
+    } catch (err: any) {
+      setStudentSearchResults([]);
+      setStudentSearchError(
+        err?.message || t(isHi, "Couldn't search students", 'छात्र खोज विफल रही'),
+      );
     } finally {
       setStudentSearchLoading(false);
     }
-  }, [schoolId]);
+  }, [schoolId, isHi]);
 
   const loadStudentDetail = useCallback(async (studentId: string) => {
     if (!schoolId) return;
@@ -997,9 +1011,23 @@ export default function SchoolAdminReportsPage() {
           </div>
         )}
 
-        {/* No results */}
+        {/* Search failed — never render this as "no students found" */}
+        {studentSearchError && !studentSearchLoading && !selectedStudentId && (
+          <div className="mt-2">
+            <AdminErrorState
+              isHi={isHi}
+              compact
+              title={t(isHi, "Couldn't search students", 'छात्र खोज विफल रही')}
+              message={studentSearchError}
+              onRetry={() => searchStudents(studentSearchQuery)}
+            />
+          </div>
+        )}
+
+        {/* No results — genuine empty only */}
         {studentSearchQuery.trim().length >= 2 &&
           !studentSearchLoading &&
+          !studentSearchError &&
           studentSearchResults.length === 0 &&
           !selectedStudentId && (
             <p className="mt-2 text-[13px] text-muted-foreground">
