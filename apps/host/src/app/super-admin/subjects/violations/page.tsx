@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
 import DataTable, { Column } from '../../_components/DataTable';
 import StatusBadge from '../../_components/StatusBadge';
 
@@ -59,6 +60,10 @@ interface RepairProgress {
 
 function ViolationsContent() {
   const { apiFetch } = useAdmin();
+  /* NOTE (flagged for frontend): this page is otherwise English-only — it has
+     no bilingual coverage at all. The new failure string below is bilingual per
+     P7; the surrounding page is a pre-existing P7 gap, not one introduced here. */
+  const { isHi } = useAuth();
   const [data, setData] = useState<Violation[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -321,8 +326,22 @@ function ViolationsContent() {
         </div>
       )}
 
+      {/* Failure-as-empty guard. The banner above already carries the message
+          and the ONE retry control on this page — do not add a second. What was
+          still wrong is below it: a failed read left `total` at 0 and `data` at
+          [], so the page asserted "0 violations matching filters" over "No
+          violations under the current filters." That is a compliance all-clear
+          on a screen whose entire job is to surface invalid subject
+          enrolments. Em-dash on failure; a genuine 0 still reads "0 violations
+          matching filters" with the real empty-table copy. */}
       <div style={{ fontSize: 12, color: colors.text3, marginBottom: 8 }}>
-        {loading ? 'Loading…' : `${total} violation${total === 1 ? '' : 's'} matching filters`}
+        {loading
+          ? 'Loading…'
+          : error && data.length === 0
+            ? isHi
+              ? '— violations matching filters (रीड विफल)'
+              : '— violations matching filters (read failed)'
+            : `${total} violation${total === 1 ? '' : 's'} matching filters`}
       </div>
 
       <DataTable
@@ -330,7 +349,7 @@ function ViolationsContent() {
         data={data}
         keyField="student_id"
         loading={loading}
-        emptyMessage="No violations under the current filters."
+        emptyMessage={error ? '' : 'No violations under the current filters.'}
       />
 
       {/* Bulk confirm modal */}

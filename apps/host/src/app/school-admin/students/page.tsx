@@ -291,7 +291,10 @@ export default function SchoolAdminStudentsPage() {
 
   /* ── State ── */
   const [students, setStudents] = useState<SchoolStudent[]>([]);
-  const [loadingStudents, setLoadingStudents] = useState(false);
+  /* Starts TRUE. The roster fetch only begins in an effect after schoolId
+     resolves, so a `false` seed committed one frame of "No students yet" +
+     "Generate invite code" before any read had been attempted. */
+  const [loadingStudents, setLoadingStudents] = useState(true);
   const [rpcError, setRpcError] = useState<string | null>(null);
 
   /* Filter state */

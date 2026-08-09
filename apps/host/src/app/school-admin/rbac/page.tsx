@@ -13,6 +13,7 @@ import {
   Skeleton,
   EmptyState,
 } from '@alfanumrik/ui/ui';
+import { AdminErrorState } from '@alfanumrik/ui/admin-ui';
 
 /* -----------------------------------------------------------------
    BILINGUAL HELPER (P7)
@@ -172,6 +173,17 @@ export default function SchoolAdminRBACPage() {
   const [delegations, setDelegations] = useState<DelegationRecord[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [loadingData, setLoadingData] = useState(false);
+  /* Per-read failure for the active tab.
+     WHY: fetch() only rejects on a network fault — a 401/403/500 RESOLVES with
+     res.ok === false. The four loaders below previously kept their `if (res.ok)`
+     happy path and swallowed every other outcome, so a failed read left the
+     state at its initial value and this page then ASSERTED that as fact:
+     "No elevations", "No delegation tokens", "All approval requests have been
+     handled", and 0 / 0 / 0 on the dashboard. On a privilege-governance surface
+     that is the most dangerous form of the bug: an admin concludes nobody holds
+     elevated access when the truth is that we could not read it.
+     Genuine-empty stays genuine-empty; only the failure path changes. */
+  const [dataError, setDataError] = useState<string | null>(null);
 
   /* ── Message toast ── */
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -247,58 +259,97 @@ export default function SchoolAdminRBACPage() {
     });
   }, []);
 
-  /* ── Data fetchers ── */
+  /* ── Data fetchers ──
+     Each reads ONE action and records failure in `dataError`. A non-ok response
+     is a failure (fetch resolves for those), and the caught branch covers a real
+     network fault. Either way the tab body below renders an honest, retryable
+     error surface instead of an empty-shaped claim. */
+  const readRbac = useCallback(
+    async (action: string): Promise<unknown> => {
+      const res = await apiFetch(`/api/school-admin/rbac?action=${action}&school_id=${schoolId}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body?.error === 'string' && body.error ? body.error : `Request failed (${res.status})`,
+        );
+      }
+      const d = await res.json();
+      return d.data;
+    },
+    [schoolId, apiFetch],
+  );
+
+  const failureMessage = useCallback(
+    (err: unknown) =>
+      err instanceof Error && err.message
+        ? err.message
+        : t(isHi, "Couldn't load this data.", 'यह डेटा लोड नहीं हो सका।'),
+    [isHi],
+  );
+
   const fetchStats = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
+    setDataError(null);
     try {
-      const res = await apiFetch(`/api/school-admin/rbac?action=dashboard_stats&school_id=${schoolId}`);
-      if (res.ok) {
-        const d = await res.json();
-        setStats(d.data || { activeElevations: 0, activeDelegations: 0, pendingApprovals: 0 });
-      }
-    } catch { /* swallow */ }
+      const data = await readRbac('dashboard_stats');
+      setStats(
+        (data as DashboardStats) || { activeElevations: 0, activeDelegations: 0, pendingApprovals: 0 },
+      );
+    } catch (err) {
+      setDataError(failureMessage(err));
+    }
     setLoadingData(false);
-  }, [schoolId, apiFetch]);
+  }, [schoolId, readRbac, failureMessage]);
 
   const fetchElevations = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
+    setDataError(null);
     try {
-      const res = await apiFetch(`/api/school-admin/rbac?action=elevations&school_id=${schoolId}`);
-      if (res.ok) {
-        const d = await res.json();
-        setElevations(d.data || []);
-      }
-    } catch { /* swallow */ }
+      const data = await readRbac('elevations');
+      setElevations((data as ElevationRecord[]) || []);
+    } catch (err) {
+      setDataError(failureMessage(err));
+    }
     setLoadingData(false);
-  }, [schoolId, apiFetch]);
+  }, [schoolId, readRbac, failureMessage]);
 
   const fetchDelegations = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
+    setDataError(null);
     try {
-      const res = await apiFetch(`/api/school-admin/rbac?action=delegations&school_id=${schoolId}`);
-      if (res.ok) {
-        const d = await res.json();
-        setDelegations(d.data || []);
-      }
-    } catch { /* swallow */ }
+      const data = await readRbac('delegations');
+      setDelegations((data as DelegationRecord[]) || []);
+    } catch (err) {
+      setDataError(failureMessage(err));
+    }
     setLoadingData(false);
-  }, [schoolId, apiFetch]);
+  }, [schoolId, readRbac, failureMessage]);
 
   const fetchApprovals = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
+    setDataError(null);
     try {
-      const res = await apiFetch(`/api/school-admin/rbac?action=approvals&school_id=${schoolId}`);
-      if (res.ok) {
-        const d = await res.json();
-        setApprovals(d.data || []);
-      }
-    } catch { /* swallow */ }
+      const data = await readRbac('approvals');
+      setApprovals((data as ApprovalRecord[]) || []);
+    } catch (err) {
+      setDataError(failureMessage(err));
+    }
     setLoadingData(false);
-  }, [schoolId, apiFetch]);
+  }, [schoolId, readRbac, failureMessage]);
+
+  /* Re-runs whichever read the visible tab depends on. */
+  const retryActiveTab = useCallback(() => {
+    switch (activeTab) {
+      case 'dashboard': return void fetchStats();
+      case 'elevations': return void fetchElevations();
+      case 'delegations': return void fetchDelegations();
+      case 'approvals': return void fetchApprovals();
+    }
+  }, [activeTab, fetchStats, fetchElevations, fetchDelegations, fetchApprovals]);
 
   /* ── Actions ── */
   const grantElevation = async () => {
@@ -597,6 +648,18 @@ export default function SchoolAdminRBACPage() {
         ═══════════════════════════════════════ */}
         {activeTab === 'dashboard' && (
           <section aria-label={t(isHi, 'RBAC Overview', 'RBAC अवलोकन')}>
+            {/* A failed read has no counts behind it: surface the failure and
+                dash out every tile. A confident 0 here reads as "nobody holds
+                elevated access", which is the opposite of what we know. */}
+            {dataError && !loadingData && (
+              <AdminErrorState
+                isHi={isHi}
+                compact
+                title={t(isHi, "Couldn't load RBAC activity", 'RBAC गतिविधि लोड नहीं हो सकी')}
+                message={dataError}
+                onRetry={retryActiveTab}
+              />
+            )}
             <div className="grid grid-cols-3 gap-3">
               {/* Active Elevations */}
               <Card accent="#E8581C">
@@ -605,7 +668,7 @@ export default function SchoolAdminRBACPage() {
                     className="text-2xl font-bold font-['Sora',system-ui,sans-serif]"
                     style={{ color: '#E8581C' }}
                   >
-                    {loadingData ? '\u2014' : stats.activeElevations}
+                    {loadingData || dataError ? '\u2014' : stats.activeElevations}
                   </div>
                   <p className="text-xs font-semibold text-[var(--text-3)] mt-1">
                     {t(isHi, 'Active Elevations', 'सक्रिय अधिकार')}
@@ -620,7 +683,7 @@ export default function SchoolAdminRBACPage() {
                     className="text-2xl font-bold font-['Sora',system-ui,sans-serif]"
                     style={{ color: '#7C3AED' }}
                   >
-                    {loadingData ? '\u2014' : stats.activeDelegations}
+                    {loadingData || dataError ? '\u2014' : stats.activeDelegations}
                   </div>
                   <p className="text-xs font-semibold text-[var(--text-3)] mt-1">
                     {t(isHi, 'Active Delegations', 'सक्रिय प्रतिनिधि')}
@@ -635,7 +698,7 @@ export default function SchoolAdminRBACPage() {
                     className="text-2xl font-bold font-['Sora',system-ui,sans-serif]"
                     style={{ color: '#0891B2' }}
                   >
-                    {loadingData ? '\u2014' : stats.pendingApprovals}
+                    {loadingData || dataError ? '\u2014' : stats.pendingApprovals}
                   </div>
                   <p className="text-xs font-semibold text-[var(--text-3)] mt-1">
                     {t(isHi, 'Pending Approvals', 'लंबित अनुमोदन')}
@@ -733,6 +796,13 @@ export default function SchoolAdminRBACPage() {
                   <Skeleton key={i} variant="rect" height={72} rounded="rounded-xl" />
                 ))}
               </div>
+            ) : dataError ? (
+              <AdminErrorState
+                isHi={isHi}
+                title={t(isHi, "Couldn't load elevations", 'अधिकार लोड नहीं हो सके')}
+                message={dataError}
+                onRetry={retryActiveTab}
+              />
             ) : elevations.length === 0 ? (
               <EmptyState
                 icon="&#x1F512;"
@@ -802,7 +872,7 @@ export default function SchoolAdminRBACPage() {
                               {t(isHi, 'Revoke', 'रद्द करें')}
                             </button>
                           ) : (
-                            <span className="text-xs text-[var(--text-3)]">\u2014</span>
+                            <span className="text-xs text-[var(--text-3)]">{'\u2014'}</span>
                           )}
                         </td>
                       </tr>
@@ -892,6 +962,13 @@ export default function SchoolAdminRBACPage() {
                   <Skeleton key={i} variant="rect" height={72} rounded="rounded-xl" />
                 ))}
               </div>
+            ) : dataError ? (
+              <AdminErrorState
+                isHi={isHi}
+                title={t(isHi, "Couldn't load delegation tokens", 'प्रतिनिधि टोकन लोड नहीं हो सके')}
+                message={dataError}
+                onRetry={retryActiveTab}
+              />
             ) : delegations.length === 0 ? (
               <EmptyState
                 icon="&#x1F511;"
@@ -934,7 +1011,7 @@ export default function SchoolAdminRBACPage() {
                                 <Badge key={p} color="#7C3AED" size="sm">{p}</Badge>
                               ))
                             ) : (
-                              <span className="text-xs text-[var(--text-3)]">\u2014</span>
+                              <span className="text-xs text-[var(--text-3)]">{'\u2014'}</span>
                             )}
                           </div>
                         </td>
@@ -967,7 +1044,7 @@ export default function SchoolAdminRBACPage() {
                               {t(isHi, 'Revoke', 'रद्द करें')}
                             </button>
                           ) : (
-                            <span className="text-xs text-[var(--text-3)]">\u2014</span>
+                            <span className="text-xs text-[var(--text-3)]">{'\u2014'}</span>
                           )}
                         </td>
                       </tr>
@@ -990,6 +1067,13 @@ export default function SchoolAdminRBACPage() {
                   <Skeleton key={i} variant="rect" height={80} rounded="rounded-xl" />
                 ))}
               </div>
+            ) : dataError ? (
+              <AdminErrorState
+                isHi={isHi}
+                title={t(isHi, "Couldn't load approval requests", 'अनुमोदन अनुरोध लोड नहीं हो सके')}
+                message={dataError}
+                onRetry={retryActiveTab}
+              />
             ) : approvals.length === 0 ? (
               <EmptyState
                 icon="&#x2705;"

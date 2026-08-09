@@ -43,7 +43,17 @@ interface SchoolClass {
   subject: string | null;
   student_count: number;
   teacher_count: number;
-  avg_mastery: number;
+  /**
+   * null when the row carries no mastery signal.
+   *
+   * `get_school_classes` does NOT select an avg_mastery column (verified against
+   * the RPC body), so this is null for every row today. It used to default to
+   * `0`, which rendered a RED "Avg Mastery 0%" bar on every class card in every
+   * school — a fabricated academic figure a principal could report upward. The
+   * value stays verbatim-from-the-source; only its absence is now honest, and a
+   * genuine 0 (if the RPC ever supplies one) still renders as 0%.
+   */
+  avg_mastery: number | null;
   teachers: ClassTeacher[];
   class_code: string | null;
   created_at: string;
@@ -113,7 +123,8 @@ interface ClassCardProps {
 }
 
 function ClassCard({ cls, isHi, onOpenDetail }: ClassCardProps) {
-  const color = masteryColor(cls.avg_mastery);
+  const hasMastery = cls.avg_mastery != null && !Number.isNaN(cls.avg_mastery);
+  const color = hasMastery ? masteryColor(cls.avg_mastery as number) : 'var(--text-3)';
 
   return (
     <Card
@@ -178,15 +189,26 @@ function ClassCard({ cls, isHi, onOpenDetail }: ClassCardProps) {
         )}
       </div>
 
-      {/* ── Avg mastery bar ── */}
+      {/* ── Avg mastery ── rendered only when the row carries a real signal.
+          With no source (today's `get_school_classes` shape) we say so rather
+          than draw a red 0% bar. */}
       <div className="mt-3">
-        <ProgressBar
-          value={cls.avg_mastery}
-          color={color}
-          height={6}
-          label={t(isHi, 'Avg Mastery', 'औसत महारत')}
-          showPercent
-        />
+        {hasMastery ? (
+          <ProgressBar
+            value={cls.avg_mastery as number}
+            color={color}
+            height={6}
+            label={t(isHi, 'Avg Mastery', 'औसत महारत')}
+            showPercent
+          />
+        ) : (
+          <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+            {t(isHi, 'Avg Mastery', 'औसत महारत')}:{' '}
+            <span className="font-semibold" data-testid="class-avg-mastery-unavailable">
+              &#8212;
+            </span>
+          </p>
+        )}
       </div>
 
       {/* ── Student + Teacher counts ── */}
@@ -373,7 +395,8 @@ interface ClassDetailPanelProps {
 
 function ClassDetailPanel({ cls, isHi }: ClassDetailPanelProps) {
   const [copied, setCopied] = useState(false);
-  const color = masteryColor(cls.avg_mastery);
+  const hasMastery = cls.avg_mastery != null && !Number.isNaN(cls.avg_mastery);
+  const color = hasMastery ? masteryColor(cls.avg_mastery as number) : 'var(--text-3)';
 
   const handleCopy = async () => {
     if (!cls.class_code) return;
@@ -436,7 +459,7 @@ function ClassDetailPanel({ cls, isHi }: ClassDetailPanelProps) {
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold" style={{ color }}>
-            {Math.round(cls.avg_mastery)}%
+            {hasMastery ? `${Math.round(cls.avg_mastery as number)}%` : '—'}
           </p>
           <p className="text-xs text-[var(--text-3)] mt-0.5 font-medium">
             {t(isHi, 'Avg Mastery', 'औसत महारत')}
@@ -533,7 +556,10 @@ export default function SchoolAdminClassesPage() {
 
   /* ── State ── */
   const [classes, setClasses] = useState<SchoolClass[]>([]);
-  const [loadingClasses, setLoadingClasses] = useState(false);
+  /* Starts TRUE. The list fetch only begins in an effect after schoolId
+     resolves, so a `false` seed committed one frame of "No classes yet" +
+     "Create your first class" before any read had been attempted. */
+  const [loadingClasses, setLoadingClasses] = useState(true);
   const [rpcError, setRpcError] = useState<string | null>(null);
 
   /* Modal state */
@@ -561,7 +587,8 @@ export default function SchoolAdminClassesPage() {
     } else {
       // RPC row shape: id, name, grade, section, subject, class_code,
       // is_active, created_at, student_count, teachers[]. It does not return
-      // teacher_count (derived) or avg_mastery (no source yet — defaults to 0).
+      // teacher_count (derived) or avg_mastery (no source yet — mapped to null,
+      // which renders "—"; it must NOT default to 0, see the type comment).
       const rows = Array.isArray(data) ? data : [];
       setClasses(
         rows.map((row: any): SchoolClass => ({
@@ -572,7 +599,8 @@ export default function SchoolAdminClassesPage() {
           subject: row.subject ?? null,
           student_count: typeof row.student_count === 'number' ? row.student_count : 0,
           teacher_count: Array.isArray(row.teachers) ? row.teachers.length : 0,
-          avg_mastery: typeof row.avg_mastery === 'number' ? row.avg_mastery : 0,
+          // Absent ⇒ null (renders "—"), never a confident 0.
+          avg_mastery: typeof row.avg_mastery === 'number' ? row.avg_mastery : null,
           teachers: Array.isArray(row.teachers) ? row.teachers : [],
           class_code: row.class_code ?? null,
           created_at: row.created_at,
