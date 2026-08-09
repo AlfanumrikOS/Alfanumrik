@@ -84,7 +84,8 @@ function wireAdmin(opts: { billingCycle: string; seats: number; pricePerSeat: nu
 
   const admin = {
     rpc: vi.fn(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-q1' }], error: null };
+      // Fresh receipt: never seen, therefore never processed → route proceeds.
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-q1', already_processed: false }], error: null };
       if (name === 'mark_webhook_event_processed') return { data: null, error: null };
       return { data: null, error: null };
     }),

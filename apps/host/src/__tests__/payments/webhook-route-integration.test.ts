@@ -83,9 +83,12 @@ describe('webhook route — event-level dedupe', () => {
   });
 
   it('on duplicate event_id, returns 200 with note=dedupe and skips activation', async () => {
-    // record_webhook_event RPC reports is_new=false (duplicate).
+    // record_webhook_event reports an existing receipt that was ALREADY
+    // SUCCESSFULLY PROCESSED (processed_at set + terminal-success outcome).
+    // Since migration 20260814000006 that — not is_new=false — is what
+    // suppresses re-processing; is_new=false alone means only "event seen".
     mockAdmin.rpc.mockImplementation(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: false, id: 'wh-1' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: false, id: 'wh-1', already_processed: true }], error: null };
       throw new Error(`unexpected RPC ${name}`);
     });
 
@@ -117,7 +120,7 @@ describe('webhook route — atomic downgrade', () => {
 
   it('subscription.cancelled calls atomic_downgrade_subscription RPC, not raw UPDATEs', async () => {
     mockAdmin.rpc.mockImplementation(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-2' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-2', already_processed: false }], error: null };
       if (name === 'mark_webhook_event_processed') return { data: null, error: null };
       if (name === 'atomic_downgrade_subscription') return { data: [{ outcome: 'downgraded' }], error: null };
       throw new Error(`unexpected RPC ${name}`);
@@ -162,7 +165,7 @@ describe('webhook route — subscription.pending', () => {
 
   it('subscription.pending calls mark_subscription_past_due RPC', async () => {
     mockAdmin.rpc.mockImplementation(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-3' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-3', already_processed: false }], error: null };
       if (name === 'mark_subscription_past_due') return { data: null, error: null };
       if (name === 'mark_webhook_event_processed') return { data: null, error: null };
       throw new Error(`unexpected RPC ${name}`);
@@ -258,7 +261,7 @@ describe('webhook route — RPC fallback ladder', () => {
 
   it('primary RPC success: only activate_subscription_locked called', async () => {
     mockAdmin.rpc.mockImplementation(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-1' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-1', already_processed: false }], error: null };
       if (name === 'activate_subscription_locked') return { data: null, error: null };
       if (name === 'mark_webhook_event_processed') return { data: null, error: null };
       throw new Error(`unexpected ${name}`);
@@ -274,7 +277,7 @@ describe('webhook route — RPC fallback ladder', () => {
 
   it('primary fails, atomic fallback succeeds → 200', async () => {
     mockAdmin.rpc.mockImplementation(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-1' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-1', already_processed: false }], error: null };
       if (name === 'activate_subscription_locked') return { data: null, error: { message: 'primary fail' } };
       if (name === 'atomic_subscription_activation_locked') return { data: null, error: null };
       if (name === 'mark_webhook_event_processed') return { data: null, error: null };
@@ -291,7 +294,7 @@ describe('webhook route — RPC fallback ladder', () => {
 
   it('both primary and atomic fail → 503 (Razorpay retries)', async () => {
     mockAdmin.rpc.mockImplementation(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-1' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-1', already_processed: false }], error: null };
       if (name === 'activate_subscription_locked') return { data: null, error: { message: 'primary fail' } };
       if (name === 'atomic_subscription_activation_locked') return { data: null, error: { message: 'atomic fail' } };
       if (name === 'mark_webhook_event_processed') return { data: null, error: null };
@@ -305,7 +308,7 @@ describe('webhook route — RPC fallback ladder', () => {
 
   it('kill switch disabled + primary fails → 503 without atomic call', async () => {
     mockAdmin.rpc.mockImplementation(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-1' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-1', already_processed: false }], error: null };
       if (name === 'activate_subscription_locked') return { data: null, error: { message: 'primary fail' } };
       if (name === 'mark_webhook_event_processed') return { data: null, error: null };
       throw new Error(`unexpected ${name}`);
@@ -344,7 +347,7 @@ describe('webhook route — observability', () => {
 
   it('emits payment.webhook_processed with latency_ms on activated terminal path', async () => {
     mockAdmin.rpc.mockImplementation(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-x' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-x', already_processed: false }], error: null };
       if (name === 'activate_subscription_locked') return { data: null, error: null };
       if (name === 'mark_webhook_event_processed') return { data: null, error: null };
       return { data: null, error: null };
@@ -396,7 +399,7 @@ describe('webhook route — billing.invoice_paid event publishing', () => {
     insertSpy = vi.fn().mockResolvedValue({ error: null });
     mockAdmin = {
       rpc: vi.fn().mockImplementation(async (name: string) => {
-        if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-x' }], error: null };
+        if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-x', already_processed: false }], error: null };
         if (name === 'activate_subscription_locked') return { data: null, error: null };
         if (name === 'mark_webhook_event_processed') return { data: null, error: null };
         return { data: null, error: null };

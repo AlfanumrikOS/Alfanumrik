@@ -25757,6 +25757,7 @@ export type Database = {
           p_raw_payload?: Json
         }
         Returns: {
+          already_processed: boolean
           id: string
           is_new: boolean
         }[]
