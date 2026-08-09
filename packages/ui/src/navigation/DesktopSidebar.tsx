@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, type UserRole } from '@alfanumrik/lib/AuthContext';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
-import { getSidebarSections, getItemLockForGrade, isItemVisibleForFlags, isNavItemActive, type NavFlagGatedItem } from './nav-config';
+import { getSidebarSections, getItemLockForGrade, isItemVisibleForFlags, resolveActiveNavHref, type NavFlagGatedItem } from './nav-config';
 import { useHasUpcomingExam } from './use-has-upcoming-exam';
 
 export function DesktopSidebar() {
@@ -28,29 +28,38 @@ export function DesktopSidebar() {
   const passesExamGate = (item: any): boolean =>
     !(item?.requiresUpcomingExam === true && !hasUpcomingExam);
 
-  // Consumer Minimalism Wave A — surface the adaptive "Today" home in the
-  // sidebar's first section when ff_today_home_v1 is ON (student only). When
-  // OFF this branch is skipped and the sidebar is byte-identical to today.
-  const todayHomeOn = navFlags?.ff_today_home_v1 === true;
-
+  // Consumer Minimalism Wave A — the adaptive "Today" home is surfaced when
+  // ff_today_home_v1 is ON (student only). It used to be spliced in here
+  // imperatively at section index 0; since 2026-08-09 it is a normal
+  // flagName-gated entry in SIDEBAR_SECTIONS' "Main" section, so the SAME
+  // isItemVisibleForFlags filter below enforces the gate. Behaviour when the
+  // flag is OFF is unchanged (no Today entry).
   const sidebarSections = getSidebarSections(activeRole)
     .filter(s => {
       const gMin = (s as any).gradeMin;
       return gMin == null || studentGrade >= gMin;
     })
-    .map((section, idx) => ({
+    .map(section => ({
       ...section,
-      items: [
-        ...(todayHomeOn && activeRole === 'student' && idx === 0
-          ? [{ href: '/today', icon: '☀️', label: 'Today', labelHi: 'आज' }]
-          : []),
-        ...section.items,
-      ]
+      items: section.items
         .filter(item => isItemVisibleForFlags(item as NavFlagGatedItem, navFlags))
         .filter(passesExamGate),
     }));
 
-  const isActive = (href: string) => isNavItemActive(pathname ?? '', href);
+  // Single-winner active resolution across the WHOLE sidebar, so exactly one
+  // item can carry aria-current="page". A per-item isNavItemActive() loop
+  // could mark two (e.g. the primary Practice slot's /quiz alt and the
+  // Practice section's own /quiz entry); resolveActiveNavHref prefers the
+  // longest match, so the more specific entry wins.
+  const activeHref = resolveActiveNavHref(
+    pathname ?? '',
+    sidebarSections.flatMap(section =>
+      section.items
+        .filter(item => !getItemLock(item).locked)
+        .map(item => item.href),
+    ),
+  );
+  const isActive = (href: string) => href === activeHref;
   const isFocusedFoxy = pathname === '/foxy' || pathname.startsWith('/foxy');
 
   // Fallback for browsers without :has() support (Safari < 15.4, Firefox < 121).
@@ -106,7 +115,12 @@ export function DesktopSidebar() {
           <span style={{ fontSize: 12 }}>{collapsed ? '\u00BB' : '\u00AB'}</span>
         </button>
 
-        <div className="space-y-5">
+        {/* The sidebar had NO navigation landmark: <aside> exposes role
+            "complementary", so at 1024px+ the a11y tree had zero navigation
+            regions. The bottom bar and the tablet rail carry the same
+            accessible name; only one of the three tiers is ever in the tree
+            because the other two are display:none at any given width. */}
+        <nav aria-label="Main navigation" className="space-y-5">
           {sidebarSections.map(section => {
             const isSectionCollapsed = !collapsed && collapsedSections[section.title];
             const hasActiveItem = section.items.some(item => !getItemLock(item).locked && isActive(item.href));
@@ -141,6 +155,12 @@ export function DesktopSidebar() {
                         type="button"
                         onClick={lock.locked ? undefined : () => router.push(item.href)}
                         aria-disabled={lock.locked || undefined}
+                        // The sidebar previously marked the active route with
+                        // colour + a dot only — no programmatic current-page
+                        // signal at all, so screen-reader users at 1024px+ had
+                        // no "you are here". Matches the bottom bar and rail.
+                        aria-current={active ? 'page' : undefined}
+                        data-active={active ? 'true' : 'false'}
                         aria-label={lock.locked
                           ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
                           : undefined}
@@ -157,6 +177,7 @@ export function DesktopSidebar() {
                           fontSize: '14px',
                           opacity: lock.locked ? 0.7 : 1,
                           cursor: lock.locked ? 'not-allowed' : 'pointer',
+                          minHeight: 'var(--tap-min)',
                         }}
                       >
                         <span className="text-lg w-6 text-center" aria-hidden="true">{item.icon}</span>
@@ -183,7 +204,7 @@ export function DesktopSidebar() {
               </div>
             );
           })}
-        </div>
+        </nav>
       </div>
 
       <div className="px-3 pt-4 mt-4 border-t" style={{ borderColor: 'var(--border)' }}>

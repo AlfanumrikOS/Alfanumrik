@@ -1,8 +1,30 @@
 import { type UserRole } from '@alfanumrik/lib/AuthContext';
 import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 
-// Consumer Minimalism Wave A — the 4-tab student model (always-on).
-// Today is the home tab (carries the streak badge); Foxy stays the center FAB.
+// ─── The student primary navigation (2026-08-09) ───────────────────────────
+//
+// FIVE primary slots, one fixed order, identical labels + destinations + order
+// at EVERY breakpoint. Only the PRESENTATION changes across tiers:
+//
+//   360–767px   → five-item bottom bar          (MobileBottomNav)
+//   768–1023px  → vertical navigation rail      (TabletNavRail)
+//   1024px+     → persistent sidebar            (DesktopSidebar)
+//
+//   1. Today  2. Learn  3. Practice  4. Progress  5. More
+//
+// CORE_TABS is the four primary DESTINATIONS; "More" is the fifth slot and is
+// an overflow control, not a destination, so it carries no href and is supplied
+// by resolveStudentPrimaryNav() below. Consumers that need all five slots in
+// order (all three tier components do) must call resolveStudentPrimaryNav()
+// rather than reading CORE_TABS directly.
+//
+// IA CHANGE — Foxy left the primary bar. It previously occupied slot 3 as a
+// raised centre FAB. Per the navigation spec, Foxy / profile / notifications /
+// search are UTILITIES, not primary destinations, so `/foxy` moved into the
+// More sheet's "Utilities" group (its first entry) and into the desktop
+// sidebar's new "Utilities" section. `/practice` took the vacated primary
+// slot. `/foxy` itself is untouched as a route and its deep links still work;
+// /foxy also keeps suppressing all nav chrome, as before.
 //
 // IA law "one destination = one name = one icon" (2026-08-05). `/progress` was
 // "Me" 🙂 here and "My Progress" 📈 in SIDEBAR_SECTIONS — one route wearing two
@@ -12,7 +34,8 @@ import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 export const CORE_TABS = [
   { href: '/today', icon: '☀️', activeIcon: '☀️', label: 'Today', labelHi: 'आज' },
   { href: '/learn', icon: '📚', activeIcon: '📚', label: 'Learn', labelHi: 'सीखें' },
-  { href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', isFab: true },
+  // Slot 3 — see PRACTICE FLAG CONTRACT in resolveStudentPrimaryNav().
+  { href: '/practice', icon: '⚡', activeIcon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
   { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
 ];
 
@@ -25,11 +48,16 @@ export const MORE_ITEMS = [
   // section headers instead of one flat 19-item list. `group` is a sheet-only
   // projection concern — SIDEBAR_SECTIONS already groups by section.
   { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
+  // 2026-08-09 — Foxy is a UTILITY, not a primary destination. It used to be
+  // the raised centre FAB in CORE_TABS; the navigation spec reserves the five
+  // primary slots for Today / Learn / Practice / Progress / More and classes
+  // Foxy alongside profile, notifications and search. It leads the utilities
+  // group so it stays one interaction away on phones.
+  { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', group: 'utilities' },
   { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट', group: 'practice' },
   { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब', group: 'practice' },
-  // Alfa OS Practice Center — flag-gated (ff_practice_os_v1). A v2 practice hub
-  // over the existing /quiz engine; only appears once its launch flag is ON.
-  { href: '/practice', icon: '⚡', label: 'Practice Center', labelHi: 'अभ्यास केंद्र', flagName: 'ff_practice_os_v1', group: 'practice' },
+  // /practice is NOT listed here any more — it is primary slot 3. See the
+  // PRACTICE FLAG CONTRACT note on resolveStudentPrimaryNav().
   { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9, group: 'practice' },
   { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9, group: 'practice' },
   // Alfa OS pre-test briefing hub — flag-gated (ff_test_os_v1). The single
@@ -53,8 +81,8 @@ export const MORE_ITEMS = [
   // unambiguous and is the screen's real name.
   { href: '/me', icon: '⚙️', label: 'Me', labelHi: 'मैं', flagName: 'ff_me_v2', group: 'account' },
   // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
-  { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है', group: 'account' },
-  { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ', group: 'account' },
+  { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है', group: 'utilities' },
+  { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ', group: 'utilities' },
   { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट', group: 'account' },
   { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट', group: 'account' },
 ];
@@ -64,6 +92,13 @@ export const MORE_ITEMS = [
  *  groups in this order. Mirrors SIDEBAR_SECTIONS' Practice/Study/Account
  *  grouping so both projections share the same mental model (IA law). */
 export const MORE_SHEET_GROUPS: { key: string; en: string; hi: string }[] = [
+  // Utilities first — Foxy, notifications and the memory screen are the
+  // things a student reaches for mid-session, and Foxy in particular lost its
+  // centre-FAB slot when the five primary destinations were fixed.
+  { key: 'utilities', en: 'Utilities', hi: 'उपयोगिताएँ' },
+  // Header text intentionally still "Practice" (not renamed alongside the new
+  // primary Practice slot): these are the practice surfaces that did NOT get a
+  // primary slot, and an existing regression test pins this header string.
   { key: 'practice', en: 'Practice', hi: 'अभ्यास' },
   { key: 'study', en: 'Study', hi: 'पढ़ाई' },
   { key: 'account', en: 'Account', hi: 'खाता' },
@@ -71,10 +106,24 @@ export const MORE_SHEET_GROUPS: { key: string; en: string; hi: string }[] = [
 
 export const SIDEBAR_SECTIONS = [
   {
-    title: 'Home', titleHi: 'होम',
+    // 2026-08-09 — was titled "Home" while also containing an item called
+    // "Home". Retitled "Main" and rebuilt to hold the FIVE primary
+    // destinations in the spec order (Today · Learn · Practice · Progress,
+    // plus /dashboard which is the student's literal home route). This is the
+    // desktop projection of the same ordered set the bottom bar and the tablet
+    // rail render — same labels, same icons, same order, different chrome.
+    //
+    // `/learn` was previously ABSENT from the sidebar entirely: a primary
+    // destination that existed at 360px and vanished at 1024px. Added here.
+    // `/today` moved in from DesktopSidebar's imperative injection — the
+    // ff_today_home_v1 gate is preserved declaratively via flagName, which
+    // isItemVisibleForFlags already enforces on this list.
+    title: 'Main', titleHi: 'मुख्य',
     items: [
+      { href: '/today', icon: '☀️', label: 'Today', labelHi: 'आज', flagName: 'ff_today_home_v1' },
       { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
-      { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
+      { href: '/learn', icon: '📚', label: 'Learn', labelHi: 'सीखें' },
+      { href: '/practice', icon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
       // Matches CORE_TABS exactly — same name, same icon, same route.
       { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
     ],
@@ -82,8 +131,10 @@ export const SIDEBAR_SECTIONS = [
   {
     title: 'Practice', titleHi: 'अभ्यास',
     items: [
-      // Alfa OS Practice Center (flag-gated) — v2 hub above the /quiz engine.
-      { href: '/practice', icon: '⚡', label: 'Practice Center', labelHi: 'अभ्यास केंद्र', flagName: 'ff_practice_os_v1' },
+      // /practice moved to the Main section above — it is primary slot 3 now,
+      // and is no longer flag-gated in NAV (the route itself still resolves
+      // ff_practice_os_v1; see the PRACTICE FLAG CONTRACT note below).
+      //
       // Was labelled "Practice" — identical to this section's own title and a
       // near-twin of "Practice Center" one line above, so the section read
       // "Practice > Practice Center / Practice". Renamed to what the route
@@ -108,6 +159,19 @@ export const SIDEBAR_SECTIONS = [
     ],
   },
   {
+    // 2026-08-09 — new section. Foxy left the primary bar (it was the centre
+    // FAB); it and the other non-destination affordances the spec calls
+    // utilities live here, mirroring the More sheet's "Utilities" group so
+    // both projections carry the same mental model.
+    title: 'Utilities', titleHi: 'उपयोगिताएँ',
+    items: [
+      { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
+      // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
+      { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है' },
+      { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
+    ],
+  },
+  {
     title: 'Account', titleHi: 'खाता',
     items: [
       { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
@@ -116,8 +180,6 @@ export const SIDEBAR_SECTIONS = [
       // so the desktop sidebar surfaces the same additive screen once the flag
       // ramps, under the same name and icon.
       { href: '/me', icon: '⚙️', label: 'Me', labelHi: 'मैं', flagName: 'ff_me_v2' },
-      // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
-      { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है' },
       { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
       { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
     ],
@@ -166,6 +228,161 @@ export function isItemVisibleForFlags(
   const name = item?.flagName;
   if (!name) return true;
   return flags?.[name] === true;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * ONE typed, capability-aware primary navigation, reused by all three tiers.
+ *
+ * MobileBottomNav (< 768), TabletNavRail (768–1023) and DesktopSidebar (1024+)
+ * all read resolveStudentPrimaryNav(). They differ only in chrome: the same
+ * five slots, the same labels, the same destinations, the same order.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+export type StudentNavSlotId = 'today' | 'learn' | 'practice' | 'progress' | 'more';
+
+/** The order is a product contract, not a rendering detail. */
+export const STUDENT_PRIMARY_ORDER: readonly StudentNavSlotId[] = [
+  'today',
+  'learn',
+  'practice',
+  'progress',
+  'more',
+] as const;
+
+export interface StudentNavCapabilities {
+  /** Resolved feature flags. `undefined` = not yet loaded (treated as OFF). */
+  flags?: Record<string, boolean> | null;
+  /** Student grade as a number (P5: grades are strings at the boundary). */
+  grade?: number;
+  /** Whether the learner has an exam within the sprint window. */
+  hasUpcomingExam?: boolean;
+}
+
+export interface ResolvedNavSlot {
+  id: StudentNavSlotId;
+  /** `destination` navigates; `overflow` opens the More sheet. */
+  kind: 'destination' | 'overflow';
+  /** null only for the overflow slot. */
+  href: string | null;
+  icon: string;
+  activeIcon: string;
+  label: string;
+  labelHi: string;
+  /**
+   * Extra pathnames that should also mark this slot current. Used where a
+   * destination legitimately lands the student somewhere else (see the
+   * PRACTICE FLAG CONTRACT below) so the bar never shows zero active slots.
+   */
+  altHrefs: string[];
+  /**
+   * Accessible name when it must differ from the visible label. The overflow
+   * slot reads "More options" to screen readers (it opens a sheet, it does not
+   * navigate) while showing the shorter visible "More".
+   */
+  a11yLabel?: string;
+  a11yLabelHi?: string;
+  /** Optional decoration the tier components may render. */
+  badge?: 'streak';
+}
+
+const MORE_SLOT: ResolvedNavSlot = {
+  id: 'more',
+  kind: 'overflow',
+  href: null,
+  icon: '☰',
+  activeIcon: '☰',
+  label: 'More',
+  labelHi: 'और',
+  a11yLabel: 'More options',
+  a11yLabelHi: 'अधिक विकल्प',
+  altHrefs: [],
+};
+
+/** The overflow slot, exported so every tier renders the identical fifth slot. */
+export const STUDENT_MORE_SLOT: ResolvedNavSlot = MORE_SLOT;
+
+/**
+ * The five primary slots for the student role, in the fixed spec order.
+ *
+ * PRACTICE FLAG CONTRACT (`ff_practice_os_v1`)
+ * --------------------------------------------
+ * The Practice SLOT is permanent — the bar is five items in every flag state,
+ * never four. The flag governs what `/practice` RENDERS, not whether the slot
+ * exists:
+ *
+ *   flag ON  → `/practice` renders the Alfa OS Practice Center hub.
+ *   flag OFF → `/practice` immediately `router.replace('/quiz')` — the live
+ *              quiz engine. This is pre-existing, already-shipped behaviour of
+ *              `apps/host/src/app/(student)/practice/page.tsx`, not something
+ *              introduced here; the route has always been a non-route when the
+ *              flag is off rather than a 404.
+ *
+ * So the slot is never dead and never silently disappears, and no flag has to
+ * be graduated to satisfy the five-destination contract. `altHrefs: ['/quiz']`
+ * keeps the slot marked `aria-current="page"` after the flag-OFF redirect.
+ * (On a surface that ALSO lists `/quiz` in its own right — the desktop sidebar
+ * does — `resolveActiveNavHref` prefers the longer exact match, so `/quiz`
+ * wins there and only one item is ever current.)
+ *
+ * TODAY FLAG CONTRACT (`ff_today_home_v1`) — identical shape
+ * ---------------------------------------------------------
+ * `/today` with the flag OFF does `router.replace('/dashboard')`
+ * (`apps/host/src/app/today/page.tsx`), so the Today slot's real landing page
+ * is `/dashboard` for every student until that flag ramps. Without
+ * `altHrefs: ['/dashboard']` the bar would show ZERO current destinations on
+ * the app's own home route — measured in Chromium at 360px before this was
+ * added. When the flag is ON, `/dashboard` is still reachable from the More
+ * sheet and will also mark the Today slot current; both are "home", so that
+ * is the intended reading rather than a collision.
+ */
+export function resolveStudentPrimaryNav(
+  caps: StudentNavCapabilities = {},
+): ResolvedNavSlot[] {
+  void caps; // reserved: grade / hasUpcomingExam gate no primary slot today.
+  const [today, learn, practice, progress] = CORE_TABS;
+  return [
+    { ...today, id: 'today', kind: 'destination', altHrefs: ['/dashboard'], badge: 'streak' },
+    { ...learn, id: 'learn', kind: 'destination', altHrefs: [] },
+    { ...practice, id: 'practice', kind: 'destination', altHrefs: ['/quiz'] },
+    { ...progress, id: 'progress', kind: 'destination', altHrefs: [] },
+    MORE_SLOT,
+  ];
+}
+
+/**
+ * Pick the SINGLE href that owns the current pathname, longest match first.
+ *
+ * Guarantees at most one `aria-current="page"` per navigation surface, which a
+ * per-item `isNavItemActive` loop cannot: on `/quiz` both `/quiz` and the
+ * Practice slot's `/quiz` alt would otherwise light up, and on `/learn/math/1`
+ * a future `/learn/math` entry would tie with `/learn`.
+ */
+export function resolveActiveNavHref(
+  pathname: string,
+  hrefs: readonly string[],
+): string | null {
+  let best: string | null = null;
+  for (const href of hrefs) {
+    if (!href) continue;
+    if (!isNavItemActive(pathname, href)) continue;
+    if (best === null || href.length > best.length) best = href;
+  }
+  return best;
+}
+
+/** The one primary slot that owns `pathname`, or null when none does. */
+export function resolvePrimaryActiveId(
+  pathname: string,
+  slots: readonly ResolvedNavSlot[],
+): StudentNavSlotId | null {
+  let best: { id: StudentNavSlotId; len: number } | null = null;
+  for (const slot of slots) {
+    const candidates = slot.href ? [slot.href, ...slot.altHrefs] : slot.altHrefs;
+    const match = resolveActiveNavHref(pathname, candidates);
+    if (match === null) continue;
+    if (best === null || match.length > best.len) best = { id: slot.id, len: match.length };
+  }
+  return best?.id ?? null;
 }
 
 export function getCoreTabs(role: UserRole) {

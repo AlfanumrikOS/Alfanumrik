@@ -1,11 +1,42 @@
 'use client';
 
+/**
+ * MobileBottomNav — tier 1 of the ONE student navigation (360–767px).
+ *
+ * Renders the five primary slots from resolveStudentPrimaryNav() in the fixed
+ * spec order: Today · Learn · Practice · Progress · More. The tablet rail
+ * (TabletNavRail, 768–1023px) and the desktop sidebar (DesktopSidebar, 1024+)
+ * render the SAME five, same labels, same destinations, same order — only the
+ * chrome changes. Visibility per tier is CSS-only (globals.css); all three
+ * components stay mounted so route transitions never re-mount navigation.
+ *
+ * 2026-08-09 IA CHANGE: Foxy no longer occupies the raised centre slot. It is
+ * a utility (More sheet + sidebar Utilities section), and `/practice` took the
+ * primary slot. See nav-config.ts for the full rationale and the
+ * PRACTICE FLAG CONTRACT.
+ *
+ * A11y contract:
+ *   - exactly one `aria-current="page"` (resolvePrimaryActiveId picks a single
+ *     winner rather than each slot testing itself)
+ *   - every slot is >= --tap-min (44px) in both axes, icon AND visible label
+ *   - keyboard focus is visible via the --focus-ring-* tokens
+ *   - safe-area padding via env(safe-area-inset-bottom)
+ */
+
 import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
-import { getCoreTabs, getMoreItems, getItemLockForGrade, isItemVisibleForFlags, isNavItemActive, MORE_SHEET_GROUPS, type NavFlagGatedItem } from './nav-config';
+import {
+  getCoreTabs,
+  getItemLockForGrade,
+  resolveActiveNavHref,
+  resolvePrimaryActiveId,
+  resolveStudentPrimaryNav,
+  STUDENT_MORE_SLOT,
+  type ResolvedNavSlot,
+} from './nav-config';
+import { NavMoreSheet, useMoreSheetItems } from './NavMoreSheet';
 import { useHasUpcomingExam } from './use-has-upcoming-exam';
 
 export function MobileBottomNav() {
@@ -13,9 +44,8 @@ export function MobileBottomNav() {
   const router = useRouter();
   const auth = useAuth();
   const isHi = auth?.isHi ?? false;
-  const { roles, activeRole, setActiveRole } = auth;
+  const { activeRole } = auth;
   const [showMore, setShowMore] = useState(false);
-  const moreSheetRef = useRef<HTMLDivElement>(null);
 
   const [navHidden, setNavHidden] = useState(false);
   const lastScrollYRef = useRef(0);
@@ -46,324 +76,100 @@ export function MobileBottomNav() {
     };
   }, []);
 
-  useEffect(() => {
-    if (showMore && moreSheetRef.current) {
-      const firstButton = moreSheetRef.current.querySelector('button');
-      firstButton?.focus();
-    }
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showMore) setShowMore(false);
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showMore]);
-
   const { data: navFlags } = useFeatureFlags();
 
   const student = (auth as any)?.student;
   // Extracted to a shared hook so DesktopSidebar derives the SAME gate instead
   // of hard-coding `true` (which made "Exam Sprint" desktop-only-always).
   const hasUpcomingExam = useHasUpcomingExam(student?.id);
-
-  const tabs = getCoreTabs(activeRole);
   const studentGrade = parseInt(student?.grade ?? '6', 10);
+
+  // Non-student roles keep their ROLE_CONFIG-derived 4 tabs + More. Only the
+  // student role has the typed five-slot primary contract.
+  const isStudent = activeRole === 'student';
+  const slots: ResolvedNavSlot[] = isStudent
+    ? resolveStudentPrimaryNav({ flags: navFlags, grade: studentGrade, hasUpcomingExam })
+    : [
+        ...getCoreTabs(activeRole).map(
+          (t) =>
+            ({
+              id: t.href as any,
+              kind: 'destination' as const,
+              href: t.href,
+              icon: t.icon,
+              activeIcon: t.activeIcon ?? t.icon,
+              label: t.label,
+              labelHi: t.labelHi,
+              altHrefs: [],
+            }) as ResolvedNavSlot,
+        ),
+        STUDENT_MORE_SLOT,
+      ];
+
+  const moreItems = useMoreSheetItems();
   const getItemLock = (item: any) => getItemLockForGrade(item, studentGrade);
-  const subscriptionPlan = (student?.subscription_plan as string | null | undefined) ?? null;
-  const showUpgradePill = activeRole === 'student' && (subscriptionPlan === null || subscriptionPlan === 'free');
-
-  const passesExamGate = (item: any): boolean =>
-    !(item?.requiresUpcomingExam === true && !hasUpcomingExam);
-
-  const moreItems = getMoreItems(activeRole)
-    .filter(item => isItemVisibleForFlags(item as NavFlagGatedItem, navFlags))
-    .filter(passesExamGate);
-
-  // 2026-08-06 declutter: the More sheet is grouped instead of one flat list.
-  // Ungrouped items (Home) render first, then the MORE_SHEET_GROUPS in order,
-  // mirroring the desktop sidebar's Practice / Study / Account sections (IA law
-  // "one destination one name" — same mental model on both projections).
-  const groupOf = (item: (typeof moreItems)[number]): string | undefined =>
-    (item as { group?: string } | undefined)?.group;
-
-  const groupedMoreItems: { header?: { en: string; hi: string }; items: typeof moreItems }[] = [];
-  const ungrouped = moreItems.filter(item => !groupOf(item));
-  if (ungrouped.length) groupedMoreItems.push({ items: ungrouped });
-  for (const group of MORE_SHEET_GROUPS) {
-    const items = moreItems.filter(item => groupOf(item) === group.key);
-    if (items.length) groupedMoreItems.push({ header: { en: group.en, hi: group.hi }, items });
-  }
 
   const streakCount: number = (auth as any)?.snapshot?.current_streak ?? 0;
 
-  const isActive = (href: string) => isNavItemActive(pathname ?? '', href);
-
-  const isMoreActive = moreItems.some(m => !getItemLock(m).locked && isActive(m.href));
-  const hasMultipleRoles = roles.length > 1;
-
-  const handleRoleSwitch = (role: typeof activeRole) => {
-    setActiveRole(role);
-    const config = ROLE_CONFIG[role];
-    if (config?.homePath) {
-      setShowMore(false);
-      router.push(config.homePath);
-    }
-  };
+  // Exactly ONE winner across the whole bar — never two aria-current="page".
+  const activeSlotId = resolvePrimaryActiveId(pathname ?? '', slots);
+  const isMoreActive =
+    activeSlotId === null &&
+    resolveActiveNavHref(
+      pathname ?? '',
+      moreItems.filter((m) => !getItemLock(m).locked).map((m) => m.href),
+    ) !== null;
 
   return (
     <>
-      {showMore && (
-        <>
-          <div
-            className="fixed inset-0 z-[60] animate-fade-in"
-            style={{ background: 'rgba(0,0,0,0.3)' }}
-            onClick={() => setShowMore(false)}
-            role="presentation"
-            aria-hidden="true"
-          />
-          <div
-            ref={moreSheetRef}
-            role="dialog"
-            aria-label="More navigation options"
-            className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl animate-slide-up"
-            style={{
-              background: 'var(--surface-1)',
-              paddingBottom: 'env(safe-area-inset-bottom, 16px)',
-              boxShadow: '0 -8px 40px rgba(0,0,0,0.12)',
-            }}
-          >
-            <div className="flex justify-center pt-3 pb-2">
-              <div className="w-10 h-1 rounded-full" style={{ background: 'var(--border-mid, #ccc)' }} />
-            </div>
-            <div className="px-5 pb-4 space-y-1 max-h-[calc(80vh-48px)] overflow-y-auto overscroll-contain">
-              {groupedMoreItems.map((group, gi) => (
-                <div key={gi}>
-                  {group.header && (
-                    <p
-                      className="text-[11px] font-bold uppercase tracking-widest px-4 pt-2 pb-1"
-                      style={{ color: 'var(--text-3)' }}
-                    >
-                      {isHi ? group.header.hi : group.header.en}
-                    </p>
-                  )}
-                  <div className="space-y-1">
-                    {group.items.map(item => {
-                      const lock = getItemLock(item);
-                      const active = !lock.locked && isActive(item.href);
-                      const gradeChipLabel = lock.locked
-                        ? (isHi ? `कक्षा ${lock.gradeMin}+` : `Grade ${lock.gradeMin}+`)
-                        : null;
-                      return (
-                        <button
-                          key={item.href}
-                          type="button"
-                          onClick={lock.locked
-                            ? undefined
-                            : () => { setShowMore(false); router.push(item.href); }}
-                          aria-disabled={lock.locked || undefined}
-                          aria-label={lock.locked
-                            ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
-                            : undefined}
-                          className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
-                          style={{
-                            background: active ? 'rgb(var(--orange-rgb) / 0.08)' : 'transparent',
-                            color: lock.locked ? 'var(--text-3)' : (active ? 'var(--orange)' : 'var(--text-2)'),
-                            opacity: lock.locked ? 0.75 : 1,
-                            cursor: lock.locked ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
-                          <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
-                          {lock.locked ? (
-                            <span
-                              className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
-                              style={{
-                                background: 'var(--surface-3)',
-                                color: 'var(--text-3)',
-                                border: '1px solid var(--border)',
-                              }}
-                            >
-                              <span aria-hidden="true">🔒</span>
-                              {gradeChipLabel}
-                            </span>
-                          ) : /* The `/review` due-count badge branch that used to sit
-                                here was dead code: `/review` appears in none of
-                                CORE_TABS / MORE_ITEMS / SIDEBAR_SECTIONS (it is a
-                                permanent 301), so it could never render. Removing it
-                                also removed this component's only useDashboardData()
-                                call. */
-                            active ? (
-                            <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-              {showUpgradePill && (
-                <div className="pt-3 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
-                  <a
-                    href="/pricing"
-                    onClick={() => {
-                      setShowMore(false);
-                      if (typeof window !== 'undefined') {
-                        try {
-                          window.dispatchEvent(new CustomEvent('alfanumrik:upgrade-cta-click', {
-                            detail: { source: 'nav_more_sheet', variant: 'pill', timestamp: Date.now() },
-                          }));
-                        } catch { /* non-blocking */ }
-                      }
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] focus-visible:ring-offset-2"
-                    style={{
-                      background: 'linear-gradient(135deg, rgb(var(--purple-rgb) / 0.10), rgb(var(--orange-rgb) / 0.08))',
-                      border: '1px solid rgb(var(--purple-rgb) / 0.25)',
-                    }}
-                  >
-                    <span
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-xl shrink-0"
-                      style={{
-                        background: 'linear-gradient(135deg, var(--purple), var(--purple-light))',
-                        color: 'white',
-                      }}
-                      aria-hidden="true"
-                    >
-                      ✨
-                    </span>
-                    <span className="flex flex-col flex-1 min-w-0">
-                      <span className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
-                        {isHi ? 'प्रीमियम पर अपग्रेड करें' : 'Upgrade to Premium'}
-                      </span>
-                      <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>
-                        {isHi ? 'और चैट, अनलिमिटेड क्विज़' : 'More chats, unlimited quizzes'}
-                      </span>
-                    </span>
-                    <span className="text-xs font-bold" style={{ color: 'var(--purple)' }} aria-hidden="true">→</span>
-                  </a>
-                </div>
-              )}
-              {hasMultipleRoles && (
-                <div className="pt-2 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
-                  <p className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-widest px-4 mb-1.5">
-                    {isHi ? 'भूमिका बदलें' : 'Switch Role'}
-                  </p>
-                  {roles.filter(r => r !== 'none').map(role => {
-                    const cfg = ROLE_CONFIG[role];
-                    const isCurrent = role === activeRole;
-                    return (
-                      <button
-                        key={role}
-                        type="button"
-                        onClick={() => handleRoleSwitch(role)}
-                        aria-label={isHi ? cfg.labelHi : cfg.label}
-                        aria-current={isCurrent ? 'true' : undefined}
-                        className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-left transition-all active:scale-[0.98]"
-                        style={{
-                          background: isCurrent ? `${cfg.color}12` : 'transparent',
-                          color: isCurrent ? cfg.color : 'var(--text-2)',
-                        }}
-                      >
-                        <span className="text-xl w-7 text-center" aria-hidden="true">{cfg.icon}</span>
-                        <span className="text-sm font-semibold">{isHi ? cfg.labelHi : cfg.label}</span>
-                        {isCurrent && <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: `${cfg.color}20`, color: cfg.color }}>{isHi ? 'सक्रिय' : 'Active'}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+      <NavMoreSheet open={showMore} onClose={() => setShowMore(false)} pathname={pathname ?? ''} />
 
       <nav
         className="bottom-nav-mobile fixed bottom-0 left-0 right-0 z-50"
         aria-label="Main navigation"
-        role="navigation"
         data-scroll-hidden={navHidden ? 'true' : 'false'}
         style={{
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
-        <div className="flex items-end justify-around px-2 pt-2 pb-1">
-          {tabs.map((item) => {
-            const active = isActive(item.href);
-
-            if (activeRole === 'student' && 'isFab' in item && item.isFab) {
-              return (
-                <button
-                  key={item.href}
-                  onClick={() => router.push(item.href)}
-                  aria-label={isHi ? item.labelHi : item.label}
-                  aria-current={active ? 'page' : undefined}
-                  className="touchable flex flex-col items-center -mt-3 active:scale-95 transition-transform bg-transparent border-0"
-                  style={{ minWidth: 'var(--tap-comfort)' }}
-                >
-                  <span
-                    className="flex items-center justify-center rounded-2xl"
-                    style={{
-                      width: 52,
-                      height: 52,
-                      marginTop: -12,
-                      background: active
-                        ? 'linear-gradient(135deg, var(--accent), var(--gold))'
-                        : 'linear-gradient(135deg, var(--accent), #D84315)',
-                      boxShadow: '0 8px 20px rgb(var(--orange-rgb) / 0.42)',
-                      color: '#fff',
-                      fontSize: 26,
-                      lineHeight: 1,
-                    }}
-                    aria-hidden="true"
-                  >
-                    {item.icon}
-                  </span>
-                  <span
-                    className="font-bold mt-1"
-                    style={{
-                      fontSize: 'var(--text-2xs)',
-                      letterSpacing: '0.02em',
-                      color: active ? 'var(--accent)' : 'var(--ink-2)',
-                    }}
-                  >
-                    {isHi ? item.labelHi : item.label}
-                  </span>
-                </button>
-              );
-            }
+        <div className="flex items-stretch justify-around px-1 pt-1.5 pb-1">
+          {slots.map((slot) => {
+            const isOverflow = slot.kind === 'overflow';
+            const active = isOverflow ? isMoreActive : activeSlotId === slot.id;
 
             return (
               <button
-                key={item.href}
-                onClick={() => router.push(item.href)}
-                aria-label={isHi ? item.labelHi : item.label}
-                aria-current={active ? 'page' : undefined}
+                key={slot.id}
+                type="button"
+                onClick={
+                  isOverflow
+                    ? () => setShowMore((prev) => !prev)
+                    : () => slot.href && router.push(slot.href)
+                }
+                aria-label={
+                  isHi
+                    ? (slot.a11yLabelHi ?? slot.labelHi)
+                    : (slot.a11yLabel ?? slot.label)
+                }
+                aria-current={!isOverflow && active ? 'page' : undefined}
+                aria-expanded={isOverflow ? showMore : undefined}
                 data-active={active ? 'true' : 'false'}
-                className="touchable bottom-nav-mobile__slot flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 relative"
-                style={{
-                  color: active ? 'var(--accent)' : 'var(--ink-3)',
-                  minWidth: 'var(--tap-comfort)',
-                }}
+                data-slot={slot.id}
+                className="bottom-nav-mobile__slot"
+                style={{ color: active ? 'var(--accent)' : 'var(--ink-3)' }}
               >
                 <span
-                  className="relative inline-block"
+                  className="bottom-nav-mobile__icon"
                   style={{
-                    fontSize: 22,
-                    lineHeight: 1,
                     transform: active ? 'translateY(-1px) scale(1.06)' : 'scale(1)',
-                    transition: 'transform 200ms cubic-bezier(.22,1,.36,1)',
                     filter: active ? 'drop-shadow(0 0 6px rgb(var(--orange-rgb) / 0.3))' : 'none',
                   }}
                   aria-hidden="true"
                 >
-                  {active ? item.activeIcon : item.icon}
-                  {item.href === '/today' && streakCount > 0 && activeRole === 'student' && (
+                  {active ? slot.activeIcon : slot.icon}
+                  {slot.badge === 'streak' && streakCount > 0 && isStudent && (
                     <span
-                      className="absolute -top-1.5 -right-2.5 min-w-[18px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold px-0.5"
-                      style={{
-                        background: '#F59E0B',
-                        color: '#fff',
-                        border: '1.5px solid var(--bg)',
-                      }}
+                      className="bottom-nav-mobile__badge"
                       aria-label={`${streakCount} day streak`}
                     >
                       {streakCount}
@@ -371,47 +177,14 @@ export function MobileBottomNav() {
                   )}
                 </span>
                 <span
-                  className="tracking-wide"
-                  style={{
-                    fontSize: 'var(--text-2xs)',
-                    fontWeight: active ? 700 : 600,
-                    letterSpacing: '0.02em',
-                  }}
+                  className="bottom-nav-mobile__label"
+                  style={{ fontWeight: active ? 700 : 600 }}
                 >
-                  {isHi ? item.labelHi : item.label}
+                  {isHi ? slot.labelHi : slot.label}
                 </span>
               </button>
             );
           })}
-
-          <button
-            onClick={() => setShowMore(!showMore)}
-            aria-label={isHi ? 'अधिक विकल्प' : 'More options'}
-            aria-expanded={showMore}
-            data-active={isMoreActive ? 'true' : 'false'}
-            className="touchable bottom-nav-mobile__slot flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 relative"
-            style={{
-              color: isMoreActive ? 'var(--accent)' : 'var(--ink-3)',
-              minWidth: 'var(--tap-comfort)',
-            }}
-          >
-            <span
-              aria-hidden="true"
-              style={{ fontSize: 22, lineHeight: 1 }}
-            >
-              &#x2630;
-            </span>
-            <span
-              className="tracking-wide"
-              style={{
-                fontSize: 'var(--text-2xs)',
-                fontWeight: isMoreActive ? 700 : 600,
-                letterSpacing: '0.02em',
-              }}
-            >
-              {isHi ? 'और' : 'More'}
-            </span>
-          </button>
         </div>
       </nav>
     </>
