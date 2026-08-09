@@ -35,12 +35,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          check-latest: true
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      # tsx lets Node 20 execute the .ts files in eval/rag/ without a separate
+      # tsx lets Node 22 execute the .ts files in eval/rag/ without a separate
       # build step. Pinned to a stable line.
       - name: Install tsx (transient)
         run: npm install --no-save tsx@4.19.0

@@ -1076,6 +1076,7 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         with:
           node-version: '22'
+          check-latest: true
 
       - name: Run protected-flag migration guard
         if: steps.changes.outputs.changed == 'true'
@@ -1111,6 +1112,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Run alignment analyzer
         run: npm run foxy:analyze
@@ -1135,6 +1137,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Run gen-mol-matrix --check
         run: npm run gen:mol-matrix:check
@@ -1166,6 +1169,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Cache node_modules
         id: cache
@@ -1531,6 +1535,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Cache node_modules
         id: cache
@@ -1624,6 +1629,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Cache node_modules
         id: cache
@@ -2376,6 +2382,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Cache node_modules
         id: cache
@@ -2437,6 +2444,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Cache node_modules
         id: cache
@@ -2728,6 +2736,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
       - name: Cache node_modules
         id: cache
         uses: actions/cache@v4

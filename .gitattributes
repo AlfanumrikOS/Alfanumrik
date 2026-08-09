@@ -70,3 +70,13 @@ python/services/ai/business/quiz_generator/handler.py -text
 # Verify with: git check-attr text -- .claude/hooks/__fixtures__/crlf-positive.sh
 # Expected:    text: unset
 .claude/hooks/__fixtures__/** -text
+
+# ─────────────────────────────────────────────────────────────
+# Node toolchain pins. Both are consumed by tools that parse the file as a
+# bare token (nvm/fnm read .nvmrc; npm reads .npmrc as key=value), and both
+# are already committed as LF. Windows checkouts with core.autocrlf=true were
+# rewriting .nvmrc to "22\r\n" in the working tree; pin them so the working
+# copy matches the committed blob and the Node version cannot drift on a
+# trailing CR.
+.nvmrc text eol=lf
+.npmrc text eol=lf

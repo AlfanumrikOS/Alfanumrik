@@ -85,3 +85,9 @@ __pycache__/
 # Binary documents (tracked going forward only — no history rewrite)
 Alfanumrik_PreSeed_Investor_Deck.pdf
 Alfanumrik_PreSeed_Investor_Deck.pptx
+
+# Playwright
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

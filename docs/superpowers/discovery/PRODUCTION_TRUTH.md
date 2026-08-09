@@ -14,7 +14,7 @@
 | Project ID | `prj_1PRfOVHYbSemMYSU5DXCMIUG9sda` |
 | Team | `Pradeep Sharma's projects` (`team_hzGOneVt21Je8RCtuAsDU7TA`) |
 | Framework | Next.js |
-| Node version | 24.x |
+| Node version | Dashboard setting **24.x** as observed 2026-05-06. ⚠️ **Not the runtime — and the runtime is currently UNVERIFIED.** The repo now declares `engines.node: ">=22.0.0 <23.0.0"` in the root and every workspace `package.json`, and `engines.node` overrides the dashboard setting, so the *intended* runtime major is 22.x and the dashboard value is cosmetic. This has not been confirmed against the live app. Do not quote a production Node version from this row — measure it: `curl -fsS https://alfanumrik.com/api/v1/health \| jq '.environment.node_version'`. Backfill the measured value here once taken. See `docs/ops/deployment-flow.md` → "Node Version Pin (repo-wide)" → "Verifying the live Node version". |
 | Bundler | Turbopack |
 | Production domains | `alfanumrik.com`, `www.alfanumrik.com`, `*.alfanumrik.com` |
 | Latest production deployment ID | `dpl_29MAFrSBcs7PR1WDKJuxdbzAxBQY` |

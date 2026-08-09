@@ -6,8 +6,12 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 370 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-367..REG-370 (2026-08-05, Student-OS IA consolidation —
+**Total catalog: 371 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-378 (2026-08-09, Node.js toolchain version pin — every surface
+that can choose a Node is pinned to 22.x and none may float; `engine-strict`
+makes the real floor 22.22.0, not 22.0.0. Full entry further down this file
+and in `11-infrastructure.md`. REG-371..REG-377 remain RESERVED.)
+Prior: REG-367..REG-370 (2026-08-05, Student-OS IA consolidation —
 four guards for ONE failure class: a cross-file contract that no compiler,
 linter, type or render test relates, so when the two sides disagree NOTHING
 fails and the student silently gets a duplicated panel, an unreadable label,
@@ -352,7 +356,37 @@ Phase 4 wave 4a/4b promotion + FoxyPanel guard took REG-359..REG-360.
 (REG-361..REG-365 taken by the Phase 5 Stakeholders + Play batch above;
 REG-366 taken by the same-day K9 leadership standalone-route fold-in.) That
 made REG-367 the next free id, and the same-day Student-OS IA consolidation
-batch then took **REG-367..REG-370**, so **REG-371 is now the next free id.**
+batch then took **REG-367..REG-370**, so REG-371 was the next free id at that
+point. That is superseded below — the 2026-08-09 Node.js version-pin batch took
+**REG-378**, so **REG-379 is now the next free id** and REG-371..REG-377 remain
+RESERVED (see the ID-collision note immediately below).
+
+2026-08-09: **REG-378 — Node.js toolchain version pin** (deployment-config
+change; architect made it, P14 chain architect → ops, testing). Every surface
+that can choose a Node — 5 workspace `package.json` `engines` blocks (the root
+one previously ABSENT), all 3 `Dockerfile` stages (`node:20-alpine` →
+`node:22-alpine`), 5 GitHub Actions workflows (incl. `playwright.yml`'s floating
+`lts/*`), and `.nvmrc` — is pinned to 22.x, with a new root `.npmrc` carrying
+`engine-strict=true` so a wrong Node cannot silently produce a build. Guard:
+`apps/host/src/__tests__/regressions/reg-378-node-version-pin-drift.test.ts`
+(21 tests) re-derives every pin from the files on each run, resolves workflow
+`${{ env.* }}` against SAME-FILE scope only (a cross-file expression expands to
+the empty string and unpins setup-node exactly like `lts/*`, so it is a FAILURE
+not a skip), rejects all floating aliases, re-derives the workspace set from the
+root `workspaces` globs rather than a hand-copied list, and — because
+`engine-strict` applies to the WHOLE tree — re-derives the real `npm ci` floor
+from `package-lock.json` (`posthog-node → ^20.20.0 || >=22.22.0`, i.e. **22.22.0,
+not 22.0.0**) and fails if `.npmrc`'s documented number goes stale. Scans exclude
+`node_modules/`, `.next/`, `.claude/` (agent worktrees there still carry
+`FROM node:20-alpine` — the exclusion is proven load-bearing), and deliberately
+INCLUDE `python/Dockerfile` (a `python:3.12-slim` image with zero `FROM node:`
+lines: inert today, governed the day a Node stage appears). Honest gap, recorded
+in the shard: **no static test can prove a CI runner or the Vercel build image
+resolves `22` to >= 22.22.0** — `setup-node` prefers the runner's tool cache over
+the newest release unless `check-latest: true`, and a resolution below the floor
+turns `engine-strict` into a pipeline-wide `npm ci` failure. Entry + mitigations
+in `11-infrastructure.md`. Taken as REG-378 (not 371) to leave REG-371..REG-377
+reserved to the pending ops renumbering pass described next.
 
 ID-collision note (2026-08-05, resolved): the Student-OS IA consolidation
 batch was authored as REG-345..REG-348 while still uncommitted. Upstream
@@ -388,6 +422,10 @@ confirms they were counted in error), treat 370 as an upper bound — if they
 were counted but never written, the honest total is 365. This affects only the
 total, never the ids: REG-361..REG-365 are RESERVED to upstream's Phase 5
 batch either way and must not be reissued.
+(2026-08-09 addendum: REG-378 adds exactly one filed, body-backed entry, so the
+same bracket now reads **371 upper bound / 366 honest**. REG-378 itself is
+filed — `## REG-378` heading plus `| REG-378 |` table row in
+`11-infrastructure.md` — and is not part of the unresolved gap above.)
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

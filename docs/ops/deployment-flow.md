@@ -14,7 +14,7 @@ Three GitHub Actions workflows handle all builds and deployments.
 Push/PR
   |
   v
-[quality] ubuntu-latest, Node 20
+[quality] ubuntu-latest, Node 22
   |- npm ci
   |- npm audit --audit-level=high (continue-on-error: true)
   |- npm run lint
@@ -116,8 +116,72 @@ Push to develop/staging
 | Framework | Next.js (auto-detected) |
 | Build command | `next build` (via Vercel CLI in CI) |
 | Output directory | `.next/` |
-| Node.js version | 20.x |
+| Node.js version | **22.x** — controlled by `engines.node` (`>=22.0.0 <23.0.0`) in `package.json`, **not** by the Vercel dashboard. When `engines.node` is present Vercel honours it and it overrides the dashboard "Node.js Version" setting, so the dashboard value is now cosmetic. Changing the production runtime Node major means editing `engines.node`, not the dashboard. |
 | Serverless function timeout | Default (10s for Hobby, 60s for Pro) |
+
+### Node Version Pin (repo-wide)
+
+Node is pinned to **22.x** in every plane. There is exactly one supported major; there is no fallback.
+
+| Surface | Where the pin lives | Value |
+|---|---|---|
+| Local dev | `.nvmrc` | `22` |
+| Local + CI installs | root `.npmrc` → `engine-strict=true` | makes a mismatch a hard `npm install`/`npm ci` failure, not a warning |
+| All workspaces | `engines.node` in root + `apps/host` + `packages/lib` + `packages/ui` + `eslint-plugin-alfanumrik` `package.json` | `>=22.0.0 <23.0.0` |
+| GitHub Actions | `NODE_VERSION: '22'` (`ci.yml`, `deploy-production.yml`, `deploy-staging.yml`, `e2e-suite.yml`) and literal `node-version: '22'` in the standalone workflows | latest 22.x resolved by `actions/setup-node` |
+| Container builds | `Dockerfile` (all 3 stages) | `node:22-alpine` |
+| Vercel runtime | `engines.node` (overrides the dashboard setting) | 22.x |
+
+**Effective floor is 22.22.0, not 22.0.0.** `engine-strict` validates the *whole* dependency tree, and the tightest transitive constraint is `posthog-node` → `^20.20.0 || >=22.22.0`. Node 22.0–22.21 therefore fails `npm ci` even though it satisfies our own `engines` range. Re-check this floor whenever `posthog-node` is bumped.
+
+**Emergency unblock (one line, no code change):** set `engine-strict=false` in the root `.npmrc`. See the Troubleshooting section of `DEPLOYMENT_RUNBOOK.md` for the full failure-mode table.
+
+#### Which `package.json` does Vercel read?
+
+Vercel reads `engines.node` from the `package.json` in the project's configured **Root Directory**, not necessarily the repo root. This project's `vercel.json` lives at `apps/host/vercel.json` and its `functions` globs are written relative to `apps/host` (`src/app/api/**`), which indicates the Vercel Root Directory is `apps/host`.
+
+Both files now declare the same range, so the distinction no longer changes the outcome. It matters for one thing only: **you cannot infer the pre-pin production runtime from the repo.** Before the 2026-08 pin, the repo root had no `engines` block while `apps/host` declared `>=20.0.0 <23.0.0`, and the Vercel dashboard was last observed at 24.x (`docs/superpowers/discovery/PRODUCTION_TRUTH.md`, 2026-05-06). Those three inputs imply different answers. Measure it, do not reason about it.
+
+#### Verifying the live Node version
+
+There is exactly one authoritative answer, and it is served by the app itself:
+
+```bash
+curl -fsS https://alfanumrik.com/api/v1/health | jq '.environment.node_version'
+```
+
+`environment.node_version` is `process.version` read inside the live serverless function (`apps/host/src/app/api/v1/health/route.ts`). It reports the full `vMAJOR.MINOR.PATCH`, so it answers both "which major is production on" and "is the minor above the 22.22.0 floor." Capture it **before and after** any deploy that touches `engines.node`, and record both values in the release evidence.
+
+Secondary sources, in decreasing order of trust:
+- **Vercel build logs** — the build output names the Node version the *build image* used. This is the number that decides whether `npm ci` clears the 22.22.0 floor.
+- **Vercel dashboard → Project Settings → Node.js Version** — cosmetic once `engines.node` exists. Do not trust it.
+
+#### The build-image minor is not pinnable
+
+Vercel exposes a Node **major** selector only; the minor inside that major comes from whatever the build image currently ships and drifts on Vercel's schedule, with no repo-side knob and no advance notice. Because `engine-strict=true` enforces the transitive 22.22.0 floor at install time, a build-image minor below 22.22.0 fails `npm ci` **during the build**. Two consequences:
+
+- The failure is loud and pre-production — a Vercel build failure, never a bad deploy. This is the pin working as designed.
+- A deploy that succeeded yesterday can fail today with no repo change. If a Vercel build starts failing `EBADENGINE` out of nowhere, check the build-log Node version before looking for a code cause.
+
+Margin is thin: the floor is 22.22.0 and the latest 22.x is 22.23.2. Re-check this whenever `posthog-node` is bumped — recompute the true floor from the lockfile rather than trusting this paragraph:
+
+```bash
+node -e "
+const l=require('./package-lock.json');
+let best=null;
+for (const [name,meta] of Object.entries(l.packages||{})) {
+  const r = meta && meta.engines && meta.engines.node;
+  if (typeof r !== 'string') continue;
+  for (const m of r.matchAll(/>=\s*22\.(\d+)\.(\d+)/g)) {
+    const v = (+m[1])*1e6 + (+m[2]);
+    if (!best || v > best.v) best = { v, name, range: r, floor: \`22.\${m[1]}.\${m[2]}\` };
+  }
+}
+console.log(best ? \`effective 22.x floor: \${best.floor} (from \${best.name}: \${best.range})\` : 'no 22.x floor found');
+"
+```
+
+As of 2026-08-09 that prints `effective 22.x floor: 22.22.0 (from node_modules/posthog-node: ^20.20.0 || >=22.22.0)`. Compare minors numerically, not by array/string comparison — `>=22.3.0` sorts above `>=22.22.0` under string coercion and will silently report the wrong floor.
 
 ### Environment Variables in Vercel
 

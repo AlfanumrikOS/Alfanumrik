@@ -44,6 +44,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          check-latest: true
           cache: 'npm'
 
       # Defeat any warm-cache effects from the setup-node restore. The whole

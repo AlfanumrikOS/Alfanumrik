@@ -2228,5 +2228,98 @@ four of the eight ids REG-336..REG-343 consumed by this batch. The 2026-08-04
 P2-2 pass adds REG-344 (`withRoute()` API response-envelope wrapper).
 **Total catalog: 344 entries (target: 35 — TARGET EXCEEDED).**
 
+(That trailer is this shard's own point-in-time carry-forward and is stale
+against `00-header.md`, which is the authoritative index. Do not reconcile it
+here — read the header.)
+
+---
+
+## REG-378 — Node.js toolchain version pin: every surface that can choose a Node says 22, and none of them may float (2026-08-09)
+
+Source: a hand audit found the repo's Node version had silently drifted apart
+across every surface that can pick one. `.nvmrc` said `22` while
+`apps/host/package.json` engines said `>=20.0.0 <23.0.0`; the root
+`package.json` had **no** `engines` block at all; the `Dockerfile` built AND
+ran production on `node:20-alpine` (all three stages); and four GitHub Actions
+workflows still provisioned Node 20 — one of them (`playwright.yml`) via the
+floating alias `lts/*`, which resolves to whatever the runner image happens to
+ship that week. Nothing in the repo related these files to one another, so each
+could move independently and **nothing failed**. The divergence was only ever
+findable by hand, and a hand audit rots the moment it is written.
+
+The pin-down (architect, deployment-config change; P14 chain architect → ops,
+testing) set every surface to 22.x and added `engine-strict=true` in a new root
+`.npmrc` so a wrong Node can no longer silently produce a build. This entry is
+that audit, mechanised.
+
+**The effective floor is NOT 22.0.0.** `engine-strict` applies to the WHOLE
+dependency tree, not just our own packages. The tightest transitive constraint
+in the current lockfile is `posthog-node@5.33.4 → "^20.20.0 || >=22.22.0"`, so
+`npm ci` actually requires Node **>= 22.22.0** even though our own `engines`
+declare `>=22.0.0`. Latest 22.x at pin-down was 22.23.2 — roughly two patch
+releases of margin. The suite RE-DERIVES that floor from `package-lock.json` on
+each run and fails if the number documented in `.npmrc` stops matching, so a
+dependency bump cannot rot the comment.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-378 | `node_version_pin_drift_guard` | **(a) Workflow pins.** Every `actions/setup-node` step in every `.github/workflows/*.yml` has an explicit `node-version` (or a `node-version-file` pointing at the pinned `.nvmrc`), and every one resolves to major **22**. `${{ env.X }}` expressions are resolved against **SAME-FILE scope only** (workflow-level `env:` + the referencing job's `env:`) because GitHub Actions does not inherit `env:` across workflow files — an unresolvable expression expands to the EMPTY STRING and unpins setup-node exactly like `lts/*`, so `unresolved-env` is a FAILURE, not a skip. A raw-text sweep over `node-version:`/`NODE_VERSION:` catches pins the structural step-walk cannot see (matrix entries, reusable-workflow inputs, hand-written keys), and a **widened sweep covers every YAML anywhere under `.github/`**, not just `workflows/`, so a future composite action (`.github/actions/<name>/action.yml`) pinning Node 20 fails on day one. **(b) No floating aliases** — `lts/*`, any `lts/…`, `latest`, `node`, `*`, `current`, `stable` are all rejected wherever a Node version may be written. **(c) package.json engines.** Every tracked workspace `package.json` (root + `apps/host` + `packages/lib` + `packages/ui` + `eslint-plugin-alfanumrik`) declares a **22-ONLY** `engines.node`; the range parser understands only `>=22.0.0 <23.0.0` / `22.x` / `^22.0.0` and **REJECTS anything else rather than guessing**, so a novel range shape trips the guard instead of slipping through. The workspace list is **re-derived from the root `package.json`'s own `workspaces` globs** and asserted to equal the hardcoded list — adding `apps/admin` or `packages/foo` with no engines block fails here rather than shipping unpinned. **(d) Dockerfile base images.** Every `FROM node:` line in every tracked Dockerfile is a `node:22` base, with a `>= 3` node-stage floor so the scan cannot go vacuous on the 3-stage root build. **(e) `.nvmrc`** reads a non-floating 22 pin (bare `22` or a fully-qualified `22.x.y`) with **no stray carriage return** — `.gitattributes` pins it `eol=lf` precisely because nvm/fnm read the file as a bare token and `"22\r"` is not `"22"`; any sibling `.node-version`/`.tool-versions` must agree. **(f) engine-strict floor.** `.npmrc` keeps `engine-strict=true`, and the effective transitive floor is re-derived from `package-lock.json` and cross-checked against the number `.npmrc` documents (plus the package that sets it) — a stale comment is a failure. A coherence check pins that the derived floor still has major 22 and still sits **inside** our declared 22-only window, so the day a dependency raises the tree's floor past 22.x the pin is declared incoherent by a unit test instead of by an `EBADENGINE` wall on every environment at once. **(g) Scan hygiene** — `node_modules/`, `.next/`, `.claude/` (incl. agent worktrees), `dist/`, `build/`, `coverage/` are excluded, asserted on the walk's OUTPUT rather than the constant. The `.claude/worktrees` exclusion is proven **load-bearing**: those stale worktree checkouts still carry `FROM node:20-alpine`, so without the skip rule (d) would false-fail on every machine that has ever run one. `python/Dockerfile` is deliberately **scanned, not excluded** — it is a `python:3.12-slim` image with zero `FROM node:` lines, so it can never false-fail rule (d) while remaining governed by the 22 pin the day anyone adds a Node build stage to it. **Non-vacuity:** every rule is also exercised against synthetic MUTATED input and asserted to FAIL — the four real pre-2026-08-09 drift states (`20`, `'20'`, `lts/*`, cross-file `${{ env.NODE_VERSION }}`), the literal pre-pin `>=20.0.0 <23.0.0` engines range, unparseable ranges (`>=22`, `*`), a reverted `node:20-alpine` Dockerfile, a reverted/floating `.nvmrc`, and a floor-derivation that takes the first match instead of the tightest. Two of the guards were additionally proven non-vacuous by live probe files (a `packages/__reg378_probe__` workspace with no engines block, and a `.github/actions/__reg378_probe__/action.yml` pinning `node-version: '20'`) — both made the suite fail, then were removed. NO network, NO Supabase, NO `npm install` (the `engine-strict` pin makes `npm ci` fail by design on an off-range local Node); file reads only. | `apps/host/src/__tests__/regressions/reg-378-node-version-pin-drift.test.ts` (21 tests) | E |
+
+### Files pinned by this entry
+
+`package.json`, `apps/host/package.json`, `packages/lib/package.json`,
+`packages/ui/package.json`, `eslint-plugin-alfanumrik/package.json` (engines);
+`Dockerfile` (3 stages); `.nvmrc`; `.npmrc` (`engine-strict=true` + the
+documented transitive floor); `.gitattributes` (`eol=lf` on `.nvmrc`/`.npmrc`);
+and every `.github/workflows/*.yml` carrying a Node pin — 29 workflow files, 27
+`node-version:` keys at pin-down, of which `edge-auth-sweep.yml`,
+`migration-lint.yml`, `synthetic-monitor.yml`, `playwright.yml` (new, was
+`lts/*`) and `mesh-cron.yml` (quoting only) were edited in this pass.
+
+### Invariants covered by this section
+
+- Deployment integrity — the build, the test runners and the production
+  container can no longer disagree about which Node they run. This is the same
+  failure class as REG-342 (one health authority, not two): a contract spread
+  across files that nothing relates, so divergence is silent by construction.
+- Gate honesty (REG-317 family) — the guard is proven to inspect something.
+  Every rule has a mutation twin, the scans carry non-vacuity floors (>= 20
+  workflow files, >= 20 workflow pins, >= 3 Docker node stages, >= 2 workspace
+  package.jsons), and the workspace list is re-derived rather than restated.
+
+### Known gaps (recorded honestly, not claimed as covered)
+
+- **No static test can prove a RUNNER resolves `22` to >= 22.22.0.** This is
+  the one real residual risk and it is a runtime property, not a file property.
+  `actions/setup-node` with `node-version: '22'` prefers a satisfying version
+  already in the hosted runner's tool cache over the newest matching release
+  (that is what `check-latest: true` exists to override), and Vercel picks its
+  own 22.x minor for the build image. If either ever sits below 22.22.0,
+  `engine-strict=true` turns it into a hard `npm ci` failure across the whole
+  pipeline — or a failed production deploy — with no in-repo signal beforehand.
+  Mitigations, in preference order, all currently UNAPPLIED: (1) pin `.nvmrc`
+  to an exact `22.x.y` at or above the floor and switch every workflow to
+  `node-version-file: .nvmrc` (the suite already accepts both, and rule (e) was
+  deliberately written to permit a fully-qualified `.nvmrc` so it does not
+  block this fix); (2) add `check-latest: true` to every `setup-node` step;
+  (3) add a CI preflight that asserts `node --version` >= the derived floor so
+  the failure is diagnosable rather than an npm `EBADENGINE` dump.
+- **Vercel project setting is not in this repo.** The root `engines.node` now
+  EXCLUDES Node 20, where the pre-pin `apps/host` range admitted it. If the
+  Vercel project's Node.js Version setting is still `20.x`, the next deploy
+  errors on version mismatch. Ops action, not testable from here.
+- No live `npm ci` was executed under the new pin (by design — the local
+  machine is on Node v24.19.0 and `engine-strict=true` makes the attempt fail
+  and would mutate `package-lock.json`). The engine-strict behaviour is pinned
+  structurally, not empirically.
+
+### Note on the id
+
+`00-header.md` declares REG-371 the next free id but explicitly RESERVES
+REG-371..REG-377 to the ops student-IA-consolidation renumbering pass, which
+has not landed. REG-378 is taken here per that same note ("if that batch lands,
+the next free id becomes REG-378"), deliberately leaving 371..377 to ops so the
+two passes cannot collide. **REG-379 is the next free id after this entry.**
+
 ---
 

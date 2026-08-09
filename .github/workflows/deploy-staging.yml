@@ -147,6 +147,7 @@ jobs:
         if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
           cache: 'npm'
 
       - name: Install dependencies
@@ -235,6 +236,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
           cache: 'npm'
 
       - name: Install dependencies

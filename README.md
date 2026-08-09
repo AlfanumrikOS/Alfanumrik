@@ -44,13 +44,24 @@ The repository is an **npm workspace monorepo**. The Next.js web application liv
 
 ## Getting Started / Local Development
 
-**Prerequisites:** Node.js 20.x (`>=20 <23`), npm, and the [Supabase CLI](https://supabase.com/docs/guides/cli). For mobile work you also need the Flutter SDK (3.16+ / Dart 3.2+).
+**Prerequisites:** Node.js **22.x** (`>=22.0.0 <23.0.0`, and in practice `>= 22.22.0` — see below), npm, and the [Supabase CLI](https://supabase.com/docs/guides/cli). For mobile work you also need the Flutter SDK (3.16+ / Dart 3.2+).
+
+The repo pins Node in `.nvmrc`, so:
+
+```bash
+nvm use          # or: fnm use / nvs use — reads .nvmrc (22)
+node --version   # must print v22.x, >= v22.22.0
+```
 
 Install dependencies from the repo root (this installs all workspaces):
 
 ```bash
 npm install
 ```
+
+> **If `npm install` fails with `EBADENGINE`** — you are on the wrong Node major. The root `.npmrc` sets `engine-strict=true`, which turns npm's normal advisory engine *warning* into a hard install *failure*, so a wrong Node version can never silently produce a build. Every workspace `package.json` declares `engines.node: ">=22.0.0 <23.0.0"`. Additionally, the transitive dependency `posthog-node` requires `>= 22.22.0`, so 22.0–22.21 will also fail. Fix: `nvm install 22 && nvm use`. Do not work around it by deleting `.npmrc` — the pin is the point.
+
+
 
 ### Web (Next.js)
 

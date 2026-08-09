@@ -25,7 +25,7 @@
 | `pg_dump` / `psql` | `17.x` (matches prod PG 17.6) | `pg_dump --version` (Windows: install via PostgreSQL installer or `winget install PostgreSQL.PostgreSQL`) |
 | `gh` CLI | any recent | `gh --version`; `gh auth status` |
 | `git` | any recent | n/a |
-| Node | `>= 20` (matches CI) | `node --version` |
+| Node | `22.x` — `>=22.0.0 <23.0.0`, effective floor `>= 22.22.0` (matches CI, `.nvmrc`, and `engines.node`). `engine-strict=true` makes a mismatch a hard `npm install` failure, not a warning. | `node --version` (or `nvm use`) |
 | GNU `sed` (or perl) | any | Windows: use Git Bash; macOS: `brew install gnu-sed` and use `gsed` |
 
 ### Secrets / handles needed (have these in front of you before starting)
