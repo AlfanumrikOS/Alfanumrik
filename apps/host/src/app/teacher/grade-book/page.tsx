@@ -25,6 +25,7 @@ import { useTeacherGradebookDepth } from '@alfanumrik/lib/use-teacher-gradebook-
 import { BLOOM_LEVEL_ORDER } from '@alfanumrik/lib/types';
 import type { ClassMasteryBloomSummary } from '@alfanumrik/lib/types';
 import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
+import { TeacherDataError } from '../_components/TeacherDataError';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -501,6 +502,11 @@ export default function TeacherGradeBookPage() {
 
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [classesLoading, setClassesLoading] = useState(true);
+  // Tracked separately from the page-level `error` string: the no-classes
+  // branch below RETURNS EARLY, above the error banner, so a failed class read
+  // used to render "No classes yet — create a class first" with the failure
+  // shown nowhere at all.
+  const [classesError, setClassesError] = useState('');
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [term, setTerm] = useState<'current' | 'previous'>('current');
   const [data, setData] = useState<GradeBookData | null>(null);
@@ -532,6 +538,7 @@ export default function TeacherGradeBookPage() {
   const loadClasses = useCallback(async () => {
     if (!teacherId) return;
     setClassesLoading(true);
+    setClassesError('');
     try {
       const dash = await api('get_dashboard', { teacher_id: teacherId });
       const cls = (dash?.classes || []) as ClassRow[];
@@ -541,7 +548,9 @@ export default function TeacherGradeBookPage() {
         setSelectedClassId(validatedRequested || cls[0].id);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : tt(isHi, 'Failed to load classes', 'कक्षाएं लोड करने में विफल'));
+      const message = e instanceof Error ? e.message : tt(isHi, 'Failed to load classes', 'कक्षाएं लोड करने में विफल');
+      setError(message);
+      setClassesError(message);
     } finally {
       setClassesLoading(false);
     }
@@ -658,7 +667,7 @@ export default function TeacherGradeBookPage() {
     );
   }
 
-  if (!classesLoading && classes.length === 0) {
+  if (!classesLoading && (classesError || classes.length === 0)) {
     return (
       <div style={pageStyle}>
         <header style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--surface-2)' }}>
@@ -666,25 +675,35 @@ export default function TeacherGradeBookPage() {
             {tt(isHi, 'Grade Book', 'ग्रेड बुक')}
           </h1>
         </header>
-        <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
-          <div style={{ fontSize: 36, marginBottom: 8 }}>📚</div>
-          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '8px 0 4px' }}>
-            {tt(isHi, 'No classes yet', 'अभी कोई कक्षा नहीं')}
-          </p>
-          <p style={{ fontSize: 13, color: '#7D7264', margin: '0 0 16px' }}>
-            {tt(isHi, 'Create a class first to start tracking grades.', 'ग्रेड ट्रैक करने के लिए पहले एक कक्षा बनाएं।')}
-          </p>
-          <button
-            onClick={() => router.push('/teacher/classes')}
-            style={{
-              padding: '8px 18px', background: 'var(--orange)', color: '#fff', border: 'none',
-              borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}
-          >
-            {tt(isHi, 'Go to Classes', 'कक्षाओं पर जाएं')} →
-          </button>
-        </div>
-        
+        {classesError ? (
+          <TeacherDataError
+            isHi={isHi}
+            titleEn="Couldn't load your classes"
+            titleHi="आपकी कक्षाएं लोड नहीं हो सकीं"
+            detail={classesError}
+            onRetry={loadClasses}
+            testId="gradebook-classes-error"
+          />
+        ) : (
+          <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>📚</div>
+            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '8px 0 4px' }}>
+              {tt(isHi, 'No classes yet', 'अभी कोई कक्षा नहीं')}
+            </p>
+            <p style={{ fontSize: 13, color: '#7D7264', margin: '0 0 16px' }}>
+              {tt(isHi, 'Create a class first to start tracking grades.', 'ग्रेड ट्रैक करने के लिए पहले एक कक्षा बनाएं।')}
+            </p>
+            <button
+              onClick={() => router.push('/teacher/classes')}
+              style={{
+                padding: '8px 18px', background: 'var(--orange)', color: '#fff', border: 'none',
+                borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              {tt(isHi, 'Go to Classes', 'कक्षाओं पर जाएं')} →
+            </button>
+          </div>
+        )}
       </div>
     );
   }

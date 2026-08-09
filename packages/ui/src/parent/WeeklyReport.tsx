@@ -159,7 +159,7 @@ export default function WeeklyReport({ studentId, guardianId, isHi }: WeeklyRepo
         <button
           onClick={fetchReport}
           disabled={loading}
-          className="px-4 py-2 bg-orange-500 text-white text-[13px] font-semibold rounded-lg border-none cursor-pointer disabled:opacity-50"
+          className="min-h-[44px] px-4 py-2 bg-orange-500 text-white text-[13px] font-semibold rounded-lg border-none cursor-pointer disabled:opacity-50"
         >
           {t(isHi, 'Try Again', 'पुनः प्रयास करें')}
         </button>
@@ -185,7 +185,7 @@ export default function WeeklyReport({ studentId, guardianId, isHi }: WeeklyRepo
           <button
             onClick={fetchReport}
             disabled={loading}
-            className="px-3 py-1.5 bg-transparent text-orange-500 border border-orange-200 rounded-md text-[11px] cursor-pointer disabled:opacity-50"
+            className="min-h-[44px] px-3 py-1.5 bg-transparent text-orange-500 border border-orange-200 rounded-md text-[11px] cursor-pointer disabled:opacity-50"
           >
             {loading
               ? t(isHi, 'Generating...', 'बना रहे हैं...')

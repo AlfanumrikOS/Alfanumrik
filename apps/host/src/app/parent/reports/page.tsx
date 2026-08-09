@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { logger } from '@alfanumrik/lib/logger';
 import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@alfanumrik/lib/constants';
@@ -894,13 +895,25 @@ function colorToTone(color?: string): 'success' | 'info' | 'brand' {
   return 'brand';
 }
 
-function CircularProgressRing({ value, size = 72, color = '#16A34A', label }: {
+function CircularProgressRing({ value, size = 72, color = '#16A34A', label, hint }: {
   value: number; size?: number; color?: string; label?: string;
+  /**
+   * Plain-language gloss shown under the label. "Concept Mastery" and
+   * "7-Day Retention" are engine vocabulary — a parent has no way to know what
+   * scale they are on or what a good number looks like. The hint translates
+   * the metric into an outcome without changing how it is derived (P1).
+   */
+  hint?: string;
 }) {
   return (
     <div className="flex flex-col items-center gap-1">
       <ProgressRing value={value} size={size} tone={colorToTone(color)} />
       {label && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{label}</span>}
+      {hint && (
+        <span style={{ fontSize: 9, color: '#94A3B8', maxWidth: 110, textAlign: 'center', lineHeight: 1.35 }}>
+          {hint}
+        </span>
+      )}
     </div>
   );
 }
@@ -916,29 +929,53 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
   const [selectedMonth, setSelectedMonth] = useState(months[0]?.value ?? '');
   const [monthlyData, setMonthlyData] = useState<MonthlyReportData | null>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
+  // Failure must NEVER read as "this month has no report". The parent-portal
+  // Edge Function returns HTTP 200 + `{ error }` for the genuine "nothing to
+  // report" case, but 400/403/500 (and the 15s timeout) throw through
+  // usePortalAction. Both used to land on setMonthlyData(null), so a 500 —
+  // or an access-denied — rendered the reassuring "No monthly report available
+  // for this period." A parent deciding whether to keep paying cannot tell a
+  // broken read from a quiet month.
+  const [monthlyError, setMonthlyError] = useState<string | null>(null);
+  const monthlySequence = useRef(0);
 
-  useEffect(() => {
+  const fetchMonthlyReport = useCallback(async () => {
     if (!studentId || !selectedMonth) return;
-    const fetchMonthlyReport = async () => {
-      setMonthlyLoading(true);
-      try {
-        const res = await api('get_monthly_report', {
-          guardian_id: guardianId,
-          student_id: studentId,
-          report_month: selectedMonth,
-        });
-        if (res && !res.error) {
-          setMonthlyData(res.report_data ?? res);
-        } else {
-          setMonthlyData(null);
-        }
-      } catch {
+    const sequence = ++monthlySequence.current;
+    setMonthlyLoading(true);
+    setMonthlyError(null);
+    try {
+      const res = await api('get_monthly_report', {
+        guardian_id: guardianId,
+        student_id: studentId,
+        report_month: selectedMonth,
+      });
+      if (sequence !== monthlySequence.current) return;
+      if (res && !res.error) {
+        setMonthlyData(res.report_data ?? res);
+      } else {
+        // HTTP 200 + { error } — the report genuinely does not exist for this
+        // month. This is the ONLY path allowed to show the empty copy.
         setMonthlyData(null);
       }
-      setMonthlyLoading(false);
-    };
-    fetchMonthlyReport();
-  }, [api, guardianId, studentId, selectedMonth]);
+    } catch (err) {
+      if (sequence !== monthlySequence.current) return;
+      // P13: log the reason only — never the student id or the payload.
+      logger.warn('parent.monthly_report.load_failed', {
+        reason: err instanceof Error ? err.message : 'unknown',
+      });
+      setMonthlyData(null);
+      setMonthlyError(
+        t(isHi, "We couldn't load this month's report.", 'इस महीने की रिपोर्ट लोड नहीं हो सकी।'),
+      );
+    } finally {
+      if (sequence === monthlySequence.current) setMonthlyLoading(false);
+    }
+  }, [api, guardianId, studentId, selectedMonth, isHi]);
+
+  useEffect(() => {
+    void fetchMonthlyReport();
+  }, [fetchMonthlyReport]);
 
   const handlePrintMonthly = () => {
     window.print();
@@ -979,7 +1016,33 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
         </div>
       )}
 
-      {!monthlyLoading && !monthlyData && (
+      {/* Failure \u2014 honest and retryable. Distinct from the empty state below. */}
+      {!monthlyLoading && monthlyError && (
+        <div role="alert" style={{ ...cardStyle, textAlign: 'center', padding: 30 }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }} aria-hidden="true">{'\u26A0\uFE0F'}</div>
+          <p style={{ fontSize: 14, color: '#B91C1C', fontWeight: 600, margin: '0 0 4px' }}>{monthlyError}</p>
+          <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 14px', lineHeight: 1.5 }}>
+            {t(
+              isHi,
+              "This doesn't mean there was no activity \u2014 we just couldn't reach the report.",
+              '\u0907\u0938\u0915\u093E \u092E\u0924\u0932\u092C \u092F\u0939 \u0928\u0939\u0940\u0902 \u0915\u093F \u0915\u094B\u0908 \u0917\u0924\u093F\u0935\u093F\u0927\u093F \u0928\u0939\u0940\u0902 \u0939\u0941\u0908 \u2014 \u0939\u092E \u092C\u0938 \u0930\u093F\u092A\u094B\u0930\u094D\u091F \u0924\u0915 \u0928\u0939\u0940\u0902 \u092A\u0939\u0941\u0901\u091A \u0938\u0915\u0947\u0964',
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={() => void fetchMonthlyReport()}
+            style={{
+              minHeight: 44, padding: '11px 24px', border: 0, borderRadius: 10,
+              backgroundColor: '#16A34A', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            {t(isHi, 'Try again', '\u092B\u093F\u0930 \u0938\u0947 \u0915\u094B\u0936\u093F\u0936 \u0915\u0930\u0947\u0902')}
+          </button>
+        </div>
+      )}
+
+      {/* Genuine empty \u2014 only when the request SUCCEEDED and carried no report. */}
+      {!monthlyLoading && !monthlyError && !monthlyData && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: 30 }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>{'\uD83D\uDCCA'}</div>
           <p style={{ fontSize: 14, color: '#64748B' }}>{t(isHi, 'No monthly report available for this period.', 'इस अवधि के लिए कोई मासिक रिपोर्ट उपलब्ध नहीं है।')}</p>
@@ -996,11 +1059,13 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
                 value={monthlyData.conceptMasteryPct ?? 0}
                 color="#16A34A"
                 label={t(isHi, 'Concept Mastery', 'अवधारणा महारत')}
+                hint={t(isHi, 'Topics they can now solve on their own', 'जिन विषयों को वे अब खुद हल कर सकते हैं')}
               />
               <CircularProgressRing
                 value={monthlyData.retentionScore ?? 0}
                 color="#0891B2"
                 label={t(isHi, '7-Day Retention', '7-दिन याददाश्त')}
+                hint={t(isHi, 'How much they still remember a week later', 'एक हफ़्ते बाद उन्हें कितना याद रहता है')}
               />
             </div>
 
@@ -1457,6 +1522,10 @@ function ParentReportsPage() {
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ReportData | null>(null);
   const [scoreTrends, setScoreTrends] = useState<ScoreTrendEntry[]>([]);
+  // True when the performance-score read FAILED (as opposed to genuinely
+  // returning no scores). Keeps "section absent because broken" distinct from
+  // "section absent because this child has no scores yet".
+  const [scoreTrendsError, setScoreTrendsError] = useState(false);
   const [error, setError] = useState('');
   const [scopeError, setScopeError] = useState('');
   const [scopeAttempt, setScopeAttempt] = useState(0);
@@ -1579,6 +1648,7 @@ function ParentReportsPage() {
     const sequence = ++reportSequence.current;
     setLoading(true);
     setError('');
+    setScoreTrendsError(false);
     try {
       const res = await api('get_child_dashboard', {
         guardian_id: guardian.id,
@@ -1608,28 +1678,49 @@ function ParentReportsPage() {
     if (sequence !== reportSequence.current) return;
 
     // Fetch Performance Score trends from score_history + performance_scores
-    // RLS handles parent access via guardian_student_links policies
+    // RLS handles parent access via guardian_student_links policies.
+    //
+    // The PostgREST builder RESOLVES with { data, error } — it does not reject —
+    // so the try/catch below never sees a query failure. Reading `data` alone
+    // made a failed read look like "this child has no performance scores": the
+    // whole Performance Score section silently disappeared. Both reads now
+    // check `error` explicitly and preserve the last known-good trends instead
+    // of asserting an empty set.
     try {
       // Get current scores
-      const { data: currentScores } = await supabase
+      const { data: currentScores, error: currentErr } = await supabase
         .from('performance_scores')
         .select('subject, overall_score, level_name')
         .eq('student_id', student.id);
 
-      if (currentScores && currentScores.length > 0) {
+      if (currentErr) {
+        // P13: reason only — no student id, no row payload.
+        logger.warn('parent.report.performance_scores_failed', { reason: currentErr.message });
+        if (sequence === reportSequence.current) setScoreTrendsError(true);
+      } else if (currentScores && currentScores.length > 0) {
         // Get previous week scores for trend comparison
         const oneWeekAgo = new Date();
         oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
         const twoWeeksAgo = new Date();
         twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
-        const { data: histData } = await supabase
+        const { data: histData, error: histErr } = await supabase
           .from('score_history')
           .select('subject, score, recorded_at')
           .eq('student_id', student.id)
           .gte('recorded_at', twoWeeksAgo.toISOString().split('T')[0])
           .lt('recorded_at', oneWeekAgo.toISOString().split('T')[0])
           .order('recorded_at', { ascending: false });
+
+        if (histErr) {
+          // Without last week's rows every subject would render the verbatim
+          // claim "No data from last week" — indistinguishable from a genuine
+          // first week. Degrade the whole block honestly instead.
+          logger.warn('parent.report.score_history_failed', { reason: histErr.message });
+          if (sequence === reportSequence.current) setScoreTrendsError(true);
+          if (sequence === reportSequence.current) setLoading(false);
+          return;
+        }
 
         // Build a map of previous week's latest score per subject
         const prevScoreMap: Record<string, number> = {};
@@ -1953,7 +2044,36 @@ function ParentReportsPage() {
             </SectionErrorBoundary>
 
             {/* ── 1b. PERFORMANCE SCORE TRENDS ── */}
-            {scoreTrends.length > 0 && (
+            {/* Read failed: say so rather than letting the section vanish, which
+                a parent reads as "my child has no performance score". */}
+            {scoreTrendsError && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={sectionHeading}>{t(isHi, 'Performance Score', 'प्रदर्शन स्कोर')}</div>
+                <div role="alert" style={{ ...cardStyle, textAlign: 'center' }}>
+                  <p style={{ fontSize: 13, color: '#B91C1C', fontWeight: 600, margin: '0 0 4px' }}>
+                    {t(isHi, "Performance scores couldn't be loaded.", 'प्रदर्शन स्कोर लोड नहीं हो सके।')}
+                  </p>
+                  <p style={{ fontSize: 12, color: '#64748B', margin: '0 0 12px', lineHeight: 1.5 }}>
+                    {t(
+                      isHi,
+                      'The rest of this report is unaffected.',
+                      'इस रिपोर्ट का बाकी हिस्सा प्रभावित नहीं है।',
+                    )}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={fetchReport}
+                    style={{
+                      minHeight: 44, padding: '11px 24px', border: 0, borderRadius: 10,
+                      backgroundColor: '#16A34A', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    {t(isHi, 'Try again', 'फिर से कोशिश करें')}
+                  </button>
+                </div>
+              </div>
+            )}
+            {!scoreTrendsError && scoreTrends.length > 0 && (
               <SectionErrorBoundary section="Performance Score Trends">
               <div style={{ marginBottom: 20 }}>
                 <div style={sectionHeading}>{t(isHi, 'Performance Score', 'प्रदर्शन स्कोर')}</div>

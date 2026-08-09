@@ -65,7 +65,12 @@ async function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks();
   mockIsHi = false;
-  getStudentNotifications.mockResolvedValue({ unread_count: 1, notifications: [UNREAD] });
+  // ServiceResult envelope — getStudentNotifications no longer resolves the
+  // bare payload (a failure and an empty inbox used to be the same value).
+  getStudentNotifications.mockResolvedValue({
+    ok: true,
+    data: { unread_count: 1, notifications: [UNREAD] },
+  });
 });
 
 afterEach(() => {
@@ -179,5 +184,119 @@ describe('/notifications — mark ONE read (tap-through)', () => {
       expect(String(message)).toMatch(/^Couldn't mark .* Please try again\.$/);
     }
     expect(loggerWarn).toHaveBeenCalledTimes(2);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Quality review follow-up (2026-08-09) — the LOAD path.
+
+   `getStudentNotifications` resolved `{ unread_count: 0, notifications: [] }`
+   for BOTH a genuine empty inbox and a failed RPC, and the page's `catch` was
+   dead code (supabase.rpc() resolves, it does not reject). Net effect: after a
+   500 the student was told "No notifications yet" / "अभी तक कोई सूचना नहीं" —
+   the same lie /progress told with "No knowledge gaps detected!" and the exact
+   counter-example that disproved the TODO(backend) claim in supabase.ts.
+
+   BOTH DIRECTIONS are asserted. A failure-only suite would also pass against a
+   build that simply deleted the empty state — which is a different wrong
+   product, since a real first-run student has an empty inbox.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe('/notifications — load failure vs genuinely empty inbox', () => {
+  const FAILURE = { ok: false, error: 'getStudentNotifications: rpc denied', code: 'DB_ERROR' };
+  const EMPTY = { ok: true, data: { unread_count: 0, notifications: [] } };
+
+  it('a FAILED read shows the error card and NOT "No notifications yet"', async () => {
+    getStudentNotifications.mockResolvedValue(FAILURE);
+    await renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Failed to load notifications')).toBeInTheDocument(),
+    );
+    // The reassuring claim must be ABSENT, not merely accompanied.
+    expect(screen.queryByText('No notifications yet')).toBeNull();
+    expect(screen.queryByText('अभी तक कोई सूचना नहीं')).toBeNull();
+    // Logged with a reason and no PII (P13) — never swallowed.
+    expect(loggerWarn).toHaveBeenCalledWith(
+      'notifications: get_student_notifications failed',
+      expect.objectContaining({ reason: expect.stringContaining('rpc denied') }),
+    );
+    const [, meta] = loggerWarn.mock.calls[0];
+    expect(JSON.stringify(meta)).not.toContain('stu-1');
+  });
+
+  it('a GENUINELY EMPTY inbox shows "No notifications yet" and NO error card', async () => {
+    getStudentNotifications.mockResolvedValue(EMPTY);
+    await renderPage();
+
+    await waitFor(() => expect(screen.getByText('No notifications yet')).toBeInTheDocument());
+    expect(screen.queryByText('Failed to load notifications')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(loggerWarn).not.toHaveBeenCalled();
+  });
+
+  it('the failure copy is bilingual (P7)', async () => {
+    mockIsHi = true;
+    getStudentNotifications.mockResolvedValue(FAILURE);
+    await renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('सूचनाएं लोड नहीं हो सकीं')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('पुनः प्रयास')).toBeInTheDocument();
+    expect(screen.queryByText('अभी तक कोई सूचना नहीं')).toBeNull();
+  });
+
+  it('Retry re-reads and recovers to the real list', async () => {
+    getStudentNotifications.mockResolvedValueOnce(FAILURE);
+    getStudentNotifications.mockResolvedValue({
+      ok: true,
+      data: { unread_count: 1, notifications: [UNREAD] },
+    });
+    await renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Failed to load notifications')).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByText('Retry'));
+
+    await waitFor(() => expect(screen.getByText(UNREAD.title)).toBeInTheDocument());
+    expect(screen.queryByText('Failed to load notifications')).toBeNull();
+  });
+
+  it('a failed REFRESH keeps last-known-good rather than blanking the list', async () => {
+    getStudentNotifications.mockResolvedValueOnce({
+      ok: true,
+      data: { unread_count: 1, notifications: [UNREAD] },
+    });
+    getStudentNotifications.mockResolvedValue(FAILURE);
+    await renderPage();
+
+    await waitFor(() => expect(screen.getByText(UNREAD.title)).toBeInTheDocument());
+    // Force a refresh through the same loader the error card's Retry uses.
+    fireEvent.click(screen.getByText(UNREAD.title));
+
+    // The row the student was reading survives; the failure is reported next
+    // to it rather than replacing it with an empty (or reassuring) screen.
+    await waitFor(() => expect(screen.getByText(UNREAD.title)).toBeInTheDocument());
+    expect(screen.queryByText('No notifications yet')).toBeNull();
+  });
+
+  it('declares the 44px touch floor on the Retry control (WCAG 2.5.8)', async () => {
+    getStudentNotifications.mockResolvedValue(FAILURE);
+    await renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Failed to load notifications')).toBeInTheDocument(),
+    );
+    // Declaration only — JSDOM loads no stylesheet, so getComputedStyle here
+    // returns '' for min-height and can prove nothing about layout. The REAL
+    // measurement is e2e/ui-error-states.spec.ts, which reads boundingBox() at
+    // nine viewports; that is the layer that caught /progress's 42px control,
+    // and this assertion deliberately does not pretend to replace it. Same
+    // two-layer split as progress-data-load-error.test.ts:405.
+    const retry = screen.getByText('Retry').closest('button')!;
+    expect(retry.className).toContain('min-h-[44px]');
+    expect(retry.className).toContain('min-w-[44px]');
   });
 });

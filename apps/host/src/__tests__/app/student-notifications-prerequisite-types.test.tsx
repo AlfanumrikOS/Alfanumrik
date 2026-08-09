@@ -75,8 +75,8 @@ afterEach(() => {
 describe('/notifications page — prerequisite_blocked / prerequisite_resolved (Loop D)', () => {
   it('renders prerequisite_blocked with the "Foundation Boost" EN label and 🔗 icon', async () => {
     getStudentNotifications.mockResolvedValueOnce({
-      unread_count: 1,
-      notifications: [BLOCKED_NOTIF],
+      ok: true,
+      data: { unread_count: 1, notifications: [BLOCKED_NOTIF] },
     });
     await renderPage();
 
@@ -90,8 +90,8 @@ describe('/notifications page — prerequisite_blocked / prerequisite_resolved (
 
   it('renders prerequisite_resolved with the "Foundation Ready" EN label and ✅ icon', async () => {
     getStudentNotifications.mockResolvedValueOnce({
-      unread_count: 1,
-      notifications: [RESOLVED_NOTIF],
+      ok: true,
+      data: { unread_count: 1, notifications: [RESOLVED_NOTIF] },
     });
     await renderPage();
 
@@ -104,8 +104,8 @@ describe('/notifications page — prerequisite_blocked / prerequisite_resolved (
 
   it('renders both types together, each keeping its own distinct icon/label', async () => {
     getStudentNotifications.mockResolvedValueOnce({
-      unread_count: 2,
-      notifications: [BLOCKED_NOTIF, RESOLVED_NOTIF],
+      ok: true,
+      data: { unread_count: 2, notifications: [BLOCKED_NOTIF, RESOLVED_NOTIF] },
     });
     await renderPage();
 
@@ -119,8 +119,8 @@ describe('/notifications page — prerequisite_blocked / prerequisite_resolved (
   it('renders Hindi labels ("नींव अभ्यास" / "नींव तैयार") when isHi=true (P7)', async () => {
     mockIsHi = true;
     getStudentNotifications.mockResolvedValueOnce({
-      unread_count: 2,
-      notifications: [BLOCKED_NOTIF, RESOLVED_NOTIF],
+      ok: true,
+      data: { unread_count: 2, notifications: [BLOCKED_NOTIF, RESOLVED_NOTIF] },
     });
     await renderPage();
 

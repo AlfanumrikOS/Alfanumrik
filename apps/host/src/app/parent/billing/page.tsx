@@ -216,7 +216,7 @@ export default function ParentBillingPage() {
           <p className="text-sm">{error}</p>
           <button
             onClick={load}
-            className="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+            className="mt-3 min-h-[44px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
           >
             {t(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
@@ -365,7 +365,7 @@ export default function ParentBillingPage() {
             </p>
             <button
               onClick={() => router.push('/parent/children')}
-              className="mt-4 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700"
+              className="mt-4 min-h-[44px] rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700"
             >
               {t(isHi, 'Link a Child', 'बच्चा जोड़ें')}
             </button>
@@ -466,7 +466,7 @@ export default function ParentBillingPage() {
                         onClick={() =>
                           router.push(withParentChildId('/parent', child.student_id))
                         }
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                       >
                         {t(isHi, 'View progress', 'प्रगति देखें')}
                       </button>
@@ -474,7 +474,7 @@ export default function ParentBillingPage() {
                         <button
                           onClick={handleUpgrade}
                           data-testid={`upgrade-${child.student_id}`}
-                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                          className="min-h-[44px] rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
                         >
                           {t(isHi, 'Upgrade', 'अपग्रेड')}
                         </button>
@@ -484,7 +484,7 @@ export default function ParentBillingPage() {
                             onClick={() => handleCancel(child)}
                             disabled={cancellingId === child.student_id}
                             data-testid={`cancel-${child.student_id}`}
-                            className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            className="min-h-[44px] rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                           >
                             {cancellingId === child.student_id
                               ? t(isHi, 'Cancelling…', 'रद्द हो रहा है…')
@@ -554,14 +554,14 @@ export default function ParentBillingPage() {
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button
               onClick={() => setCancelConfirmChild(null)}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               {t(isHi, 'Keep subscription', 'सदस्यता रखें')}
             </button>
             <button
               onClick={() => executeCancelSubscription(cancelConfirmChild)}
               data-testid="cancel-confirm-btn"
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+              className="min-h-[44px] rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
             >
               {t(isHi, 'Cancel subscription', 'सदस्यता रद्द करें')}
             </button>

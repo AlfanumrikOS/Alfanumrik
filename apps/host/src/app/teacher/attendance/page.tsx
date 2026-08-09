@@ -22,6 +22,7 @@ import { useRequireAuth } from '@alfanumrik/lib/useRequireAuth';
 import { useRouter } from 'next/navigation';
 import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
+import { TeacherDataError } from '../_components/TeacherDataError';
 
 // ── Bilingual helper (P7) ──────────────────────────────────────
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
@@ -268,6 +269,11 @@ export default function TeacherAttendancePage() {
   // ── State ───────────────────────────────────────────────
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [classesLoading, setClassesLoading] = useState(true);
+  // A failed class read is NOT "you have no classes". The previous catch block
+  // set `classes` to [] with the comment "user will see 'no classes' empty
+  // state" — which told a teacher with a full timetable to "contact your admin
+  // to be assigned to a class", and left them unable to take the register.
+  const [classesError, setClassesError] = useState('');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedDate, setSelectedDate] = useState(today);
 
@@ -285,18 +291,23 @@ export default function TeacherAttendancePage() {
   const loadClasses = useCallback(async () => {
     if (!teacherId) return;
     setClassesLoading(true);
+    setClassesError('');
     try {
       const dash = await api('get_dashboard', { teacher_id: teacherId });
       const cls = (dash?.classes ?? []) as ClassRow[];
       setClasses(cls);
       if (cls.length > 0) setSelectedClassId(prev => prev || cls[0].id);
     } catch (e) {
-      // Non-fatal — user will see "no classes" empty state
-      setClasses([]);
+      // Record the failure instead of collapsing it into an empty roster —
+      // an empty `classes` array must only ever mean "this teacher genuinely
+      // has no classes".
+      setClassesError(
+        e instanceof Error ? e.message : tt(isHi, 'Failed to load classes', 'कक्षाएं लोड करने में विफल'),
+      );
     } finally {
       setClassesLoading(false);
     }
-  }, [api, teacherId]);
+  }, [api, teacherId, isHi]);
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
 
@@ -406,8 +417,11 @@ export default function TeacherAttendancePage() {
     );
   }
 
-  // ── Render: no classes ───────────────────────────────────
-  if (!classesLoading && classes.length === 0) {
+  // ── Render: class read failed, or genuinely no classes ───
+  // These two must never look the same: "No classes assigned yet — contact
+  // your admin" sends a teacher chasing a phantom admin problem when the real
+  // cause was a failed request they could simply retry.
+  if (!classesLoading && (classesError || classes.length === 0)) {
     return (
       <div style={pageStyle}>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -426,14 +440,25 @@ export default function TeacherAttendancePage() {
             {tt(isHi, 'Attendance', 'उपस्थिति')}
           </h1>
         </header>
-        <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
-          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '0 0 6px' }}>
-            {tt(isHi, 'No classes assigned yet', 'अभी कोई कक्षा नहीं दी गई है')}
-          </p>
-          <p style={{ fontSize: 13, color: '#7D7264', margin: 0 }}>
-            {tt(isHi, 'Contact your admin to be assigned to a class.', 'एक कक्षा में असाइन होने के लिए अपने व्यवस्थापक से संपर्क करें।')}
-          </p>
-        </div>
+        {classesError ? (
+          <TeacherDataError
+            isHi={isHi}
+            titleEn="Couldn't load your classes"
+            titleHi="आपकी कक्षाएं लोड नहीं हो सकीं"
+            detail={classesError}
+            onRetry={loadClasses}
+            testId="attendance-classes-error"
+          />
+        ) : (
+          <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
+            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '0 0 6px' }}>
+              {tt(isHi, 'No classes assigned yet', 'अभी कोई कक्षा नहीं दी गई है')}
+            </p>
+            <p style={{ fontSize: 13, color: '#7D7264', margin: 0 }}>
+              {tt(isHi, 'Contact your admin to be assigned to a class.', 'एक कक्षा में असाइन होने के लिए अपने व्यवस्थापक से संपर्क करें।')}
+            </p>
+          </div>
+        )}
       </div>
     );
   }

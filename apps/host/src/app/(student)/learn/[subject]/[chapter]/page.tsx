@@ -18,6 +18,7 @@ import {
   getChapterTopicsFromConcepts,
   isUsableChapterDeck,
 } from '@alfanumrik/lib/chapter-reader/get-concepts-from-table';
+import type { ServiceResult } from '@alfanumrik/lib/domains/types';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
 // Mobile-first responsive shell (2026-05-19, Phase 2 — followup #1 of PR #867).
 // Wraps the chapter concept walkthrough in a CSS-Grid shell with safe-area
@@ -113,6 +114,18 @@ interface ConceptState {
   selectedOption: number | null;
   submitted: boolean;
   isCorrect: boolean;
+}
+
+/**
+ * Turn a ServiceResult read into the promise-rejection this page's load() is
+ * already built around. The two branches of the union are the two states this
+ * page renders differently — a rejection reaches the `loadError` card, a
+ * resolved empty array reaches the "No concepts found" empty state — so this is
+ * the single place that decides which one a given read becomes.
+ */
+function unwrapRead<T>(result: ServiceResult<T>): T {
+  if (!result.ok) throw new Error(result.error);
+  return result.data;
 }
 
 function ChapterConceptPageContent() {
@@ -262,11 +275,16 @@ function ChapterConceptPageContent() {
       chapterMetaResult,
       subjectRow,
     ] = await Promise.all([
-      getChapterTopics(subject, grade, chapterNum),
+      // Both reads return ServiceResult. unwrapRead REJECTS on a failed read so
+      // this Promise.all rejects, the catch below flips `loadError`, and the
+      // student gets the retryable "Couldn't load this chapter" card — instead
+      // of "No concepts found for this chapter yet", which asserts something
+      // about the NCERT corpus that a 500 cannot establish.
+      getChapterTopics(subject, grade, chapterNum).then(unwrapRead),
       chapterReaderV2FlagRef.current
         ? getChapterTopicsFromConcepts(subject, grade, chapterNum)
         : Promise.resolve([]),
-      getChapterQuestions(subject, grade, chapterNum, 30),
+      getChapterQuestions(subject, grade, chapterNum, 30).then(unwrapRead),
       supabase
         .from('chapters')
         .select('title, title_hi, ncert_page_start, ncert_page_end')
@@ -400,10 +418,13 @@ function ChapterConceptPageContent() {
     setQuizCurrentIdx(0);
     setQuizAnswers({});
     } catch (err: unknown) {
-      // Transient fetch failure — surface a retryable error card. Note this is
-      // distinct from "loaded OK but empty": getChapterTopics() swallows RAG
-      // errors and returns [], so a network failure on the OTHER queries
-      // (questions/diagrams/chapter meta) is the path that reaches here.
+      // Transient fetch failure — surface a retryable error card. Distinct from
+      // "loaded OK but empty". getChapterTopics/getChapterQuestions used to
+      // swallow their errors and resolve to [], so only a failure of the OTHER
+      // queries (chapter meta / subject row) could reach here and a broken RAG
+      // read rendered as "No concepts found for this chapter yet". They now
+      // return ServiceResult and are unwrapped through unwrapRead, so a failed
+      // content read lands here too — where it belongs.
       console.warn('[learn] chapter load failed:', err instanceof Error ? err.message : String(err));
       setLoadError(true);
     } finally {
