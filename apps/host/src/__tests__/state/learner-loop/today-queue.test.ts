@@ -316,7 +316,12 @@ describe('resolveTodayQueue — cold-start short-circuit', () => {
 // ── (e) live-resume exception + de-dup ───────────────────────────────
 
 describe('resolveTodayQueue — live-resume exception', () => {
-  it('in_quiz live → resume url is /quiz and primary differs from raw first-match', () => {
+  // PHASE 4 UPDATE: this used to assert `url === '/quiz'`, which pinned the
+  // defect rather than the contract — a bare `/quiz` lands on the QuizSetup
+  // SELECTION screen, so the "resume" CTA started the student over on a new
+  // question set. The resume link must carry the session id so /quiz can
+  // rebuild the interrupted session (see packages/lib/src/quiz/resume.ts).
+  it('in_quiz live → resume url carries the session id and primary differs from raw first-match', () => {
     const live: LiveSessionState = {
       kind: 'in_quiz',
       quizSessionId: '55555555-5555-5555-5555-555555555555',
@@ -332,7 +337,7 @@ describe('resolveTodayQueue — live-resume exception', () => {
     const q = resolveTodayQueue(state, aug, { now: WEEKDAY_NOON_IST });
 
     expect(q.primary.kind).toBe('resume_in_progress');
-    expect(q.primary.url).toBe('/quiz');
+    expect(q.primary.url).toBe('/quiz?session=55555555-5555-5555-5555-555555555555');
     // primary differs from raw first-match (the only case this is allowed).
     expect(q.primary).not.toEqual(raw);
     // branch still reflects the raw resolver pick.

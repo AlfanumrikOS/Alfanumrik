@@ -10,6 +10,18 @@ import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabas
 import { invalidateDashboard, useFeatureFlags } from '@alfanumrik/lib/swr';
 import { useNextTask } from '@alfanumrik/lib/quiz/v2/use-next-task';
 import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
+// Phase 4 — session resume. `saveQuizAnswerProgress` makes every confirmed
+// answer durable server-side the instant it is confirmed (on EVERY mode, no
+// flag); `fetchQuizResume` rebuilds an interrupted session from that record.
+// See packages/lib/src/quiz/resume.ts for the substrate + security design.
+import {
+  saveQuizAnswerProgress,
+  fetchQuizResume,
+  isResumeSessionId,
+  writeResumeBreadcrumb,
+  readResumeBreadcrumb,
+  clearResumeBreadcrumb,
+} from '@alfanumrik/lib/quiz/resume';
 import { assembleQuiz } from '@alfanumrik/lib/quiz-assembler';
 import { XP_RULES } from '@alfanumrik/lib/xp-config';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
@@ -441,6 +453,20 @@ export default function QuizPage() {
     | null
   >(null);
   const deepLinkFiredRef = useRef(false);
+  // Phase 4 resume: the session id to rebuild, from ?session= or the
+  // same-device breadcrumb. Consumed exactly once (resumeFiredRef).
+  const [resumeSessionId, setResumeSessionId] = useState<string | null>(null);
+  const resumeFiredRef = useRef(false);
+  // Flips once the resume attempt has resolved either way. The ?qid= / ?mode=srs
+  // deep-link consumer waits on it so a pending resume and a "start this exact
+  // quiz" link can never both drive the same page instance.
+  const resumeSettledRef = useRef(false);
+  // True while THIS page instance is running a resumed session. Used to (a)
+  // skip the P6 "all served questions must be freshly assembled" path and
+  // (b) keep answered questions immutable — a resumed session starts at the
+  // first UNANSWERED question and the runtime has no backward navigation, so
+  // an already-recorded answer can never be revisited or changed.
+  const [isResumedSession, setIsResumedSession] = useState(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -451,14 +477,38 @@ export default function QuizPage() {
       setInitialSubject(subj);
     }
     const mode = params.get('mode');
+    // `practice` was the ONLY QuizMode with no branch here, so every
+    // `?mode=practice` deep link silently fell through to the 'cognitive'
+    // default. Two live surfaces emit it — /assignments (startAssignment) and
+    // learn/[subject]/[chapter] ("Take a Quiz") — and PracticeRunner's gate is
+    // `quizMode === 'practice'`, so Screen 07 Practice was unreachable from
+    // any deep link no matter what `ff_quiz_v2` was set to. Practice is a
+    // first-class mode in QuizSetup (its own card, its own difficulty picker),
+    // so the correct behaviour is simply to honour it exactly like the other
+    // two: preselect the mode and let the student confirm on the setup screen.
+    if (mode === 'practice') { setQuizMode('practice'); setInitialMode('practice'); }
     if (mode === 'cognitive') { setQuizMode('cognitive'); setInitialMode('cognitive'); }
     if (mode === 'exam') { setQuizMode('exam'); setInitialMode('exam'); }
     const qid = params.get('qid');
     const QID_UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const hasExplicitStart = Boolean((qid && QID_UUID_RE.test(qid)) || mode === 'srs');
     if (qid && QID_UUID_RE.test(qid)) {
       setDeepLink({ kind: 'qid', qid });
     } else if (mode === 'srs') {
       setDeepLink({ kind: 'srs', subject: subj });
+    }
+    // Phase 4 resume deep link: /quiz?session=<uuid>. Emitted by the Today
+    // `resume_in_progress` CTA (resolve-next-action.ts). Falls back to the
+    // same-device breadcrumb so closing the tab and reopening a bare /quiz
+    // still offers to continue — but ONLY when the URL isn't already asking
+    // for a specific new quiz (?qid= / ?mode=srs), which must win: an explicit
+    // navigation is a stronger signal of intent than a leftover breadcrumb.
+    const sessionParam = params.get('session') ?? params.get('sessionId');
+    if (isResumeSessionId(sessionParam)) {
+      setResumeSessionId(sessionParam);
+    } else if (!hasExplicitStart) {
+      const breadcrumb = readResumeBreadcrumb();
+      if (isResumeSessionId(breadcrumb)) setResumeSessionId(breadcrumb);
     }
     const countParam = params.get('count');
     if (countParam) {
@@ -811,11 +861,20 @@ export default function QuizPage() {
           };
         });
         setServerSessionId(session.session_id);
+        // Phase 4: same-device resume breadcrumb (session id only — never any
+        // answer, option or correctness). Lets a student who simply closed the
+        // tab reopen a bare /quiz and be offered their session back, without
+        // routing through /today. The server still authorises every read.
+        writeResumeBreadcrumb(session.session_id);
       } else {
         // Server session unavailable — fall back to original-order render.
         // Without a shuffle, selected_option IS the original index, so
         // legacy v1 scoring still works correctly.
         setServerSessionId(null);
+        // No server session means nothing durable to come back to; drop any
+        // breadcrumb so a later visit can't offer to resume a DIFFERENT,
+        // older session while this un-resumable one is the live quiz.
+        clearResumeBreadcrumb();
       }
 
       // F2: an SRS card map only survives into a pinnedOnly (SRS review)
@@ -846,6 +905,8 @@ export default function QuizPage() {
       setAnswerChecks({});
       setCheckingAnswer(false);
       confirmedPracticeQuestionIdsRef.current = new Set();
+      // Phase 4: this is a brand-new session, not a resumed one.
+      setIsResumedSession(false);
       setCogLoad(initialCognitiveLoad());
       setReflection(null);
       // B2C funnel: quiz-start activation event. Fires exactly once per
@@ -877,6 +938,8 @@ export default function QuizPage() {
     if (!deepLink || deepLinkFiredRef.current) return;
     if (isLoading || !student) return;          // readiness: profile loaded
     if (screen !== 'select' || loading) return; // readiness: still on setup, idle
+    // Phase 4: never race a pending resume (see resumeSettledRef).
+    if (resumeSessionId && !resumeSettledRef.current) return;
     deepLinkFiredRef.current = true;
 
     const QB_COLUMNS =
@@ -966,6 +1029,140 @@ export default function QuizPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fire-once consumer guarded by deepLinkFiredRef; isValidQuestion/questionCount are stable per render
   }, [deepLink, isLoading, student, screen, loading, startQuiz]);
 
+  // ── Phase 4: session RESUME consumer (/quiz?session=<uuid>) ───────────────
+  //
+  // Rebuilds an interrupted session from the server-owned snapshot instead of
+  // starting a new quiz. Deliberately does NOT call startQuiz/startQuizSession:
+  // a resume must never mint a second session id, a second shuffle snapshot,
+  // or a second row anywhere (idempotency). It re-hydrates the SAME session.
+  //
+  // What is restored, and from where:
+  //   - the exact question set, in the exact DISPLAYED option order the
+  //     student saw (server snapshot + shuffle map — the client is never told
+  //     which option is correct, before or after the interruption);
+  //   - each already-answered question's OWN selected index and the time the
+  //     student actually spent on it (both persisted server-side at answer
+  //     time, first-write-wins, so neither can be retro-edited);
+  //   - the total-time counter, seeded with the SUM of those per-question
+  //     times. That is on-task time, never wall clock: an hour spent away
+  //     from the tab contributes exactly zero, so the P3 3s/question floor
+  //     cannot be defeated by walking away — and an honest resumer is not
+  //     falsely flagged by a counter that restarted at zero.
+  //
+  // `is_correct` is seeded `false` for restored answers, exactly as
+  // confirmAnswer() does in server-shuffle mode: it is a provisional
+  // placeholder the submit response overwrites with server truth. It is not,
+  // and never becomes, a scoring input (P1).
+  //
+  // Fail-soft on every branch: any non-resumable reason (already submitted,
+  // expired, corrupt, or the immediate-feedback interlock) simply leaves the
+  // student on the normal setup screen with no error banner.
+  useEffect(() => {
+    if (!resumeSessionId || resumeFiredRef.current) return;
+    if (isLoading || !student) return;
+    if (screen !== 'select' || loading) return;
+    resumeFiredRef.current = true;
+
+    (async () => {
+      setLoading(true);
+      try {
+        const result = await fetchQuizResume(resumeSessionId, authHeader);
+        if (!result.resumable) {
+          // Nothing to come back to — drop the stale breadcrumb so we don't
+          // keep re-asking on every future /quiz visit.
+          clearResumeBreadcrumb();
+          resumeSettledRef.current = true;
+          setLoading(false);
+          return;
+        }
+
+        const restoredQuestions: Question[] = result.questions.map(q => ({
+          id: q.question_id,
+          question_text: q.question_text,
+          question_hi: q.question_hi,
+          question_type: q.question_type,
+          options: q.options_displayed,
+          // Same contract as the server-shuffle start path: the client does
+          // NOT know the correct index. -1 makes any accidental client-side
+          // comparison fail loudly rather than silently score wrong.
+          correct_answer_index: -1,
+          explanation: q.explanation,
+          explanation_hi: q.explanation_hi,
+          hint: q.hint,
+          difficulty: q.difficulty,
+          bloom_level: q.bloom_level,
+          chapter_number: q.chapter_number,
+        }));
+
+        // Answered questions lead the payload (see orderResumeRows), so the
+        // restored responses are a prefix and the cursor is their count.
+        const answered = result.questions.filter(q => q.answered);
+        if (answered.some(q => q.selected_displayed_index === null)) {
+          // Defensive: an answered row with no usable index would desync the
+          // cursor from the response list. Start fresh rather than guess.
+          clearResumeBreadcrumb();
+          resumeSettledRef.current = true;
+          setLoading(false);
+          return;
+        }
+
+        const restoredResponses: Response[] = answered.map(q => ({
+          question_id: q.question_id,
+          selected_option: q.selected_displayed_index as number,
+          is_correct: false, // provisional — server truth arrives at submit
+          time_spent: q.time_spent_seconds ?? 0,
+          shuffle_map: null,
+          hint_level: 0,
+          telemetry: {
+            latency_ms: (q.time_spent_seconds ?? 0) * 1000,
+            changed_answers_count: 0,
+            hints_used: 0,
+          },
+        }));
+
+        setQuestions(restoredQuestions);
+        setShuffleMaps(restoredQuestions.map(() => null));
+        setServerSessionId(result.session_id);
+        setResponses(restoredResponses);
+        setCurrentIdx(Math.min(restoredResponses.length, restoredQuestions.length - 1));
+        setSelectedOption(null);
+        setChangedAnswersCount(0);
+        setShowExplanation(false);
+        setHintLevel(0);
+        setCurrentEval(null);
+        setReflection(null);
+        setCogLoad(initialCognitiveLoad());
+        setAnswerChecks({});
+        setCheckingAnswer(false);
+        // Already-answered ids are pre-loaded into the "no retry after reveal"
+        // guard so the practice-v2 confirm path can never re-confirm one.
+        confirmedPracticeQuestionIdsRef.current = new Set(answered.map(q => q.question_id));
+        setSelectedSubject(result.subject);
+        setSelectedChapter(result.chapter_number);
+        setQuestionCount(restoredQuestions.length);
+        // P3: seed the total-time counter with real on-task time (see above).
+        setTimer(result.elapsed_seconds);
+        // Session mode is not persisted, so a resumed session always runs in
+        // the untimed lane. Resuming into exam mode would start a FRESH
+        // countdown that could auto-submit the moment it expires — a worse
+        // outcome than losing the timed framing of an abandoned attempt.
+        if (quizMode === 'exam') setQuizMode('cognitive');
+        setExamTimerActive(false);
+        examAutoSubmittedRef.current = false;
+        setIsResumedSession(true);
+        writeResumeBreadcrumb(result.session_id);
+        track('quiz_started', { subject: result.subject, grade: student.grade });
+        resumeSettledRef.current = true;
+        setScreen('quiz');
+      } catch {
+        clearResumeBreadcrumb();
+        resumeSettledRef.current = true;
+      }
+      setLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fire-once consumer guarded by resumeFiredRef
+  }, [resumeSessionId, isLoading, student, screen, loading]);
+
   // parseOptions is imported from @alfanumrik/lib/quiz/options (used by shuffle logic)
 
   const selectAnswer = (optIdx: number) => {
@@ -1052,6 +1249,32 @@ export default function QuizPage() {
         hints_used: hintLevel,
       },
     }]);
+
+    // ── Phase 4: PERSIST-IMMEDIATELY (always on, every mode) ──────────────
+    // The instant an answer is confirmed it becomes durable server-side, so a
+    // refresh / tab close / connection drop between here and final submit no
+    // longer loses it. Fire-and-forget by contract: it never blocks the quiz
+    // and never throws, and its failure costs only resumability — grading
+    // still happens exactly once, at final submit, unchanged (P1/P2/P4).
+    //
+    // Server-side this is first-write-wins, so a double-tap or a retry cannot
+    // rewrite a recorded answer, and neither can a resumed tab.
+    //
+    // SKIPPED on the practice-v2 branch: there confirmAnswerPracticeV2 calls
+    // check_quiz_answer(), which persists the SAME three columns itself
+    // (migration 20260802130000). Both writers are replay-locked, so a double
+    // write would be harmless — but letting only one own the write keeps
+    // check_quiz_answer's `already_answered` flag meaningful for the UI.
+    const practiceV2OwnsPersist = practiceV2On && quizMode === 'practice' && isQuestionMCQ(q);
+    if (serverSessionId && !practiceV2OwnsPersist && isQuestionMCQ(q) && selectedOption >= 0) {
+      void saveQuizAnswerProgress(
+        serverSessionId,
+        q.id,
+        selectedOption,
+        questionTimer,
+        authHeader,
+      );
+    }
 
     // In exam mode, skip explanation — go straight to next question
     if (quizMode === 'exam') {
@@ -1421,6 +1644,13 @@ export default function QuizPage() {
           serverSessionId,  // P0 fix: route to v2 RPC when present
         );
         setResults(res);
+        // Phase 4: the session is graded — retire the resume breadcrumb so no
+        // later visit offers to "continue" a finished quiz. Belt-and-braces
+        // only: the resume route independently refuses any session whose
+        // idempotency key already appears on a graded quiz_sessions row, so a
+        // stale breadcrumb could never reopen a submitted session anyway.
+        clearResumeBreadcrumb();
+        setIsResumedSession(false);
         // P0 fix: if v2 returned per-question review data, sync the
         // authoritative is_correct back into local responses so QuizResults
         // shows the correct/wrong banner derived from server truth.
@@ -1927,6 +2157,19 @@ export default function QuizPage() {
         </header>
 
         <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-5 flex flex-col gap-4">
+          {/* Phase 4: tell a resumed learner, in plain language, that their
+              earlier work is intact and where they are picking up (P7). */}
+          {isResumedSession && (
+            <div
+              role="status"
+              className="rounded-xl px-3 py-2 text-xs font-semibold"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}
+            >
+              {isHi
+                ? `▶ जहाँ छोड़ा था वहीं से — पहले के ${responses.length} जवाब सुरक्षित हैं।`
+                : `▶ Continuing where you stopped — your earlier ${responses.length} answer${responses.length === 1 ? '' : 's'} ${responses.length === 1 ? 'is' : 'are'} saved.`}
+            </div>
+          )}
           {/* Branch: MCQ vs Written Answer rendering */}
           {isQuestionMCQ(q) ? (
             <>

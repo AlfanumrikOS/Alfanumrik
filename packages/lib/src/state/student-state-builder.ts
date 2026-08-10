@@ -39,6 +39,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { RESUME_MAX_AGE_MS } from '../quiz/resume';
 import type {
   StudentState,
   StudentStateBuilder,
@@ -78,6 +79,28 @@ interface QuizSessionRow {
   total_answered: number | null;
   started_at: string | null;
   is_completed: boolean | null;
+}
+
+/**
+ * One in-flight quiz, derived from the server-owned per-question snapshot
+ * (`quiz_session_shuffles`) rather than from `quiz_sessions`.
+ *
+ * PHASE 4 FIX — `quiz_sessions` cannot express "mid-quiz". `start_quiz_session`
+ * writes NO `quiz_sessions` row (verified in the RPC body, latest definition
+ * 20260801100900); the row is INSERTed for the first time by
+ * `submit_quiz_results_v2`, already `is_completed = true`. So the
+ * `is_completed = false` probe below could only ever match legacy/foreign rows,
+ * and `live.kind === 'in_quiz'` — the thing the whole `resume_in_progress`
+ * branch keys off — was effectively unreachable for a real in-flight quiz.
+ * The snapshot table IS written at session start and carries a durable
+ * per-question answer record, so it is the honest source for "there is a quiz
+ * in progress".
+ */
+interface OpenQuizSnapshotRow {
+  session_id: string;
+  question_id: string;
+  student_answered_at: string | null;
+  created_at: string | null;
 }
 
 interface FoxySessionRow {
@@ -205,6 +228,7 @@ export function createStudentStateBuilder(
       masteryRes,
       openQuizRes,
       activeFoxyRes,
+      latestSnapshotRes,
       guardiansRes,
       tenantModulesRes,
     ] = await Promise.all([
@@ -229,6 +253,16 @@ export function createStudentStateBuilder(
         .eq('student_id', student.id)
         .order('last_active_at', { ascending: false })
         .limit(1),
+      // Newest quiz snapshot row → the candidate in-flight session id. One
+      // indexed row (idx_quiz_session_shuffles_student is (student_id,
+      // created_at DESC)); the follow-up reads below only run when this
+      // candidate is fresh, so the idle case costs exactly one extra row.
+      sb
+        .from('quiz_session_shuffles')
+        .select('session_id, question_id, student_answered_at, created_at')
+        .eq('student_id', student.id)
+        .order('created_at', { ascending: false })
+        .limit(1),
       sb
         .from('guardian_student_links')
         .select('parent_auth_user_id, verified_at')
@@ -242,8 +276,23 @@ export function createStudentStateBuilder(
     ]);
 
     const masteryRows = (masteryRes.data ?? []) as MasteryRow[];
-    const openQuiz = (openQuizRes.data?.[0] ?? null) as QuizSessionRow | null;
+    const legacyOpenQuiz = (openQuizRes.data?.[0] ?? null) as QuizSessionRow | null;
     const activeFoxy = (activeFoxyRes.data?.[0] ?? null) as FoxySessionRow | null;
+
+    // Resumable in-flight quiz (see OpenQuizSnapshotRow). Best-effort: any
+    // failure degrades to "no live quiz", never a thrown builder.
+    let openQuiz = legacyOpenQuiz;
+    try {
+      const resumable = await resolveResumableQuiz(
+        sb,
+        student.id,
+        (latestSnapshotRes.data?.[0] ?? null) as OpenQuizSnapshotRow | null,
+        now(),
+      );
+      if (resumable) openQuiz = resumable;
+    } catch {
+      // Peripheral read — keep the legacy probe's answer.
+    }
     const guardians = (guardiansRes.data ?? []) as GuardianRow[];
     const tenantModules = (tenantModulesRes.data ?? []) as TenantModuleRow[];
 
@@ -378,6 +427,88 @@ function rollupMastery(rows: MasteryRow[]): SubjectMastery[] {
     });
   }
   return subjects.sort((a, b) => a.subjectCode.localeCompare(b.subjectCode));
+}
+
+/**
+ * Turn the newest quiz-snapshot row into a `QuizSessionRow`-shaped "there is
+ * a quiz in progress" signal, or null when there is nothing to resume.
+ *
+ * Deliberately returns the SAME shape the legacy `quiz_sessions` probe returns
+ * so `deriveLiveState` stays untouched — this adds a source, not a branch.
+ *
+ * A session counts as resumable only when ALL of:
+ *   1. its snapshot is younger than RESUME_MAX_AGE_MS (a day-old "continue"
+ *      card is worse than a fresh start),
+ *   2. the student has confirmed at least one answer (otherwise there is
+ *      literally no progress to preserve — start fresh),
+ *   3. it has NOT already been graded. `submitQuizResults` passes the server
+ *      session id as the submit RPC's idempotency key, so a `quiz_sessions`
+ *      row carrying that key is the definitive "already submitted" marker.
+ *      Without this check the Today CTA would keep offering to resume a quiz
+ *      the student already finished, and tapping it would walk them into a
+ *      session the submit RPC can only ever replay.
+ *   4. the questions carry a positive chapter number — `LiveSessionState`'s
+ *      `in_quiz` variant requires one, and the resume CTA copy is
+ *      chapter-anchored.
+ *
+ * Read-only. No writes, no scoring, no XP.
+ */
+async function resolveResumableQuiz(
+  sb: SupabaseClient,
+  studentId: string,
+  latest: OpenQuizSnapshotRow | null,
+  now: Date,
+): Promise<QuizSessionRow | null> {
+  if (!latest?.session_id) return null;
+
+  const startedAt = latest.created_at ?? null;
+  if (startedAt) {
+    const t = Date.parse(startedAt);
+    if (Number.isFinite(t) && now.getTime() - t > RESUME_MAX_AGE_MS) return null;
+  }
+
+  const rowsRes = await sb
+    .from('quiz_session_shuffles')
+    .select('question_id, student_answered_at')
+    .eq('session_id', latest.session_id)
+    .eq('student_id', studentId);
+  const rows = (rowsRes.data ?? []) as Array<{
+    question_id: string;
+    student_answered_at: string | null;
+  }>;
+  if (rows.length === 0) return null;
+
+  const answered = rows.filter(r => r.student_answered_at !== null).length;
+  if (answered === 0) return null;
+
+  const gradedRes = await sb
+    .from('quiz_sessions')
+    .select('id')
+    .eq('student_id', studentId)
+    .eq('idempotency_key', latest.session_id)
+    .limit(1);
+  if ((gradedRes.data ?? []).length > 0) return null;
+
+  const metaRes = await sb
+    .from('question_bank')
+    .select('subject, chapter_number')
+    .eq('id', rows[0].question_id)
+    .maybeSingle();
+  const meta = (metaRes.data ?? null) as {
+    subject: string | null;
+    chapter_number: number | null;
+  } | null;
+  if (!meta?.subject || !meta.chapter_number || meta.chapter_number <= 0) return null;
+
+  return {
+    id: latest.session_id,
+    subject: meta.subject,
+    chapter_number: meta.chapter_number,
+    total_questions: rows.length,
+    total_answered: answered,
+    started_at: startedAt,
+    is_completed: false,
+  };
 }
 
 function deriveLiveState(

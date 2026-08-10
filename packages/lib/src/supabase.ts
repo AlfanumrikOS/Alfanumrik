@@ -544,6 +544,25 @@ export async function submitQuizResults(studentId: string, subject: string, grad
       p_chapter: chapter,
       p_responses: _mapV2(responses),
       p_time: time,
+      // ONE GRADED SUBMISSION PER SERVER SESSION, FOREVER (Phase 4 resume).
+      //
+      // The server session id is already a fresh per-session UUID minted by
+      // start_quiz_session, so using it as the idempotency key makes
+      // quiz_sessions' partial unique index on (student_id, idempotency_key)
+      // — migration 20260504100200 — enforce exactly that. Any second submit
+      // of the same session (retrySubmit, a network retry, or a resumed tab
+      // reaching the end again) short-circuits to the cached result with
+      // `idempotent_replay: true` instead of inserting a second quiz_sessions
+      // row and awarding XP twice.
+      //
+      // This is the P2/P4 backstop that makes resume safe: the only guard
+      // before this was `_quizDedup`, an in-memory Set that a page refresh —
+      // the exact event resume exists to survive — wipes.
+      //
+      // `null` when there is no server session (the legacy no-shuffle
+      // fallback path), which is the RPC's documented pre-existing default:
+      // behaviour there is byte-identical to before.
+      p_idempotency_key: sessionId ?? null,
     });
     if (!v2.error && v2.data) return v2.data;
     throw new Error(v2.error?.message || 'Quiz submission failed.');

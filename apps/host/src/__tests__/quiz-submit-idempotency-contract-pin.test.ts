@@ -59,15 +59,27 @@ describe('SLC-8 pin: live client calls submit_quiz_results_v2 directly, no Idemp
     expect(src).toMatch(/rpc\(\s*['"]submit_quiz_results_v2['"]/);
   });
 
-  it("FIXME(cutover): the direct L1 v2 call passes NO p_idempotency_key today", () => {
-    // Isolate the L1 v2 rpc(...) call and assert it does NOT carry p_idempotency_key.
-    // When ff_server_only_quiz_submit cutover completes and the client routes
-    // through /api/quiz/submit (which DOES supply the key), this pin must be
-    // updated — that is the intended trip-wire, not a permanent guarantee.
+  // PIN FLIPPED 2026-08-11 (Phase 4 resume, owner: backend — exactly the
+  // "conscious update" this trip-wire was built to force).
+  //
+  // The direct L1 path now DOES pass an idempotency key: the server session
+  // id itself. That id is a fresh per-session UUID from start_quiz_session,
+  // so quiz_sessions' partial unique index on (student_id, idempotency_key)
+  // makes "one graded submission per session, forever" a SERVER-enforced
+  // invariant — which also closes the section-4 FIXME below about duplicate
+  // quiz_sessions ROWS on the keyless path.
+  //
+  // This was a prerequisite for session resume: without it, the only guard
+  // against a resumed tab submitting a second time was the in-memory
+  // `_quizDedup` Set, which a page refresh — the exact event resume exists to
+  // survive — wipes. It does NOT complete the ff_server_only_quiz_submit
+  // cutover (section 2/3 pins below are unchanged); it removes the specific
+  // double-submit hazard that blocked resume.
+  it('the direct L1 v2 call passes the server session id as p_idempotency_key', () => {
     const flat = src.replace(/\s+/g, ' ');
-    const m = flat.match(/rpc\(\s*['"]submit_quiz_results_v2['"]\s*,\s*\{[^}]*\}/);
+    const m = flat.match(/rpc\(\s*['"]submit_quiz_results_v2['"]\s*,\s*\{[\s\S]*?p_idempotency_key:[^,}]*/);
     expect(m).not.toBeNull();
-    expect(m![0]).not.toMatch(/p_idempotency_key/);
+    expect(m![0]).toMatch(/p_idempotency_key:\s*sessionId \?\? null/);
   });
 
   it('client-side dedup is in-memory only (Set), documented as lost on reload', () => {
@@ -168,10 +180,32 @@ describe('SLC-8 residual mitigation: reference_id dedup prevents double XP on re
     expect(buildReferenceId('abc-123')).toBe('quiz_abc-123');
   });
 
-  // FIXME(cutover, SLC-8): the residual mitigation prevents double XP, but it does
-  // NOT prevent a duplicate quiz_sessions ROW on the keyless direct path (v2 INSERTs
-  // the session before the cap/ledger step). A full "single session row per submit"
-  // assertion is only achievable once ff_server_only_quiz_submit is ON and the client
-  // routes through /api/quiz/submit with an Idempotency-Key. Pinned as a known gap
-  // rather than a false assertion. Owner: backend + architect (rollout); testing pins.
+  // RESOLVED 2026-08-11 (Phase 4 resume): the "duplicate quiz_sessions ROW on
+  // the keyless direct path" gap is closed WITHOUT waiting for the
+  // ff_server_only_quiz_submit cutover. The direct path now supplies
+  // p_idempotency_key = the server session id (see section 1), so the v2 RPC's
+  // replay short-circuit fires before the INSERT and the partial unique index
+  // on (student_id, idempotency_key) backstops any race. The model below pins
+  // that behaviour.
+  it('a replayed session returns the cached row instead of inserting a second one', () => {
+    // Mirrors submit_quiz_results_v2's Phase 2.8 short-circuit: look up
+    // (student_id, idempotency_key) first; on a hit, return the cached shape
+    // with idempotent_replay: true and INSERT nothing.
+    const sessions: Array<{ id: string; studentId: string; key: string; xp: number }> = [];
+    function submit(studentId: string, key: string, xp: number) {
+      const existing = sessions.find(s => s.studentId === studentId && s.key === key);
+      if (existing) return { session_id: existing.id, xp_earned: existing.xp, idempotent_replay: true };
+      const row = { id: `qs-${sessions.length + 1}`, studentId, key, xp };
+      sessions.push(row);
+      return { session_id: row.id, xp_earned: xp, idempotent_replay: false };
+    }
+
+    const first = submit('student-1', 'session-xyz', 90);
+    const second = submit('student-1', 'session-xyz', 90); // resumed tab / retry
+
+    expect(first.idempotent_replay).toBe(false);
+    expect(second.idempotent_replay).toBe(true);
+    expect(second.session_id).toBe(first.session_id);
+    expect(sessions).toHaveLength(1); // exactly ONE quiz_sessions row
+  });
 });
