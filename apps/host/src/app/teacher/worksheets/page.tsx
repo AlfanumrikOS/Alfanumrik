@@ -326,7 +326,7 @@ export default function TeacherWorksheetsPage() {
       {!isPrintView && (
         <>
           {/* Header */}
-          <div style={{ background: 'linear-gradient(135deg, #E8581C 0%, #C2410C 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
+          <div style={{ background: 'var(--surface-accent)', padding: '32px 20px 28px', color: 'var(--on-surface-accent)', position: 'relative' }}>
             <button
               onClick={() => router.push('/teacher')}
               style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
@@ -450,8 +450,10 @@ export default function TeacherWorksheetsPage() {
               <button onClick={generateWorksheet} disabled={selectedTypes.length === 0 || isGenerating}
                 style={{
                   width: '100%', padding: '12px', borderRadius: 12, border: 'none',
-                  background: selectedTypes.length > 0 && !isGenerating ? 'linear-gradient(135deg, #E8581C, #C2410C)' : '#d1d5db',
-                  color: '#fff', fontSize: 14, fontWeight: 700, cursor: selectedTypes.length > 0 && !isGenerating ? 'pointer' : 'not-allowed',
+                  background: selectedTypes.length > 0 && !isGenerating ? 'var(--surface-accent)' : '#d1d5db',
+                  // DD-16: #fff on the disabled #d1d5db fill is 1.51:1 (invisible).
+                  color: selectedTypes.length > 0 && !isGenerating ? 'var(--on-surface-accent)' : 'var(--text-2)',
+                  fontSize: 14, fontWeight: 700, cursor: selectedTypes.length > 0 && !isGenerating ? 'pointer' : 'not-allowed',
                 }}>
                 {isGenerating ? tt(isHi, 'Generating...', 'बना रहे हैं...') : tt(isHi, 'Generate Worksheet', 'वर्कशीट बनाएं')}
               </button>
@@ -505,7 +507,7 @@ export default function TeacherWorksheetsPage() {
               </button>
               <button onClick={handlePrint} style={{
                 padding: '8px 18px', borderRadius: 10, border: 'none',
-                background: '#E8581C', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
               }}>
                 {tt(isHi, 'Print Worksheet', 'वर्कशीट प्रिंट करें')}
               </button>

@@ -191,7 +191,7 @@ export default function TodaysFocusSection({
               });
               router.push('/learn');
             }}
-            className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
+            className="w-full py-3.5 rounded-xl text-sm font-bold text-foreground transition-all active:scale-[0.98]"
             style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}
           >
             📚 {isHi ? 'पढ़ना शुरू करो →' : 'Start Learning →'}
@@ -221,7 +221,7 @@ export default function TodaysFocusSection({
             <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
               {isHi ? 'शुरुआत करो' : 'Getting Started'}
             </h3>
-            <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'var(--orange)', color: '#fff' }}>
+            <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}>
               {[
                 quizzesTaken >= 1,
                 totalXp > 0 && profilesLength > 0,

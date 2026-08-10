@@ -295,7 +295,7 @@ export default function PlanModal({
                 onClose();
                 if (plan) onUpgradeSuccess?.(plan);
               }}
-              className="w-full py-3 rounded-xl text-sm font-bold text-white"
+              className="w-full py-3 rounded-xl text-sm font-bold text-foreground"
               style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}
               data-testid="plan-modal-continue"
             >

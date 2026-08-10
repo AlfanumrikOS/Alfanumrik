@@ -125,9 +125,12 @@ function SubjectTabs({
             style={
               isSelected
                 ? {
-                    background: s.color || 'var(--orange)',
-                    color: '#fff',
-                    boxShadow: `0 4px 12px ${s.color || 'var(--orange)'}40`,
+                    // DD-16: the fallback was --orange, where #fff is 3.59:1 (sub-AA).
+                    // s.color is DB-supplied and its luminance is unknown at build
+                    // time — tracked as a residual DD-16 item, see the inventory.
+                    background: s.color || 'var(--accent-warm-strong)',
+                    color: 'var(--on-accent)',
+                    boxShadow: `0 4px 12px ${s.color || 'var(--accent-warm-strong)'}40`,
                     border: '1.5px solid transparent',
                   }
                 : {
@@ -191,8 +194,8 @@ function ChapterGrid({
         </p>
         <button
           onClick={() => router.push(`/foxy?subject=${subjectCode}&mode=learn`)}
-          className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95"
-          style={{ background: subjectColor || 'var(--orange)' }}
+          className="px-5 py-2.5 rounded-xl text-sm font-bold text-on-accent transition-all active:scale-95"
+          style={{ background: subjectColor || 'var(--accent-warm-strong)' }}
         >
           🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
         </button>

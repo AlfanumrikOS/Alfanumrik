@@ -78,7 +78,7 @@ export default function TeacherProfilePage() {
 
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 100 }}>
-      <div style={{ background: 'linear-gradient(135deg, #E8581C 0%, #C2410C 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
+      <div style={{ background: 'var(--surface-accent)', padding: '32px 20px 28px', color: 'var(--on-surface-accent)', position: 'relative' }}>
         <button
           onClick={() => router.push('/teacher')}
           style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
@@ -192,8 +192,10 @@ export default function TeacherProfilePage() {
                 disabled={saving || editSubjects.length === 0}
                 style={{
                   padding: '10px 24px', borderRadius: 10, border: 'none',
-                  background: saving || editSubjects.length === 0 ? '#EDE6DC' : 'var(--orange)',
-                  color: '#fff', fontSize: 13, fontWeight: 600,
+                  background: saving || editSubjects.length === 0 ? '#EDE6DC' : 'var(--accent-warm-strong)',
+                  // DD-16: #fff on the disabled #EDE6DC fill is 1.18:1 (invisible).
+                  color: saving || editSubjects.length === 0 ? 'var(--text-2)' : 'var(--on-accent)',
+                  fontSize: 13, fontWeight: 600,
                   cursor: saving || editSubjects.length === 0 ? 'default' : 'pointer',
                   opacity: saving || editSubjects.length === 0 ? 0.6 : 1,
                 }}

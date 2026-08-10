@@ -237,8 +237,8 @@ export default function LabLeaderboardPage() {
             <p className="text-xs mt-1 mb-3 break-words" style={{ color: 'var(--danger)' }}>{errorMsg}</p>
             <button
               onClick={load}
-              className="min-h-[44px] py-2 px-4 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors"
-              style={{ background: 'var(--orange)' }}
+              className="min-h-[44px] py-2 px-4 text-on-accent rounded-lg text-sm font-semibold cursor-pointer transition-colors"
+              style={{ background: 'var(--accent-warm-strong)' }}
             >
               {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
             </button>

@@ -100,8 +100,8 @@ export default function StreamStep({ value, onChange, onNext, onBack, isHi }: St
         type="button"
         disabled={!value}
         onClick={onNext}
-        className="w-full mt-6 py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"
-        style={{ background: 'var(--orange)' }}
+        className="w-full mt-6 py-3 rounded-xl text-sm font-bold text-on-accent transition-all disabled:opacity-40"
+        style={{ background: 'var(--accent-warm-strong)' }}
       >
         {isHi ? 'आगे बढ़ो' : 'Continue'}
       </button>

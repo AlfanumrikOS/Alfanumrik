@@ -64,7 +64,7 @@ export function UpgradeModal({ isOpen, onClose, feature, currentLimit, onUpgrade
           <h3 className="text-lg font-bold mb-2">Upgrade Successful!</h3>
           <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>Your plan has been upgraded. Enjoy more {featureLabel}!</p>
           <button onClick={() => { setSuccess(false); onClose(); onUpgradeSuccess?.(); }}
-            className="w-full py-3 rounded-xl text-sm font-bold text-white"
+            className="w-full py-3 rounded-xl text-sm font-bold text-foreground"
             style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}>
             Continue Learning
           </button>

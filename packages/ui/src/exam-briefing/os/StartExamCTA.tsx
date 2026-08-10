@@ -31,8 +31,8 @@ export default function StartExamCTA({ exam, isHi }: StartExamCTAProps) {
         className="inline-flex items-center justify-center gap-2 rounded-2xl text-base font-bold transition-transform duration-150 motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
         style={{
           minHeight: 56,
-          background: 'var(--orange, #E8581C)',
-          color: '#fff',
+          background: 'var(--accent-warm-strong)',
+          color: 'var(--on-accent)',
           boxShadow: 'var(--shadow-md)',
         }}
         aria-label={

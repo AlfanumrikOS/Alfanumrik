@@ -37,8 +37,8 @@ export default function QuickStartCTA({ isHi }: QuickStartCTAProps) {
       className="group w-full rounded-2xl px-5 py-4 text-left transition-transform duration-150 motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       style={{
         minHeight: 48,
-        background: 'linear-gradient(135deg, var(--orange, #E8581C), var(--purple, #7C3AED))',
-        color: '#fff',
+        background: 'linear-gradient(135deg, var(--accent-warm-strong), var(--purple, #7C3AED))',
+        color: 'var(--on-accent)',
         boxShadow: 'var(--shadow-md)',
       }}
       aria-label={`${primaryLabel} — ${subLabel}`}

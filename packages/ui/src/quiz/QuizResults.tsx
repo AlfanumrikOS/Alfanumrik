@@ -484,8 +484,8 @@ export default function QuizResults({
         {/* First Quiz Celebration */}
         {isFirstQuiz && (
           <div
-            className="rounded-2xl p-6 text-center text-white animate-scale-in"
-            style={{ background: 'linear-gradient(135deg, var(--purple), var(--accent-warm))' }}
+            className="rounded-2xl p-6 text-center text-on-accent animate-scale-in"
+            style={{ background: 'linear-gradient(135deg, var(--purple), var(--accent-warm-strong))' }}
           >
             <div className="text-5xl mb-3">🎊</div>
             <h2 className="text-2xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -616,7 +616,7 @@ export default function QuizResults({
                 <button
                   onClick={() => router.push('/quiz')}
                   className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
-                  style={{ background: 'var(--green)', color: '#fff' }}
+                  style={{ background: 'var(--green)', color: 'var(--text-1)' }}
                 >
                   {isHi ? 'करो →' : 'Go →'}
                 </button>
@@ -644,7 +644,7 @@ export default function QuizResults({
                 <button
                   onClick={() => router.push(`/foxy?subject=${subjectParam}&mode=doubt`)}
                   className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
-                  style={{ background: 'var(--accent-warm)', color: '#fff' }}
+                  style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}
                 >
                   {isHi ? 'पूछो →' : 'Ask →'}
                 </button>
@@ -672,7 +672,7 @@ export default function QuizResults({
                 <button
                   onClick={onRetry}
                   className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
-                  style={{ background: 'var(--teal)', color: '#fff' }}
+                  style={{ background: 'var(--teal)', color: 'var(--text-1)' }}
                 >
                   {isHi ? 'फिर से →' : 'Retry →'}
                 </button>
@@ -888,7 +888,7 @@ export default function QuizResults({
               <button
                 onClick={() => router.push(foxyHref)}
                 className="flex-shrink-0 text-sm font-bold px-4 py-2 rounded-xl transition-all active:scale-95"
-                style={{ background: 'var(--accent-warm)', color: '#fff' }}
+                style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}
               >
                 {isHi ? 'पूछो →' : 'Ask →'}
               </button>
@@ -1136,7 +1136,12 @@ export default function QuizResults({
                         background: correct ? 'var(--green)'
                           : (resp?.student_answer_text !== undefined && (resp?.marks_awarded ?? 0) > 0) ? 'var(--gold)'
                           : 'var(--red)',
-                        color: '#fff',
+                        // DD-16: #fff is 3.30:1 on --green and 2.03:1 on --gold (both
+                        // sub-AA); ink clears on both (5.62:1 / 9.14:1). --red keeps
+                        // --on-accent (4.83:1 AA). Colour is not the sole signal —
+                        // the glyph (✓ / ✗ / marks) carries the meaning.
+                        color: correct || (resp?.student_answer_text !== undefined && (resp?.marks_awarded ?? 0) > 0)
+                          ? 'var(--text-1)' : 'var(--on-accent)',
                       }}
                     >
                       {resp?.student_answer_text !== undefined && resp?.selected_option < 0
@@ -1288,7 +1293,7 @@ export default function QuizResults({
                       {!correct && (
                         <button
                           className="w-full rounded-lg py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold transition-colors"
-                          style={{ background: 'var(--accent-warm)', color: '#fff' }}
+                          style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}
                           onClick={(e) => {
                             e.stopPropagation();
                             const subjectParam = selectedSubject || '';
@@ -1362,7 +1367,7 @@ export default function QuizResults({
               xpEarned: results.xp_earned,
               isHi,
             }))}
-            style={{ background: '#25D366', color: '#fff' }}
+            style={{ background: '#25D366', color: 'var(--text-1)' }}
           >
             {isHi ? '📱 WhatsApp पर शेयर करो' : '📱 Share on WhatsApp'}
           </Button>

@@ -243,7 +243,7 @@ export default function ProfileScreen({
       >
         <div className="flex items-center gap-3 mb-4">
           <div
-            className="rounded-full flex items-center justify-center flex-shrink-0 font-black text-white"
+            className="rounded-full flex items-center justify-center flex-shrink-0 font-black text-foreground"
             style={{ width: 56, height: 56, background: 'linear-gradient(135deg, var(--orange), #F5A623)', fontSize: 20 }}
             aria-hidden="true"
           >

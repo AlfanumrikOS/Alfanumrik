@@ -129,10 +129,13 @@ export default function DailyChallengeCard({
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
             style={{
-              background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
+              // DD-16: was --accent-warm -> --accent-warm-strong, where #fff is
+              // 3.59:1 at the light stop. --surface-accent is the AA-verified CTA
+              // gradient (4.72:1 worst stop) paired with --on-surface-accent.
+              background: 'var(--surface-accent)',
             }}
           >
-            <span className="text-white text-sm font-bold" aria-hidden="true">{'\u25B6'}</span>
+            <span className="text-on-surface-accent text-sm font-bold" aria-hidden="true">{'\u25B6'}</span>
           </div>
 
           <div className="flex-1 min-w-0">

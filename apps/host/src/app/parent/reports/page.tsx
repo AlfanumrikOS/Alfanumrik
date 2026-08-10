@@ -719,7 +719,10 @@ function downloadReportPDF(studentName: string, grade: string, reportData: Repor
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, 'Plus Jakarta Sans', sans-serif; background: #fff; color: #1E293B; font-size: 13px; }
-    .header { background: linear-gradient(135deg, #F97316, #EA580C); color: #fff; padding: 24px 28px; margin-bottom: 24px; }
+    /* DD-16: was #F97316 -> #EA580C, where #fff is 2.80:1 / 3.56:1 — sub-AA on both
+       stops. Retargeted to the AA-safe CTA stops (4.72:1 / 5.18:1). Literal hexes
+       (not var()) because this markup is written into a detached print document. */
+    .header { background: linear-gradient(135deg, #CB4710, #C2410C); color: #fff; padding: 24px 28px; margin-bottom: 24px; }
     .header h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
     .header p { font-size: 13px; opacity: 0.9; }
     .container { padding: 0 28px 28px; }
@@ -835,21 +838,21 @@ function PrintShareSection({ studentName, grade, reportData, isHi = false }: { s
       <h3 style={{ ...cardTitle, textAlign: 'center' }}>{t(isHi, 'Share This Report', 'यह रिपोर्ट साझा करें')}</h3>
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         <button onClick={() => downloadReportPDF(studentName, grade, reportData)} style={{
-          padding: '12px 24px', backgroundColor: '#E8581C', color: '#fff',
+          padding: '12px 24px', backgroundColor: 'var(--accent-warm-strong)', color: 'var(--on-accent)',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <span>&#x1F4C4;</span> {t(isHi, 'Download PDF', 'PDF डाउनलोड करें')}
         </button>
         <button onClick={handlePrint} style={{
-          padding: '12px 24px', backgroundColor: '#16A34A', color: '#fff',
+          padding: '12px 24px', backgroundColor: '#16A34A', color: 'var(--text-1)',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <span>\uD83D\uDDA8\uFE0F</span> {t(isHi, 'Print Report', 'रिपोर्ट प्रिंट करें')}
         </button>
         <button onClick={handleWhatsApp} style={{
-          padding: '12px 24px', backgroundColor: '#25D366', color: '#fff',
+          padding: '12px 24px', backgroundColor: '#25D366', color: 'var(--text-1)',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
         }}>
@@ -1213,7 +1216,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
           {/* Download PDF */}
           <div className="no-print" style={{ textAlign: 'center', marginTop: 12 }}>
             <button onClick={handlePrintMonthly} style={{
-              padding: '12px 28px', backgroundColor: '#16A34A', color: '#fff',
+              padding: '12px 28px', backgroundColor: '#16A34A', color: 'var(--text-1)',
               border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
               cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
             }}>
@@ -1797,7 +1800,7 @@ function ParentReportsPage() {
           <button
             type="button"
             onClick={() => setScopeAttempt((attempt) => attempt + 1)}
-            style={{ minHeight: 44, border: 0, borderRadius: 8, background: '#16A34A', color: '#fff', padding: '8px 18px', fontWeight: 600 }}
+            style={{ minHeight: 44, border: 0, borderRadius: 8, background: '#16A34A', color: 'var(--text-1)', padding: '8px 18px', fontWeight: 600 }}
           >
             {t(isHi, 'Try again', 'फिर से कोशिश करें')}
           </button>
@@ -1847,7 +1850,11 @@ function ParentReportsPage() {
 
       {/* ── HEADER ── */}
       <div style={{
-        background: 'linear-gradient(135deg, #16A34A, #15803D)',
+        // DD-16: the light stop was bare #16A34A, where #fff is only 3.30:1 — the
+        // 16px/13px sub-lines (and the 0.8-opacity one) failed AA outright. Darkened
+        // via color-mix on the --green token (same idiom as CoinBalance) so the
+        // WORST stop is 4.88:1; the #15803D stop is 5.02:1. No new hex literal.
+        background: 'linear-gradient(135deg, color-mix(in srgb, var(--green) 80%, #000), #15803D)',
         padding: '28px 22px 22px',
         borderRadius: '0 0 24px 24px',
         marginBottom: 20,
@@ -1985,7 +1992,7 @@ function ParentReportsPage() {
             <p style={{ fontSize: 15, fontWeight: 600 }}>{error}</p>
             <button onClick={fetchReport} style={{
               marginTop: 12, padding: '8px 20px', backgroundColor: '#16A34A',
-              color: '#fff', border: 'none', borderRadius: 8, fontSize: 13,
+              color: 'var(--text-1)', border: 'none', borderRadius: 8, fontSize: 13,
               fontWeight: 600, cursor: 'pointer',
             }}>{t(isHi, 'Try Again', 'फिर से कोशिश करें')}</button>
           </div>

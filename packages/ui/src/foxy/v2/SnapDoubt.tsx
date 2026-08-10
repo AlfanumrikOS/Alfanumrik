@@ -187,8 +187,8 @@ function CaptureStep({
           className="w-full rounded-xl text-sm font-bold mt-3"
           style={{
             minHeight: 48,
-            background: 'var(--orange)',
-            color: '#fff',
+            background: 'var(--accent-warm-strong)',
+            color: 'var(--on-accent)',
             opacity: value.trim().length === 0 ? 0.5 : 1,
           }}
         >

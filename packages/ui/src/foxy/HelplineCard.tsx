@@ -52,8 +52,8 @@ export default function HelplineCard({ helpline, isHi }: HelplineCardProps) {
           </p>
           <a
             href={`tel:${helpline.number}`}
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-3 min-h-[44px] text-white font-bold text-sm transition-all active:scale-[0.97]"
-            style={{ background: 'var(--orange, #F97316)' }}
+            className="inline-flex items-center gap-2 rounded-xl px-4 py-3 min-h-[44px] text-on-accent font-bold text-sm transition-all active:scale-[0.97]"
+            style={{ background: 'var(--accent-warm-strong)' }}
           >
             <span aria-hidden="true">📞</span>
             <span>
