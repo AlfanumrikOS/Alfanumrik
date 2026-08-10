@@ -156,9 +156,14 @@ describe('webhook route — PAY-7 missing-secret is retryable (503), forged sign
 // PAY-5 — idempotency under re-delivery / un-dedupable events
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('webhook route — PAY-5 re-delivery never double-grants', () => {
-  it('an already-recorded (duplicate) event ACKs 200 with note=dedupe and does NOT activate', async () => {
+  it('an already-PROCESSED (duplicate) event ACKs 200 with note=dedupe and does NOT activate', async () => {
+    // already_processed=true means the receipt carries processed_at + a terminal
+    // success outcome ('ack'|'activated'|'downgraded'). Since migration
+    // 20260814000006 that — not the bare is_new=false — is the suppression
+    // signal; an existing-but-UNPROCESSED receipt must re-attempt instead
+    // (pinned in webhook-retry-after-failed-activation.test.ts).
     mockAdmin.rpc.mockImplementation(async (name: string) => {
-      if (name === 'record_webhook_event') return { data: [{ is_new: false, id: 'wh-dup' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: false, id: 'wh-dup', already_processed: true }], error: null };
       throw new Error(`unexpected RPC ${name}`);
     });
 
@@ -177,7 +182,7 @@ describe('webhook route — PAY-5 re-delivery never double-grants', () => {
       if (name === 'activate_subscription_locked') return { data: null, error: null };
       if (name === 'mark_webhook_event_processed') return { data: null, error: null };
       // record_webhook_event must NOT be reachable without account_id/id, but stay safe.
-      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-x' }], error: null };
+      if (name === 'record_webhook_event') return { data: [{ is_new: true, id: 'wh-x', already_processed: false }], error: null };
       return { data: null, error: null };
     });
     mockAdmin.from.mockImplementation(studentResolver());
