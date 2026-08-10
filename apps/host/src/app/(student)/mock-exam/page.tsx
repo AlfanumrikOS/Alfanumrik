@@ -7,8 +7,7 @@ import { supabase } from '@alfanumrik/lib/supabase';
 import { Card, Button } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { useSubjectLookup } from '@alfanumrik/lib/useSubjectLookup';
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
+import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
 
 /*
   CBSE 80-mark paper structure:
@@ -55,11 +54,6 @@ interface Question {
 }
 
 type Screen = 'select' | 'exam' | 'confirm-submit' | 'submitted';
-
-function parseOptions(raw: string | string[]): string[] {
-  if (Array.isArray(raw)) return raw;
-  try { return JSON.parse(raw); } catch { return []; }
-}
 
 export default function MockExamPage() {
   const { student, isLoggedIn, isLoading, isHi, activeRole } = useAuth();

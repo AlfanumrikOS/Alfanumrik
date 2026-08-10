@@ -8,9 +8,11 @@
  * the data each picker needs (curated phenomena + the student's weakest
  * topics).
  *
- * Backend glue for the /dive surface (`src/app/dive/page.tsx`) and the
- * dashboard rhythm queue lite consumer
- * (`src/components/dashboard/sections/DailyRhythmQueue.tsx`).
+ * Backend glue for the /dive surface (`apps/host/src/app/dive/page.tsx`). The
+ * planned second consumer — a "this week's dive" CTA on the dashboard rhythm
+ * queue (`packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx`) — never
+ * shipped; that component was deleted in the 2026-08 orphan consolidation
+ * (zero importers). This route currently has exactly one caller, /dive.
  *
  * Server-gated by ff_pedagogy_v2_weekly_dive — when off, returns 404 so the
  * surface is fully hidden (mirrors /api/dive/history + /api/synthesis/state).

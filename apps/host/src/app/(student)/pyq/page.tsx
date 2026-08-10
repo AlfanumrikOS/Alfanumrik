@@ -7,8 +7,8 @@ import { supabase } from '@alfanumrik/lib/supabase';
 import { Card, Button, ProgressBar } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { useSubjectLookup } from '@alfanumrik/lib/useSubjectLookup';
+import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
 
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 const PYQ_YEARS = Array.from({ length: 11 }, (_, i) => 2025 - i); // 2025 down to 2015
 
 interface Question {
@@ -25,11 +25,6 @@ interface Question {
 }
 
 type Screen = 'select' | 'quiz' | 'done';
-
-function parseOptions(raw: string | string[]): string[] {
-  if (Array.isArray(raw)) return raw;
-  try { return JSON.parse(raw); } catch { return []; }
-}
 
 export default function PYQPage() {
   const { student, isLoggedIn, isLoading, isHi, activeRole } = useAuth();

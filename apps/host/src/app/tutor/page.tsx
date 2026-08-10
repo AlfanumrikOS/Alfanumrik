@@ -24,14 +24,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
 import type { TutorNextResponse, TutorConceptRow } from '@alfanumrik/lib/tutor/types';
 import { track } from '@alfanumrik/lib/posthog/client';
-
-function parseOptions(opts: unknown): string[] {
-  if (Array.isArray(opts)) return opts.map(String);
-  if (typeof opts === 'string') {
-    try { return JSON.parse(opts) as string[]; } catch { return []; }
-  }
-  return [];
-}
+import { parseOptions } from '@alfanumrik/lib/quiz/options';
 
 export default function TutorPage() {
   const router = useRouter();

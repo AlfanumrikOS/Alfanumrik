@@ -19,6 +19,7 @@ import { useFeatureFlags } from '@alfanumrik/lib/swr';
 import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import { calculateLevel, getLevelName } from '@alfanumrik/lib/xp-config';
 import { reviewRoute, reviseRoute } from '@alfanumrik/lib/routes/study-menu-routes';
+import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
 import NextActionCard from '@alfanumrik/ui/quiz/NextActionCard';
 import CelebrationOverlay from '@alfanumrik/ui/quiz/CelebrationOverlay';
 import GoalScorecardSentence from '@alfanumrik/ui/quiz/GoalScorecardSentence';
@@ -64,8 +65,6 @@ interface Response {
   marks_possible?: number;
   rubric_feedback?: string;
 }
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 interface QuizResultsProps {
   results: {
@@ -258,11 +257,6 @@ export default function QuizResults({
       }
     })();
   }, [student?.id, selectedSubject]);
-
-  const parseOptions = (opts: string | string[]): string[] => {
-    if (Array.isArray(opts)) return opts;
-    try { return JSON.parse(opts); } catch { return []; }
-  };
 
   // Play completion sound on mount
   useEffect(() => {

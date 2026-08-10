@@ -4,9 +4,11 @@
  * Single source for the "due quiz-wrong-answer cards" query + selection logic
  * shared by:
  *   - the /quiz?mode=srs deep-link consumer (apps/host quiz page) — CONTENT
- *   - the dashboard DailyRhythmQueue SRS lane — COUNT
+ *   - the dashboard SRS lane — COUNT
  * so the lane count and the quiz content can never disagree (F3 short-term
- * fix; full store unification is Phase 3).
+ * fix; full store unification is Phase 3). The COUNT consumer was originally
+ * the DailyRhythmQueue component, deleted in the 2026-08 orphan consolidation;
+ * the shared-source rule below binds whatever renders the lane next.
  *
  * Also owns:
  *   - the SM-2 quality mapping for auto-grading SRS cards after a quiz

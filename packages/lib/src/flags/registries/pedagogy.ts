@@ -47,14 +47,17 @@ export const GOAL_ADAPTIVE_FLAGS = {
  *    Default: false.
  *
  *  ff_pedagogy_v2_daily_rhythm
- *    Dashboard renders <DailyRhythmQueue/> above the hero; /api/rhythm/today
- *    is callable. Default: false. When off, dashboard is unchanged.
+ *    /api/rhythm/today is callable. Seed default: false (since raised —
+ *    see FLAG_DEFAULTS in ../defaults.ts for live state). The dashboard
+ *    renderer this originally gated, <DailyRhythmQueue/>, was deleted in the
+ *    2026-08 orphan consolidation; the route and the daily-rhythm
+ *    orchestrator are unaffected. When off, /api/rhythm/today 404s.
  *
  *  ff_pedagogy_v2_weekly_dive
- *    /dive surface is reachable, /api/dive/* endpoints respond, and the
- *    dashboard's DailyRhythmQueue shows a "This week's dive" CTA when the
- *    week's dive is not yet completed. Default: false. When off, /dive
- *    returns 404 and the CTA is suppressed.
+ *    /dive surface is reachable and /api/dive/* endpoints respond.
+ *    Seed default: false. When off, /dive returns 404. (A companion
+ *    "This week's dive" CTA on the dashboard's DailyRhythmQueue was
+ *    specified but never shipped, and that component is now deleted.)
  *
  *  ff_pedagogy_v2_monthly_synthesis
  *    /synthesis surface is reachable, /api/synthesis/* endpoints respond,

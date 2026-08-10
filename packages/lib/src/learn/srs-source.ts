@@ -19,8 +19,10 @@
  *
  * NOTE (wave 3b handoff): `getReviewCards` in packages/lib/src/supabase.ts
  * (ai-engineer-owned this wave) and the packages/ui dashboard read paths
- * (DailyRhythmQueue / QuickRecallSection — frontend) are NOT re-pointed
- * here yet; they move in wave 3b.
+ * are NOT re-pointed here yet; they move in wave 3b. Of the two original
+ * frontend read paths only QuickRecallSection
+ * (packages/ui/src/refresh/QuickRecallSection.tsx) still exists —
+ * DailyRhythmQueue was deleted in the 2026-08 orphan consolidation.
  *
  * Server-only: delegates to domains/practice.ts which uses the service-role
  * client. Callers MUST resolve studentId from the authenticated session —

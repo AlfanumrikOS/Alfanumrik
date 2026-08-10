@@ -26,24 +26,24 @@
   },
   "overrides": [
     {
-      // ── Monorepo allowlist repair for alfanumrik/no-raw-subject-imports ──
+      // == Monorepo allowlist repair for alfanumrik/no-raw-subject-imports ==
       // The rule (eslint-plugin-alfanumrik/no-raw-subject-imports.js) documents
       // an allowlist of files where GRADE_SUBJECTS / SUBJECT_META /
       // getSubjectsForGrade / SUBJECT_BY_GRADE MAY legitimately be declared:
       // the subjects service itself and the deprecated compat shim. That
       // allowlist is matched with `file.includes('src/lib/constants.ts')` and
-      // `file.includes('src/lib/subjects.ts')` — PRE-MONOREPO paths. After the
+      // `file.includes('src/lib/subjects.ts')` -- PRE-MONOREPO paths. After the
       // apps/* + packages/* migration the canonical files are
       // `packages/lib/src/constants.ts` and `packages/lib/src/subjects.ts`,
-      // which do NOT contain the substring `src/lib/…`, so the rule fired on
+      // which do NOT contain the substring `src/lib/...`, so the rule fired on
       // the very files it is written to exempt.
       //
       // This surfaced only on 2026-07-28, when packages/ got a lint script for
-      // the first time (they had never been linted — `--if-present` skipped
+      // the first time (they had never been linted -- `--if-present` skipped
       // them silently). These are the 3 "real errors" from that audit: they are
       // allowlist path-drift, not a genuine subject-source-of-truth violation.
       //
-      // Scope is deliberately narrow — exactly the two canonical files the rule
+      // Scope is deliberately narrow -- exactly the two canonical files the rule
       // already names. Every other file under packages/ stays fully enforced.
       // DURABLE FIX (owner: whoever owns eslint-plugin-alfanumrik/): widen the
       // in-rule `isAllowed` check to match the monorepo paths, then delete this
@@ -58,10 +58,15 @@
       }
     },
     {
+      // Test files may write canonical state directly.
+      // PATHS: monorepo-real (apps/* + packages/*). The three repo-root
+      // `src/**` entries that used to head this list were removed 2026-08-09:
+      // there is no `src/` at the repo root, so they matched zero files.
+      // The `*.spec.{ts,tsx}` entries match zero files TODAY (all 48 specs
+      // live in repo-root `e2e/`, outside every lint scope) and are kept
+      // deliberately as forward cover for colocated specs. That is a
+      // "nothing to match YET", not a dead path -- do not confuse the two.
       "files": [
-        "src/__tests__/**",
-        "src/**/*.test.{ts,tsx}",
-        "src/**/*.spec.{ts,tsx}",
         "apps/*/src/__tests__/**",
         "apps/*/src/**/*.test.{ts,tsx}",
         "apps/*/src/**/*.spec.{ts,tsx}",
@@ -73,15 +78,38 @@
         "alfanumrik/no-canonical-write-outside-projector": "off"
       }
     },
+
+    // ====================================================================
+    // no-restricted-syntax blocks. SAME LAST-WINS HAZARD as the
+    // no-restricted-imports tiers below -- see the long note there.
+    // ====================================================================
     {
+      // == Phase 5B design tokens: no raw hex inside style={{}} (warn) ==
+      // NOTE ON PATHS: monorepo-real (apps/* + packages/*). This block was
+      // anchored at repo-root `src/app/**` + `src/components/**` until
+      // 2026-08-09 and therefore matched ZERO files -- `npx eslint
+      // --print-config` on any page reported `no-restricted-syntax:
+      // undefined`. Do not "normalise" these back to a `src/...` prefix; no
+      // such directory exists, and a pattern that matches nothing enforces
+      // nothing. Component code moved to packages/ui/src/ (the
+      // @alfanumrik/ui package); apps/host/src/components/ no longer exists.
+      //
+      // !! SHADOWED -- KNOWN, NEEDS AN OWNER DECISION (raised 2026-08-09).
+      // The next block sets `no-restricted-syntax` over the SAME file scope,
+      // and ESLint resolves a rule key by last-matching-override-wins rather
+      // than by merging selector lists. So the alert() ban below REPLACES
+      // these two hex selectors rather than adding to them, and this warning
+      // reaches no file. Collapsing the two blocks is not a free fix:
+      // `no-restricted-syntax` carries ONE severity per rule instance, and
+      // these are "warn" (about 317 files currently use raw hex in
+      // style={{}}) while the alert() ban is "error". Merging would either
+      // escalate 317 files to errors or downgrade the alert() ban.
+      // Owner (frontend): pick a severity, then merge the selector lists.
       "files": [
-        "src/app/**/*.{ts,tsx}",
-        "src/components/**/*.{ts,tsx}"
+        "apps/host/src/app/**/*.{ts,tsx}",
+        "packages/ui/src/**/*.{ts,tsx}"
       ],
       "excludedFiles": [
-        "src/**/*.test.{ts,tsx}",
-        "src/**/*.spec.{ts,tsx}",
-        "src/__tests__/**",
         "apps/*/src/**/*.test.{ts,tsx}",
         "apps/*/src/**/*.spec.{ts,tsx}",
         "apps/*/src/__tests__/**",
@@ -104,14 +132,16 @@
       }
     },
     {
+      // == Phase E.3: no native alert() in user-facing surfaces (error) ==
+      // NOTE ON PATHS: monorepo-real (apps/* + packages/*). Previously
+      // anchored at repo-root `src/app/**` + `src/components/**`, which
+      // matched zero files, so this ban has been unenforced since the
+      // monorepo migration. Do not re-anchor to `src/...`.
       "files": [
-        "src/app/**/*.{ts,tsx}",
-        "src/components/**/*.{ts,tsx}"
+        "apps/host/src/app/**/*.{ts,tsx}",
+        "packages/ui/src/**/*.{ts,tsx}"
       ],
       "excludedFiles": [
-        "src/**/*.test.{ts,tsx}",
-        "src/**/*.spec.{ts,tsx}",
-        "src/__tests__/**",
         "apps/*/src/**/*.test.{ts,tsx}",
         "apps/*/src/**/*.spec.{ts,tsx}",
         "apps/*/src/__tests__/**",
@@ -124,55 +154,78 @@
           "error",
           {
             "selector": "CallExpression[callee.name='alert']",
-            "message": "alert() is forbidden in src/app/** and src/components/**. Use the toast component (import { toast } from '@/components/ui/toast') or a styled modal instead. (Phase E.3)"
+            "message": "alert() is forbidden in apps/host/src/app/** and packages/ui/src/**. Use the toast component (import { toast } from '@alfanumrik/ui/ui/toast') or a styled modal instead. (Phase E.3)"
           },
           {
             "selector": "CallExpression[callee.object.name='window'][callee.property.name='alert']",
-            "message": "window.alert() is forbidden in src/app/** and src/components/**. Use the toast component (import { toast } from '@/components/ui/toast') or a styled modal instead. (Phase E.3)"
+            "message": "window.alert() is forbidden in apps/host/src/app/** and packages/ui/src/**. Use the toast component (import { toast } from '@alfanumrik/ui/ui/toast') or a styled modal instead. (Phase E.3)"
           }
         ]
       }
     },
+
+    // ====================================================================
+    // no-restricted-imports TIERS -- ORDER IS LOAD-BEARING. READ THIS.
+    //
+    // ESLint resolves a rule key across overrides by LAST-MATCHING-OVERRIDE-
+    // WINS. It does NOT merge two overrides' `patterns` arrays. So if two
+    // blocks both set `no-restricted-imports` and both match a file, the
+    // later one REPLACES the earlier one wholesale, and the earlier block's
+    // bans silently vanish for that file.
+    //
+    // This bit us on 2026-08-09: repointing the (previously dead,
+    // repo-root-anchored) eval-harness block to `apps/host/src/app/**` made
+    // it match apps/host/src/app/layout.tsx, which instantly clobbered the
+    // P10 framer-motion guard on the root layout. Verified with
+    // `npx eslint --print-config src/app/layout.tsx`, which then showed ONLY
+    // the eval group. Repairing one dead rule had killed a live one.
+    //
+    // The tiers below are therefore ordered BROADEST -> NARROWEST, and each
+    // narrower tier REPEATS every group from the tiers it overlaps:
+    //
+    //   TIER A  all production code           -> eval-harness
+    //   TIER B  client-executed surfaces      -> eval-harness + supabase-admin
+    //   TIER C  shared first-paint graph (15) -> eval-harness + supabase-admin
+    //                                           + framer-motion
+    //
+    // BEFORE ADDING OR REORDERING A BLOCK, run from apps/host:
+    //   npx eslint --print-config src/app/layout.tsx
+    //   npx eslint --print-config "src/app/(student)/quiz/page.tsx"
+    //   npx eslint --print-config src/app/api/foxy/route.ts
+    // and confirm every group you expect is still present on each.
+    // ====================================================================
     {
+      // == xp-rules deprecation (warn) ==
+      // NOTE ON PATHS: monorepo-real (apps/* + packages/*). Previously
+      // anchored at repo-root `src/app|components|lib/**`, matching zero
+      // files, so this warning has been silent since the monorepo migration.
+      // Do not re-anchor to `src/...`. The canonical implementation is
+      // packages/lib/src/xp-rules.ts, which must be able to define itself --
+      // hence the excludedFiles entry.
+      //
+      // !! SHADOWED -- KNOWN, NEEDS AN OWNER DECISION (raised 2026-08-09).
+      // This block's scope is a subset of TIER A's, and TIER A sets the same
+      // rule key at "error", so per the last-wins semantics above TIER A
+      // replaces this block everywhere and the warning reaches no file. This
+      // is NOT fixable by reordering: `no-restricted-imports` carries ONE
+      // severity per rule instance, and this is deliberately "warn" (a
+      // deprecation) while the eval-harness and supabase-admin bans are
+      // "error" (shipped-bundle and P8 security boundaries). The one-line fix
+      // is to move this group into TIER A's `patterns` array, which escalates
+      // the deprecation from warn to error -- a policy change, not a path
+      // repair, so it is deliberately NOT made here. It costs nothing today:
+      // there are ZERO non-test importers of xp-rules in the repo as of
+      // 2026-08-09 (verified), so no violation is being missed.
+      // Owner (assessment / frontend): either delete this block, or fold the
+      // group into TIER A at "error".
       "files": [
-        "src/components/**/*.{ts,tsx}",
-        "src/app/**/page.{ts,tsx}",
-        "src/app/**/layout.{ts,tsx}",
-        "src/app/**/template.{ts,tsx}",
-        "src/app/**/loading.{ts,tsx}",
-        "src/app/**/error.{ts,tsx}",
-        "src/app/**/not-found.{ts,tsx}"
-      ],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": [
-                  "@/lib/supabase-admin",
-                  "**/lib/supabase-admin",
-                  "../**/supabase-admin",
-                  "../../**/supabase-admin"
-                ],
-                "message": "supabase-admin uses the service-role key and bypasses RLS. It MUST NOT be imported from client components, pages, layouts, or other client-executed files. Use a server API route (src/app/api/**) or a domain module (src/lib/domains/**) instead. See docs/architecture/DOMAIN_BOUNDARIES.md."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": [
-        "src/app/**/*.{ts,tsx}",
-        "src/components/**/*.{ts,tsx}",
-        "src/lib/**/*.{ts,tsx}"
+        "apps/host/src/app/**/*.{ts,tsx}",
+        "apps/host/src/lib/**/*.{ts,tsx}",
+        "packages/lib/src/**/*.{ts,tsx}",
+        "packages/ui/src/**/*.{ts,tsx}"
       ],
       "excludedFiles": [
-        "src/lib/xp-rules.ts",
-        "src/__tests__/**",
-        "src/**/*.test.{ts,tsx}",
-        "src/**/*.spec.{ts,tsx}",
+        "packages/lib/src/xp-rules.ts",
         "apps/*/src/__tests__/**",
         "apps/*/src/**/*.test.{ts,tsx}",
         "apps/*/src/**/*.spec.{ts,tsx}",
@@ -188,11 +241,12 @@
               {
                 "group": [
                   "@/lib/xp-rules",
+                  "@alfanumrik/lib/xp-rules",
                   "**/lib/xp-rules",
                   "../**/xp-rules",
                   "../../**/xp-rules"
                 ],
-                "message": "@/lib/xp-rules is @deprecated. New code MUST import from @/lib/score-config (Performance Score) or @/lib/coin-rules (Foxy Coins) instead. Existing 17 imports remain for backward compat \u2014 see audit F19. Migration roadmap: docs/architecture/xp-deprecation.md (TBD)."
+                "message": "xp-rules is @deprecated. New code MUST import from score-config (Performance Score) or coin-rules (Foxy Coins) instead. Migration roadmap: docs/architecture/xp-deprecation.md (TBD). (The '17 existing imports for backward compat' noted in audit F19 are gone as of 2026-08-09: zero non-test importers remain, so any new hit here is genuinely new code.)"
               }
             ]
           }
@@ -200,15 +254,29 @@
       }
     },
     {
+      // == TIER A -- B1 RAG eval-harness must never reach a shipped bundle ==
+      // NOTE ON PATHS: monorepo-real (apps/* + packages/*). Previously
+      // anchored at repo-root `src/app|components|lib/**`, matching zero
+      // files, so this ban has been unenforced since the monorepo migration.
+      // Do not re-anchor to `src/...`.
+      // The harness itself lives at repo-root eval/ (outside every lint
+      // scope); its only permitted importers are the tests under
+      // apps/host/src/__tests__/eval/**, excluded below.
+      //
+      // DO NOT add a bare `**/eval/**` group. It was tried on 2026-08-09 and
+      // reverted the same hour: packages/lib/src/ai/eval/ is an UNRELATED,
+      // legitimate production module (emit.ts / index.ts / response-eval.ts),
+      // and a bare `**/eval/**` flagged its own internal imports as
+      // shipped-bundle violations. Every group here must name `harness` or a
+      // relative `../…/eval/` prefix so it can only match the repo-root
+      // harness, never a directory that merely happens to be called `eval`.
       "files": [
-        "src/app/**/*.{ts,tsx}",
-        "src/components/**/*.{ts,tsx}",
-        "src/lib/**/*.{ts,tsx}"
+        "apps/host/src/app/**/*.{ts,tsx}",
+        "apps/host/src/lib/**/*.{ts,tsx}",
+        "packages/lib/src/**/*.{ts,tsx}",
+        "packages/ui/src/**/*.{ts,tsx}"
       ],
       "excludedFiles": [
-        "src/__tests__/**",
-        "src/**/*.test.{ts,tsx}",
-        "src/**/*.spec.{ts,tsx}",
         "apps/*/src/__tests__/**",
         "apps/*/src/**/*.test.{ts,tsx}",
         "apps/*/src/**/*.spec.{ts,tsx}",
@@ -232,7 +300,172 @@
                   "../../../eval/**",
                   "../../../../eval/**"
                 ],
-                "message": "B1 RAG eval-harness (architect, B6): the offline read-only eval harness under eval/** (esp. eval/rag/harness/**) MUST NEVER be imported by production/client code (src/app, src/components, src/lib). It is build-time/offline-only and must not reach a shipped bundle. Only test files under src/__tests__/eval/** may import it. See docs/superpowers/plans/2026-06-13-rag-eval-harness.md (Task 8)."
+                "message": "B1 RAG eval-harness (architect, B6): the offline read-only eval harness under eval/** (esp. eval/rag/harness/**) MUST NEVER be imported by production/client code (apps/host/src/app/**, apps/host/src/lib/**, packages/lib/src/**, packages/ui/src/**). It is build-time/offline-only and must not reach a shipped bundle. Only test files under apps/host/src/__tests__/eval/** may import it. See docs/superpowers/plans/2026-06-13-rag-eval-harness.md (Task 8)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // == TIER B -- P8 (RLS boundary): service-role client OUT of client code ==
+      // supabase-admin is constructed with the Supabase service-role key and
+      // bypasses RLS entirely. It is server-only. (The env var name is spelled
+      // out in docs/architecture/DOMAIN_BOUNDARIES.md, not here, because
+      // post-edit-check.sh flags the literal name as a possible hardcoded
+      // secret.)
+      //
+      // NOTE ON PATHS: monorepo-real (apps/* + packages/*). Until 2026-08-09
+      // this block was anchored at repo-root `src/components/**` and
+      // `src/app/**/page.{ts,tsx}` -- the PRE-monorepo prefix. There is no
+      // `src/` at the repo root, so every pattern matched zero files and
+      // `npx eslint --print-config src/app/layout.tsx` reported
+      // `no-restricted-imports: undefined`. The P8 boundary was therefore NOT
+      // enforced by ESLint at all for the whole post-migration period. Do not
+      // "normalise" these back to `src/...`: a pattern that matches nothing is
+      // indistinguishable from one with nothing to match, and that ambiguity
+      // is exactly what hid this.
+      //
+      // SCOPE IS DELIBERATELY NARROW -- client-executed surfaces only:
+      //   packages/ui/src/**   the shared component package (the monorepo
+      //                        home of the old repo-root src/components/**)
+      //   apps/host/src/app/**/{page,layout,template,loading,error,
+      //   not-found}.{ts,tsx}  App Router segment files
+      // apps/host/src/components/ is intentionally absent: that directory does
+      // not exist (its re-export stubs were deleted). template.{ts,tsx} and
+      // not-found.{ts,tsx} match zero files today; they are kept as forward
+      // cover so a future segment file of those kinds is guarded on day one.
+      //
+      // LEGITIMATE SERVER USAGE MUST STAY CLEAN and is therefore NOT in scope:
+      // API routes (apps/host/src/app/api/**/route.ts -- 100+ of them import
+      // supabase-admin today), server-only lib modules, and
+      // supabase/functions/**. Only route-segment files and shared UI are
+      // banned. If you widen this to `apps/host/src/app/**/*.{ts,tsx}` you
+      // will break every API route in the repo.
+      //
+      // The eval-harness group is REPEATED here because this tier overlaps
+      // TIER A and would otherwise clobber it -- see the tier note above.
+      "files": [
+        "packages/ui/src/**/*.{ts,tsx}",
+        "apps/host/src/app/**/page.{ts,tsx}",
+        "apps/host/src/app/**/layout.{ts,tsx}",
+        "apps/host/src/app/**/template.{ts,tsx}",
+        "apps/host/src/app/**/loading.{ts,tsx}",
+        "apps/host/src/app/**/error.{ts,tsx}",
+        "apps/host/src/app/**/not-found.{ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/lib/supabase-admin",
+                  "@alfanumrik/lib/supabase-admin",
+                  "**/lib/supabase-admin",
+                  "**/supabase-admin",
+                  "../**/supabase-admin",
+                  "../../**/supabase-admin"
+                ],
+                "message": "supabase-admin uses the service-role key and bypasses RLS (P8). It MUST NOT be imported from client components, pages, layouts, or other client-executed files. Use a server API route (apps/host/src/app/api/**) or a server-only domain module instead. See docs/architecture/DOMAIN_BOUNDARIES.md."
+              },
+              {
+                "group": [
+                  "**/eval/rag/harness/**",
+                  "../**/eval/rag/harness/*",
+                  "../../**/eval/rag/harness/*",
+                  "**/eval/**/harness/**",
+                  "../eval/**",
+                  "../../eval/**",
+                  "../../../eval/**",
+                  "../../../../eval/**"
+                ],
+                "message": "B1 RAG eval-harness (architect, B6): the offline read-only eval harness under eval/** (esp. eval/rag/harness/**) MUST NEVER be imported by production/client code. It is build-time/offline-only and must not reach a shipped bundle. Only test files under apps/host/src/__tests__/eval/** may import it. See docs/superpowers/plans/2026-06-13-rag-eval-harness.md (Task 8)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // == TIER C -- P10: keep framer-motion OUT of the shared first-paint graph ==
+      // framer-motion is an install-only dependency today (CEO-approved
+      // 2026-08-09) and is permitted PER-SURFACE, behind a
+      // next/dynamic({ ssr: false }) island. It is NOT permitted in any module
+      // that every route pulls on first paint -- one card must not cost all 209
+      // routes. Enforced caps live in scripts/check-bundle-size.mjs
+      // (CAP_SHARED_KB / CAP_PAGE_KB); 101 of 209 routes already exceed
+      // CAP_PAGE_KB and pass only via the per-page ratchet, so the shared graph
+      // has no free bytes.
+      //
+      // The file list below is the ENUMERATED root-layout import graph, i.e.
+      // apps/host/src/app/layout.tsx plus every module it imports directly
+      // (verified 2026-08-09), plus the middleware (its own CAP_MIDDLEWARE_KB).
+      // If the root layout gains a new direct import, ADD IT HERE -- an
+      // unlisted module in the shared graph is unenforced.
+      //
+      // NOTE ON PATHS: these are monorepo-real paths (apps/* + packages/*).
+      // Do not "normalise" them to a repo-root `src/...` prefix -- no such
+      // directory exists, and a pattern that matches nothing enforces nothing.
+      //
+      // This tier is LAST because it overlaps both TIER A and TIER B, so it
+      // repeats their groups. Dropping either repeat silently disables that
+      // ban on these 15 files -- see the tier note above.
+      "files": [
+        "apps/host/src/app/layout.tsx",
+        "apps/host/src/proxy.ts",
+        "packages/lib/src/AuthContext.tsx",
+        "packages/lib/src/SWRProvider.tsx",
+        "packages/lib/src/SchoolContext.tsx",
+        "packages/lib/src/RegisterSW.tsx",
+        "packages/lib/src/cosmic-theme.tsx",
+        "packages/lib/src/cosmic-fonts.ts",
+        "packages/lib/src/momentum-fonts.ts",
+        "packages/lib/src/tenant-domain/client.tsx",
+        "packages/ui/src/ErrorBoundary.tsx",
+        "packages/ui/src/JsonLd.tsx",
+        "packages/ui/src/LayoutDeferredChrome.tsx",
+        "packages/ui/src/ui/toast.tsx",
+        "packages/ui/src/navigation/GlobalAppLayout.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "framer-motion",
+                  "framer-motion/*",
+                  "motion",
+                  "motion/*"
+                ],
+                "message": "P10 (bundle budget): this file is part of the shared first-paint import graph - the root layout, the middleware, or a module the root layout imports directly. Importing framer-motion here ships the animation runtime to ALL 209 routes at once, against CAP_SHARED_KB / CAP_MIDDLEWARE_KB in scripts/check-bundle-size.mjs (and 101 of 209 routes already have zero page-budget headroom). framer-motion is permitted PER-SURFACE only. Escape hatch: put the animated component in packages/ui/src/motion/ and load it as an island via createMotionIsland() (packages/ui/src/motion/dynamicMotion.tsx), which wraps it in next/dynamic({ ssr: false }). If CSS can already do the motion (reveal, stagger, hover, press, bar fill), use CSS - that is the default."
+              },
+              {
+                "group": [
+                  "@/lib/supabase-admin",
+                  "@alfanumrik/lib/supabase-admin",
+                  "**/lib/supabase-admin",
+                  "**/supabase-admin",
+                  "../**/supabase-admin",
+                  "../../**/supabase-admin"
+                ],
+                "message": "supabase-admin uses the service-role key and bypasses RLS (P8). It MUST NOT be imported from the root layout, the middleware, or any module in the shared first-paint graph. Use a server API route (apps/host/src/app/api/**) instead. See docs/architecture/DOMAIN_BOUNDARIES.md."
+              },
+              {
+                "group": [
+                  "**/eval/rag/harness/**",
+                  "../**/eval/rag/harness/*",
+                  "../../**/eval/rag/harness/*",
+                  "**/eval/**/harness/**",
+                  "../eval/**",
+                  "../../eval/**",
+                  "../../../eval/**",
+                  "../../../../eval/**"
+                ],
+                "message": "B1 RAG eval-harness (architect, B6): the offline read-only eval harness under eval/** (esp. eval/rag/harness/**) MUST NEVER be imported by production/client code. It is build-time/offline-only and must not reach a shipped bundle. Only test files under apps/host/src/__tests__/eval/** may import it. See docs/superpowers/plans/2026-06-13-rag-eval-harness.md (Task 8)."
               }
             ]
           }

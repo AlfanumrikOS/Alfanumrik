@@ -9,6 +9,7 @@ import { track } from '@alfanumrik/lib/analytics';
 import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession, checkQuizAnswer, type QuizAnswerCheck } from '@alfanumrik/lib/supabase';
 import { invalidateDashboard, useFeatureFlags } from '@alfanumrik/lib/swr';
 import { useNextTask } from '@alfanumrik/lib/quiz/v2/use-next-task';
+import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
 import { assembleQuiz } from '@alfanumrik/lib/quiz-assembler';
 import { XP_RULES } from '@alfanumrik/lib/xp-config';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
@@ -215,12 +216,6 @@ function classifyQuizError(question: Question, response: Response): string {
 
 const VALID_QUIZ_COUNTS = [5, 10, 15, 20] as const;
 
-/** Parse options from string or array format */
-function parseOptions(opts: string|string[]) {
-  if (Array.isArray(opts)) return opts;
-  try { return JSON.parse(opts); } catch { return []; }
-}
-
 /* ═══ OPTION SHUFFLE — server-owned (migration 20260428160000) ═══
  *
  * P0 fix: shuffle authority moved from client to server. The legacy
@@ -259,8 +254,6 @@ function shuffledToOriginal(displayIdx: number, _shuffleMap: number[]|null) {
 function originalToShuffled(origIdx: number, _shuffleMap: number[]|null) {
   return origIdx;
 }
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function QuizPage() {
   const experienceV3 = false;
@@ -973,7 +966,7 @@ export default function QuizPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fire-once consumer guarded by deepLinkFiredRef; isValidQuestion/questionCount are stable per render
   }, [deepLink, isLoading, student, screen, loading, startQuiz]);
 
-  // parseOptions is now a module-level function (used by shuffle logic)
+  // parseOptions is imported from @alfanumrik/lib/quiz/options (used by shuffle logic)
 
   const selectAnswer = (optIdx: number) => {
     if (showExplanation) return;
@@ -1469,7 +1462,7 @@ export default function QuizPage() {
           });
         }
         refreshSnapshot();
-        // Invalidate SWR dashboard cache so DailyRhythmQueue reflects new unlock state
+        // Invalidate SWR dashboard cache so the dashboard reflects new unlock state
         invalidateDashboard(student!.id);
         // Bust the server-side rhythm cache (30s TTL) so next load sees updated chapter progress
         fetch('/api/rhythm/today', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
@@ -1648,7 +1641,7 @@ export default function QuizPage() {
         });
       }
       refreshSnapshot();
-      // Invalidate SWR dashboard cache so DailyRhythmQueue reflects new unlock state
+      // Invalidate SWR dashboard cache so the dashboard reflects new unlock state
       invalidateDashboard(student!.id);
       // Bust the server-side rhythm cache (30s TTL) so next load sees updated chapter progress
       fetch('/api/rhythm/today', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
