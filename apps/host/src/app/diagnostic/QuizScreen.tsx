@@ -12,19 +12,9 @@
  */
 
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
 import { DIAGNOSTIC_COPY as C, t, type Bilingual } from './copy';
 import type { DiagnosticQuestion } from './types';
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
-
-function parseOptions(opts: string | string[]): string[] {
-  if (Array.isArray(opts)) return opts;
-  try {
-    return JSON.parse(opts);
-  } catch {
-    return [];
-  }
-}
 
 export interface QuizScreenProps {
   isHi: boolean;

@@ -565,6 +565,19 @@ single route whose every read is PROVABLY policy-covered:
 move to the cookie-scoped server client (the sole caller, `DailyLabMission.tsx`,
 fetches with `credentials: 'include'`). Response shape is byte-identical.
 
+**Prose correction 2026-08-10 (entry NOT deleted; its own asserting tests are
+untouched).** `packages/ui/src/dashboard/DailyLabMission.tsx` was deleted in the
+orphan-consolidation pass — it had zero production importers at HEAD. The "sole
+caller" sentence above is therefore now historical: `GET /api/student/daily-lab`
+has **no remaining caller** anywhere in `apps/host/src` or `packages/ui/src`
+(only the sibling `POST /api/student/daily-lab/claim` is still called, from
+`apps/host/src/app/stem-centre/page.tsx`). This does not weaken the entry —
+the cookie-scoped-server-client + RLS-coverage guarantees it pins are
+properties of the ROUTE and remain fully asserted. Flagged so the
+now-callerless GET route is a deliberate decision (keep for mobile/future
+re-wiring vs. retire) rather than an accident, and so this cell is not read as
+evidence of a live web caller that no longer exists.
+
 **RLS coverage proof (the gate that prevents a repeat of the dashboard incident).**
 
 | Read | Filter | Admitting SELECT policy (baseline / migration) |
@@ -586,6 +599,50 @@ read under RLS, so they are out of scope for this defense-in-depth batch.
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
 | REG-217 | `GET /api/student/daily-lab — RLS contract (admin→server migration)` | P8/P9: with the RLS-scoped server client mocked, an authenticated OWNER receives their Daily Lab with the byte-identical response shape (`simulation_id/title/title_hi/subject/emoji/estimated_minutes/bonus_coins=50/completed_today/deeplink/experiment_id`); a request the SELECT policy does NOT admit (mocked `students` read returns no row — RLS deny for a cross-user/forged `studentId`) yields `400 { success:false, error:'Student profile incomplete' }` with NO simulation payload — i.e. the migration fails CLOSED. The admin-client allowlist guard pins the ledger ratchet 273 → 272 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/daily-lab.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9 |
+
+#### Note — `GET /api/student/daily-lab` is caller-less but DELIBERATELY RETAINED (2026-08-10)
+
+Recorded during the `refactor/student-phase-2-consolidation` artifact-retirement
+pass, which retired four other orphans (`StudentGoalBadge`, `XPDailyStatus`,
+`GET /api/learner/srs/due`, `dashboard_cta_clicked`/`trackDashboardCta`). This
+route was evaluated for the same treatment and **blocked, pending a user
+decision.** Status stays `E` — nothing about the pinned contract changed.
+
+The GET route has no production caller. Only its sibling `/claim` is invoked
+(`apps/host/src/app/stem-centre/page.tsx:179`):
+
+```
+$ grep -rn "api/student/daily-lab" --include=*.ts --include=*.tsx --include=*.dart \
+    apps packages mobile e2e scripts
+apps/host/src/app/stem-centre/page.tsx:179:        fetch('/api/student/daily-lab/claim', {
+…                                        (all other hits are the routes' own
+                                          headers and daily-lab.test.ts)
+```
+
+Three reasons it was NOT deleted:
+
+1. **REG-217 is its only pin.** Deleting the route would orphan this entry, and
+   removing a catalog entry requires explicit user approval.
+2. **`/claim` imports a constant from it** — deleting the module breaks the
+   LIVE route:
+   ```
+   apps/host/src/app/api/student/daily-lab/claim/route.ts:32:import { DAILY_LAB_BONUS_COINS } from '../route';
+   apps/host/src/app/api/student/daily-lab/route.ts:38:export const DAILY_LAB_BONUS_COINS = 50;
+   ```
+   `/claim` uses it at lines 228, 250 and 257 (the coin-award amount). The
+   constant would have to be relocated first — a code change outside this
+   pass's scope.
+3. **Its test file also guards the live `/claim` route.**
+   `apps/host/src/__tests__/api/daily-lab.test.ts:292` asserts
+   `BUILT_IN_SIMULATIONS_META` covers every entry in `BUILT_IN_SIMULATIONS` —
+   and `/claim` builds its own `builtinPool` from that same metadata
+   (`claim/route.ts:30,154`). Deleting the test with the route would silently
+   drop a parity guard that a still-live route depends on.
+
+Honest scope note: this is a *retention* record, not new coverage. The
+admin→server RLS contract REG-217 pins is still enforced by the same test file;
+what is newly documented is that the GET surface it protects is currently
+unreachable from any product surface.
 
 ### Invariants covered by this section
 
@@ -765,7 +822,15 @@ own id; the route performs NO writes):
 The `students`+`class_students` nested-read recursion incident is FIXED (migration
 `20260702080000` + Phase 1). Caller transport: mobile = Bearer (now RLS-resolved
 via the forwarded JWT); web dashboard `DailyPlanCard` = cookie (server-client
-fallback). Fail-CLOSED: an RLS deny on the `students` read yields `student=null`
+fallback). **Prose correction 2026-08-10:** `packages/ui/src/dashboard/DailyPlanCard.tsx`
+was deleted in the orphan-consolidation pass (zero production importers at
+HEAD — verified by `git grep`; its only importer was its own test
+`apps/host/src/__tests__/components/dashboard/DailyPlanCard.test.tsx`, deleted
+with it). That test was never cited by any catalog entry, so **no entry loses
+an asserting file here** and REG-220's own pins are untouched — only this
+sentence's "web dashboard = cookie" caller example is now historical. The
+mobile Bearer caller, which is what REG-220 actually migrated and asserts, is
+unaffected. Fail-CLOSED: an RLS deny on the `students` read yields `student=null`
 → `404 { success:false, error:'student_not_found' }`, no plan payload, no 500.
 Query set + response envelope (`{ success, data, flagEnabled, intercepted }`)
 byte-identical; `authorizeRequest('study_plan.view',{requireStudentId:true})`

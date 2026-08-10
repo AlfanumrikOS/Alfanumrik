@@ -60,6 +60,7 @@ const ChapterReadinessCard = dynamic(
 // CTA button on first paint; FoxyPanel is dynamic-imported (ssr:false)
 // only when the student taps. First-load JS delta ≈ 0.
 import FoxyPanelLauncher from '@alfanumrik/ui/foxy-launcher/FoxyPanelLauncher';
+import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
 
 // Screen 06 "Topic" (Wave B, ff_learn_topic_v2). Additive presentation layer
 // — code-split so its bundle cost is zero for the (today: 100%) flag-off
@@ -69,8 +70,6 @@ const TopicPageV2 = dynamic(
   () => import('@alfanumrik/ui/learn/v2/TopicPage'),
   { loading: () => <LoadingFoxy /> },
 );
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 interface Question {
   id: string;
@@ -298,10 +297,17 @@ function ChapterConceptPageContent() {
         .eq('chapter_number', chapterNum)
         .eq('is_active', true)
         .maybeSingle(),
+      // is_active is load-bearing, not cosmetic: a deep link to a retired
+      // subject must not resolve to a subject_id and render curriculum topics.
+      // Matches the sibling reads in src/app/foxy/page.tsx and
+      // src/app/(student)/exams/page.tsx. When it misses, subjectRow.data is
+      // null → curriculumTopics stays empty and the plan-gate effect above
+      // (which never finds the code in the allowed list) redirects to /learn.
       supabase
         .from('subjects')
         .select('id')
         .eq('code', subject)
+        .eq('is_active', true)
         .maybeSingle(),
     ]);
 
@@ -686,11 +692,6 @@ function ChapterConceptPageContent() {
       passed_threshold: scoreGood,
     });
   }, [showCompletion, student, conceptStates, subject, chapterNum, telemetryBase]);
-
-  const parseOptions = (opts: string | string[]): string[] => {
-    if (Array.isArray(opts)) return opts;
-    try { return JSON.parse(opts); } catch { return []; }
-  };
 
   const selectOption = (optIdx: number) => {
     if (conceptStates[currentIdx]?.submitted) return;

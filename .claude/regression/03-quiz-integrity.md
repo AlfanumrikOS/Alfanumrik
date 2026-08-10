@@ -1462,7 +1462,7 @@ SM-2 math (no-duplicate rule; the endpoint owns ease/interval updates).
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-345 | `srs_grade_loop_closure` | **(1) Quality mapping (RE-PINNED 2026-08-05, assessment mandate)** — `srsQualityForResponse` emits ONLY from the endpoint's zod-accepted set {0,3,4,5} (the same four ratings QuickRecallSection exposes): correct <10s → 5, correct ≥10s → 4, **wrong → ALWAYS 0, regardless of speed — NEVER 3**. SM-2 defines quality >= 3 as SUCCESSFUL recall, so emitting 3 for a wrong answer would count as a correct review and advance the interval (1→6), corrupting the schedule for failed cards; 0 is the only failure value in the accepted set. Quality 3 stays in the `SrsQuality` union solely because the flashcard UI (QuickRecallSection's "Hard" button) legitimately sends it — the auto-mapper must never emit it. A sweep pins the closed emitted set {0,4,5} across speeds (the original entry's "wrong <5s→0 else ≥5s→3" mapping is the pinned-ABSENT defect shape). **(2) No double-grading** — `gradeSrsCardsFireAndForget` grades each card AT MOST ONCE per invocation (two question ids mapping to the same card → one POST), POSTs QuickRecallSection's EXACT request contract (`{ cardId, quality }`, JSON, same-origin), and NEVER throws on fetch failure (fire-and-forget; the card simply stays due). **(3) Count/content agreement (F3)** — `fetchSrsDueQuizCards` + `selectSrsReviewSet` are THE shared due-query/selection used by BOTH the quiz deep-link content and the dashboard DailyRhythmQueue SRS lane count (single-subject selection, `source_id` dedupe, cap; explicit subject filter wins, else earliest-due card's subject; the exact filter set `source='quiz_wrong_answer'`, `is_active=true`, `source_id NOT NULL`, `next_review_date <= today`, limit 50 is pinned). **(4) End-to-end** — the REAL quiz page rendered with `/quiz?mode=srs` POSTs exactly ONE grade per card after submit using SERVER-truth `is_correct` from the submit response (quality 5 for a fast correct). **(5) F4 rider** — `classifyError` receives the REAL per-topic mastery (0.62 from a `concept_mastery` row) and the explicit 0.5 fallback ONLY when no row exists; `fetchTopicMasteryByQuestionId` degrades to `{}` on any client failure (never blocks quiz start). | `apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` (14 tests, updated 2026-08-05 for the wrong→always-0 re-pin); `apps/host/src/__tests__/app/quiz-foxy-phase0.test.tsx` (F2 + F4 describe blocks, real quiz page render); `apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx` (lane count from the shared query) | E | P1-adjacent (server-truth correctness), learner-state rules |
+| REG-345 | `srs_grade_loop_closure` | **(1) Quality mapping (RE-PINNED 2026-08-05, assessment mandate)** — `srsQualityForResponse` emits ONLY from the endpoint's zod-accepted set {0,3,4,5} (the same four ratings QuickRecallSection exposes): correct <10s → 5, correct ≥10s → 4, **wrong → ALWAYS 0, regardless of speed — NEVER 3**. SM-2 defines quality >= 3 as SUCCESSFUL recall, so emitting 3 for a wrong answer would count as a correct review and advance the interval (1→6), corrupting the schedule for failed cards; 0 is the only failure value in the accepted set. Quality 3 stays in the `SrsQuality` union solely because the flashcard UI (QuickRecallSection's "Hard" button) legitimately sends it — the auto-mapper must never emit it. A sweep pins the closed emitted set {0,4,5} across speeds (the original entry's "wrong <5s→0 else ≥5s→3" mapping is the pinned-ABSENT defect shape). **(2) No double-grading** — `gradeSrsCardsFireAndForget` grades each card AT MOST ONCE per invocation (two question ids mapping to the same card → one POST), POSTs QuickRecallSection's EXACT request contract (`{ cardId, quality }`, JSON, same-origin), and NEVER throws on fetch failure (fire-and-forget; the card simply stays due). **(3) Count/content agreement (F3)** — `fetchSrsDueQuizCards` + `selectSrsReviewSet` are THE shared due-query/selection used by ~~BOTH the quiz deep-link content and the dashboard DailyRhythmQueue SRS lane count~~ — **CORRECTED 2026-08-10 (second pass): the dashboard lane consumer is GONE (`DailyRhythmQueue` deleted in the Phase 2 orphan-consolidation pass), so "BOTH" is now the quiz deep-link content ALONE and this clause is VACUOUS in the same way REG-358's is — see the REG-358 evidence correction + vacuity finding below.** The selection mechanics below remain fully enforced by `srs-quiz-review.test.ts` — (single-subject selection, `source_id` dedupe, cap; explicit subject filter wins, else earliest-due card's subject; the exact filter set `source='quiz_wrong_answer'`, `is_active=true`, `source_id NOT NULL`, `next_review_date <= today`, limit 50 is pinned). **(4) End-to-end** — the REAL quiz page rendered with `/quiz?mode=srs` POSTs exactly ONE grade per card after submit using SERVER-truth `is_correct` from the submit response (quality 5 for a fast correct). **(5) F4 rider** — `classifyError` receives the REAL per-topic mastery (0.62 from a `concept_mastery` row) and the explicit 0.5 fallback ONLY when no row exists; `fetchTopicMasteryByQuestionId` degrades to `{}` on any client failure (never blocks quiz start). | `apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` (14 tests, updated 2026-08-05 for the wrong→always-0 re-pin); `apps/host/src/__tests__/app/quiz-foxy-phase0.test.tsx` (F2 + F4 describe blocks, real quiz page render); ~~`apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx` (lane count from the shared query)~~ — **REMOVED 2026-08-10 with its subject; see the SRS lane-count reconciliation note below** | E | P1-adjacent (server-truth correctness), learner-state rules |
 
 Known gaps: no live-DB test of `/api/learner/review/grade` itself (pre-existing
 endpoint, unchanged this phase); the fire-and-forget POST is not retried, by
@@ -1622,7 +1622,171 @@ Added 2026-08-05 (testing agent, Phase 3 batch).
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-358 | `srs_single_predicate` | `packages/lib/src/learn/srs-predicate.ts` is the ONLY helper that shapes the "due quiz-wrong-answer cards" query: `SRS_DUE_PREDICATE_DESCRIPTOR` freezes the predicate (`is_active=true`, `source='quiz_wrong_answer'`, `source_id IS NOT NULL`, `next_review_date <= today`, `ORDER BY next_review_date ASC`, `defaultLimit=50`, `hardLimit=100`); `buildSrsDueQuery(client, studentId, opts)` is called by BOTH the client-side deep-link consumer (`packages/lib/src/learn/srs-quiz-review.ts` → `fetchSrsDueQuizCards` → `selectSrsReviewSet`) AND the server-side `/api/learner/srs/due` route AND the `DailyRhythmQueue` count. The dashboard SRS lane COUNT and the quiz `/quiz?mode=srs` CONTENT cannot disagree because they resolve through the same predicate object — the drift that REG-345 pinned at the fetcher level is now closed at the predicate level. Limit clamping (1 ≤ limit ≤ 100), today-yyyy-mm-dd date rendering, and optional-subject narrowing are all owned by the helper (call sites never assemble query strings). | `apps/host/src/__tests__/lib/learn/srs-source.test.ts`; `apps/host/src/__tests__/api/learner/srs-due.test.ts`; `apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx` | E | E4, drift-prevention |
+| REG-358 | `srs_single_predicate` | `packages/lib/src/learn/srs-predicate.ts` is the ONLY helper that shapes the "due quiz-wrong-answer cards" query: `SRS_DUE_PREDICATE_DESCRIPTOR` freezes the predicate (`is_active=true`, `source='quiz_wrong_answer'`, `source_id IS NOT NULL`, `next_review_date <= today`, `ORDER BY next_review_date ASC`, `defaultLimit=50`, `hardLimit=100`); `buildSrsDueQuery(client, studentId, opts)` is called by ~~BOTH the client-side deep-link consumer (`packages/lib/src/learn/srs-quiz-review.ts` → `fetchSrsDueQuizCards` → `selectSrsReviewSet`) AND the server-side `/api/learner/srs/due` route AND the `DailyRhythmQueue` count. The dashboard SRS lane COUNT and the quiz `/quiz?mode=srs` CONTENT cannot disagree because they resolve through the same predicate object~~ — **CORRECTED 2026-08-10 (second pass): exactly ONE production consumer remains** — the client-side deep-link path `packages/lib/src/learn/srs-quiz-review.ts` → `fetchSrsDueQuizCards` → `selectSrsReviewSet` → `/quiz?mode=srs`. The `DailyRhythmQueue` count was deleted in the Phase 2 orphan-consolidation pass and `GET /api/learner/srs/due` was retired once it lost that last caller. **The predicate is frozen and behaviourally tested, but the count-vs-content agreement clause is now VACUOUS — there is no second consumer left to disagree with.** See the reconciliation note below. — the drift that REG-345 pinned at the fetcher level is closed at the predicate level. Limit clamping (1 ≤ limit ≤ 100), today-yyyy-mm-dd date rendering, and optional-subject narrowing are all owned by the helper (call sites never assemble query strings). | ~~`apps/host/src/__tests__/lib/learn/srs-source.test.ts`~~ — **MIS-CITED, corrected 2026-08-10: that file never references `SRS_DUE_PREDICATE_DESCRIPTOR` or `buildSrsDueQuery`; it pins an unrelated `get_review_cards` RPC ⇄ adapter parity**; ~~`apps/host/src/__tests__/api/learner/srs-due.test.ts`~~ — **DELETED 2026-08-10 with the route it pinned**; ~~`apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx`~~ — **REMOVED 2026-08-10 with its subject**. **Surviving carriers (verified 2026-08-10):** `apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` → `describe('fetchSrsDueQuizCards (shared due query)')` (BEHAVIOURAL — exercises the real, unmocked `buildSrsDueQuery` and asserts the applied `.eq/.not/.lte/.limit` filter set); `apps/host/src/__tests__/adaptive-differential.test.ts:797-844` (STATIC — asserts `srs-predicate.ts` carries the `.eq/.not/.lte` chain and that `srs-quiz-review.ts` delegates to it). See the SRS lane-count reconciliation note below | E | E4, drift-prevention |
+
+---
+
+#### SRS lane-count reconciliation — REG-345 + REG-358 (2026-08-10)
+
+Both entries cited
+`apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx`
+(4 tests) as one of their asserting files. That file was deleted in the
+2026-08-10 orphan-consolidation pass together with the component it rendered
+(`packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx`). **Neither entry is
+deleted** — removing a catalog entry requires explicit user approval. Both stay
+`E`, on the surviving server-side pins.
+
+**What that file uniquely pinned:** the dashboard SRS lane's *displayed count* —
+that it reads `/api/learner/srs/due` rather than the rhythm queue, dedupes,
+caps the rendered number at 5, fails soft back to the rhythm-queue item count
+on API error, and skips the call entirely with no student in context.
+
+**REG-345 (`srs_grade_loop_closure`) — still `E`.** Its load-bearing claims are
+the quality mapping ({0,3,4,5}, wrong → ALWAYS 0) and the shared
+`fetchSrsDueQuizCards` + `selectSrsReviewSet` pair, both pinned by
+`apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` (14 tests) with the
+real quiz-page render in
+`apps/host/src/__tests__/app/quiz-foxy-phase0.test.tsx`. Neither depends on the
+deleted component. Verified passing 2026-08-10.
+
+~~**REG-358 (`srs_single_predicate`) — still `E`, and this is the entry that
+matters.** Its whole point is that the lane COUNT and the `/quiz?mode=srs`
+CONTENT cannot disagree *because both resolve through one frozen predicate
+object*. That guarantee lives at the predicate layer, not the render layer:
+`apps/host/src/__tests__/lib/learn/srs-source.test.ts` pins
+`SRS_DUE_PREDICATE_DESCRIPTOR` and `buildSrsDueQuery`, and
+`apps/host/src/__tests__/api/learner/srs-due.test.ts` pins the server route
+consuming it. The deleted file only ever demonstrated one *consumer* honouring
+the predicate; it never held the predicate itself. Verified passing 2026-08-10.~~
+
+**^ THE PARAGRAPH ABOVE IS FACTUALLY WRONG. Superseded by the correction
+immediately below (2026-08-10, second pass — same day, later reconciliation).**
+
+---
+
+#### REG-358 evidence correction + vacuity finding (2026-08-10, second pass)
+
+Written during the `refactor/student-phase-2-consolidation` retirement of
+`GET /api/learner/srs/due`. The backend agent challenged REG-358's cited
+evidence; testing re-derived it from source rather than accepting either the
+prior note or the challenge on report. **The challenge is upheld.**
+
+**Finding 1 — the `srs-source.test.ts` citation was never true.** Not "went
+stale": that file has never referenced either symbol. Direct grep:
+
+```
+$ grep -n "SRS_DUE_PREDICATE_DESCRIPTOR\|buildSrsDueQuery" \
+    apps/host/src/__tests__/lib/learn/srs-source.test.ts
+exit=1                      # zero matches
+```
+
+What it actually pins (its own `describe` names):
+
+```
+56:describe('srs-source predicate parity (RPC ⇄ adapter)', () => {
+71:  it('the get_review_cards RPC filters on is_active AND next_review_date <= CURRENT_DATE'
+79:  it('listDueCards carries the SAME predicate (is_active + next_review_date + student_id)'
+89:  it('countDueByStudent carries the SAME predicate (E4 fix pin — is_active was missing)'
+99:  it('the adapter itself defines NO predicate — it delegates to domains/practice'
+112:  it('resolve-next-action reads the due count through the adapter, not inline'
+123:describe('srs-source delegation', () => {
+```
+
+That is the `get_review_cards` RPC ⇄ `srs-source` adapter lane — a *different*
+predicate on a *different* code path. Real coverage, wrong entry.
+
+**Finding 2 — `SRS_DUE_PREDICATE_DESCRIPTOR` has ZERO enforcing tests
+repo-wide.** Pre-existing gap; NOT created by this change. Repo-wide grep over
+`apps/`, `packages/`, `supabase/`, `scripts/`, `e2e/` (node_modules excluded):
+
+```
+packages/lib/src/learn/srs-predicate.ts:45:export const SRS_DUE_PREDICATE_DESCRIPTOR = {
+packages/lib/src/learn/srs-predicate.ts:79:    Math.max(1, opts.limit ?? SRS_DUE_PREDICATE_DESCRIPTOR.defaultLimit),
+packages/lib/src/learn/srs-predicate.ts:80:    SRS_DUE_PREDICATE_DESCRIPTOR.hardLimit,
+packages/lib/src/learn/srs-predicate.ts:85:    .from(SRS_DUE_PREDICATE_DESCRIPTOR.table)
+```
+
+Four hits, all inside the descriptor's own source file. No test imports it, no
+test asserts its shape. Its *values* leak into one behavioural assertion by
+accident — `srs-quiz-review.test.ts` pins `['limit', 50]`, which is
+`defaultLimit` — but `hardLimit`, `order`, `dateFilter` and the `table` name are
+enforced nowhere as a descriptor. Changing `hardLimit: 100 → 5` breaks no test.
+The descriptor is documentation that happens to be executable, not a pin.
+
+**Finding 3 — REG-358's thesis is now VACUOUS, not unenforced.** The
+distinction matters and the entry should not be allowed to read as if it still
+guarantees what it originally claimed. `buildSrsDueQuery` now has exactly ONE
+production consumer:
+
+```
+$ grep -rn "srs-predicate" --include=*.ts --include=*.tsx apps packages supabase scripts e2e
+apps/host/src/__tests__/adaptive-differential.test.ts:809   (comment)
+apps/host/src/__tests__/adaptive-differential.test.ts:827   (regex literal)
+apps/host/src/__tests__/adaptive-differential.test.ts:838   (readSource path)
+packages/lib/src/learn/srs-quiz-review.ts:35:import { buildSrsDueQuery, type SrsQueryClient } from './srs-predicate';
+packages/lib/src/learn/srs-quiz-review.ts:53   (comment)
+```
+
+One non-test importer. The other two consumers named in the original entry are
+gone — `DailyRhythmQueue` (Phase 2 orphan-consolidation) and
+`GET /api/learner/srs/due` (retired here once caller-less). So the predicate is
+frozen and it is tested, but **"the COUNT and the CONTENT cannot disagree" is
+now a statement about a single consumer agreeing with itself.** It is true, and
+it is empty. The entry's residual value is forward-looking only: the multi-client
+`SrsQueryClient` indirection is deliberately retained so a future server or cron
+consumer *must* route through the same helper rather than reintroducing the
+drift. That is a design guard, not a currently-enforced invariant.
+
+**Surviving carriers — verified, not asserted.** Both re-run this session:
+
+```
+$ npx vitest run src/__tests__/lib/learn/srs-quiz-review.test.ts \
+                src/__tests__/lib/learn/srs-source.test.ts
+ Test Files  2 passed (2)
+      Tests  21 passed (21)
+
+$ npx vitest run src/__tests__/adaptive-differential.test.ts
+ Test Files  1 passed (1)
+      Tests  44 passed (44)
+```
+
+- `apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` →
+  `describe('fetchSrsDueQuizCards (shared due query)')`. **Behavioural.** The
+  file carries no `vi.mock` of `srs-predicate` (grep for `vi.mock` in it returns
+  nothing), so calling `fetchSrsDueQuizCards` runs the REAL `buildSrsDueQuery`
+  against a recording chain-client and asserts the applied filters:
+  `['eq','source','quiz_wrong_answer']`, `['eq','is_active',true]`,
+  `['not','source_id',…]`, `['lte','next_review_date',…]`, `['limit',50]`,
+  plus the `id, source_id, subject` projection. This is the strongest surviving
+  evidence and it is stronger than either deleted file.
+- `apps/host/src/__tests__/adaptive-differential.test.ts:797-844`. **Static.**
+  Asserts the quiz page goes through `fetchSrsDueQuizCards` +
+  `selectSrsReviewSet`, that `srs-quiz-review.ts` either inlines the chain OR
+  imports the builder, and that whichever module owns the predicate carries the
+  literal `.eq/.not/.lte` chain. Source-text pattern matching, not execution.
+
+**Status stays `E`** — the predicate shape genuinely is enforced by a passing
+behavioural test. It is the entry's *scope claim* that was overstated, and it is
+corrected above rather than the status being downgraded.
+
+**Open obligation (tracked):** if `SRS_DUE_PREDICATE_DESCRIPTOR` is intended to
+be a contract rather than a comment, it needs a direct shape pin
+(`hardLimit`, `order`, `dateFilter`, `table`). None exists today and none is
+added by this pass — recording the gap, not silently closing it.
+
+**Genuinely unenforced after this deletion:** the cap-at-5 display rule and the
+fail-soft-to-rhythm-count fallback — both pure render concerns of the deleted
+component.
+
+**Judgement — vacuous loss, not a coverage regression.** Verified by
+`git grep DailyRhythmQueue HEAD`: the component's only importers at HEAD were
+its own three test files — zero production importers — and no UI anywhere in
+`apps/host/src` or `packages/ui/src` still consumes `GET /api/rhythm/today`.
+The lane was already dark; the test was a false green.
+
+**Open obligation (tracked):** when a live surface re-renders an SRS lane
+count, the cap-at-5 and fail-soft-fallback rules must be re-pinned against it.
+The predicate they read is frozen and tested, so re-pinning is mechanical.
 
 ---
 
@@ -1633,5 +1797,77 @@ IRT shadow contract in `02-foxy-ai.md` (kept in that shard to sit next to
 the other IRT/AI observability pins — REG-311/316). REG-358 (SRS single
 predicate) is above. Continuous through REG-358.
 **Total catalog: 358 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-379 — canonical `parseOptions` / `OPTION_LETTERS`: `JSON.parse(null)` render-crash fix + P6 count/order invariance (2026-08-10)
+
+Added 2026-08-10 (testing agent, orphan + duplication consolidation pass).
+
+`parseOptions` had drifted into SEVEN copies and `OPTION_LETTERS` into SEVEN
+more across two packages. Six of the seven `parseOptions` copies carried a real
+latent defect. Their body was:
+
+```ts
+if (Array.isArray(opts)) return opts;
+try { return JSON.parse(opts); } catch { return []; }
+```
+
+**`JSON.parse(null)` does not throw.** It coerces its argument to the string
+`"null"`, parses it, and returns `null`. So the `catch` never fires and those
+six copies could return `null` from a function annotated `: string[]` — after
+which the caller's `opts.map(...)` throws a render-time
+`TypeError: Cannot read properties of null (reading 'map')`, blanking the quiz,
+learn, mock-exam, pyq, diagnostic and results screens rather than degrading.
+The seventh copy (`/tutor`) was the odd one out and the correct one: it took
+`unknown`, guarded with `typeof opts === 'string'`, and returned `[]`. The new
+canonical module `packages/lib/src/quiz/options.ts` unifies on `[]`.
+
+This sits directly on the **question-serving path**, so the entry also freezes
+the two marking-safety properties the parser must never break: option **COUNT**
+(what P6 pins at exactly four) and option **ORDER** (bound to the server-side
+shuffle snapshot and `selected_displayed_index` — reordering here would corrupt
+marking).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-379a | `parse_options_null_returns_empty_not_null` | The fixed defect. `parseOptions(null)` and `parseOptions(undefined)` return `[]`, never `null` — so no caller's `.map()` can throw at render. Also `[]` for other non-string non-array input (`42`, `{a:1}`, `true`). Malformed JSON strings (`'not json at all'`, `'["unterminated"'`, `''`) return `[]` via the `catch`, as all seven originals did. | `apps/host/src/__tests__/lib/quiz/options.test.ts` | E | P6, render-safety |
+| REG-379b | `parse_options_count_and_order_invariant` | **P6 / marking safety.** For both input shapes the parser NEVER changes count or order: no reorder (`parseOptions(ordered)[2] === 'third'` for array AND JSON-string input), no dedupe, no trim, no dropping of empty members (`['  padded  ','','dup','dup']` survives at length 4), no padding a short array to 4, no truncating a 6-option array to 4, and no mutation of the input array. Shape enforcement is deliberately left to the P6 gate in `question-validation.ts`; a filter here would silently change how many options render. | `apps/host/src/__tests__/lib/quiz/options.test.ts` | E | **P6**, P1 (marking) |
+| REG-379c | `parse_options_behavioural_union_of_seven` | Consolidation is behaviour-neutral. Array branch applies `.map(String)` (adopted from the `/tutor` copy, which carried the guard because its source column `chapter_concepts.practice_options` is nullable `unknown` jsonb; the call sites that actually run `opt.replace(...)` per member are `(student)/quiz/page.tsx:1972`, `(student)/learn/[subject]/[chapter]/page.tsx:2083` and `:2241`, and `packages/ui/src/quiz/v2/PracticeRunner.tsx:254` — `/tutor` renders `{opt}` directly as a React child at `tutor/page.tsx:342` and never calls `.replace()`) — proven 1:1 and index-preserving, and byte-identical for genuine `string[]`, which P6 guarantees. String branch returns `JSON.parse`'s result VERBATIM including valid-JSON non-arrays (`'"abc"'`→`'abc'`, `'5'`→`5`, `'null'`→`null`, `'{"a":1}'`→`{a:1}`) and does NOT coerce members — exactly as all seven originals did. Hindi (Devanagari) options round-trip intact (P7). | `apps/host/src/__tests__/lib/quiz/options.test.ts` | E | P6, P7 |
+| REG-379d | `option_letters_single_frozen_constant` | `OPTION_LETTERS` is exactly `['A','B','C','D']` in order, is `Object.isFrozen` (a shared constant must not be mutable by one consumer), and is `undefined` past index 3 so every call site's `OPTION_LETTERS[idx] \|\| String(idx + 1)` fallback still yields `'5'` at index 4. | `apps/host/src/__tests__/lib/quiz/options.test.ts` | E | P6 |
+
+**Call sites consolidated (8 files, 7 `parseOptions` + 7 `OPTION_LETTERS`
+declarations removed):** `apps/host/src/app/(student)/quiz/page.tsx`,
+`apps/host/src/app/(student)/learn/[subject]/[chapter]/page.tsx`,
+`apps/host/src/app/(student)/mock-exam/page.tsx`,
+`apps/host/src/app/(student)/pyq/page.tsx`,
+`apps/host/src/app/diagnostic/QuizScreen.tsx`,
+`apps/host/src/app/tutor/page.tsx`, `packages/ui/src/quiz/QuizResults.tsx`,
+`packages/ui/src/quiz/v2/PracticeRunner.tsx` (letters only).
+
+**Reference-identity check (independently verified, not taken on report).** The
+array branch now returns a NEW array (`.map(String)`) where six originals
+returned the input by reference. Every one of the seven `parseOptions` call
+sites was read directly: all consume the result inline during render or inside
+a `.map` body — none sits in a `useMemo`/`useEffect` dependency array and none
+does a reference comparison. The identity change is unobservable. The one place
+the result's length is load-bearing —
+`QuizResults.tsx:1090`'s legacy `origOpts.length === 4` shuffle gate — is
+unaffected because `.map(String)` is length-preserving.
+
+### Known gap (documented, not silently dropped)
+
+The string branch still returns `JSON.parse`'s result verbatim, so a DB value
+of the literal string `'null'` still yields `null` and would still crash a
+caller's `.map()`. This is **preserved, not introduced** — all seven originals
+behaved this way, and REG-379c pins it deliberately so the consolidation stays
+provably behaviour-neutral. Tightening it (e.g. an `Array.isArray` guard on the
+parse result) is a real follow-up, but it is a BEHAVIOUR CHANGE on the
+question-serving path and therefore needs assessment sign-off under P6 rather
+than being folded into a consolidation pass. The `null` (not `'null'`) case —
+the one that actually occurs, from nullable columns such as
+`concepts.practice_options` — is fully closed by REG-379a.
+
+**Total catalog: 359 entries (target: 35 — TARGET EXCEEDED).**
 
 ---

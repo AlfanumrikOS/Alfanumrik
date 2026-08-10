@@ -28,12 +28,15 @@ export function DesktopSidebar() {
   const passesExamGate = (item: any): boolean =>
     !(item?.requiresUpcomingExam === true && !hasUpcomingExam);
 
-  // Consumer Minimalism Wave A — the adaptive "Today" home is surfaced when
-  // ff_today_home_v1 is ON (student only). It used to be spliced in here
-  // imperatively at section index 0; since 2026-08-09 it is a normal
-  // flagName-gated entry in SIDEBAR_SECTIONS' "Main" section, so the SAME
-  // isItemVisibleForFlags filter below enforces the gate. Behaviour when the
-  // flag is OFF is unchanged (no Today entry).
+  // Consumer Minimalism Wave A — the adaptive "Today" home used to be spliced
+  // in here imperatively at section index 0, then (2026-08-09) became a
+  // flagName-gated entry in SIDEBAR_SECTIONS' "Main" section. Since the Phase 3
+  // IA trim (2026-08-10) it is an UNGATED entry there: the "Home" (/dashboard)
+  // row that used to cover the flag-OFF case is gone, so gating Today would
+  // leave this sidebar with no home destination. /today redirects to
+  // /dashboard while ff_today_home_v1 is OFF, so it is never a dead end. The
+  // isItemVisibleForFlags filter below still enforces every OTHER flagName in
+  // the list (today: only /me's ff_me_v2).
   const sidebarSections = getSidebarSections(activeRole)
     .filter(s => {
       const gMin = (s as any).gradeMin;

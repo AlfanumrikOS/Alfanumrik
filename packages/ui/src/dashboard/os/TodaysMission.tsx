@@ -5,10 +5,14 @@
  *
  * Decision-first design: this is the single dominant CTA on the page. It fetches
  * the learner-loop queue from /api/v2/today (gated by ff_today_home_v1, which IS
- * enabled globally) via the shared useTodayQueue hook. This replaces the former
- * DailyRhythmQueue which fetched /api/rhythm/today (gated by
- * ff_pedagogy_v2_daily_rhythm — OFF in production), meaning the hero was empty
- * for all students.
+ * enabled globally) via the shared useTodayQueue hook. This replaced the former
+ * DailyRhythmQueue, which fetched /api/rhythm/today and was never mounted on
+ * this dashboard — leaving the hero empty for all students. That component
+ * (packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx) was deleted in the
+ * 2026-08 orphan consolidation. Note the /api/rhythm/today route and its
+ * ff_pedagogy_v2_daily_rhythm flag are both still live and the flag is enabled
+ * globally (migration 20260621000001) — it was the renderer that was missing,
+ * not the flag.
  *
  * ONE-PRIMARY-ACTION RULE (2026-08-05 declutter). The card previously rendered
  * up to FIVE competing calls to action at once: the primary queue row, two

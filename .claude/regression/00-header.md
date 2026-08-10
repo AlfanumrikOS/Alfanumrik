@@ -6,8 +6,141 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 371 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-378 (2026-08-09, Node.js toolchain version pin — every surface
+**Total catalog: 372 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
+`JSON.parse(null)` returns `null` rather than throwing, so six of the seven
+duplicate `parseOptions` copies could return `null` from a function annotated
+`: string[]`, crashing the caller's `.map()` at render on the quiz, learn,
+mock-exam, pyq, diagnostic and results screens. The canonical module
+`packages/lib/src/quiz/options.ts` returns `[]`; the entry also freezes the two
+marking-safety properties of the question-serving path — option COUNT (P6's
+exactly-four) and option ORDER (bound to the server shuffle snapshot and
+`selected_displayed_index`) — as explicitly invariant. 4 sub-entries
+[REG-379a..d], 22 tests in `apps/host/src/__tests__/lib/quiz/options.test.ts`,
+all E. Documented known gap: the literal STRING `'null'` still parses to `null`
+verbatim, preserved-not-introduced from all seven originals and pinned
+deliberately; tightening it is a P6 behaviour change needing assessment
+sign-off. Full entry in `03-quiz-integrity.md`. **REG-380 is now the next free
+id**; REG-371..REG-377 remain RESERVED.)
+
+2026-08-10 reconciliation — 4 test files deleted in the orphan-consolidation
+pass, 3 catalog entries repaired, **0 entries deleted**. The deleted files were
+`DailyPlanCard.test.tsx` and `DailyRhythmQueue.{blockedPrerequisite,remediation,
+srs-count}.test.tsx`. Three entries cited them and were repaired IN PLACE with
+the citation struck through and a reconciliation note added — REG-129
+(`09-adaptive-program.md`, client half of the Loop A remediation lane;
+downgraded `U`→`P` because its six client-half clauses are now unenforced,
+server half fully intact via `api/rhythm/today-remediation-lane.test.ts`) and
+REG-345 + REG-358 (`03-quiz-integrity.md`, SRS lane count; both stay `E` — the
+~~predicate-level guarantee that makes REG-358 meaningful lives in
+`srs-source.test.ts` + `api/learner/srs-due.test.ts`, never in the deleted
+render test~~ **← THIS CLAUSE IS FACTUALLY WRONG. Corrected the SAME DAY by the
+second-pass reconciliation below: `srs-source.test.ts` never referenced either
+predicate symbol at any point, and `api/learner/srs-due.test.ts` has since been
+deleted with its route.**). `DailyPlanCard.test.tsx` was cited by NO entry; only REG-220's
+prose named the component, corrected in place in `10-rbac-rls.md`. The
+`blockedPrerequisite` test was cited by no entry either. **Judgement: all four
+were false greens, not lost coverage** — `git grep` at HEAD proves all three
+`DailyRhythmQueue` tests and the `DailyPlanCard` test were the ONLY importers
+of their subjects (zero production importers), and no UI in `apps/host/src` or
+`packages/ui/src` consumes `GET /api/rhythm/today` at all any more. Open
+obligations to re-pin the client-half clauses if either lane is ever re-lit are
+recorded in both shards.
+
+2026-08-10 reconciliation, SECOND PASS (branch
+`refactor/student-phase-2-consolidation`, base `855784bc6`) — 4 artifacts
+retired, **2 catalog entries corrected, 1 annotated, 0 entries added, 0 entries
+deleted. Declared total UNCHANGED at 372 upper bound / 367 honest.**
+
+Retired: `packages/ui/src/goals/StudentGoalBadge.tsx` (+ test);
+`packages/ui/src/xp/XPDailyStatus.tsx` (+ barrel line);
+`GET /api/learner/srs/due` (+ `api/learner/srs-due.test.ts`, route-access
+manifest 399 → 398); `dashboard_cta_clicked` / `trackDashboardCta`
+(`packages/lib/src/posthog/dashboard-cta.ts` + its test; type tombstoned in
+`posthog/types.ts`).
+
+**Catalog impact is narrower than the change set.** A grep of
+`.claude/regression/` for all six retired symbols found citations for exactly
+ONE of them:
+
+```
+$ grep -rn "srs-due.test.ts\|dashboard-cta.test\|StudentGoalBadge\|XPDailyStatus\|trackDashboardCta\|dashboard_cta_clicked" .claude/regression/
+.claude/regression/00-header.md:36:      … api/learner/srs-due.test.ts …
+.claude/regression/03-quiz-integrity.md:1625: (REG-358 Location column)
+.claude/regression/03-quiz-integrity.md:1658: (REG-358 reconciliation note)
+```
+
+`StudentGoalBadge`, `XPDailyStatus`, `trackDashboardCta` and
+`dashboard_cta_clicked` were cited by **zero** catalog entries — three of the
+four retirements cost the catalog nothing.
+
+**REG-358 (`srs_single_predicate`) — evidence CORRECTED, status stays `E`.**
+The backend agent challenged its cited evidence; testing re-derived it from
+source rather than accepting either side on report, and **upheld the
+challenge**. Three findings, all recorded in full in `03-quiz-integrity.md`:
+
+1. **The `srs-source.test.ts` citation was never true** — not stale, never
+   true. `grep -n "SRS_DUE_PREDICATE_DESCRIPTOR\|buildSrsDueQuery"` against
+   that file exits 1 (zero matches). It pins an unrelated `get_review_cards`
+   RPC ⇄ adapter parity. The same false claim had been repeated in this
+   header's first-pass note above; both are now struck through.
+2. **`SRS_DUE_PREDICATE_DESCRIPTOR` has ZERO enforcing tests repo-wide** —
+   a **pre-existing gap, NOT created by this change**. All four repo-wide
+   matches are inside its own source file. `hardLimit`, `order`, `dateFilter`
+   and `table` are enforced nowhere; changing `hardLimit: 100 → 5` breaks no
+   test. Open obligation recorded, deliberately NOT silently closed.
+3. **REG-358's thesis is now VACUOUS rather than unenforced** — the
+   distinction matters. After the Phase 2 deletion and this route retirement,
+   `buildSrsDueQuery` has exactly ONE production importer
+   (`packages/lib/src/learn/srs-quiz-review.ts` → `/quiz?mode=srs`). The
+   predicate is frozen and behaviourally tested, but "the COUNT and the CONTENT
+   cannot disagree" is now a statement about a single consumer agreeing with
+   itself. True, and empty. Residual value is forward-looking only: the
+   multi-client `SrsQueryClient` indirection is deliberately retained so a
+   future server/cron consumer must route through the same helper.
+
+Real surviving carriers, both re-run green this session (21/21 and 44/44):
+`apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` →
+`describe('fetchSrsDueQuizCards (shared due query)')` — BEHAVIOURAL, no
+`vi.mock` of `srs-predicate`, so it exercises the real `buildSrsDueQuery`; and
+`apps/host/src/__tests__/adaptive-differential.test.ts:797-844` — STATIC
+source-text pins. Status stays `E`: the predicate shape genuinely is enforced.
+It was the entry's SCOPE claim that was overstated, so the scope is corrected
+rather than the status downgraded.
+
+**REG-345 (`srs_grade_loop_closure`) — clause (3) annotated, status stays `E`.**
+Its "used by BOTH the quiz deep-link content and the dashboard DailyRhythmQueue
+SRS lane count" is vacuous for the same reason. Selection mechanics remain
+fully enforced by `srs-quiz-review.test.ts`.
+
+**REG-217 (`GET /api/student/daily-lab` RLS contract) — retention note added,
+status stays `E`.** The route is now caller-less (only its sibling `/claim` is
+invoked, from `apps/host/src/app/stem-centre/page.tsx:179`) but was
+**DELIBERATELY RETAINED**, blocked pending a user decision: (a) REG-217 is its
+only pin; (b) `claim/route.ts:32` imports `DAILY_LAB_BONUS_COINS` from it, so
+deleting the module breaks a LIVE route; (c) its test file also guards
+`BUILT_IN_SIMULATIONS_META` parity, which `/claim` depends on. Full rationale
+with command output in `10-rbac-rls.md`.
+
+Independently derived body count this pass (stated definition: distinct
+`REG-N` numerals appearing either as a `##`-level heading or as the leading
+cell of a table row, across the 15 non-header shards):
+
+```
+$ grep -rhoE '^#{2,4} +REG-[0-9]+' <15 shards> ; grep -rhoE '^\|[[:space:]]*\*{0,2}REG-[0-9]+' <15 shards> \
+    | grep -oE '[0-9]+' | sort -n -u | wc -l
+326      # max id: 379
+```
+
+**326 body-backed ids vs the 372/367 declared above.** That divergence is
+PRE-EXISTING and is NOT resolved here — it is the same class of gap the
+"Honesty note on the declared total" below already tracks (REG-361..REG-365
+narrated but never filed), and closing it needs a full shard-by-shard audit,
+not a drive-by edit. Recorded so the next reader has a measured number rather
+than only a carried-forward one. This pass itself is count-neutral: 0 added,
+0 deleted.
+
+Prior: REG-378 (2026-08-09, Node.js toolchain version pin — every surface
 that can choose a Node is pinned to 22.x and none may float; `engine-strict`
 makes the real floor 22.22.0, not 22.0.0. Full entry further down this file
 and in `11-infrastructure.md`. REG-371..REG-377 remain RESERVED.)
@@ -178,12 +311,17 @@ REG-358 SRS single predicate [E]: `packages/lib/src/learn/srs-predicate.ts`
 freezes `SRS_DUE_PREDICATE_DESCRIPTOR` (`is_active=true`,
 `source='quiz_wrong_answer'`, `source_id IS NOT NULL`, `next_review_date <=
 today`, `ORDER BY next_review_date ASC`, defaultLimit 50, hardLimit 100)
-and exposes `buildSrsDueQuery`, called by BOTH the client-side deep-link
+and exposes `buildSrsDueQuery`, ~~called by BOTH the client-side deep-link
 consumer (`srs-quiz-review.ts` → `fetchSrsDueQuizCards` →
 `selectSrsReviewSet`) AND the server-side `/api/learner/srs/due` route AND
 the `DailyRhythmQueue` count — the dashboard SRS lane COUNT and the
 `/quiz?mode=srs` CONTENT cannot disagree because they resolve through the
-same predicate object; closes the drift REG-345 pinned at the fetcher level
+same predicate object~~ **← superseded 2026-08-10 (second pass): TWO of those
+three consumers are gone (`DailyRhythmQueue` deleted in Phase 2;
+`/api/learner/srs/due` retired once caller-less), leaving the client-side
+deep-link path as the SOLE production consumer. The predicate is still frozen
+and behaviourally tested, but the count-vs-content clause is now VACUOUS.**;
+closes the drift REG-345 pinned at the fetcher level
 one layer deeper at the predicate level.)
 Prior: REG-351..REG-353 (2026-08-05, Foxy North-Star Phase 2 Canonical
 Learner Model batch — three pins in `03-quiz-integrity.md` covering the
@@ -358,8 +496,10 @@ REG-366 taken by the same-day K9 leadership standalone-route fold-in.) That
 made REG-367 the next free id, and the same-day Student-OS IA consolidation
 batch then took **REG-367..REG-370**, so REG-371 was the next free id at that
 point. That is superseded below — the 2026-08-09 Node.js version-pin batch took
-**REG-378**, so **REG-379 is now the next free id** and REG-371..REG-377 remain
-RESERVED (see the ID-collision note immediately below).
+**REG-378**, so REG-379 was the next free id and REG-371..REG-377 remain
+RESERVED (see the ID-collision note immediately below). That is in turn
+superseded above — the 2026-08-10 canonical-`parseOptions` consolidation took
+**REG-379**, so **REG-380 is now the next free id.**
 
 2026-08-09: **REG-378 — Node.js toolchain version pin** (deployment-config
 change; architect made it, P14 chain architect → ops, testing). Every surface
@@ -426,6 +566,19 @@ batch either way and must not be reissued.
 same bracket now reads **371 upper bound / 366 honest**. REG-378 itself is
 filed — `## REG-378` heading plus `| REG-378 |` table row in
 `11-infrastructure.md` — and is not part of the unresolved gap above.)
+(2026-08-10 addendum: REG-379 adds exactly one more filed, body-backed entry —
+`## REG-379` heading plus four `| REG-379a..d |` table rows in
+`03-quiz-integrity.md`, counted as ONE entry — so the bracket now reads
+**372 upper bound / 367 honest**. The REG-361..REG-365 upstream gap above is
+still unresolved and untouched by this pass. The same-day deletion
+reconciliation changed no count: 3 entries were repaired in place, 0 deleted.
+The same-day SECOND-PASS reconciliation — the four-artifact retirement on
+`refactor/student-phase-2-consolidation` — likewise changed no count: REG-358
+corrected, REG-345 annotated, REG-217 annotated, 0 added, 0 deleted, so the
+bracket still reads **372 upper bound / 367 honest**. That pass DID record an
+independently derived body-backed figure of **326** distinct `REG-N` ids across
+the 15 shards, which agrees with neither number above; the discrepancy is
+pre-existing, is flagged in that note, and remains open.)
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

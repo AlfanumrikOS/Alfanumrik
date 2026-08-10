@@ -270,7 +270,14 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // src/app/api/health/route.ts is now a PURE liveness endpoint (no downstream
 // probes, no service-role reads); its ledger entry is pruned in the same change
 // so the guard ratchets DOWN, not drifts.
-const EXPECTED_COUNT = 268;
+// learners repository module (2026-08-10): 268 -> 267.
+// src/app/api/v2/student/profile/route.ts now reads the caller's OWN students
+// row through the RLS-scoped request client (createSupabaseRouteClient) behind
+// the new learners repository port; the read is served by the
+// students_select_merged policy (auth_user_id = auth.uid()), so service-role is
+// no longer required. Ledger entry pruned in the same change so the guard
+// ratchets DOWN, not drifts.
+const EXPECTED_COUNT = 267;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

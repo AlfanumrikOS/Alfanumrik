@@ -39,89 +39,110 @@ export const CORE_TABS = [
   { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
 ];
 
+// ─── PHASE 3 IA TRIM (2026-08-10) ──────────────────────────────────────────
+//
+// MORE_ITEMS carried 18 rows and SIDEBAR_SECTIONS 22 links. The five primary
+// slots were right, but the breadth BELOW them meant a student met ~20 named
+// places one tap past the bar — the overflow had become a second, unranked
+// product surface. Trimmed to 10 More rows / 14 sidebar links, and the two
+// projections now mirror each other item-for-item.
+//
+// ROUTES ARE RETAINED, ONLY NAV ENTRIES WERE REMOVED. Nine destinations left
+// the navigation and every one of them still resolves and is still deep-linked
+// to from outside the nav — removing the page would break those callers:
+//
+//   /assignments, /pyq, /mock-exam, /exam-briefing, /refresh, /revision,
+//   /exam-prep   — targets of ~24 notification types, teacher assignment links
+//                  and Foxy deep links.
+//   /quiz        — reached through the Practice slot (PRACTICE FLAG CONTRACT
+//                  below: /practice replaces to /quiz while ff_practice_os_v1
+//                  is OFF, and `altHrefs: ['/quiz']` keeps the slot current).
+//   /dashboard   — the Today slot's real landing page while ff_today_home_v1
+//                  is OFF (TODAY FLAG CONTRACT below).
+//
+// DUPLICATE HOME REMOVED. `/dashboard` was a More row called "Home" AND the
+// Today slot's `altHrefs` target, so the app shipped two names for one home.
+// The row is gone; the altHrefs behaviour is deliberately unchanged, because
+// it is what keeps exactly one slot `aria-current` while the Today routing
+// flag settles.
 export const MORE_ITEMS = [
-  // Was "Dashboard" here and "Home" in SIDEBAR_SECTIONS — one route, two names
-  // (same icon). Found by the cross-projection guard added alongside the
-  // /progress fix; unified to the sidebar's "Home", which is what the route is
-  // to a student. Destination unchanged.
-  // 2026-08-06 declutter: items carry a `group` so the More sheet can render
-  // section headers instead of one flat 19-item list. `group` is a sheet-only
-  // projection concern — SIDEBAR_SECTIONS already groups by section.
-  { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
   // 2026-08-09 — Foxy is a UTILITY, not a primary destination. It used to be
   // the raised centre FAB in CORE_TABS; the navigation spec reserves the five
   // primary slots for Today / Learn / Practice / Progress / More and classes
   // Foxy alongside profile, notifications and search. It leads the utilities
   // group so it stays one interaction away on phones.
   { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', group: 'utilities' },
-  { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट', group: 'practice' },
-  { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब', group: 'practice' },
-  // /practice is NOT listed here any more — it is primary slot 3. See the
-  // PRACTICE FLAG CONTRACT note on resolveStudentPrimaryNav().
-  { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9, group: 'practice' },
-  { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9, group: 'practice' },
-  // Alfa OS pre-test briefing hub — flag-gated (ff_test_os_v1). The single
-  // "Start an exam" front door; hands off to the existing exam runtime.
-  { href: '/exam-briefing', icon: '🧭', label: 'Exam Briefing', labelHi: 'परीक्षा ब्रीफ़िंग', flagName: 'ff_test_os_v1', group: 'practice' },
-  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', group: 'study' },
+  // Was "Settings & Notifications" — wrong on both halves. The page carries no
+  // settings controls, and the job the IA gives this destination is reminders.
+  { href: '/notifications', icon: '🔔', label: 'Reminders', labelHi: 'रिमाइंडर', group: 'utilities' },
+  // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
+  { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है', group: 'utilities' },
   { href: '/library', icon: '📚', label: 'Library', labelHi: 'अध्ययन सामग्री', group: 'study' },
-  { href: '/refresh', icon: '🔁', label: 'Refresh', labelHi: 'ताज़ा करो', group: 'study' },
-  // Alfa OS Revision Center — flag-gated (ff_revision_os_v1). A v2 spaced-
-  // repetition revision hub; only appears once its launch flag is ON.
-  { href: '/revision', icon: '🧠', label: 'Revision Center', labelHi: 'दोहराव केंद्र', flagName: 'ff_revision_os_v1', group: 'study' },
-  { href: '/exam-prep', icon: '🎯', label: 'Exam Sprint', labelHi: 'परीक्षा की तैयारी', requiresUpcomingExam: true, group: 'practice' },
+  { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', group: 'study' },
+  { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब', group: 'study' },
+  // /practice is NOT listed here — it is primary slot 3. See the PRACTICE FLAG
+  // CONTRACT note on resolveStudentPrimaryNav().
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल', group: 'account' },
   // Wave B gap screen 16 "Me" — flag-gated (ff_me_v2). Additive presentation
   // layer over /profile (apps/host/src/app/me/page.tsx); only appears once
-  // the launch flag is ON, same convention as Practice Center / Revision
-  // Center above.
+  // the launch flag is ON.
   // Label was "Me (New)" — a build-status marker leaking into student-facing
   // UI, and one of the THREE things called "Me" (the others were the /progress
   // tab and /profile). With /progress renamed to "Progress", plain "Me" is now
   // unambiguous and is the screen's real name.
   { href: '/me', icon: '⚙️', label: 'Me', labelHi: 'मैं', flagName: 'ff_me_v2', group: 'account' },
-  // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
-  { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है', group: 'utilities' },
-  { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ', group: 'utilities' },
   { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट', group: 'account' },
   { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट', group: 'account' },
 ];
 
 /** More-sheet section headers (mobile overflow projection only). `group` on a
  *  MORE_ITEMS entry references these. Ungrouped items render at the top, then
- *  groups in this order. Mirrors SIDEBAR_SECTIONS' Practice/Study/Account
- *  grouping so both projections share the same mental model (IA law). */
+ *  groups in this order. Mirrors SIDEBAR_SECTIONS' Utilities/Study/Account
+ *  sections so both projections share the same mental model (IA law). */
 export const MORE_SHEET_GROUPS: { key: string; en: string; hi: string }[] = [
-  // Utilities first — Foxy, notifications and the memory screen are the
-  // things a student reaches for mid-session, and Foxy in particular lost its
+  // Utilities first — Foxy, reminders and the memory screen are the things a
+  // student reaches for mid-session, and Foxy in particular lost its
   // centre-FAB slot when the five primary destinations were fixed.
   { key: 'utilities', en: 'Utilities', hi: 'उपयोगिताएँ' },
-  // Header text intentionally still "Practice" (not renamed alongside the new
-  // primary Practice slot): these are the practice surfaces that did NOT get a
-  // primary slot, and an existing regression test pins this header string.
-  { key: 'practice', en: 'Practice', hi: 'अभ्यास' },
   { key: 'study', en: 'Study', hi: 'पढ़ाई' },
   { key: 'account', en: 'Account', hi: 'खाता' },
+  // The "Practice" group is GONE (Phase 3 trim). It held the practice surfaces
+  // that did not get a primary slot — /assignments, /pyq, /mock-exam,
+  // /exam-briefing, /exam-prep — all of which left the nav, so the key had no
+  // member left and NavMoreSheet (which skips empty groups) would never have
+  // rendered the header again. Leaving a key that can match nothing is
+  // indistinguishable from one that has nothing to match YET, so it is removed
+  // rather than kept as dead config.
 ];
 
+// The desktop projection of the SAME trimmed set as MORE_ITEMS: four primary
+// destinations in the Main section, then the identical Utilities / Study /
+// Account membership the More sheet renders. Item-for-item mirroring is the
+// point — a student who resizes from 360px to 1440px must not discover a
+// different product. The only structural difference is that the sidebar shows
+// the four primaries inline (the phone tiers render them as the bar itself).
 export const SIDEBAR_SECTIONS = [
   {
     // 2026-08-09 — was titled "Home" while also containing an item called
-    // "Home". Retitled "Main" and rebuilt to hold the FIVE primary
-    // destinations in the spec order (Today · Learn · Practice · Progress,
-    // plus /dashboard which is the student's literal home route). This is the
-    // desktop projection of the same ordered set the bottom bar and the tablet
-    // rail render — same labels, same icons, same order, different chrome.
+    // "Home". Retitled "Main"; the "Home" (/dashboard) row was removed in the
+    // Phase 3 trim, because /dashboard is already the Today slot's landing
+    // page while ff_today_home_v1 is OFF and two names for one home is the
+    // exact IA-law violation this file keeps recording.
     //
     // `/learn` was previously ABSENT from the sidebar entirely: a primary
-    // destination that existed at 360px and vanished at 1024px. Added here.
-    // `/today` moved in from DesktopSidebar's imperative injection — the
-    // ff_today_home_v1 gate is preserved declaratively via flagName, which
-    // isItemVisibleForFlags already enforces on this list.
+    // destination that existed at 360px and vanished at 1024px. Added 2026-08-09.
+    //
+    // `/today` carries NO flagName. It used to, which was safe only while the
+    // "Home" row sat beside it; with that row gone, a flag-gated Today would
+    // leave the 1024px+ sidebar with three destinations and no home whenever
+    // ff_today_home_v1 is off or has not loaded yet — a fourth-destination
+    // dropout the other two tiers never had (CORE_TABS never gated Today).
+    // Un-gating is safe and NOT a new route behaviour: /today with the flag
+    // OFF does `router.replace('/dashboard')` (apps/host/src/app/today/page.tsx),
+    // so it is a redirect, never a dead end. See TODAY FLAG CONTRACT below.
     title: 'Main', titleHi: 'मुख्य',
     items: [
-      { href: '/today', icon: '☀️', label: 'Today', labelHi: 'आज', flagName: 'ff_today_home_v1' },
-      { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
+      { href: '/today', icon: '☀️', label: 'Today', labelHi: 'आज' },
       { href: '/learn', icon: '📚', label: 'Learn', labelHi: 'सीखें' },
       { href: '/practice', icon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
       // Matches CORE_TABS exactly — same name, same icon, same route.
@@ -129,33 +150,20 @@ export const SIDEBAR_SECTIONS = [
     ],
   },
   {
-    title: 'Practice', titleHi: 'अभ्यास',
-    items: [
-      // /practice moved to the Main section above — it is primary slot 3 now,
-      // and is no longer flag-gated in NAV (the route itself still resolves
-      // ff_practice_os_v1; see the PRACTICE FLAG CONTRACT note below).
-      //
-      // Was labelled "Practice" — identical to this section's own title and a
-      // near-twin of "Practice Center" one line above, so the section read
-      // "Practice > Practice Center / Practice". Renamed to what the route
-      // actually is. The destination is unchanged.
-      { href: '/quiz', icon: '✏️', label: 'Quiz', labelHi: 'क्विज़' },
-      { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट' },
-      { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
-      { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
-      { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
-      // Alfa OS pre-test briefing hub (flag-gated) — the "Start an exam" front door.
-      { href: '/exam-briefing', icon: '🧭', label: 'Exam Briefing', labelHi: 'परीक्षा ब्रीफ़िंग', flagName: 'ff_test_os_v1' },
-    ],
-  },
-  {
+    // The "Practice" SECTION is gone (Phase 3 trim): /quiz, /assignments,
+    // /pyq, /mock-exam and /exam-briefing all left the nav. /quiz in
+    // particular is now reached through the primary Practice slot, whose
+    // altHrefs include it — listing it here as well was the one place a
+    // surface carried both, and the reason resolveActiveNavHref needs its
+    // longest-match tie-break. That resolver is unchanged and still needed:
+    // /learn vs a future /learn/* entry has the same shape.
     title: 'Study', titleHi: 'पढ़ाई',
     items: [
-      { href: '/library',   icon: '📚', label: 'Library',     labelHi: 'अध्ययन सामग्री' },
-      { href: '/refresh',   icon: '🔁', label: 'Refresh',     labelHi: 'ताज़ा करो' },
-      // Alfa OS Revision Center (flag-gated) — v2 spaced-repetition revision hub.
-      { href: '/revision',  icon: '🧠', label: 'Revision Center', labelHi: 'दोहराव केंद्र', flagName: 'ff_revision_os_v1' },
-      { href: '/exam-prep', icon: '🎯', label: 'Exam Sprint', labelHi: 'परीक्षा की तैयारी', requiresUpcomingExam: true },
+      { href: '/library',     icon: '📚', label: 'Library',     labelHi: 'अध्ययन सामग्री' },
+      // /leaderboard was in the More sheet but in NO sidebar section — an
+      // overflow destination that simply did not exist at 1024px+. Mirrored in.
+      { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
+      { href: '/stem-centre', icon: '🔬', label: 'STEM Lab',    labelHi: 'STEM लैब' },
     ],
   },
   {
@@ -166,9 +174,11 @@ export const SIDEBAR_SECTIONS = [
     title: 'Utilities', titleHi: 'उपयोगिताएँ',
     items: [
       { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
+      // Same relabel as MORE_ITEMS — the page has no settings controls and the
+      // IA names this job reminders.
+      { href: '/notifications', icon: '🔔', label: 'Reminders', labelHi: 'रिमाइंडर' },
       // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
       { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है' },
-      { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
     ],
   },
   {
