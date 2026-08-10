@@ -32,9 +32,13 @@ interface Xc3BatchEntry {
 
 interface Xc3BatchManifest {
   rcaItem: 'RCA-01';
-  totalAdminClientRoutesPinned: number;
   objective: string;
   entries: Xc3BatchEntry[];
+  /**
+   * Deliberately typed as never-present. See the assertion below and the
+   * `_totalAdminClientRoutesPinned_removed` note in the manifest.
+   */
+  totalAdminClientRoutesPinned?: never;
 }
 
 interface AdminClientAllowlist {
@@ -75,8 +79,40 @@ describe('XC-3 service-role migration batch manifest (RCA-01)', () => {
     ) as { routes: RouteAccessEntry[] };
 
     expect(manifest.rcaItem).toBe('RCA-01');
-    expect(manifest.totalAdminClientRoutesPinned).toBe(allowlist.count);
     expect(manifest.objective).toContain('high-sensitivity');
+
+    // ── Single source of truth for the admin-client route count ──────────────
+    // This test used to assert
+    //   manifest.totalAdminClientRoutesPinned === allowlist.count
+    // i.e. it compared two HAND-MAINTAINED copies of the same number living in
+    // two different JSON files. That is not a gate, it is a drift detector for
+    // a duplication this repo chose to create: on 2026-08-11 the two files
+    // disagreed (268 vs 267) inside a single branch and failed a CI shard for a
+    // reason that had nothing to do with code quality.
+    //
+    // The duplicate is now DELETED rather than re-synced, so the class of
+    // failure is gone: the count is read from the one ledger that is actually
+    // verified against reality. `api-admin-client-allowlist.test.ts` pins that
+    // ledger three ways — count === routes.length === the set of routes really
+    // importing @alfanumrik/lib/supabase-admin in the live tree === its own
+    // EXPECTED_COUNT ratchet. NOTHING is unpinned by this change; the assertion
+    // removed here had no information the allowlist guard did not already have.
+    //
+    // The assertion below is the anti-regression: it fails if anyone re-adds a
+    // second copy of the number to this manifest.
+    expect(
+      Object.prototype.hasOwnProperty.call(manifest, 'totalAdminClientRoutesPinned'),
+      'scripts/xc3-service-role-migration-batch.json must NOT restate the admin-client route ' +
+        'count — scripts/admin-client-allowlist.json "count" is the single source of truth ' +
+        '(pinned by api-admin-client-allowlist.test.ts). Read it, do not copy it.',
+    ).toBe(false);
+
+    // Derived, never stored: the batch below is scoped against this many
+    // still-service-role routes. Non-vacuity only — the real pin lives in
+    // api-admin-client-allowlist.test.ts.
+    const totalAdminClientRoutesPinned = allowlist.count;
+    expect(totalAdminClientRoutesPinned).toBe(allowlist.routes.length);
+    expect(totalAdminClientRoutesPinned).toBeGreaterThan(0);
 
     const ids = manifest.entries.map((entry) => entry.id).sort();
     expect(ids).toEqual([...requiredIds].sort());
