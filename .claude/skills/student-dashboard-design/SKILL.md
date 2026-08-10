@@ -234,7 +234,11 @@ Design principles (concrete, not corporate):
 
 ## Motion (P10-aware)
 
-- **CSS-only. No framer-motion, no animation runtime dependency.** This is an explicit bundle-budget protection (P10; `CAP_SHARED_KB` in `scripts/check-bundle-size.mjs`) and is stated in the CSS itself.
+- **CSS-only is the DEFAULT and the preferred approach** for every dashboard card — reveal, stagger, hover, press, bar fill. Do not add a JS animation runtime to fade or slide a card.
+- **`framer-motion` is permitted, conditionally** (CEO-approved 2026-08-09, with the premium UI stack: `lucide-react`, 24 Radix primitives, `class-variance-authority`, `react-hook-form` + `@hookform/resolvers`, `sonner`, `vaul`, `cmdk`, `embla-carousel-react`; install-only, zero imports as of that date). This supersedes the previous blanket ban stated here and in the CSS. Reserve it for genuinely complex interaction — gesture/drag, shared-layout (`layoutId`), orchestrated exit-on-unmount, spring physics. No dashboard card ships today that needs it.
+- **Never in the shared import graph**: not in `apps/host/src/app/layout.tsx`, not in `packages/lib/src/AuthContext.tsx`, not in anything either graph pulls — that lands on all 209 routes. Per-card only, and behind `next/dynamic({ ssr: false })` where practical (the dashboard shell itself already uses that boundary).
+- **P10 still gates it**: `CAP_SHARED_KB = 289`, `CAP_PAGE_KB = 260` in `scripts/check-bundle-size.mjs`. Reality check before you assume headroom — **101 of 209 routes already exceed `CAP_PAGE_KB`** (worst: **306.1 kB at `/(student)/progress/dashboard`**), and the gate passes only via a per-page ratchet against recorded baselines, not because pages are under the cap. A page with existing debt has zero free bytes.
+- **`tailwindcss-animate` is installed but deliberately NOT registered** in `apps/host/tailwind.config.js`: it redefines 8 in-use classes — `.duration-150/200/300/500/700/1000`, `.ease-out`, `.ease-in-out` — as `animation-*` longhands emitted **after** `.animate-spin` / `.animate-pulse`, which would silently retime existing animations. Whoever registers it owns that collision.
 - Reveal: `.os-mission` and `.os-reveal-card` run the `osReveal` keyframes (`packages/ui/src/globals.css:3923-3962`), staggered by `--reveal-i` (`calc(0.06s + min(var(--reveal-i,0),6) * 0.07s)`). Roadmap nodes stagger by `--stagger-i`, capped at 8.
 - Tailwind animation utilities available (`apps/host/tailwind.config.js`): `float`, `scale-in`, `slide-up`, `fade-in`, `bounce-in`, `level-up`, `xp-burst`, `streak-pulse`, `mastery-fill`, `score-reveal`. Their keyframes live in `globals.css`; the config's `keyframes: {}` is empty by design.
 - `prefers-reduced-motion`: global blanket at `globals.css:772-788` plus a dashboard-specific kill block at `globals.css:3964-3972`. The blanket's `*, *::before, *::after` rule (`globals.css:773-778`) already forces `animation-duration: 0.01ms !important` and `animation-iteration-count: 1 !important` on **everything**, so a one-shot reveal is collapsed automatically and needs no new entry. What genuinely needs an explicit `animation: none !important` is a **looping / infinite** animation (the `globals.css:779-786` list — `.animate-float`, `.animate-shimmer`, `.animate-spin-slow`, `.typing-dot`, `.streak-flame`, `.xp-rise`, `.animate-streak-pulse`). Add a looping class there; adding a one-shot class is harmless defense-in-depth, not a requirement. `AppShell.tsx:152-155` reads the media query but intentionally no-ops (`void reduced`) — CSS owns reduced-motion, not JS.
@@ -318,7 +322,10 @@ Reject the change (or stop and hand off) when it:
 - Promises more XP for more effort without accounting for `quiz_daily_cap`.
 - Ships a user-facing string with no Hindi counterpart (P7).
 - Authors a `dark:` Tailwind class — dead CSS on this app.
-- Adds `framer-motion` or any runtime animation dependency (P10).
+- Imports `framer-motion` (or any heavy premium dep) into the root layout, `packages/lib/src/AuthContext.tsx`, or any module in those import graphs — one card must not cost all 209 routes (P10).
+- Uses `framer-motion` for motion CSS already does, or ships it with no `next/dynamic({ ssr: false })` boundary where one was practical (P10).
+- Registers `tailwindcss-animate` in `tailwind.config.js` without resolving the 8-class `.duration-*` / `.ease-*` collision (see Motion).
+- Breaches `/dashboard`'s recorded P10 ratchet baseline, or raises a `CAP_*` constant without CEO approval.
 - Uses a raw hex or a Tailwind palette colour class where a token exists.
 - Omits the empty or error state, or renders raw error text to a student.
 - Lets an empty state render on a failed or in-flight fetch.

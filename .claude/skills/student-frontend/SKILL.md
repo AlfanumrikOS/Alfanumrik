@@ -140,9 +140,14 @@ Three standing warnings:
 
 ### Motion
 
-- **CSS-only. No framer-motion, no runtime animation dependency** (P10 protection). This is stated in the CSS itself.
+- **CSS-only motion is the DEFAULT and the preferred approach.** Transitions, reveals, hover/press states, staggers, spinners — CSS. Do not pull in a JS animation runtime to fade a div.
+- **`framer-motion` is permitted, conditionally** (CEO-approved 2026-08-09, with the premium UI stack: `lucide-react`, 24 Radix primitives, `class-variance-authority`, `react-hook-form` + `@hookform/resolvers`, `sonner`, `vaul`, `cmdk`, `embla-carousel-react`; all install-only, zero imports as of that date). It supersedes the previous blanket ban. Reserve it for genuinely complex interaction: gesture/drag, shared-layout (`layoutId`) transitions, orchestrated enter/**exit**-on-unmount, spring physics. Anything CSS already does, do in CSS.
+- **Never in the shared import graph.** `framer-motion` (and any other heavy premium dep) must **not** be imported into `apps/host/src/app/layout.tsx`, `packages/lib/src/AuthContext.tsx`, or any module either graph pulls in — that puts the cost on all 209 routes at once. Per-surface only.
+- **Behind a dynamic boundary** where practical: `next/dynamic(..., { ssr: false })` on the component that uses `framer-motion`, not a static page-level import (same discipline as §8.1).
+- **P10 still gates it** — `CAP_SHARED_KB = 289`, `CAP_PAGE_KB = 260` in `scripts/check-bundle-size.mjs`. Read §8 for the current per-page debt reality before assuming you have headroom; you probably do not.
 - Reveal stagger: `.os-reveal-card` + `--reveal-i` (`globals.css:~3923-3962`); roadmap nodes stagger by `--stagger-i`.
 - Tailwind animation utilities: `float`, `scale-in`, `slide-up`, `fade-in`, `bounce-in`, `level-up`, `xp-burst`, `streak-pulse`, `mastery-fill`, `score-reveal`.
+- **`tailwindcss-animate` is installed but deliberately NOT registered** in `apps/host/tailwind.config.js`. Registering it redefines 8 in-use classes — `.duration-150/200/300/500/700/1000`, `.ease-out`, `.ease-in-out` — as `animation-*` longhands emitted **after** `.animate-spin` / `.animate-pulse`, silently retiming existing animations. Anyone registering it owns resolving that collision first.
 - **Reduced motion:** global blanket kills all animation under `prefers-reduced-motion` (`globals.css:772-788`). Looping/infinite animations need an explicit `animation: none !important` entry in the kill block (`:779-786`); one-shots are collapsed automatically. `AppShell` reads the media query but intentionally no-ops — CSS owns reduced motion, not JS.
 
 ---
@@ -247,10 +252,12 @@ The target is Indian 4G (2–5 Mbps) on low-cost Android. Enforced caps live in 
 - `CAP_PAGE_KB` — **260 kB** per page.
 - `CAP_MIDDLEWARE_KB` — **120 kB**.
 
+**Current state, so you are not surprised (2026-08-09):** **101 of 209 routes already exceed `CAP_PAGE_KB`**, worst is **306.1 kB at `/(student)/progress/dashboard`**. The gate passes only because it ratchets each page against its **recorded baseline** — not because pages are under the absolute cap. Practical consequence: a page carrying pre-existing debt has **zero** free headroom; any byte you add to it fails the ratchet even though the cap number looks far away.
+
 House techniques you must keep honest:
 
 1. **Code-split heavy UI** with `next/dynamic({ ssr: false })` — Foxy panel, TodayHomeV2, ConversationManager, ContextPanel, InlineSimulation, nav chrome. A new heavy surface on a page = a dynamic boundary, not a static import.
-2. **No animation runtime** — CSS-only motion (see §3).
+2. **Animation runtime is opt-in and per-surface, never shared** — CSS-only is the default; `framer-motion` is permitted for genuinely complex interaction behind a `next/dynamic({ ssr: false })` boundary, and must never enter the root-layout / `AuthContext` import graph (see §3).
 3. **Self-hosted fonts** via `next/font` (Sora, Plus Jakarta Sans) — no third-party font CDN (`layout.tsx:160-169`).
 4. **SWR caching** is the network strategy — instant stale-while-revalidate, 10s dedupe, no focus storms (`swr.tsx:44-57`).
 5. **Nav mounts once at root** and persists across navigations — no per-route nav re-mount (`GlobalAppLayout.tsx:94-99`).
@@ -323,7 +330,10 @@ Reject (or stop and hand off) when the change:
 - Ships an empty state that blames the student for a possible content gap.
 - Ships a user-facing string with no Hindi counterpart (P7).
 - Authors `dark:` classes, adds a new `PremiumCard`, or imports `FoxyPanel` statically into a page (P10/P12 guard).
-- Adds `framer-motion` or any runtime animation dependency (P10).
+- Imports `framer-motion` (or any heavy premium dep) into the root layout, `packages/lib/src/AuthContext.tsx`, or any module in those import graphs — that hits all 209 routes (P10).
+- Reaches for `framer-motion` for motion CSS already does, or ships it with no `next/dynamic({ ssr: false })` boundary where one was practical (P10).
+- Registers `tailwindcss-animate` in `tailwind.config.js` without resolving the 8-class `.duration-*` / `.ease-*` collision (§3).
+- Breaches the page's recorded P10 ratchet baseline, or raises a `CAP_*` constant without CEO approval.
 - Uses a raw hex or palette colour where a token exists; uses bare `#fff` on a decorative surface without the matching `--on-*` token.
 - Omits any of the four states, or renders raw error text / PII to a student (P13).
 - Encodes meaning by colour alone; has any interactive target under 44px.
