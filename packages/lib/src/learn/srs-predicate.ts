@@ -1,13 +1,23 @@
 /**
  * SRS-due predicate — the single source for the "due quiz-wrong-answer cards"
- * query shape used by BOTH the client-side quiz deep-link consumer and the
- * server-side /api/learner/srs/due route.
+ * query shape.
  *
  * Extracted from packages/lib/src/learn/srs-quiz-review.ts (E4 wave 3b) so
  * the exact same predicate can be applied against ANY supabase-js compatible
  * client (RLS-scoped browser client, RLS-scoped server client, or the
  * service-role client for cron paths). Prevents predicate drift the way the
  * srs-source adapter did for the wider review lane.
+ *
+ * CONSUMERS (2026-08-10). Current sole production consumer is the client-side
+ * quiz deep-link path: srs-quiz-review.ts → fetchSrsDueQuizCards →
+ * selectSrsReviewSet, feeding /quiz?mode=srs. The two former consumers are
+ * gone: `packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx` (dashboard
+ * SRS lane count) was deleted in the Phase 2 orphan-consolidation pass, and
+ * the `GET /api/learner/srs/due` server route it called was retired here once
+ * it lost that last caller. The multi-client indirection above is retained
+ * deliberately: it is the reason a future server/cron consumer cannot
+ * reintroduce the count-vs-content drift REG-358 closed. Any new consumer MUST
+ * route through buildSrsDueQuery rather than assembling its own chain.
  *
  * The predicate:
  *   student_id = <caller-resolved>

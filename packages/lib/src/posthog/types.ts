@@ -146,20 +146,13 @@ export type PostHogEventName =
   | 'alfabot_inquiry_opened'
   | 'alfabot_inquiry_submitted'
   | 'alfabot_inquiry_failed'
-  // Student dashboard CTA tracking (mobile-first redesign, Phase 1.5).
-  // Originally fired client-side from the seven section components under
-  // packages/ui/src/dashboard/sections/. Those components were deleted in the
-  // 2026-08 orphan consolidation (zero importers), so this event currently has
-  // NO producers — the schema and the typed wrapper (posthog/dashboard-cta.ts)
-  // are retained so a future dashboard surface can re-emit it without
-  // re-litigating the enum. It closed the "we don't know which dashboard
-  // section drives clicks" telemetry gap identified in the ops inventory
-  // before the Foxy/Learn/Parent/Teacher AppShell migration.
-  // PII-free by design — only the section identifier (closed enum), the
-  // action key (closed enum per section), and the destination route name.
-  // NEVER includes student name, email, phone, grade, raw IDs, or any
-  // chapter / subject metadata that could fingerprint a learner.
-  | 'dashboard_cta_clicked'
+  // NOTE (2026-08, retired): `dashboard_cta_clicked` lived here. Its seven
+  // producers (packages/ui/src/dashboard/sections/*) were deleted as unreachable
+  // dead code in the Phase 2 consolidation (855784bc6), leaving zero producers.
+  // The name + payload type + typed wrapper (posthog/dashboard-cta.ts) were
+  // removed with user approval. Historical PostHog data is unaffected — removing
+  // a TS union member cannot delete ingested events, and nothing in this codebase
+  // validates inbound event names against this union at runtime.
   // Funnel — B2C acquisition. Server-side capture() from the shared
   // email-verification choke point (packages/lib/src/identity/complete-signup.ts),
   // which covers BOTH /auth/callback (PKCE `code`) and /auth/confirm
@@ -805,7 +798,6 @@ export type EventPayloadByName = {
   alfabot_inquiry_opened: AlfabotInquiryOpenedPayload;
   alfabot_inquiry_submitted: AlfabotInquirySubmittedPayload;
   alfabot_inquiry_failed: AlfabotInquiryFailedPayload;
-  dashboard_cta_clicked: DashboardCtaClickedPayload;
   email_verified: EmailVerifiedPayload;
 };
 
@@ -995,60 +987,6 @@ export interface AlfabotInquiryFailedPayload extends AlfabotEventContextBase {
     | 'mail_send_failed'
     | 'upstream_failed'
     | 'network_error';
-}
-
-// ── Student dashboard CTA payload (mobile-first redesign Phase 1.5) ────
-//
-// Was fired from the seven section components under
-// packages/ui/src/dashboard/sections/ — all deleted in the 2026-08 orphan
-// consolidation, so the event has no producers today. Shape retained for a
-// future dashboard surface. Carries:
-//   - `section` (closed enum) — WHICH section the click happened in.
-//   - `action`  (closed enum) — WHAT the user activated within that section.
-//   - `destination` (string)  — WHERE the click routes the user.
-//
-// P13 (Data Privacy) — no PII fields ever attached:
-//   no name, no email, no phone, no raw user_id, no grade, no chapter/topic
-//   titles, no streak/XP numbers (those flow via existing `xp_awarded`
-//   events). The redactor in src/lib/analytics.ts is a defence-in-depth
-//   backstop, but the call sites themselves are the primary guarantee.
-//
-// `destination` is intentionally a string (not a closed enum) because the
-// dashboard CTAs already deep-link with query strings (e.g. /quiz?qid=...,
-// /learn/math/3). To keep PII-risk low we DO NOT facet on it in dashboards
-// — we facet on `section` + `action` and use `destination` only for
-// debugging the path the user took.
-
-export interface DashboardCtaClickedPayload {
-  /**
-   * Which dashboard section the CTA lives in. Closed set — adding a new
-   * section means adding the literal here so funnels never silently split.
-   *
-   * Section keys mapped 1:1 to the component files that used to live under
-   * packages/ui/src/dashboard/sections/ (deleted 2026-08, orphan
-   * consolidation). The enum is deliberately frozen at those seven values so
-   * historical PostHog funnels stay comparable.
-   */
-  section:
-    | 'above_fold_hero'
-    | 'quick_actions'
-    | 'todays_focus'
-    | 'compete'
-    | 'progress'
-    | 'upcoming'
-    | 'daily_rhythm_queue';
-  /**
-   * The action key the user pressed within that section. Closed set so
-   * PostHog funnels stay stable across UI tweaks. Keep these short and
-   * kebab/snake-cased — they're analytics primary keys.
-   */
-  action: string;
-  /**
-   * The route the click is sending the user to. Free-form because some
-   * CTAs include query strings (e.g. `/quiz?mode=srs`, `/learn/math/3`).
-   * Capped at 256 chars on emit — see DASHBOARD_CTA_DESTINATION_MAX.
-   */
-  destination: string;
 }
 
 // ── Super-admin Health Dashboard payload (Phase E.6) ──────────────────

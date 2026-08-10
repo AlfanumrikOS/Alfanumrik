@@ -600,6 +600,50 @@ read under RLS, so they are out of scope for this defense-in-depth batch.
 |---|---|---|---|---|---|
 | REG-217 | `GET /api/student/daily-lab — RLS contract (admin→server migration)` | P8/P9: with the RLS-scoped server client mocked, an authenticated OWNER receives their Daily Lab with the byte-identical response shape (`simulation_id/title/title_hi/subject/emoji/estimated_minutes/bonus_coins=50/completed_today/deeplink/experiment_id`); a request the SELECT policy does NOT admit (mocked `students` read returns no row — RLS deny for a cross-user/forged `studentId`) yields `400 { success:false, error:'Student profile incomplete' }` with NO simulation payload — i.e. the migration fails CLOSED. The admin-client allowlist guard pins the ledger ratchet 273 → 272 (route pruned from `scripts/admin-client-allowlist.json`, `count` + `EXPECTED_COUNT` decremented; `detected === allowlist`). | `src/__tests__/api/daily-lab.test.ts`, `src/__tests__/api-admin-client-allowlist.test.ts`, `scripts/admin-client-allowlist.json` | E | P8, P9 |
 
+#### Note — `GET /api/student/daily-lab` is caller-less but DELIBERATELY RETAINED (2026-08-10)
+
+Recorded during the `refactor/student-phase-2-consolidation` artifact-retirement
+pass, which retired four other orphans (`StudentGoalBadge`, `XPDailyStatus`,
+`GET /api/learner/srs/due`, `dashboard_cta_clicked`/`trackDashboardCta`). This
+route was evaluated for the same treatment and **blocked, pending a user
+decision.** Status stays `E` — nothing about the pinned contract changed.
+
+The GET route has no production caller. Only its sibling `/claim` is invoked
+(`apps/host/src/app/stem-centre/page.tsx:179`):
+
+```
+$ grep -rn "api/student/daily-lab" --include=*.ts --include=*.tsx --include=*.dart \
+    apps packages mobile e2e scripts
+apps/host/src/app/stem-centre/page.tsx:179:        fetch('/api/student/daily-lab/claim', {
+…                                        (all other hits are the routes' own
+                                          headers and daily-lab.test.ts)
+```
+
+Three reasons it was NOT deleted:
+
+1. **REG-217 is its only pin.** Deleting the route would orphan this entry, and
+   removing a catalog entry requires explicit user approval.
+2. **`/claim` imports a constant from it** — deleting the module breaks the
+   LIVE route:
+   ```
+   apps/host/src/app/api/student/daily-lab/claim/route.ts:32:import { DAILY_LAB_BONUS_COINS } from '../route';
+   apps/host/src/app/api/student/daily-lab/route.ts:38:export const DAILY_LAB_BONUS_COINS = 50;
+   ```
+   `/claim` uses it at lines 228, 250 and 257 (the coin-award amount). The
+   constant would have to be relocated first — a code change outside this
+   pass's scope.
+3. **Its test file also guards the live `/claim` route.**
+   `apps/host/src/__tests__/api/daily-lab.test.ts:292` asserts
+   `BUILT_IN_SIMULATIONS_META` covers every entry in `BUILT_IN_SIMULATIONS` —
+   and `/claim` builds its own `builtinPool` from that same metadata
+   (`claim/route.ts:30,154`). Deleting the test with the route would silently
+   drop a parity guard that a still-live route depends on.
+
+Honest scope note: this is a *retention* record, not new coverage. The
+admin→server RLS contract REG-217 pins is still enforced by the same test file;
+what is newly documented is that the GET surface it protects is currently
+unreachable from any product surface.
+
 ### Invariants covered by this section
 
 - P8 (RLS boundary) — the route's three student-own/public reads now execute on

@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 399,
+  "routeCount": 398,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -689,13 +689,6 @@
       "access": "auth",
       "owner": "core-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work."
-    },
-    {
-      "path": "/api/learner/srs/due",
-      "file": "apps/host/src/app/api/learner/srs/due/route.ts",
-      "access": "auth",
-      "owner": "core-backend",
-      "rationale": "Server-side count (and optional items) of due SRS quiz-wrong-answer cards for the authenticated student. authorizeRequest('progress.view_own', { requireStudentId }); reads exclusively via the RLS-scoped supabase-server client through the single-source buildSrsDueQuery predicate (no supabase-admin, P8). Cache-Control: private, max-age=60."
     },
     {
       "path": "/api/learner/weak-topics",
