@@ -473,7 +473,7 @@ jobs:
 
       # Unconditional: the parity check below runs on BOTH the changed and the
       # unchanged path, so the CLI must always be present.
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
@@ -1096,7 +1096,7 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         if: steps.changed.outputs.functions != ''
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
