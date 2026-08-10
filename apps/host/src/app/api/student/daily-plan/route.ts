@@ -27,7 +27,9 @@
  *
  * Phase 3 of Goal-Adaptive Learning Layers. Gated by ff_goal_daily_plan
  * (default DISABLED on prod + staging). When OFF, the API returns an
- * empty plan; the dashboard's DailyPlanCard renders nothing.
+ * empty plan. (The intended web consumer, the dashboard's DailyPlanCard, was
+ * never mounted and was deleted in the 2026-08 orphan consolidation — no web
+ * surface renders this plan today.)
  */
 
 import { NextRequest, NextResponse } from 'next/server';

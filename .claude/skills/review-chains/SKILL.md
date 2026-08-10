@@ -17,7 +17,7 @@ When a critical file is modified, specific downstream agents MUST review before 
 |---|---|
 | testing | Update XP calculation assertions, score rounding tests, daily cap tests |
 | ai-engineer | cme-engine mastery thresholds still reference correct XP_RULES values |
-| frontend | QuizResults.tsx, ProgressSnapshot.tsx use submission response values not recalculated |
+| frontend | QuizResults.tsx and any dashboard XP/score card use submission response values, not recalculated (the former `ProgressSnapshot.tsx` was deleted 2026-08 — the rule binds whatever replaces it) |
 | backend | `atomic_quiz_profile_update()` RPC level formula `FLOOR(xp/500)+1` matches XP_PER_LEVEL |
 | mobile | Update hardcoded XP values in `mobile/lib/data/repositories/quiz_repository.dart` to match |
 

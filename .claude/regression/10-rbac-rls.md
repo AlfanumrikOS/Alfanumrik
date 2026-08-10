@@ -565,6 +565,19 @@ single route whose every read is PROVABLY policy-covered:
 move to the cookie-scoped server client (the sole caller, `DailyLabMission.tsx`,
 fetches with `credentials: 'include'`). Response shape is byte-identical.
 
+**Prose correction 2026-08-10 (entry NOT deleted; its own asserting tests are
+untouched).** `packages/ui/src/dashboard/DailyLabMission.tsx` was deleted in the
+orphan-consolidation pass — it had zero production importers at HEAD. The "sole
+caller" sentence above is therefore now historical: `GET /api/student/daily-lab`
+has **no remaining caller** anywhere in `apps/host/src` or `packages/ui/src`
+(only the sibling `POST /api/student/daily-lab/claim` is still called, from
+`apps/host/src/app/stem-centre/page.tsx`). This does not weaken the entry —
+the cookie-scoped-server-client + RLS-coverage guarantees it pins are
+properties of the ROUTE and remain fully asserted. Flagged so the
+now-callerless GET route is a deliberate decision (keep for mobile/future
+re-wiring vs. retire) rather than an accident, and so this cell is not read as
+evidence of a live web caller that no longer exists.
+
 **RLS coverage proof (the gate that prevents a repeat of the dashboard incident).**
 
 | Read | Filter | Admitting SELECT policy (baseline / migration) |
@@ -765,7 +778,15 @@ own id; the route performs NO writes):
 The `students`+`class_students` nested-read recursion incident is FIXED (migration
 `20260702080000` + Phase 1). Caller transport: mobile = Bearer (now RLS-resolved
 via the forwarded JWT); web dashboard `DailyPlanCard` = cookie (server-client
-fallback). Fail-CLOSED: an RLS deny on the `students` read yields `student=null`
+fallback). **Prose correction 2026-08-10:** `packages/ui/src/dashboard/DailyPlanCard.tsx`
+was deleted in the orphan-consolidation pass (zero production importers at
+HEAD — verified by `git grep`; its only importer was its own test
+`apps/host/src/__tests__/components/dashboard/DailyPlanCard.test.tsx`, deleted
+with it). That test was never cited by any catalog entry, so **no entry loses
+an asserting file here** and REG-220's own pins are untouched — only this
+sentence's "web dashboard = cookie" caller example is now historical. The
+mobile Bearer caller, which is what REG-220 actually migrated and asserts, is
+unaffected. Fail-CLOSED: an RLS deny on the `students` read yields `student=null`
 → `404 { success:false, error:'student_not_found' }`, no plan payload, no 500.
 Query set + response envelope (`{ success, data, flagEnabled, intercepted }`)
 byte-identical; `authorizeRequest('study_plan.view',{requireStudentId:true})`

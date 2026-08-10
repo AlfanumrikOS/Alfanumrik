@@ -28,8 +28,14 @@ Shell call: `<AppShell variant="split" className="student-os-shell" header={head
 
 Content column is `<div className="flex flex-col gap-5 px-4 pt-2 pb-6">` (`StudentOSDashboard.tsx:291`). Add cards inside it, in slot order, as direct children — the sole exception today is the `FoxyPanelLauncher` wrapper noted in slot 2.
 
-### Dead — do not extend, do not copy patterns from
-Every file under `packages/ui/src/dashboard/sections/**` (`AboveFoldHero`, `CosmicAboveFoldHero`, `CompeteSection`, `ProgressSection`, `QuickActionsSection`, `TodaysFocusSection`, `UpcomingSection`, `DailyRhythmQueue`), plus `os/GrowthStrip.tsx`, plus `packages/ui/src/dashboard/{ComebackHook,DailyChallenge,DailyLabMission,DailyPlanCard,ExamReadiness,FocusDashboard,FoxyBannerCard,ProgressSnapshot,QuickActions,SubjectProgress,TodaysPlan}.tsx`. None is imported by the live tree. (`StudentOSDashboard.tsx`'s header docstring still claims TodaysMission wraps `DailyRhythmQueue` — it does not; the comment is stale.)
+### Deleted 2026-08 — gone, not merely dead
+The whole dead list below was removed in the Phase 2 orphan consolidation (every entry had zero live importers). **Do not resurrect these paths from older docs, plans, or audits — they no longer exist on disk.**
+
+- `packages/ui/src/dashboard/sections/**` — entire directory (`AboveFoldHero`, `CosmicAboveFoldHero`, `CompeteSection`, `ProgressSection`, `QuickActionsSection`, `TodaysFocusSection`, `UpcomingSection`, `DailyRhythmQueue`)
+- `packages/ui/src/dashboard/os/GrowthStrip.tsx`
+- `packages/ui/src/dashboard/{ComebackHook,DailyChallenge,DailyLabMission,DailyPlanCard,ExamReadiness,FocusDashboard,FoxyBannerCard,ProgressSnapshot,QuickActions,SubjectProgress,TodaysPlan}.tsx`
+
+Note on `DailyRhythmQueue`: only the *renderer* was deleted. `composeDailyRhythm()` and the `DailyRhythmQueue` interface in `packages/lib/src/learn/daily-rhythm-orchestrator.ts`, the `/api/rhythm/today` route, and the `ff_pedagogy_v2_daily_rhythm` flag are all still live — a new daily-rhythm card mounts against those, not against the deleted file.
 
 ## The Card Recipe
 
@@ -229,7 +235,7 @@ Design principles (concrete, not corporate):
 - Progress must be **visible and earned**. Never fabricate, round up, or "encourage" a number. The operational test is the denominator / sample-size rule in Learner Data Semantics.
 - Celebrate the specific win ("3 chapters mastered in Science"), not generic praise ("Great job!"). Check the win is real first — a "3 mastered" celebration must survive the `due_for_review` precedence rule.
 - No dark patterns: no fake urgency, no guilt copy, no infinite-streak shaming. A broken streak offers a comeback path, not shame.
-  **Status: no comeback surface ships on `/dashboard` today.** `StreakBadge` renders a grey `🔥 0` at zero with no path and no copy (`wonder-blocks.tsx:1051-1073`), and `ComebackHook.tsx` is on the dead list — defined, imported by nothing. The principle stands (it matches Pedagogy v2's forgiving-streak intent), but anyone building this starts from scratch, under this rule and under the streak-semantics rule above.
+  **Status: no comeback surface ships on `/dashboard` today.** `StreakBadge` renders a grey `🔥 0` at zero with no path and no copy (`wonder-blocks.tsx:1051-1073`), and `ComebackHook.tsx` was deleted in the 2026-08 orphan consolidation (it had been defined but imported by nothing). The principle stands (it matches Pedagogy v2's forgiving-streak intent), but anyone building this starts from scratch, under this rule and under the streak-semantics rule above.
 - Quiet by default: a card with nothing to say self-hides (`PendingLinkApproval`, `ReviewsDueCard`) rather than occupying space with filler.
 
 ## Motion (P10-aware)
@@ -297,7 +303,7 @@ Everything currently known-wrong on `/dashboard`, in one place so it stops getti
 | D1 | **BoardScore denominator mismatch.** The gauge stacks a **cross-subject** `overallPct` + `{totalPredicted}/{totalMax}` (`BoardScoreWidget.tsx:342-361`) directly above a **single-subject** confidence band (`:364-369`, `sel.confidence_band_low/high`) and a **single-subject** coverage bar (`:414-416`). A student reads "78% · Confidence Band: 61–72%" with no signal that the band has a different denominator. Violates the cross-subject-aggregate rule in Learner Data Semantics. **Open frontend ticket — do not fix as a drive-by; the correct resolution (scope the gauge to the selected subject vs. aggregate the band) is an assessment call.** | `BoardScoreWidget.tsx` | frontend (fix) / assessment (decides which number is right) |
 | D2 | **`masteredPct` small-denominator ring.** `masteredPct` (`MasterySnapshot.tsx:125`) is denominated on *started* topics, so one started-and-mastered topic renders a hero **100%** ring. Violates the `N = 5` sample-size rule. | `MasterySnapshot.tsx` | frontend, under assessment's threshold |
 | D3 | **Empty state attributes a platform gap to the student.** "No quizzes yet / Take a quiz to see your mastery here" (`MasterySnapshot.tsx:167-186`) also fires when `get_mastery_overview` returns `[]` because no `curriculum_topics` rows exist for the student's grade. | `MasterySnapshot.tsx` | frontend (copy) / backend (needs a distinguishing signal in the response) |
-| D4 | **No comeback surface exists.** `StreakBadge` renders a grey `🔥 0` with no path or copy (`wonder-blocks.tsx:1051-1073`); `ComebackHook.tsx` is dead. The design principle mandates a comeback path that has never shipped. | `wonder-blocks.tsx` / new card | frontend, product decision on placement |
+| D4 | **No comeback surface exists.** `StreakBadge` renders a grey `🔥 0` with no path or copy (`wonder-blocks.tsx:1051-1073`); `ComebackHook.tsx` was deleted 2026-08. The design principle mandates a comeback path that has never shipped. | `wonder-blocks.tsx` / new card | frontend, product decision on placement |
 | D5 | No `<h1>` in the page shell; the greeting is a `<p>` and the only `<h1>` is inside `TodaysMission`. | `StudentOSDashboard.tsx` | frontend |
 | D6 | Language toggle in `headerRail` sets `minHeight: 32` (`StudentOSDashboard.tsx:264`) — below the 44px touch floor. | `StudentOSDashboard.tsx` | frontend |
 | D7 | BoardScore subject tabs use `role="tab"` (`BoardScoreWidget.tsx:379-408`) with no `tabpanel` / `aria-controls` pairing. | `BoardScoreWidget.tsx` | frontend |

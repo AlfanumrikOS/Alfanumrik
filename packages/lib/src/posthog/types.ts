@@ -147,10 +147,14 @@ export type PostHogEventName =
   | 'alfabot_inquiry_submitted'
   | 'alfabot_inquiry_failed'
   // Student dashboard CTA tracking (mobile-first redesign, Phase 1.5).
-  // Fired client-side from the seven section components under
-  // src/components/dashboard/sections/. Closes the "we don't know which
-  // dashboard section drives clicks" telemetry gap identified in the ops
-  // inventory before the Foxy/Learn/Parent/Teacher AppShell migration.
+  // Originally fired client-side from the seven section components under
+  // packages/ui/src/dashboard/sections/. Those components were deleted in the
+  // 2026-08 orphan consolidation (zero importers), so this event currently has
+  // NO producers — the schema and the typed wrapper (posthog/dashboard-cta.ts)
+  // are retained so a future dashboard surface can re-emit it without
+  // re-litigating the enum. It closed the "we don't know which dashboard
+  // section drives clicks" telemetry gap identified in the ops inventory
+  // before the Foxy/Learn/Parent/Teacher AppShell migration.
   // PII-free by design — only the section identifier (closed enum), the
   // action key (closed enum per section), and the destination route name.
   // NEVER includes student name, email, phone, grade, raw IDs, or any
@@ -995,8 +999,10 @@ export interface AlfabotInquiryFailedPayload extends AlfabotEventContextBase {
 
 // ── Student dashboard CTA payload (mobile-first redesign Phase 1.5) ────
 //
-// Fired from the seven section components under
-// src/components/dashboard/sections/. Carries:
+// Was fired from the seven section components under
+// packages/ui/src/dashboard/sections/ — all deleted in the 2026-08 orphan
+// consolidation, so the event has no producers today. Shape retained for a
+// future dashboard surface. Carries:
 //   - `section` (closed enum) — WHICH section the click happened in.
 //   - `action`  (closed enum) — WHAT the user activated within that section.
 //   - `destination` (string)  — WHERE the click routes the user.
@@ -1018,8 +1024,10 @@ export interface DashboardCtaClickedPayload {
    * Which dashboard section the CTA lives in. Closed set — adding a new
    * section means adding the literal here so funnels never silently split.
    *
-   * Section keys map 1:1 to component files under
-   * src/components/dashboard/sections/.
+   * Section keys mapped 1:1 to the component files that used to live under
+   * packages/ui/src/dashboard/sections/ (deleted 2026-08, orphan
+   * consolidation). The enum is deliberately frozen at those seven values so
+   * historical PostHog funnels stay comparable.
    */
   section:
     | 'above_fold_hero'

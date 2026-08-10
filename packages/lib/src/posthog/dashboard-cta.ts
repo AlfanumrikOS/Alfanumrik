@@ -31,8 +31,14 @@ import type { DashboardCtaClickedPayload } from './types';
 const DESTINATION_MAX = 256;
 
 /**
- * Fire a `dashboard_cta_clicked` event from any of the seven dashboard
- * section components. Type-safe, PII-free by construction.
+ * Fire a `dashboard_cta_clicked` event from a dashboard section component.
+ * Type-safe, PII-free by construction.
+ *
+ * NOTE (2026-08): the seven original callers under
+ * packages/ui/src/dashboard/sections/ were deleted in the orphan
+ * consolidation, so this wrapper has no production call sites right now.
+ * It is retained (with its regression test) as the sanctioned entry point
+ * for the next dashboard surface — do not re-invent a raw `track()` call.
  *
  *   trackDashboardCta({
  *     section: 'above_fold_hero',

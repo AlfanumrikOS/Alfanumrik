@@ -51,8 +51,7 @@ import type { ReactNode } from 'react';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { Card, Button, ProgressBar } from '@alfanumrik/ui/ui';
 import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
+import { OPTION_LETTERS } from '@alfanumrik/lib/quiz/options';
 
 export interface PracticeRunnerQuestion {
   id: string;

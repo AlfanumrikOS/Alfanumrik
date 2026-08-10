@@ -194,8 +194,9 @@ export async function getCardById(
 
 /**
  * Count cards currently due for a student, returning the total and a per-
- * subject breakdown. Used by dashboards (FocusDashboard) and the daily
- * digest cron.
+ * subject breakdown. Used by dashboard surfaces and the daily digest cron.
+ * (The named example, FocusDashboard, was deleted in the 2026-08 orphan
+ * consolidation — the cron remains a live caller.)
  *
  * Implementation: one row-level fetch over a narrow projection, aggregated
  * in memory. Cheap because due counts are bounded by user activity (rarely

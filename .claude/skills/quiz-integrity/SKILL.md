@@ -81,7 +81,7 @@ After quiz submission, these displays must use values from the submission respon
 |---|---|---|
 | Score percentage in QuizResults | `submitQuizResults().score_percent` | Recalculation in component |
 | XP earned in QuizResults | `submitQuizResults().xp_earned` | Recalculation in component |
-| XP total in ProgressSnapshot | `students.xp_total` (server) | Client-side sum of quiz XP |
+| XP total on any dashboard card (`ProgressSnapshot` deleted 2026-08) | `students.xp_total` (server) | Client-side sum of quiz XP |
 | Level name | `LEVEL_NAMES[Math.floor(xp/500)+1]` | Hardcoded string |
 | Streak in dashboard | `students.streak_days` (server) | Client-side day counting |
 

@@ -6,8 +6,44 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 371 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-378 (2026-08-09, Node.js toolchain version pin — every surface
+**Total catalog: 372 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
+`JSON.parse(null)` returns `null` rather than throwing, so six of the seven
+duplicate `parseOptions` copies could return `null` from a function annotated
+`: string[]`, crashing the caller's `.map()` at render on the quiz, learn,
+mock-exam, pyq, diagnostic and results screens. The canonical module
+`packages/lib/src/quiz/options.ts` returns `[]`; the entry also freezes the two
+marking-safety properties of the question-serving path — option COUNT (P6's
+exactly-four) and option ORDER (bound to the server shuffle snapshot and
+`selected_displayed_index`) — as explicitly invariant. 4 sub-entries
+[REG-379a..d], 22 tests in `apps/host/src/__tests__/lib/quiz/options.test.ts`,
+all E. Documented known gap: the literal STRING `'null'` still parses to `null`
+verbatim, preserved-not-introduced from all seven originals and pinned
+deliberately; tightening it is a P6 behaviour change needing assessment
+sign-off. Full entry in `03-quiz-integrity.md`. **REG-380 is now the next free
+id**; REG-371..REG-377 remain RESERVED.)
+
+2026-08-10 reconciliation — 4 test files deleted in the orphan-consolidation
+pass, 3 catalog entries repaired, **0 entries deleted**. The deleted files were
+`DailyPlanCard.test.tsx` and `DailyRhythmQueue.{blockedPrerequisite,remediation,
+srs-count}.test.tsx`. Three entries cited them and were repaired IN PLACE with
+the citation struck through and a reconciliation note added — REG-129
+(`09-adaptive-program.md`, client half of the Loop A remediation lane;
+downgraded `U`→`P` because its six client-half clauses are now unenforced,
+server half fully intact via `api/rhythm/today-remediation-lane.test.ts`) and
+REG-345 + REG-358 (`03-quiz-integrity.md`, SRS lane count; both stay `E` — the
+predicate-level guarantee that makes REG-358 meaningful lives in
+`srs-source.test.ts` + `api/learner/srs-due.test.ts`, never in the deleted
+render test). `DailyPlanCard.test.tsx` was cited by NO entry; only REG-220's
+prose named the component, corrected in place in `10-rbac-rls.md`. The
+`blockedPrerequisite` test was cited by no entry either. **Judgement: all four
+were false greens, not lost coverage** — `git grep` at HEAD proves all three
+`DailyRhythmQueue` tests and the `DailyPlanCard` test were the ONLY importers
+of their subjects (zero production importers), and no UI in `apps/host/src` or
+`packages/ui/src` consumes `GET /api/rhythm/today` at all any more. Open
+obligations to re-pin the client-half clauses if either lane is ever re-lit are
+recorded in both shards.
+Prior: REG-378 (2026-08-09, Node.js toolchain version pin — every surface
 that can choose a Node is pinned to 22.x and none may float; `engine-strict`
 makes the real floor 22.22.0, not 22.0.0. Full entry further down this file
 and in `11-infrastructure.md`. REG-371..REG-377 remain RESERVED.)
@@ -358,8 +394,10 @@ REG-366 taken by the same-day K9 leadership standalone-route fold-in.) That
 made REG-367 the next free id, and the same-day Student-OS IA consolidation
 batch then took **REG-367..REG-370**, so REG-371 was the next free id at that
 point. That is superseded below — the 2026-08-09 Node.js version-pin batch took
-**REG-378**, so **REG-379 is now the next free id** and REG-371..REG-377 remain
-RESERVED (see the ID-collision note immediately below).
+**REG-378**, so REG-379 was the next free id and REG-371..REG-377 remain
+RESERVED (see the ID-collision note immediately below). That is in turn
+superseded above — the 2026-08-10 canonical-`parseOptions` consolidation took
+**REG-379**, so **REG-380 is now the next free id.**
 
 2026-08-09: **REG-378 — Node.js toolchain version pin** (deployment-config
 change; architect made it, P14 chain architect → ops, testing). Every surface
@@ -426,6 +464,12 @@ batch either way and must not be reissued.
 same bracket now reads **371 upper bound / 366 honest**. REG-378 itself is
 filed — `## REG-378` heading plus `| REG-378 |` table row in
 `11-infrastructure.md` — and is not part of the unresolved gap above.)
+(2026-08-10 addendum: REG-379 adds exactly one more filed, body-backed entry —
+`## REG-379` heading plus four `| REG-379a..d |` table rows in
+`03-quiz-integrity.md`, counted as ONE entry — so the bracket now reads
+**372 upper bound / 367 honest**. The REG-361..REG-365 upstream gap above is
+still unresolved and untouched by this pass. The same-day deletion
+reconciliation changed no count: 3 entries were repaired in place, 0 deleted.)
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

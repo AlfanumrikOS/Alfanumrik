@@ -15,7 +15,11 @@
  * Consumers (will wire this in behind feature flags in the same Phase-3 sprint):
  *  - src/app/api/goals/daily-plan/route.ts        (backend — server reads goal,
  *                                                  returns DailyPlan as JSON)
- *  - src/components/dashboard/DailyPlanCard.tsx   (frontend — student dashboard)
+ *  - packages/ui/src/dashboard/DailyPlanCard.tsx  (frontend — student dashboard)
+ *      ↳ NEVER WIRED IN. Deleted 2026-08 in the orphan consolidation (zero
+ *        importers). No student-dashboard surface consumes buildDailyPlan
+ *        today; the mobile twin mobile/lib/ui/widgets/daily_plan_card.dart
+ *        still exists. Re-mounting means writing a new component.
  *  - src/components/parent/StudentDailyPlan.tsx   (frontend — parent visibility)
  *  - src/components/teacher/StudentDailyPlan.tsx  (frontend — teacher visibility)
  *

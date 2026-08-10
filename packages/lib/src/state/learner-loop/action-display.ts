@@ -13,7 +13,9 @@
  *   - Tests want to assert the mapping never leaks unmapped kinds.
  *
  * The icon is an emoji string so the dashboard's existing emoji-as-icon
- * design (see AboveFoldHero) renders without a sprite import.
+ * design renders without a sprite import. (The original reference surface,
+ * AboveFoldHero, was deleted in the 2026-08 orphan consolidation; the
+ * emoji-as-icon convention still holds on the Alfa OS dashboard cards.)
  */
 
 import type { LearnerAction } from './types';
