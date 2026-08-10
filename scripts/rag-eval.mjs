@@ -25,7 +25,8 @@
  *     to JS at build time would be too much; instead we use Node 22's
  *     experimental TypeScript support (--experimental-strip-types) when
  *     available, and fall back to a clear error message if not. CI runs
- *     Node 20 by default — see .github/workflows/rag-eval.yml for the
+ *     Node 22 everywhere (repo-wide pin: .nvmrc, workflows, Dockerfile,
+ *     package.json engines) — see .github/workflows/rag-eval.yml for the
  *     wrapper that uses tsx.
  *
  *   - The runner file (eval/rag/runner.ts) is plain TS with no Next.js or

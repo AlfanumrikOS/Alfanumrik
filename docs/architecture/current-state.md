@@ -23,7 +23,7 @@
 | Testing (E2E) | Playwright | 1.58.2 |
 | Testing (DOM) | jsdom | 29.0.1 |
 | Build Analysis | @next/bundle-analyzer | 16.2.1 |
-| Node.js | (CI environment) | 20.x |
+| Node.js | (pinned repo-wide: `.nvmrc`, all workflows, Dockerfile, `engines.node` in every workspace) | 22.x (`>=22.0.0 <23.0.0`; effective floor **22.22.0** via `posthog-node`) |
 | Mobile | Flutter + Riverpod | /mobile directory |
 | Deployment | Vercel (bom1/Mumbai region) | — |
 | CI/CD | GitHub Actions (3 workflows) | — |

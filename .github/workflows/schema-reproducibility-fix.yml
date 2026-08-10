@@ -82,6 +82,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
           cache: 'npm'
 
       - uses: supabase/setup-cli@v2

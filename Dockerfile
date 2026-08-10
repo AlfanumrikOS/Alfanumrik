@@ -1,5 +1,5 @@
 # ── Stage 1: Install dependencies ───────────────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 # libc6-compat for native modules (e.g. sharp)
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
@@ -13,7 +13,7 @@ COPY eslint-plugin-alfanumrik/package.json ./eslint-plugin-alfanumrik/package.js
 RUN npm ci
 
 # ── Stage 2: Build ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -53,7 +53,7 @@ ENV NODE_OPTIONS="--max-old-space-size=6144"
 RUN npm run build
 
 # ── Stage 3: Production runner ───────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 ARG DEPLOY_GIT_SHA

@@ -95,7 +95,7 @@ The older CI-independent model is retired. If GitHub Actions, Vercel, or Supabas
 | Tool | Purpose | Check |
 |---|---|---|
 | Git | Source control and release SHA traceability | `git --version` |
-| Node.js 22.x | Build, tests, release gates | `node --version` |
+| Node.js 22.x | Build, tests, release gates | `node --version` — must be `>= 22.22.0` and `< 23`. Pinned in `.nvmrc`; enforced as a hard install failure by `engine-strict=true` in the root `.npmrc`. Run `nvm use` in the repo root. |
 | npm | Workspace dependencies and scripts | `npm --version` |
 | Supabase CLI | DB migrations and Edge Functions | `supabase --version` |
 | Vercel CLI | Optional CLI deploy / rollback support | `vercel --version` |
@@ -372,6 +372,28 @@ If a migration caused a production incident:
 
 Use `scripts/deploy/rollback.sh` only when the migration was designed with explicit rollback support and the risk has been reviewed.
 
+### Node Runtime Rollback - Vercel
+
+Use when a release changed `engines.node` and production regressed afterwards (server-side `TypeError`/`ReferenceError`, native module load failure, Sentry spike concentrated in API routes).
+
+First, confirm what production is actually running:
+
+```bash
+curl -fsS https://alfanumrik.com/api/v1/health | jq '.environment.node_version, .version.git_sha'
+```
+
+`environment.node_version` is `process.version` from the live function and is the only authoritative source. The Vercel dashboard "Node.js Version" setting is cosmetic once `engines.node` exists.
+
+Then roll back:
+
+1. **Fast path** — Web Rollback (above) to a deployment built *before* the `engines.node` change. This restores the old runtime major, because the Node major is baked into each deployment's built function configuration at build time. Re-run the curl and confirm the major moved back.
+2. **Durable path** — revert `engines.node` in the root and every workspace `package.json`, regenerate `package-lock.json` on the target major, redeploy. Architect-owned.
+
+Two traps:
+
+- Reverting `engines.node` in Git changes nothing until a new deployment is built and promoted. If you need the runtime changed now, use the fast path first.
+- `engine-strict=false` in `.npmrc` does **not** roll back the runtime. It only relaxes install-time engine checking. See `docs/ops/rollback-plan.md` Scenario 6 (installs blocked) vs Scenario 7 (runtime regressed) — they are different incidents.
+
 ### AWS ECS Rollback (decommissioned 2026-08-03)
 
 The AWS ECS Fargate parallel host was decommissioned on 2026-08-03 (CEO decision
@@ -461,6 +483,23 @@ Capture:
 | Feature flag behavior differs from expectation | DB flag drift | Run `npx tsx scripts/verify-feature-flag-matrix.ts --env=<env>` and reconcile. |
 | Cron appears green but product state is stale | Job lacks live last-success metric or alert | Check `scripts/job-registry.json`, `ops_events`, and `verify-job-health-live.ts`. |
 | Mobile clients hit legacy endpoints | Old mobile release or contract drift | Run `verify-mobile-legacy-traffic-live.ts`, block rollout until traffic is clean. |
+| `npm ci` / `npm install` fails with `EBADENGINE` / `Unsupported engine` (locally, in CI, in Docker, or in a Vercel build) | Node version outside the pin. Root `.npmrc` sets `engine-strict=true`, so an engine mismatch is a hard failure instead of a warning. Two floors apply: our `engines.node` = `>=22.0.0 <23.0.0`, and the transitive `posthog-node` = `^20.20.0 \|\| >=22.22.0`, making the **effective floor 22.22.0**. | Put the environment on the latest Node 22.x (`nvm use` reads `.nvmrc`). If the failing environment's Node cannot be changed fast enough to clear an outage, use the emergency unblock below. |
+| Vercel build fails with `Found invalid Node.js Version` | Vercel no longer offers a Node major satisfying `engines.node`. The range `>=22.0.0 <23.0.0` admits exactly one major and has no fallback, so this fires the day Vercel retires Node 22. | Widen `engines.node` upper bound (e.g. `<25.0.0`) in the root and all workspace `package.json` files, re-run `npm install` to refresh `package-lock.json`, redeploy. Architect-owned change. |
+| Production runtime Node major changed unexpectedly after a deploy | `engines.node` in `package.json` **overrides** the Vercel dashboard "Node.js Version" setting. The dashboard value is cosmetic once `engines.node` exists. | Confirm the intended major in `engines.node`, not the dashboard. Record the change in the release evidence — a runtime-major move is a behavioural change, not a config-only one. |
+
+### Emergency Unblock: Node engine pin
+
+The pin's kill switch is one line in the root `.npmrc`:
+
+```
+engine-strict=false
+```
+
+That reverts npm to its default advisory behaviour (`EBADENGINE` becomes a warning and the install proceeds). It does **not** touch `engines.node`, `.nvmrc`, the workflows, or the Dockerfile, so it is safe to apply and revert in isolation.
+
+- Scope: unblocks *installs* only. It does not change the Vercel runtime Node major — that is governed by `engines.node`.
+- Do **not** delete `.npmrc` instead; deleting it loses the documented floor and the rationale.
+- Treat any use of this switch as an incident: open a follow-up to restore `engine-strict=true` and record why the environment was off-pin.
 
 ---
 

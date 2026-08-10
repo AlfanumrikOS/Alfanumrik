@@ -5,9 +5,24 @@ variables across local development, Vercel preview/production, Supabase Edge
 Functions, Mailgun, and Razorpay.
 
 > **TL;DR**
+> 0. Be on **Node 22.x** (`nvm use` in the repo root reads `.nvmrc`). This is a hard prerequisite, not a recommendation — see below.
 > 1. `cp .env.local.example .env.local` and fill in the 3 Supabase vars — that's enough to boot locally.
 > 2. For production, set every `[required]` variable in the Vercel project settings.
 > 3. For Edge Function secrets (Mailgun, ADMIN_API_KEY, etc.), use `supabase secrets set` or the Supabase Dashboard.
+
+## 0. Prerequisite: Node 22.x
+
+Before any env var matters, `npm install` has to succeed — and on the wrong Node it will not. The root `.npmrc` sets `engine-strict=true`, which turns npm's advisory engine *warning* into a hard install *failure*:
+
+```bash
+nvm use          # reads .nvmrc (22); or fnm use / nvs use
+node --version   # must be v22.x and >= v22.22.0
+npm ci
+```
+
+Required range is `>=22.0.0 <23.0.0`, declared in every workspace `package.json`. The **effective floor is 22.22.0**, because the transitive dependency `posthog-node` requires `^20.20.0 || >=22.22.0` — Node 22.0–22.21 fails too.
+
+If you see `npm error code EBADENGINE`, you are on the wrong Node. Fix the Node version; do **not** delete `.npmrc` or set `engine-strict=false` to get past it. Full detail: `README_LOCAL.md` and `docs/ops/rollback-plan.md` Scenario 6.
 
 ---
 

@@ -1,10 +1,34 @@
 # Local Development Guide
 
 ## Prerequisites
-- **Node.js** >= 18 (recommended LTS)
-- **npm** (comes with Node) or **pnpm** if you prefer
+- **Node.js 22.x** — required range is `>=22.0.0 <23.0.0`, and the effective floor is **>= 22.22.0** (see "Wrong Node version" below). The version is pinned in `.nvmrc`, so run `nvm use` (or `fnm use` / `nvs use`) in the repo root, then confirm with `node --version`.
+- **npm** (comes with Node). Do **not** substitute pnpm/yarn — the repo is an npm-workspaces monorepo with a committed `package-lock.json`.
 - **Docker Desktop** (optional, for Supabase local emulator)
 - **Git**
+
+### Wrong Node version → `npm install` hard-fails (`EBADENGINE`)
+
+The root `.npmrc` sets `engine-strict=true`. By default npm only *warns* when your Node version violates a package's `engines` field and installs anyway; `engine-strict` makes it a hard failure instead, so a mismatched Node can never quietly produce a build. If you see:
+
+```
+npm error code EBADENGINE
+npm error engine Unsupported engine
+npm error notsup Required: {"node":">=22.0.0 <23.0.0"}
+npm error notsup Actual:   {"node":"vXX.Y.Z"}
+```
+
+you are simply on the wrong Node. Fix it — do not delete `.npmrc`:
+
+```powershell
+nvm install 22
+nvm use 22
+node --version   # expect v22.22.0 or newer
+npm ci
+```
+
+Two floors apply, and `engine-strict` enforces both:
+- **Ours:** `engines.node` = `>=22.0.0 <23.0.0` in the root and every workspace `package.json`.
+- **Transitive:** `posthog-node` declares `^20.20.0 || >=22.22.0`, so Node **22.0–22.21 will also fail**. Install the latest 22.x.
 
 ## Clone the repository
 ```powershell

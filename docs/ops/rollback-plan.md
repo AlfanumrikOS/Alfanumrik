@@ -93,6 +93,52 @@ curl -X PUT https://alfanumrik.vercel.app/api/super-admin/feature-flags \
 
 **Degraded mode**: AI features should fail gracefully -- students can still take quizzes from the question bank without AI generation.
 
+### Scenario 6: Node Engine Pin Blocks Installs / Builds
+
+**Detection**: `npm ci` or `npm install` fails with `npm error code EBADENGINE` / `Unsupported engine` — locally, in a GitHub Actions job, in the Docker build, or inside a Vercel build. Nothing reaches production; the pipeline stops at install.
+
+**Cause**: Node is pinned to 22.x repo-wide, and the root `.npmrc` sets `engine-strict=true`, which converts npm's advisory engine warning into a hard install failure. Two floors apply:
+- ours — `engines.node` = `>=22.0.0 <23.0.0` in the root and every workspace `package.json`;
+- transitive — `posthog-node` = `^20.20.0 || >=22.22.0`, so the **effective floor is 22.22.0**. Node 22.0–22.21 fails even though it satisfies our own range.
+
+**Rollback steps** (one line, no code change):
+1. Set `engine-strict=false` in the root `.npmrc`.
+2. Commit and push. Installs revert to npm's default behaviour: `EBADENGINE` prints as a warning and the install proceeds.
+3. Do **not** delete `.npmrc` — it carries the documented floor and the rationale.
+
+**Time to rollback**: One commit; effective on the next CI run.
+
+**Scope and limits**:
+- This unblocks *installs* only. It does **not** change the production runtime Node major — that is governed by `engines.node` in `package.json`, which **overrides** the Vercel dashboard "Node.js Version" setting.
+- If the failure is Vercel reporting `Found invalid Node.js Version`, `engine-strict=false` will not help. That means Vercel offers no major satisfying `>=22.0.0 <23.0.0`; the fix is to widen the `engines.node` upper bound across all `package.json` files and refresh `package-lock.json` (architect-owned).
+
+**Follow-up**: Treat any use of this switch as an incident. Open a task to restore `engine-strict=true` and record which environment was off-pin and why.
+
+### Scenario 7: Production Runtime Regression After a Node Major Change
+
+**This is a different incident from Scenario 6.** Scenario 6 is "nothing deployed, installs are blocked." Scenario 7 is "something deployed and the *running* Node major changed under it." `engine-strict=false` does **not** help here.
+
+**Detection**: A deploy that changed `engines.node` goes out, and afterwards you see `TypeError: X is not a function`, `ReferenceError: X is not defined`, native-module (`sharp`, etc.) load failures, or a Sentry spike concentrated in server/API routes rather than the browser. Confirm with:
+
+```bash
+curl -fsS https://alfanumrik.com/api/v1/health | jq '.environment.node_version, .version.git_sha'
+```
+
+`environment.node_version` is `process.version` from the live serverless function — it is the authoritative answer to "what Node is production actually running." Compare it to the previous deployment's value.
+
+**Cause**: `engines.node` in `package.json` selects the Vercel runtime and **overrides** the dashboard "Node.js Version" setting. Narrowing or moving that range moves the production runtime major. A downgrade is as breaking as an upgrade: a newer major's built-in APIs (for example `RegExp.escape`, `Error.isError`, `node:sqlite`) simply do not exist on an older one, and TypeScript will not catch it when `@types/node` is ahead of the pinned runtime.
+
+**Rollback steps**:
+
+1. **Fast path — Vercel Instant Rollback (under 60s).** Follow Scenario 1, targeting a deployment built *before* the `engines.node` change. This restores the previous runtime major, because the Node major is baked into each deployment's built function configuration at build time — you are not merely serving older application code, you are serving functions that were provisioned on the old runtime. Verify with the `node_version` curl above; it must show the old major.
+2. **Durable path — revert the pin.** Revert `engines.node` in the root **and every workspace** `package.json`, regenerate `package-lock.json` on the target Node major, then redeploy.
+
+**Reverting `engines.node` in git is NOT sufficient on its own.** The runtime is chosen at build time, so a revert has zero effect until a new deployment is built and promoted. If you need the runtime changed *now*, use the fast path first and land the revert afterwards.
+
+**Time to rollback**: under 60s via Instant Rollback; one build cycle for the durable revert.
+
+**Do not** reach for `engine-strict=false` in this scenario. It changes npm's install behaviour only and leaves the production runtime exactly where it is.
+
 ## Incident Response Steps
 
 ### Severity Levels
