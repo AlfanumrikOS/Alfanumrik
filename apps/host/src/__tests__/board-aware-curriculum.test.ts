@@ -8,6 +8,9 @@ let _authGetUserMock = vi.fn();
 let _rpcImpl = vi.fn();
 let _studentLookup: { data: any; error: any } = { data: null, error: null };
 let _gradeSubjectMapLookup: { data: any; error: any } = { data: null, error: null };
+// Phase 3 P0: the subjects fallback now joins `subjects` and keeps only
+// is_active rows, so the mock needs a second lookup for that table.
+let _activeSubjectsLookup: { data: any; error: any } = { data: [], error: null };
 let _insertedSyllabusRows: any[] = [];
 let _opsEventsInserts: any[] = [];
 
@@ -30,17 +33,25 @@ function makeFromChain(table: string) {
     };
   }
   if (table === 'grade_subject_map') {
-    return {
-      select: (fields: string) => {
-        const resultPromise = Promise.resolve(_gradeSubjectMapLookup);
-        const eq2 = (f2: string, v2: any) => resultPromise;
-        const eq1 = (f1: string, v1: any) => ({ eq: eq2 });
-        return {
-          eq: eq1,
-          then: (onfulfilled?: any, onrejected?: any) => resultPromise.then(onfulfilled, onrejected),
-        };
-      },
+    // Thenable at every link so `.select()`, `.select().eq()` and
+    // `.select().eq().eq()` all resolve — the route now filters by grade only
+    // (board/stream are applied in TS, mirroring the RPC's grade_valid CTE),
+    // while backfill-cbse-syllabus awaits `.select()` directly.
+    const makeLink = (): any => ({
+      eq: () => makeLink(),
+      then: (onfulfilled?: any, onrejected?: any) =>
+        Promise.resolve(_gradeSubjectMapLookup).then(onfulfilled, onrejected),
+    });
+    return { select: () => makeLink() };
+  }
+  if (table === 'subjects') {
+    const link: any = {
+      in: () => link,
+      eq: () => link,
+      then: (onfulfilled?: any, onrejected?: any) =>
+        Promise.resolve(_activeSubjectsLookup).then(onfulfilled, onrejected),
     };
+    return { select: () => link };
   }
   if (table === 'ops_events') {
     return {
@@ -116,6 +127,7 @@ describe('Board-Aware Curriculum Integration Tests', () => {
     _authGetUserMock.mockReset();
     _studentLookup = { data: null, error: null };
     _gradeSubjectMapLookup = { data: null, error: null };
+    _activeSubjectsLookup = { data: [], error: null };
     _insertedSyllabusRows = [];
     _opsEventsInserts = [];
   });
@@ -136,9 +148,18 @@ describe('Board-Aware Curriculum Integration Tests', () => {
       // Mock custom mappings in grade_subject_map for grade 10 ICSE
       _gradeSubjectMapLookup = {
         data: [
-          { subject_code: 'physics', is_core: true },
-          { subject_code: 'chemistry', is_core: true },
-          { subject_code: 'biology', is_core: false },
+          { subject_code: 'physics', is_core: true, board: 'ICSE', stream: null },
+          { subject_code: 'chemistry', is_core: true, board: 'ICSE', stream: null },
+          { subject_code: 'biology', is_core: false, board: 'ICSE', stream: null },
+        ],
+        error: null,
+      };
+      // The is_active join — all three are active in the catalogue.
+      _activeSubjectsLookup = {
+        data: [
+          { code: 'physics', name: 'Physics', name_hi: 'भौतिकी', icon: '⚛️', color: '#2563EB', subject_kind: 'cbse_core' },
+          { code: 'chemistry', name: 'Chemistry', name_hi: 'रसायन', icon: '🧪', color: '#10B981', subject_kind: 'cbse_core' },
+          { code: 'biology', name: 'Biology', name_hi: 'जीव विज्ञान', icon: '🧬', color: '#F59E0B', subject_kind: 'cbse_core' },
         ],
         error: null,
       };
@@ -158,16 +179,28 @@ describe('Board-Aware Curriculum Integration Tests', () => {
 
       const physics = body.subjects.find((s: any) => s.code === 'physics');
       expect(physics.isCore).toBe(true);
-      expect(physics.color).toBe('#2563EB'); // standard color from SUBJECT_META
+      // Display metadata now comes from the `subjects` table, not SUBJECT_META.
+      expect(physics.color).toBe('#2563EB');
+      expect(physics.nameHi).toBe('भौतिकी');
+      // Phase 3 P0: fallback has no plan context, so it fails CLOSED.
+      expect(physics.isLocked).toBe(true);
 
       const biology = body.subjects.find((s: any) => s.code === 'biology');
       expect(biology.isCore).toBe(false);
+      expect(biology.isLocked).toBe(true);
 
       expect(_opsEventsInserts).toHaveLength(1);
       expect(_opsEventsInserts[0].message).toContain('v1_empty_rows');
     });
 
-    it('falls back to default CBSE subjects from constants if no custom mapping exists for board', async () => {
+    it('returns an EMPTY list (never the hardcoded catalogue) when no active mapping exists for the board', async () => {
+      // Phase 3 P0 leak closure. This test used to assert the opposite: that a
+      // board with no grade_subject_map rows fell through to
+      // getSubjectsForGrade('10') and served math/science/english/hindi/
+      // social_studies/computer_science with isLocked=false — i.e. the
+      // hardcoded 16-subject shim, bypassing `subjects.is_active` entirely.
+      // After the KEEP-SET restriction that shim is a leak, so the fallback
+      // now returns nothing and lets the picker show a support message.
       authOk();
       _rpcImpl.mockResolvedValue({ data: [], error: null });
 
@@ -186,15 +219,44 @@ describe('Board-Aware Curriculum Integration Tests', () => {
       expect(res.status).toBe(200);
 
       const body = await res.json();
-      expect(body.subjects).toBeDefined();
-      // Should fall back to CBSE Grade 10 default subjects: math, science, english, hindi, social_studies, computer_science
-      const codes = body.subjects.map((s: any) => s.code);
-      expect(codes).toContain('math');
-      expect(codes).toContain('science');
-      expect(codes).toContain('english');
-      expect(codes).toContain('hindi');
-      expect(codes).toContain('social_studies');
-      expect(codes).toContain('computer_science');
+      expect(body.subjects).toEqual([]);
+
+      // The drift is still logged so ops can see it.
+      expect(_opsEventsInserts).toHaveLength(1);
+      expect(_opsEventsInserts[0].message).toContain('v1_empty_rows');
+      expect(_opsEventsInserts[0].context.fallback_subject_count).toBe(0);
+    });
+
+    it('board fallback: a board with no mapping inherits the generic CBSE/NULL rows', async () => {
+      // Mirrors get_available_subjects' grade_valid CTE: board-specific rows
+      // win outright, and the CBSE/Other/NULL rows apply only when the
+      // student's own board has no mapping at that grade.
+      authOk();
+      _rpcImpl.mockResolvedValue({ data: [], error: null });
+      _studentLookup = { data: { grade: '9', board: 'ICSE', stream: null }, error: null };
+      _gradeSubjectMapLookup = {
+        data: [
+          { subject_code: 'math', is_core: true, board: 'CBSE', stream: null },
+          { subject_code: 'science', is_core: true, board: null, stream: null },
+          // Belongs to another board entirely — must not leak in.
+          { subject_code: 'physics', is_core: true, board: 'IB', stream: null },
+        ],
+        error: null,
+      };
+      _activeSubjectsLookup = {
+        data: [
+          { code: 'math', name: 'Mathematics', name_hi: 'गणित', icon: '∑', color: '#111', subject_kind: 'cbse_core' },
+          { code: 'science', name: 'Science', name_hi: 'विज्ञान', icon: '🔬', color: '#222', subject_kind: 'cbse_core' },
+        ],
+        error: null,
+      };
+
+      const { GET } = await import('@/app/api/student/subjects/route');
+      const res = await GET(reqWithBearer('http://localhost/api/student/subjects'));
+      const body = await res.json();
+
+      expect(body.subjects.map((s: any) => s.code).sort()).toEqual(['math', 'science']);
+      expect(body.subjects.every((s: any) => s.isLocked === true)).toBe(true);
     });
   });
 

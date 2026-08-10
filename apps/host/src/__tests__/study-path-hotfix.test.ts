@@ -12,8 +12,19 @@
  *      fall back to GRADE_SUBJECTS (subjects) or `chapters` table (chapters)
  *      and log ops_events with category='grounding.study_path'.
  *
- * This test exercises the JS fallback helpers in isolation, since the
- * migration filter change is DB-side and tested via Postgres.
+ * SUPERSEDED IN PART (Phase 3 P0, 2026-08-10) — READ BEFORE EXTENDING.
+ * Step 2's SUBJECTS half is gone. /api/student/subjects no longer falls back
+ * to GRADE_SUBJECTS / SUBJECT_META: that path ignored `subjects.is_active` and
+ * served every hardcoded subject with isLocked=false, which became a leak once
+ * the platform was restricted to the KEEP-SET. It now rebuilds from
+ * grade_subject_map ⋈ active `subjects` (fail-closed, isLocked=true) and
+ * returns [] when that yields nothing. The chapters half is unchanged.
+ *
+ * What survives here is coverage of the `getSubjectsForGrade` LIB HELPER
+ * itself, which still exists as a deprecated compat shim with other callers.
+ * These tests pin that shim's shape — they no longer describe route behaviour.
+ * Route-level fallback behaviour is pinned by regression #8 in
+ * regression-subject-leak.test.tsx.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -76,16 +87,18 @@ describe('Phase 4 study-path fallback helpers', () => {
     }
   });
 
-  it('Fallback is only used when v2 returns empty AND student has a grade — contract documentation', () => {
-    // The route handler guards:
-    //   - If v2 returns non-empty rows: serve v2, never fall back
-    //   - If v2 returns [] AND student has a grade: fall back with ops_events log
-    //   - If v2 returns [] AND no student record: return {subjects: []} (safe)
-    //   - If v2 errors AND student has a grade: fall back (with different reason)
-    //   - If v2 errors AND no student record: return 500 { error: 'service_unavailable' }
+  it('Fallback is only used when v1 returns empty AND student has a grade — contract documentation', () => {
+    // The subjects route handler guards (Phase 3 P0 shape):
+    //   - If v1 returns non-empty rows: serve v1, never fall back
+    //   - If v1 returns [] AND student has a grade: rebuild from
+    //     grade_subject_map ⋈ subjects WHERE is_active, isLocked=true, and log
+    //     ops_events — the rebuild may legitimately be EMPTY
+    //   - If v1 returns [] AND no student record: return {subjects: []} (safe)
+    //   - If v1 errors AND student has a grade: same rebuild, different reason
+    //   - If v1 errors AND no student record: return 500 { error: 'service_unavailable' }
     //
-    // This test is documentation-only; the actual guard logic lives in
-    // src/app/api/student/subjects/route.ts and is exercised by E2E.
+    // This test is documentation-only; the executable version of this contract
+    // is regression #8 in regression-subject-leak.test.tsx.
     expect(true).toBe(true);
   });
 });

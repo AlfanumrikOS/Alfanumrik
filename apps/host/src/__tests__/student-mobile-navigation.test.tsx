@@ -45,7 +45,13 @@ vi.mock('@alfanumrik/lib/supabase', () => ({
 }));
 
 import { MobileBottomNav } from '@alfanumrik/ui/navigation/MobileBottomNav';
-import { CORE_TABS, MORE_ITEMS, SIDEBAR_SECTIONS } from '@alfanumrik/ui/navigation/nav-config';
+import {
+  CORE_TABS,
+  MORE_ITEMS,
+  SIDEBAR_SECTIONS,
+  resolvePrimaryActiveId,
+  resolveStudentPrimaryNav,
+} from '@alfanumrik/ui/navigation/nav-config';
 
 describe('live student mobile navigation', () => {
   beforeEach(() => {
@@ -73,20 +79,32 @@ describe('live student mobile navigation', () => {
     expect(routerPush).toHaveBeenCalledWith('/teacher');
   });
 
-  it('groups the More sheet overflow into Practice / Study / Account headers (2026-08-06 declutter)', () => {
+  it('groups the More sheet overflow into Utilities / Study / Account headers (2026-08-10 Phase 3 trim)', () => {
     render(<MobileBottomNav />);
     fireEvent.click(screen.getByRole('button', { name: 'More options' }));
 
     const dialog = screen.getByRole('dialog', { name: 'More navigation options' });
 
-    // Ungrouped "Home" stays first; the flat 19-item list is now three sections
-    // mirroring the desktop sidebar (IA law — same mental model both projections).
-    expect(within(dialog).getByRole('button', { name: 'Home' })).toBeInTheDocument();
-    expect(within(dialog).getByText('Practice')).toBeInTheDocument();
+    // UPDATED 2026-08-10 (Phase 3 IA trim). This test previously asserted an
+    // ungrouped "Home" row (/dashboard) and a "Practice" header. Both are gone
+    // by design, and asserting them would now pin the pre-trim IA:
+    //   - the "Home" row was /dashboard under a SECOND name, while /dashboard
+    //     is already the Today slot's landing page (altHrefs). One home, one
+    //     name — so there is no ungrouped row left at all.
+    //   - the "Practice" group's entire membership (/assignments, /pyq,
+    //     /mock-exam, /exam-briefing, /exam-prep) left the nav, so the key was
+    //     removed from MORE_SHEET_GROUPS rather than left unmatchable.
+    // The INTENT — the sheet renders grouped section headers, not one flat
+    // list, and membership survives the grouping — is unchanged and asserted
+    // below against the three groups that exist now.
+    expect(within(dialog).getByText('Utilities')).toBeInTheDocument();
     expect(within(dialog).getByText('Study')).toBeInTheDocument();
     expect(within(dialog).getByText('Account')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Practice')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Home' })).not.toBeInTheDocument();
 
     // Section membership is preserved — items render inside their group, not lost.
+    expect(within(dialog).getByRole('button', { name: 'Foxy' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'STEM Lab' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Profile' })).toBeInTheDocument();
   });
@@ -107,18 +125,30 @@ describe('live student mobile navigation', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'More navigation options' });
     expect(within(dialog).queryByRole('button', { name: 'Practice' })).not.toBeInTheDocument();
-    // The sidebar entry for the live quiz engine used to be labelled
-    // "Practice" — identical to its own section title and a near-twin of
-    // "Practice Center" (/practice) directly above it. It was renamed to
-    // "Quiz" on 2026-08-05; the DESTINATION is what this test guards and it is
-    // unchanged. Asserted by href-first lookup so a future rename does not
-    // silently make this test vacuous the way a label-first lookup did.
+
+    // UPDATED 2026-08-10 (Phase 3 IA trim). This used to assert a single
+    // sidebar row for /quiz labelled "Quiz". The Phase 3 trim removed that row:
+    // /quiz is now reached through the PRIMARY Practice slot, whose altHrefs
+    // carry it, so a separate sidebar entry was the same destination in two
+    // places at 1024px+.
+    //
+    // The guarded property is unchanged and is asserted more directly than
+    // before: the live quiz engine is still a reachable nav destination and
+    // the nav still marks the student's position when they are on it. What is
+    // NO LONGER asserted — the label string "Quiz" on a row that no longer
+    // exists — is dropped rather than weakened.
     const quizItems = SIDEBAR_SECTIONS.flatMap((section) => section.items).filter(
       (item) => item.href === '/quiz',
     );
-    expect(quizItems).toHaveLength(1);
-    expect(quizItems[0].label).toBe('Quiz');
-    expect(quizItems[0].labelHi).toBe('क्विज़');
+    expect(
+      quizItems,
+      '/quiz is reached through the Practice primary slot; a sidebar row for it as well puts one ' +
+        'destination in two places at the same breakpoint',
+    ).toHaveLength(0);
+
+    const practiceSlot = resolveStudentPrimaryNav().find((s) => s.id === 'practice');
+    expect(practiceSlot?.altHrefs, 'the Practice slot is what keeps /quiz reachable').toContain('/quiz');
+    expect(resolvePrimaryActiveId('/quiz', resolveStudentPrimaryNav())).toBe('practice');
   });
 
   it('gives every sidebar entry a distinct name within its section (en + hi)', () => {
@@ -127,9 +157,10 @@ describe('live student mobile navigation', () => {
     // meaning three things. Hindi is asserted too so a rename cannot fix the
     // English collision while leaving the Hindi one (P7).
     //
-    // NOTE: the Home section still contains an item also called "Home"
-    // (/dashboard). That is a section title matching its own landing item, not
-    // two rival destinations, and is deliberately out of scope here.
+    // NOTE (superseded 2026-08-10): the "Home" section used to contain an item
+    // also called "Home" (/dashboard), which was excused here as a section
+    // title matching its own landing item. The Phase 3 IA trim removed that
+    // row outright, so the exception no longer applies to anything.
     for (const section of SIDEBAR_SECTIONS) {
       const labels = section.items.map((item) => item.label);
       const labelsHi = section.items.map((item) => item.labelHi);

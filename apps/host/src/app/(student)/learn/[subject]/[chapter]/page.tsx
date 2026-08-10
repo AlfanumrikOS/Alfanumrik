@@ -297,10 +297,17 @@ function ChapterConceptPageContent() {
         .eq('chapter_number', chapterNum)
         .eq('is_active', true)
         .maybeSingle(),
+      // is_active is load-bearing, not cosmetic: a deep link to a retired
+      // subject must not resolve to a subject_id and render curriculum topics.
+      // Matches the sibling reads in src/app/foxy/page.tsx and
+      // src/app/(student)/exams/page.tsx. When it misses, subjectRow.data is
+      // null → curriculumTopics stays empty and the plan-gate effect above
+      // (which never finds the code in the allowed list) redirects to /learn.
       supabase
         .from('subjects')
         .select('id')
         .eq('code', subject)
+        .eq('is_active', true)
         .maybeSingle(),
     ]);
 
