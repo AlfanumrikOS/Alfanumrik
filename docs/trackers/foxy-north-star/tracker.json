@@ -1967,13 +1967,14 @@
           "packages/lib/src/learn/sm2.ts",
           "packages/lib/src/learn/srs-source.ts",
           "packages/lib/src/learn/srs-predicate.ts",
-          "apps/host/src/app/api/learner/srs/due/route.ts",
+          "apps/host/src/app/api/v2/today/route.ts",
           "apps/host/src/app/api/learner/review/grade/route.ts"
         ],
         "middleware": [],
         "frontend": [
           "apps/host/src/app/(student)/quiz/page.tsx",
-          "packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx",
+          "packages/ui/src/dashboard/os/TodaysMission.tsx",
+          "packages/ui/src/refresh/QuickRecallSection.tsx",
           "packages/ui/src/quiz/QuizResults.tsx"
         ],
         "mobile": "n/a"
@@ -1982,9 +1983,9 @@
       "prs": [],
       "tests": [
         "apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts",
-        "apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx",
+        "apps/host/src/__tests__/app/quiz-foxy-phase0.test.tsx",
         "apps/host/src/__tests__/lib/learn/srs-source.test.ts",
-        "apps/host/src/__tests__/api/learner/srs-due.test.ts",
+        "apps/host/src/__tests__/adaptive-differential.test.ts",
         "packages/lib/src/__tests__/learn/sm2.test.ts"
       ],
       "regressionIds": [
@@ -2010,17 +2011,18 @@
           "quality"
         ]
       },
-      "lastVerified": "2026-08-05",
+      "lastVerified": "2026-08-11",
       "evidence": [
         "packages/lib/src/learn/srs-quiz-review.ts — Phase 0 F2 srs grade-loop closer (NEW)",
         "apps/host/src/app/(student)/quiz/page.tsx — srs grade loop closed",
-        "packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx — count=content via single predicate",
+        "packages/ui/src/dashboard/os/TodaysMission.tsx — LIVE student-visible SRS due count on /dashboard ('{dueCount} cards ready to review', bilingual copy today.item.srs_due.*), fed by GET /api/v2/today; ff_today_home_v1 is enabled globally (migration 20260621000001). Successor to the sections/DailyRhythmQueue lane deleted in the 2026-08 orphan consolidation (855784bc6) — that lane had zero importers and no student could reach it, so no live surface was lost",
+        "packages/ui/src/refresh/QuickRecallSection.tsx — LIVE student-visible SRS content surface (/refresh; the srs_due CTA target /review 301s here per apps/host/next.config.js:153): renders due cards from the get_review_cards RPC and grades each via POST /api/learner/review/grade. Count (srs-source.getDueCount) and this content resolve through the SAME due predicate (is_active = true AND next_review_date <= today) — RPC ⇄ adapter parity pinned by srs-source.test.ts. This is where F3's count+content agreement is actually observable by a student",
         "packages/lib/src/learn/due-reviews-adapter.ts — DueSm2Card SM-2 fields (build-rhythm-queue + daily-rhythm-orchestrator on the same adapter)",
         "packages/ui/src/quiz/QuizResults.tsx — canonical SM-2 seeds",
         "packages/lib/src/learn/sm2.ts — canonical SM-2 params + grader (Phase 3 single scheduler)",
-        "packages/lib/src/learn/srs-source.ts — single source-typed reader (quiz_wrong_answer path)",
-        "packages/lib/src/learn/srs-predicate.ts — SRS_DUE_PREDICATE_DESCRIPTOR + buildSrsDueQuery (single predicate — count and content agree by construction, REG-358)",
-        "apps/host/src/app/api/learner/srs/due/route.ts — server due-cards endpoint reading through the single predicate",
+        "packages/lib/src/learn/srs-source.ts — single server-side due reader (getDueItems / getDueCount over domains/practice; predicate = student's own + is_active = true + next_review_date <= today, ALL card sources)",
+        "packages/lib/src/learn/srs-predicate.ts — SRS_DUE_PREDICATE_DESCRIPTOR + buildSrsDueQuery: sole shaper of the NARROW quiz-wrong-answer due query behind /quiz?mode=srs (REG-358). Its count-vs-content clause is VACUOUS since 2026-08-10 — two of three consumers (the DailyRhythmQueue count and GET /api/learner/srs/due) were deleted, leaving one production consumer; correction recorded in .claude/regression/03-quiz-integrity.md, REG-358 kept at status E",
+        "apps/host/src/app/api/v2/today/route.ts — surviving server-side due-count read (pre-existing Today BFF, NOT authored by E4): buildLoopAugmentation in packages/lib/src/state/learner-loop/resolve-next-action.ts calls srs-source.getDueCount and the srs_due queue item carries dueCount to the dashboard. Replaces the retired GET /api/learner/srs/due, which was deleted in e14042a25 once its only caller (DailyRhythmQueue) was gone",
         "apps/host/src/app/api/learner/review/grade/route.ts — grade route wired to sm2.ts + xp_award (review_graded lane, REG-354)"
       ]
     },
