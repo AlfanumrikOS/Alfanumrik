@@ -1871,3 +1871,122 @@ the one that actually occurs, from nullable columns such as
 **Total catalog: 359 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Phase 4 — working session resume + the `quiz_session_shuffles` answer-key ACL (2026-08-11)
+
+Two commits on `main`: `b008c20c7` (feat(student): Phase 4 — working session
+resume + Today as an action queue) and `86b033a41` (fix(security): deny the
+quiz answer key to client roles on `quiz_session_shuffles`). This section
+catalogues the quiz-integrity half; the `/today` half is in
+`15-cross-cutting.md` (REG-388..REG-392).
+
+**Why resume is a P1/P2/P3/P4 surface, not a UX nicety.** `start_quiz_session`
+writes NO `quiz_sessions` row — the row is first INSERTed by
+`submit_quiz_results_v2`, already `is_completed = true`. So the
+`is_completed = false` probe `student-state-builder` used to derive
+`live.kind === 'in_quiz'` could never match an in-flight quiz: the resume CTA
+was **unreachable by construction**, and its deep link was a bare `/quiz` that
+landed on the setup screen. Fixing it means (a) restoring the student's own
+prior answers WITHOUT restoring anything that reveals correctness, (b) keeping
+the P3 3s/question floor honest in BOTH directions across the interruption,
+and (c) making "one graded submission per session" survive the page refresh
+that resume exists to survive. Each is a separate entry below.
+
+### Verification (this pass, 2026-08-11)
+
+All eight Phase 4 test files re-run green in ONE vitest pass from `apps/host`
+(`npx vitest run --maxWorkers=2 …`): **206 passed | 6 skipped (212)** across 8
+files. The 6 skips are REG-380's Lane B and are the ONLY skips in the batch.
+
+| File | Passed | Skipped |
+|---|---|---|
+| `apps/host/src/__tests__/quiz/resume-payload.test.ts` | 18 | 0 |
+| `apps/host/src/__tests__/quiz/resume-wiring.test.ts` | 14 | 0 |
+| `apps/host/src/__tests__/state/resume-live-state.test.ts` | 6 | 0 |
+| `apps/host/src/__tests__/api/quiz-session-progress.test.ts` | 22 | 0 |
+| `apps/host/src/__tests__/security/quiz-session-shuffles-answer-key-acl.test.ts` | 11 | **6** |
+| `apps/host/src/__tests__/today/today-page-states.test.tsx` | 39 | 0 |
+| `apps/host/src/__tests__/lib/today/reason-copy.test.ts` | 42 | 0 |
+| `apps/host/src/__tests__/components/today/TodayHomeV2.test.tsx` | 54 | 0 |
+
+**Lane membership verified, not assumed.** `src/__tests__/security/**` IS
+collected by the normal `npm test` lane — unlike `src/__tests__/migrations/**`,
+which the root `vitest.config.ts` puts in `NORMAL_LANE_INTEGRATION_EXCLUDES`
+and reaches only under `RUN_INTEGRATION_TESTS=1`. Measured, from `apps/host`:
+
+```
+$ npx vitest list --filesOnly src/__tests__/security/
+src/__tests__/security/affective-profile-drop-migration.test.ts
+src/__tests__/security/parent-link-code-injection.test.ts
+src/__tests__/security/quiz-session-shuffles-answer-key-acl.test.ts
+src/__tests__/security/safeguarding-escalations-migration.test.ts
+src/__tests__/security/teacher-assignment-drafts-rls.test.ts
+src/__tests__/security/teachers-classes-rls-tenant-leak-fix.test.ts
+src/__tests__/security/tenant-isolation-role-scoped-apis.test.ts
+
+$ npx vitest list --filesOnly src/__tests__/migrations/
+(no output — excluded from the unit lane)
+```
+
+### Entries
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-380 | `quiz_session_shuffles_answer_key_column_acl` | **Lane A (static, always runs — 11 tests, `E`).** Migration `20260814000014` exists and sorts after `20260814000013`; is wrapped in ONE `BEGIN;…COMMIT;`; performs NO destructive/structural DDL (no `DROP`, no `ALTER TABLE`, no policy or function change); **REVOKEs the baseline table-level grant from BOTH `anon` and `authenticated`** — the step that makes column grants authoritative at all, since a column-level `REVOKE` alone is a no-op against a table-level grant; re-grants column-level `SELECT` to `authenticated` on EXACTLY the 10 non-key columns (literal allowlist, so a future answer-key-shaped column fails closed); grants NOTHING to `anon`; explicitly revokes both key columns (`correct_answer_index_snapshot` AND `integrity_hash` — the latter is `sha256(options_snapshot \|\| correct_idx)`, and `options_snapshot` is client-readable, making it a 4-candidate brute-force oracle for the same secret) from both client roles; carries in-transaction `has_column_privilege`/`has_table_privilege` post-conditions that RAISE (→ rollback) on a half-applied ACL; **DRIFT GUARD** — no later root migration may re-grant a table-level privilege or either key column to a client role; **CROSS-MODULE PARITY** — the Phase 4 resume-route column whitelist is a subset of what stays granted; **CALLER PARITY** — the only app-code read of the key is service-role (`whatsapp/_lib/daily6.ts`). **Lane B (6 live-DB PostgREST probes) — `M`, see below.** | `apps/host/src/__tests__/security/quiz-session-shuffles-answer-key-acl.test.ts`; migration `supabase/migrations/20260814000014_quiz_session_shuffles_answer_key_column_acl.sql` | **P** | P1, P3, P8 |
+| REG-381 | `resume_payload_answer_key_non_disclosure` | The resume payload NEVER carries a correctness signal, at three independent layers. (a) **Column whitelists**: `SHUFFLE_RESUME_COLUMNS` and `QUESTION_BANK_RESUME_COLUMNS` each fail `.not.toMatch(/correct/i)`, while still naming `shuffle_map` + `options_snapshot` (what the rebuild needs). (b) **Builder never spreads an input row**: a row deliberately carrying `correct_answer_index_snapshot: 3` and a meta row carrying `correct_answer_index: 3` produce a payload whose per-question keys are EXACTLY the 14 authorised names, with `JSON.stringify(result)` matching neither `/correct/` nor `"3"`. (c) **Indistinguishability**: an answered-correct and an answered-wrong question are byte-identical in the payload apart from `selected_displayed_index` — proven by building two payloads that differ only in the student's own pick and asserting equality after nulling that one field. Serialized payloads also match none of `correct_answer_index`, `correct_answer_index_snapshot`, `is_correct`, `"correct`. At the route layer: every `select()` the GET issues is asserted to contain neither key column and to never be `'*'`, the response body carries no correctness token, and the snapshot read is scoped to `(session_id, student_id)` — the service-role client bypasses RLS here, so that ownership probe IS the boundary. Option order is rebuilt from `options_snapshot` + `shuffle_map` so the resumed student sees the same options in the same positions (`selected_displayed_index` stays meaningful); degenerate maps and JSON-string snapshots degrade to a safe value or `null`, never a silent reorder. | `apps/host/src/__tests__/quiz/resume-payload.test.ts` (§1 security, §2 restore/order); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (GET SECURITY + scoping tests) | E | P1, P6, P8, P13 |
+| REG-382 | `p3_anticheat_survives_resume_both_directions` | P3's 3s/question floor is unaffected by an interruption, in BOTH directions. **Direction 1 (no banking idle time):** `elapsed_seconds` is the SUM of server-persisted per-question times, never wall clock — a student who answers two questions 6 hours apart contributes 24s, not 6h (`expect(elapsed).toBe(24)` and `toBeLessThan(6*3600)`); the resume effect in `quiz/page.tsx` seeds the counter via `setTimer(result.elapsed_seconds)` and contains no `Date.now() -` arithmetic. **Direction 2 (no false positives):** restoring 9 × 20s of real thinking means an honest resumer submits at avg 18.5s/question instead of the 0.5s a zero-restart counter would produce — the entry pins BOTH the pass and the counterfactual that would have flagged them. **Clamping:** a persisted time of 999,999 clamps to `MAX_QUESTION_SECONDS` (3600) in the pure builder AND is clamped to 3600 before the POST route persists it; a negative or non-numeric time contributes 0, never a negative offset. **First-write-wins:** the POST `UPDATE` is filtered on `student_selected_displayed_index IS NULL`, so a re-answer after resume cannot overwrite a recorded time; an already-answered question is a benign `{saved:false}` 200, not an error. | `apps/host/src/__tests__/quiz/resume-payload.test.ts` (§3); `apps/host/src/__tests__/quiz/resume-wiring.test.ts` (`seeds the total-time counter from persisted on-task time`); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (clamp + first-write-wins) | E | **P3** |
+| REG-383 | `one_graded_submission_per_session_server_enforced` | The direct client submit path now passes the server session id as `p_idempotency_key` (`p_idempotency_key: sessionId ?? null`, alongside the pre-existing `p_session_id: sessionId`), so `quiz_sessions`' partial unique index `quiz_sessions_idempotency_key_uniq ON (student_id, idempotency_key) WHERE idempotency_key IS NOT NULL` (migration `20260504100200`) makes one graded submission per session a SERVER-enforced invariant. Behavioural pin: two `submitQuizResults` calls with the same session id both reach `submit_quiz_results_v2` carrying that key; the second returns `idempotent_replay: true` with the SAME `xp_earned` — no second XP award (P2), no second graded row (P4). The legacy no-session path still passes `null`. Before this, the only guard on the direct path was the in-memory `_quizDedup` Set, which a page refresh — the exact event resume exists to survive — wipes. The SLC-8 trip-wire pin in `quiz-submit-idempotency-contract-pin.test.ts` was consciously FLIPPED in the same commit (it previously asserted the key was ABSENT), which is precisely the behaviour that trip-wire was built to force. Complements REG-62, which pins the same guarantee at the `/api/quiz/submit` wire layer; this entry covers the direct L1 RPC path REG-62 does not reach. Resume itself also refuses an already-graded session: the GET handler looks the session up by `(student_id, idempotency_key)` and returns `{resumable:false, reason:'already_submitted'}`, and `student-state-builder` returns `live.kind === 'idle'` for a graded session so the CTA is never offered. | `apps/host/src/__tests__/quiz/resume-wiring.test.ts` (§3, incl. the mocked-RPC replay test); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`already_submitted` + the `(student_id, idempotency_key)` lookup); `apps/host/src/__tests__/state/resume-live-state.test.ts` (graded → idle); `apps/host/src/__tests__/quiz-submit-idempotency-contract-pin.test.ts` (flipped SLC-8 pin) | E | **P2, P4** |
+| REG-384 | `resume_refused_while_ff_quiz_v2_on` | `submit_quiz_results_v2` grades from client-supplied responses, NOT from the persisted `student_selected_displayed_index` columns. That is harmless while the live path never reveals correctness before submit — but it becomes a real P1/P2 exploit the moment `ff_quiz_v2` turns on per-question feedback ("answer, see it's wrong, refresh, resume, re-answer"). The GET handler therefore MECHANICALLY refuses to resume whenever `ff_quiz_v2` is enabled for the caller: `{resumable:false, reason:'blocked_immediate_feedback'}`, `isFeatureEnabled('ff_quiz_v2', …)` is proven to be consulted, and the handler is proven to bail BEFORE reading any snapshot content (no `options_snapshot` select is issued). This is an interlock, not a doc note — one console flag toggle cannot defeat it. **Lifting it requires `submit_quiz_results_v2` to prefer the persisted column, which is a P1-surface change needing assessment + architect sign-off; do not delete this entry to unblock a flag ramp.** | `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`INTERLOCK: refuses to resume while ff_quiz_v2 (immediate correctness) is ON`) | E | P1, P2 |
+| REG-385 | `resume_deep_link_and_practice_mode_routing` | The resume CTA is actually resumable and `?mode=practice` actually reaches Practice. (a) `resolveTodayQueue` on an `in_quiz` state emits `/quiz?session=<id>` and explicitly NOT the bare `/quiz` that used to land on the setup screen; an idle learner gets no `resume_in_progress` action; the raw `resolveNextLearnerAction` is unchanged (only the Today queue prepends the resume). (b) The session id survives `mapActionToTodayItem`'s URL → DTO projection: `deepLink.route === '/quiz'` and `deepLink.params` carries `session`. (c) `/quiz` reads both `?session=` and the `?sessionId=` alias; the resume effect calls `fetchQuizResume` and NEVER `startQuizSession(` or `assembleQuiz(` (a second server session would mint a second shuffle snapshot and break the one-session-one-submission basis of REG-383), and pins `correct_answer_index: -1` on the client side. (d) The `mode === 'practice'` branch now EXISTS — it had none and silently fell through to `cognitive`, so `PracticeRunner` was unreachable from `/assignments` and `learn/[chapter]`, both of which emit `params.set('mode','practice')`; the three sibling branches (`cognitive`, `exam`) are pinned unchanged. (e) Answer durability is NOT behind a flag: `confirmAnswer` calls `saveQuizAnswerProgress(` guarded only by "there is a server session" + "not an MCQ already owned by the practice-v2 writer" — never by `ff_quiz_v2` alone (which is seeded OFF, which is why ZERO rows carried `student_selected_displayed_index` before this phase). **Scope limit, stated not hidden:** (c), (d) and (e) are SOURCE-TEXT pins against `apps/host/src/app/(student)/quiz/page.tsx` (a ~2.6k-line client component whose full render needs the entire auth/SWR/Supabase stack), the same technique `auth-flows.test.ts` uses for redirect targets. They prove the seam is PRESENT, not that a browser executes it. (a) and (b) are behavioural. | `apps/host/src/__tests__/quiz/resume-wiring.test.ts` (§1, §2, §4) | E (a,b behavioural; c,d,e static source pins) | P1, P4 |
+| REG-386 | `live_in_quiz_derived_from_shuffle_snapshot` | `live.kind === 'in_quiz'` is derived from `quiz_session_shuffles` (written at session start) and no longer from an `is_completed = false` `quiz_sessions` row (which never exists mid-quiz, making the signal dead by construction). Pins: a fresh session with ≥1 confirmed answer surfaces `in_quiz` carrying `quizSessionId` (the id the deep link needs), `subjectCode`, `chapterNumber`, `questionCount` and `questionsAnswered`; a session with NO confirmed answer stays `idle` (nothing to preserve); an already-graded session stays `idle` (found via its idempotency key — offering to "continue" a finished quiz walks the student into a session the submit RPC can only replay); a session older than the 24h window stays `idle`; a missing chapter number stays `idle`; and a failed snapshot read degrades to `idle` rather than throwing. The 24h window is the same `RESUME_MAX_AGE_MS` the payload builder and the GET route enforce (`isResumeExpired`, `reason:'expired'`). | `apps/host/src/__tests__/state/resume-live-state.test.ts`; `apps/host/src/__tests__/quiz/resume-payload.test.ts` (`isResumeExpired honours the 24h window`); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`refuses a session older than the 24h resume window`) | E | P4 |
+| REG-387 | `quiz_progress_route_authz_and_write_containment` | `GET/POST /api/quiz/session/[sessionId]/progress` — the resume substrate route, which uses `getSupabaseAdmin()` (RLS-bypassing) and therefore carries its own boundary. **AuthZ:** unauthenticated → 401 on both verbs; `authorizeRequest(request, 'quiz.attempt')` is the required permission; no linked student profile → 403 `student_profile_required`; a session owned by another student → 403 `forbidden` with ZERO writes; unknown session → 404; a non-UUID session id → 400 `invalid_session_id` (path-traversal shapes such as `../../etc/passwd` are rejected by `isResumeSessionId`). **Input validation:** out-of-range selected index → 400 `invalid_selected_index`; negative time → 400 `invalid_time_spent`. **Write containment (P1/P2/P4):** the POST writes ONLY `quiz_session_shuffles`, ONLY the three durability columns (`student_selected_displayed_index`, `student_time_spent_seconds`, `student_answered_at`), and calls NO RPC; `quiz_sessions`, `quiz_responses`, `students` and `xp_transactions` are asserted untouched. The GET writes nothing and calls no RPC. | `apps/host/src/__tests__/api/quiz-session-progress.test.ts` | E | P8, P9, P1, P2, P4 |
+
+### REG-380 — status is `P`, and exactly why
+
+Two clauses of REG-380 are NOT evidence-backed, and the entry is marked `P`
+rather than `E` for that reason. Do not upgrade it without executing them.
+
+1. **Lane B has NEVER run.** Its 6 tests (`the student's OWN session:
+   selecting correct_answer_index_snapshot / integrity_hash is refused with
+   42501` ×2, `a wildcard select(*) is also refused`, `the legitimate resume
+   read still succeeds for the owner`, `server-side scoring still can: the
+   service-role client reads the answer key`, `P1 INTACT:
+   submit_quiz_results_v2 still grades the session server-side`) self-skip via
+   `skipIfNoSubstrate` when there are no real Supabase credentials, and there
+   are none in this environment. The verification run above shows them as the
+   only `↓` skips in the batch: **`11 passed | 6 skipped`**. A green run of
+   this file is evidence about SQL TEXT, not about a database.
+2. **Migration `20260814000014` has never been applied to any database.** The
+   commit message says so explicitly ("NOT EXECUTED — no DB in this
+   environment. Syntax validated with libpg_query (PG13 grammar)"). Every
+   claim about its RUNTIME effect — that `authenticated` actually gets 42501,
+   that the in-transaction post-condition actually rolls a bad apply back,
+   that no consumer actually broke — is therefore `P`. The live leak this
+   migration closes is, as of this catalog entry, **still open in
+   production.**
+
+**Discharge condition (what turns REG-380 into `E`):** apply the migration on
+staging, then run
+`RUN_INTEGRATION_TESTS=1`-equivalent Lane B with real
+`NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + a real student JWT
+and record `11 passed | 6 passed`. Until that output exists, no report may
+describe REG-380 as passing without naming the 6 skips.
+
+### Known gap carried forward, NOT closed by REG-380
+
+`question_bank_authenticated_read` (`20260728090000:311`) still lets ANY
+authenticated user read `question_bank.correct_answer_index` for all ~12.8k
+questions — a strictly WIDER path than the per-session one REG-380 closes.
+It was deliberately deferred in `20260814000000` because closing it needs
+server-side P6 validation, session-gated serving, and repointing PYQ plus two
+mobile repositories. **A green REG-380 must never be read as "the answer key
+is unreachable by a student".** The test file states this in its own header;
+it is restated here so the catalog does not over-claim. This is the top
+remaining answer-key risk.
+
+**Total catalog after this section's eight (REG-380..REG-387): see
+`00-header.md` — this shard's historical running counter (359, above) has been
+stale for many passes and is NOT updated here rather than have it drift
+further.**
+
+---

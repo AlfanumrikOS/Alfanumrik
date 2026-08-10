@@ -6,15 +6,34 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 384 entries upper bound / 379 honest (target: 35 — TARGET
-EXCEEDED). Independently measured body-backed `REG-N` ids: 326 (max 379).**
+**Total catalog: 397 entries upper bound / 392 honest (target: 35 — TARGET
+EXCEEDED). Independently measured body-backed `REG-N` ids: 339 (max 392).**
 See the 2026-08-11 addendum below — that three-way divergence is PRE-EXISTING
 and still unresolved; do not quote any one of the three numbers as "the" total
-without saying which definition you used.
-Latest REG id: REG-379. **REG-380 remains the next free REG id — the 2026-08-11
-Phase 3 subject-governance pass consumed NO REG id** (it filed 12 entries under
-this catalog's separate `SG-n` scheme, SG-7..SG-18, in
-`01-subject-governance.md`).
+without saying which definition you used. The 339 figure was RE-MEASURED on
+2026-08-11 after the Phase 4 cataloguing pass, using the same stated
+definition as the 326 measurement it supersedes (326 + 13 new = 339 — the
+divergence against the declared totals is carried forward UNCHANGED at 58
+entries, not papered over).
+Latest REG id: **REG-392**. **REG-393 is the next free REG id.**
+Prior: REG-380..REG-392 (2026-08-11, Phase 4 — working session resume,
+the `quiz_session_shuffles` answer-key ACL, and `/today` as a prioritized
+action queue; commits `b008c20c7` + `86b033a41`. Eight quiz entries in
+`03-quiz-integrity.md`, five `/today` entries in `15-cross-cutting.md`.
+**Three of the thirteen are `P`, deliberately:** REG-380 because its 6
+live-DB probes have NEVER executed (no creds in this environment — the
+verification run reads `11 passed | 6 skipped`) and because migration
+`20260814000014` has never been applied to any database, so every claim
+about its RUNTIME effect is unverified and the production leak it closes is
+still open; REG-390 because its page-layer unread-count clause asserts its
+own fixture rather than the page; REG-392 because `today_reminder_clicked`
+is 1 of the 7 new analytics events and has no asserting test. The other ten
+are `E`, backed by 206 passing tests across 8 files re-run in one vitest
+pass. Full detail, including the discharge condition that would turn REG-380
+into `E`, in the two shards.)
+Prior: REG-379. The 2026-08-11 Phase 3 subject-governance pass consumed NO
+REG id (it filed 12 entries under this catalog's separate `SG-n` scheme,
+SG-7..SG-18, in `01-subject-governance.md`).
 Prior: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
 `JSON.parse(null)` returns `null` rather than throwing, so six of the seven
 duplicate `parseOptions` copies could return `null` from a function annotated
@@ -28,8 +47,9 @@ exactly-four) and option ORDER (bound to the server shuffle snapshot and
 all E. Documented known gap: the literal STRING `'null'` still parses to `null`
 verbatim, preserved-not-introduced from all seven originals and pinned
 deliberately; tightening it is a P6 behaviour change needing assessment
-sign-off. Full entry in `03-quiz-integrity.md`. **REG-380 is now the next free
-id**; REG-371..REG-377 remain RESERVED.)
+sign-off. Full entry in `03-quiz-integrity.md`. ~~**REG-380 is now the next
+free id**~~ **← SUPERSEDED 2026-08-11: the Phase 4 pass took REG-380..REG-392,
+so REG-393 is the next free id**; REG-371..REG-377 remain RESERVED.)
 
 2026-08-10 reconciliation — 4 test files deleted in the orphan-consolidation
 pass, 3 catalog entries repaired, **0 entries deleted**. The deleted files were
@@ -147,6 +167,45 @@ narrated but never filed), and closing it needs a full shard-by-shard audit,
 not a drive-by edit. Recorded so the next reader has a measured number rather
 than only a carried-forward one. This pass itself is count-neutral: 0 added,
 0 deleted.
+
+**2026-08-11 re-measurement (Phase 4 cataloguing pass).** The same command,
+same definition, re-run against the 15 non-header shards immediately BEFORE
+and AFTER filing REG-380..REG-392:
+
+```
+before: 339 - 13 = 326      # max id 379   (reproduced the carried-forward figure exactly)
+after:  339 body-backed ids # max id 392
+$ comm -13 before.txt after.txt | tr '\n' ' '
+380 381 382 383 384 385 386 387 388 389 390 391 392
+```
+
+So the measured count moved 326 → **339** (+13, exactly the entries filed),
+and the declared totals moved 384/379 → **397/392**. **The divergence between
+the two definitions is therefore UNCHANGED** — 397 upper-bound − 339 measured
+= 58 (was 384 − 326 = 58), and 392 honest − 339 measured = 53 (was
+379 − 326 = 53). It is neither widened nor narrowed by this pass, and it is
+still NOT resolved. Do not read "339" as a correction of "392" or vice versa —
+they count different things, and which one is right is exactly what the
+outstanding shard-by-shard audit would settle.
+
+**2026-08-11 — STILL-OPEN PRODUCTION RISK filed with REG-380, read this
+before quoting the entry.** REG-380 catalogues the fix for a live leak: a
+signed-in student could `GET /rest/v1/quiz_session_shuffles
+?select=question_id,correct_answer_index_snapshot&session_id=eq.<own>` and read
+the answer key for their own IN-FLIGHT quiz (RLS is row-level and cannot hide a
+column; the baseline ships no per-table GRANT, so the schema-wide
+`ALTER DEFAULT PRIVILEGES … GRANT ALL … TO anon, authenticated` applied).
+`integrity_hash` is a second, equivalent leak — a 4-candidate brute-force
+oracle for the same secret, since `options_snapshot` is client-readable. **The
+migration that closes both (`20260814000014`) has NEVER been applied to any
+database, and REG-380's 6 live-DB probes have NEVER executed.** What is green
+today is 11 STATIC assertions about SQL text. The entry is `P` for exactly
+that reason and must not be reported as passing without naming the 6 skips.
+Separately and WIDER: `question_bank_authenticated_read` still exposes
+`question_bank.correct_answer_index` for all ~12.8k questions to any
+authenticated user — deliberately deferred, unfixed, and the top remaining
+answer-key risk. A green REG-380 does NOT mean "the answer key is unreachable
+by a student."
 
 Prior: REG-378 (2026-08-09, Node.js toolchain version pin — every surface
 that can choose a Node is pinned to 22.x and none may float; `engine-strict`
@@ -507,7 +566,9 @@ point. That is superseded below — the 2026-08-09 Node.js version-pin batch too
 **REG-378**, so REG-379 was the next free id and REG-371..REG-377 remain
 RESERVED (see the ID-collision note immediately below). That is in turn
 superseded above — the 2026-08-10 canonical-`parseOptions` consolidation took
-**REG-379**, so **REG-380 is now the next free id.**
+**REG-379**, so REG-380 was the next free id. That is in turn superseded by
+the 2026-08-11 Phase 4 pass, which took **REG-380..REG-392**, so **REG-393 is
+now the next free id.**
 
 2026-08-09: **REG-378 — Node.js toolchain version pin** (deployment-config
 change; architect made it, P14 chain architect → ops, testing). Every surface
