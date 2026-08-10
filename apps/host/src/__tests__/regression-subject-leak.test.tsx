@@ -695,6 +695,71 @@ describe('Regression #8: /api/student/subjects fallback never leaks a non-active
     expect(body.subjects.map((s: any) => s.code)).toEqual(['math']);
   });
 
+  // ── NULL-board parity with the RPC's COALESCE(board,'CBSE') ──
+  //
+  // students.board is NULLABLE (DEFAULT 'CBSE' only fills it on insert), but
+  // get_available_subjects reads `COALESCE(board,'CBSE') AS board` in its `s`
+  // CTE, so inside the RPC a NULL-board student IS a CBSE student. The TS
+  // mirror receives students.board raw, so it must coalesce too — otherwise it
+  // skips the board-specific branch and falls through to the generic
+  // CBSE/Other/NULL filter, serving rows the RPC excludes.
+  //
+  // The fixture is deliberately discriminating: this grade has a CBSE-specific
+  // row AND an 'Other'-board row AND a NULL-board row, each mapping a DIFFERENT
+  // active subject. Only a correct coalesce collapses to the CBSE row alone.
+  describe('NULL board resolves identically to board=CBSE', () => {
+    const MIXED_BOARD_MAP = [
+      { grade: '9', subject_code: 'math',    is_core: true, board: 'CBSE',  stream: null },
+      { grade: '9', subject_code: 'science', is_core: true, board: 'Other', stream: null },
+      { grade: '9', subject_code: 'physics', is_core: true, board: null,    stream: null },
+    ];
+
+    async function codesForBoard(board: string | null) {
+      _gsmRows = MIXED_BOARD_MAP;
+      _studentRow = { data: { grade: '9', board, stream: null }, error: null };
+      const { res, body } = await callRoute();
+      expect(res.status).toBe(200);
+      return { body, codes: body.subjects.map((s: any) => s.code).sort() };
+    }
+
+    it('board=null yields the same subjects as board="CBSE"', async () => {
+      const cbse = await codesForBoard('CBSE');
+      const nullBoard = await codesForBoard(null);
+
+      // The board-specific row wins outright — the 'Other' and NULL-board rows
+      // are NOT admitted. Without the coalesce, board=null returns all three.
+      expect(cbse.codes).toEqual(['math']);
+      expect(nullBoard.codes).toEqual(cbse.codes);
+      expect(nullBoard.codes).not.toContain('science');
+      expect(nullBoard.codes).not.toContain('physics');
+    });
+
+    it('board=null preserves the fail-closed + mobile contract', async () => {
+      const { body } = await codesForBoard(null);
+      // Same posture as every other fallback row: locked, count 0, shape intact.
+      expect(body.subjects.every((s: any) => s.isLocked === true)).toBe(true);
+      expect(body.subjects.every((s: any) => s.readyChapterCount === 0)).toBe(true);
+      for (const s of body.subjects) {
+        expect(typeof s.code).toBe('string');
+        expect(typeof s.name).toBe('string');
+      }
+    });
+
+    it('board=null still falls back to generic rows when no CBSE row exists', async () => {
+      // The other half of the RPC predicate: with no gsm row at the student's
+      // (coalesced) board, the generic CBSE/Other/NULL branch applies. A NULL
+      // board must not become a dead end that empties the picker.
+      _gsmRows = [
+        { grade: '9', subject_code: 'science', is_core: true, board: 'Other', stream: null },
+        { grade: '9', subject_code: 'physics', is_core: true, board: null,    stream: null },
+      ];
+      _studentRow = { data: { grade: '9', board: null, stream: null }, error: null };
+
+      const { body } = await callRoute();
+      expect(body.subjects.map((s: any) => s.code).sort()).toEqual(['physics', 'science']);
+    });
+  });
+
   it('MOBILE CONTRACT: response field names and types are unchanged', async () => {
     // mobile/lib/data/models/subject.dart casts `code` and `name` with
     // `as String` (throws on null) and reads nameHi/icon/color/subjectKind/

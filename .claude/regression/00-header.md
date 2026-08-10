@@ -6,8 +6,16 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 372 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
+**Total catalog: 384 entries upper bound / 379 honest (target: 35 — TARGET
+EXCEEDED). Independently measured body-backed `REG-N` ids: 326 (max 379).**
+See the 2026-08-11 addendum below — that three-way divergence is PRE-EXISTING
+and still unresolved; do not quote any one of the three numbers as "the" total
+without saying which definition you used.
+Latest REG id: REG-379. **REG-380 remains the next free REG id — the 2026-08-11
+Phase 3 subject-governance pass consumed NO REG id** (it filed 12 entries under
+this catalog's separate `SG-n` scheme, SG-7..SG-18, in
+`01-subject-governance.md`).
+Prior: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
 `JSON.parse(null)` returns `null` rather than throwing, so six of the seven
 duplicate `parseOptions` copies could return `null` from a function annotated
 `: string[]`, crashing the caller's `.map()` at render on the quiz, learn,
@@ -579,6 +587,44 @@ bracket still reads **372 upper bound / 367 honest**. That pass DID record an
 independently derived body-backed figure of **326** distinct `REG-N` ids across
 the 15 shards, which agrees with neither number above; the discrepancy is
 pre-existing, is flagged in that note, and remains open.)
+
+(2026-08-11 addendum — Phase 3 subject-governance catalogue pass, base
+`de5838efa`. **12 entries ADDED, 0 deleted, 0 renumbered.** A quality review
+found this area under-catalogued: 23 tests had landed in
+`apps/host/src/__tests__/regression-subject-leak.test.tsx` under a `describe`
+self-labelled *"Regression #8"* — a FILE-LOCAL number continuing that file's own
+`#1`..`#7` comment headings, **not** a catalog id — and five migrations
+`20260814000007`..`000011` had shipped, with no catalog entry for any of it.
+Filed as **SG-7..SG-18** in `01-subject-governance.md`, extending that shard's
+existing `SG-n` scheme (this shard has always used `SG-n`, never `REG-n`).
+SG-7..SG-13 are `E`, backed by the 23 tests in the subject-leak file. SG-14..SG-18
+are **`P`, deliberately**: they cover the five migrations, and **none of those
+migrations has ever executed against a real Postgres — there is no DB in this
+environment.** Their backing file
+`apps/host/src/__tests__/migrations/subject-catalogue-restriction-phase3.test.ts`
+(NEW, 32 tests, green) contains STATIC SQL-TEXT PINS ONLY; the shard states per
+entry what is pinned as source text vs. observed behaviour, and lists the exact
+live-DB assertions that would upgrade `P` → `E`. Two enforcement caveats are
+recorded in the shard rather than glossed: (a) `src/__tests__/migrations/**` is
+EXCLUDED from `apps/host/vitest.config.ts`, so `npm test` does not run
+SG-14..SG-18 — only `npm run test:integration` does; (b) the absence-pins run
+against `--`-stripped SQL with a non-vacuity floor and four recorded mutation
+proofs, because these migrations' prose headers name the very clauses asserted
+absent.
+
+**Count bookkeeping, stated honestly.** `SG-n` ids are outside the `REG-N`
+numbering, so this pass does not move the REG sweep: re-derived this pass with
+the same command and definition as the 2026-08-10 second pass, it still reads
+**326 distinct body-backed `REG-N` ids, max id 379** — unchanged, as expected.
+The declared bracket is carried forward by +12 to **384 upper bound / 379
+honest**. That leaves THREE numbers in play (384 / 379 / 326) which do not
+reconcile. The 384-vs-379 gap is the still-open REG-361..REG-365 upstream gap
+above. The gap down to 326 is the pre-existing divergence recorded on 2026-08-10
+and is **NOT** resolved here — it needs a full shard-by-shard audit, not a
+drive-by edit during a scoped catalogue pass, and it is carried forward
+deliberately rather than papered over. What this pass can state exactly: it added
+12 body-backed entries, all with a `| SG-N |` table row and a real asserting
+test.)
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

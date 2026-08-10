@@ -30,6 +30,8 @@ import { logger } from '@alfanumrik/lib/logger';
 import {  LoadingFoxy, PremiumCard, GlowButton, LockedCard } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import { SubjectsUnavailable } from '@alfanumrik/ui/learn/SubjectsUnavailable';
+import { Bone } from '@alfanumrik/ui/Skeleton';
 import { getPlanConfig } from '@alfanumrik/lib/plans';
 import { useSubjectReadiness } from '@alfanumrik/lib/useSubjectReadiness';
 import { ChapterReadinessBadge } from '@alfanumrik/ui/learn/ChapterReadinessBadge';
@@ -53,7 +55,22 @@ const SubjectsOSHub = dynamic(
 
 function LegacyLearnPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
-  const { subjects: allSubjects, unlocked: allowedSubjects, locked: lockedSubjects } = useAllowedSubjects();
+  // `degraded` separates "the gating source answered and this subject needs an
+  // upgrade" from "we could not establish what this student can access". The
+  // subjects route fails CLOSED — an RPC error returns HTTP 200 with EVERY row
+  // isLocked=true — so without this signal the grid below rendered a wall of
+  // "Upgrade to unlock" cards plus an "Unlock N more subjects" strip at a
+  // student who may well already be on Pro or Unlimited. See
+  // useAllowedSubjects: it is never inferred from `unlocked.length === 0`,
+  // which is a legitimate free-tier state.
+  const {
+    subjects: allSubjects,
+    unlocked: allowedSubjects,
+    locked: lockedSubjects,
+    isLoading: subjectsLoading,
+    degraded: subjectsDegraded,
+    refresh: refreshSubjects,
+  } = useAllowedSubjects();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -251,7 +268,38 @@ function LegacyLearnPage() {
         <SectionErrorBoundary section="Learn">
 
           {!selectedSubject ? (
-            /* ── Subject Grid ── */
+            /* ── Subject Grid ──
+               Four states, in strict precedence. Previously there was one: a
+               bare unlocked.map() + locked.map(), so the fail-closed fallback
+               (every row locked, `unlocked` empty) rendered "Grade 8 · Choose a
+               subject to study" above a grid of "Upgrade to unlock" cards, and
+               an empty list rendered that heading above nothing at all. The
+               failure state below REPLACES the upgrade strip rather than
+               sitting beside it — the two make contradictory claims and only
+               one of them can be true. */
+            subjectsLoading ? (
+              <div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" role="status" aria-busy="true">
+                  <span className="sr-only">{isHi ? 'विषय लोड हो रहे हैं…' : 'Loading your subjects…'}</span>
+                  {[0, 1, 2, 3, 4, 5].map(i => (
+                    <Bone key={i} height={132} radius={16} />
+                  ))}
+                </div>
+              </div>
+
+            ) : subjectsDegraded ? (
+              /* HONEST FAILURE — sibling of the chapter-failure state further
+                 down this file, and deliberately in the same voice: name what
+                 failed, deny the wrong inference, offer a real retry. */
+              <SubjectsUnavailable isHi={isHi} variant="failure" onRetry={refreshSubjects} />
+
+            ) : allSubjects.length === 0 ? (
+              /* Loaded and genuinely empty — the gating source answered with
+                 nothing. Distinct from the failure above; no retry, because
+                 retrying is not what fixes it. */
+              <SubjectsUnavailable isHi={isHi} variant="empty" />
+
+            ) : (
             <div>
               <p className="text-sm text-[var(--text-3)] mb-4 font-medium">
                 {isHi
@@ -342,7 +390,12 @@ function LegacyLearnPage() {
 
               </div>
 
-              {/* Upgrade prompt strip — only shown when there are locked subjects */}
+              {/* Upgrade prompt strip — only shown when there are locked
+                  subjects AND (by virtue of living in this branch) the lock is
+                  a real one the gating source vouched for. On the degraded
+                  branch above it is not rendered at all: "Unlock 12 more
+                  subjects" aimed at an Unlimited subscriber is a false claim
+                  about what they bought, not a merchandising miss. */}
               {lockedSubjects.length > 0 && (
                 <button
                   onClick={() => router.push('/pricing')}
@@ -364,6 +417,7 @@ function LegacyLearnPage() {
                 </button>
               )}
             </div>
+            )
 
           ) : subjectsOsOn ? (
             /* ── Alfa OS Subjects experience (ff_subjects_os_v1, flag ON) ──

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { Card, Button } from '@alfanumrik/ui/ui';
 import { getChaptersForSubject } from '@alfanumrik/lib/supabase';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
+import { SubjectsUnavailable } from '../learn/SubjectsUnavailable';
+import { Bone } from '../Skeleton';
 
 type QuizMode = 'practice' | 'cognitive' | 'exam';
 
@@ -104,7 +106,21 @@ export default function QuizSetup({
   }, [selectedSubject, selectedChapter]);
 
   // Allowed subjects — grade + plan aware, comes from subjects service.
-  const { unlocked: allowedSubjects } = useAllowedSubjects();
+  //
+  // `degraded` is the ONLY safe way to know the list is not an authoritative
+  // answer: the subjects route fails CLOSED, so an RPC error returns HTTP 200
+  // with every row locked and `unlocked` therefore empty. Rendering that as
+  // "you have no subjects" (or as nothing at all, which is what the bare
+  // `.map()` below used to do) states something about this student's access
+  // that the app does not know. See useAllowedSubjects for why this is never
+  // inferred from `unlocked.length === 0`.
+  const {
+    unlocked: allowedSubjects,
+    locked: lockedSubjects,
+    isLoading: subjectsLoading,
+    degraded: subjectsDegraded,
+    refresh: refreshSubjects,
+  } = useAllowedSubjects();
   const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
 
   // Load chapters when subject changes
@@ -361,30 +377,58 @@ export default function QuizSetup({
           </div>
         </div>
 
-        {/* Subject Grid */}
+        {/* Subject Grid.
+            Four states, in strict precedence. The bare `allowedSubjects.map()`
+            this replaces had exactly one, so a student on the fail-closed
+            fallback path (where `unlocked` is ALWAYS empty) got a silent void
+            under the heading "1. Choose your subject" — a chooser with nothing
+            to choose and no reason given. */}
         <div>
           <p className="text-sm text-[var(--text-3)] mb-3 font-medium">
             {isHi ? '1. विषय चुनो' : '1. Choose your subject'}
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {allowedSubjects.map(s => (
-              <button
-                key={s.code}
-                onClick={() => setSelectedSubject(s.code)}
-                className="rounded-2xl p-4 text-center transition-all active:scale-95"
-                style={{
-                  background: selectedSubject === s.code ? `${s.color}12` : 'var(--surface-1)',
-                  border: selectedSubject === s.code ? `2px solid ${s.color}` : '1.5px solid var(--border)',
-                  boxShadow: selectedSubject === s.code ? `0 4px 16px ${s.color}20` : '0 2px 8px rgba(0,0,0,0.03)',
-                }}
-              >
-                <div className="text-3xl mb-2">{s.icon}</div>
-                <div className="text-sm font-semibold" style={{ color: selectedSubject === s.code ? s.color : 'var(--text-2)' }}>
-                  {s.name}
-                </div>
-              </button>
-            ))}
-          </div>
+          {subjectsLoading ? (
+            /* Loading — placeholders, never a claim. */
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3" aria-busy="true" role="status">
+              <span className="sr-only">{isHi ? 'विषय लोड हो रहे हैं…' : 'Loading your subjects…'}</span>
+              {[0, 1, 2, 3].map(i => (
+                <Bone key={i} height={104} radius={16} />
+              ))}
+            </div>
+          ) : subjectsDegraded ? (
+            /* HONEST FAILURE — the list is not an authoritative answer, so we
+               say so and offer a retry. Never the upgrade CTA: we cannot prove
+               a plan lock from here, and selling an upgrade to someone who
+               already paid is worse than showing nothing. */
+            <SubjectsUnavailable isHi={isHi} variant="failure" onRetry={refreshSubjects} compact />
+          ) : allowedSubjects.length === 0 && lockedSubjects.length > 0 ? (
+            /* Genuine, provable plan lock: the gating source answered and every
+               subject it returned is locked. Here "upgrade" is the true answer. */
+            <SubjectsUnavailable isHi={isHi} variant="locked" compact />
+          ) : allowedSubjects.length === 0 ? (
+            /* Loaded and genuinely empty — nothing is mapped to this class. */
+            <SubjectsUnavailable isHi={isHi} variant="empty" compact />
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {allowedSubjects.map(s => (
+                <button
+                  key={s.code}
+                  onClick={() => setSelectedSubject(s.code)}
+                  className="rounded-2xl p-4 text-center transition-all active:scale-95"
+                  style={{
+                    background: selectedSubject === s.code ? `${s.color}12` : 'var(--surface-1)',
+                    border: selectedSubject === s.code ? `2px solid ${s.color}` : '1.5px solid var(--border)',
+                    boxShadow: selectedSubject === s.code ? `0 4px 16px ${s.color}20` : '0 2px 8px rgba(0,0,0,0.03)',
+                  }}
+                >
+                  <div className="text-3xl mb-2">{s.icon}</div>
+                  <div className="text-sm font-semibold" style={{ color: selectedSubject === s.code ? s.color : 'var(--text-2)' }}>
+                    {s.name}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Chapter Selector */}
