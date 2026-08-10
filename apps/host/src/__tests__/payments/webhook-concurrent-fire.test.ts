@@ -39,9 +39,24 @@ describe('webhook concurrent fire — exactly one activation', () => {
       rpc: vi.fn(async (name: string) => {
         if (name === 'record_webhook_event') {
           recordWebhookCalls++;
-          // First caller wins; rest get is_new=false.
+          // First caller wins the INSERT; the rest hit ON CONFLICT.
           const isNew = recordWebhookCalls === 1;
-          return { data: [{ is_new: isNew, id: `wh-${recordWebhookCalls}` }], error: null };
+          // Since migration 20260814000006 the suppression signal is
+          // `already_processed`, not `is_new`. This mock models the DB state the
+          // route is contractually promised: record_webhook_event takes
+          // pg_advisory_xact_lock('webhook_event:'||account||':'||event_id), so
+          // the insert-or-read + already_processed decision is serialised per
+          // event id — each losing caller reads the committed post-mark state of
+          // the winner's receipt and therefore sees already_processed=true.
+          //
+          // Honest scope note: if the winner had NOT yet reached a terminal
+          // success outcome, already_processed would be false and the losers
+          // would legitimately re-attempt (that is the whole point of the fix —
+          // see webhook-retry-after-failed-activation.test.ts). Concurrent
+          // activation is safe: it is serialised one layer down by
+          // pg_advisory_xact_lock('subscription:'||student_id) inside
+          // activate_subscription_locked and the ON CONFLICT (student_id) upsert.
+          return { data: [{ is_new: isNew, id: `wh-${recordWebhookCalls}`, already_processed: !isNew }], error: null };
         }
         if (name === 'activate_subscription_locked') {
           activateCalls++;
