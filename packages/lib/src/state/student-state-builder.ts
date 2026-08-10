@@ -39,7 +39,8 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { RESUME_MAX_AGE_MS } from '../quiz/resume';
+import { RESUME_MAX_AGE_MS, resolveSessionMode } from '../quiz/resume';
+import { isResumeBlockedByImmediateFeedback } from '../quiz/resume-gate';
 import type {
   StudentState,
   StudentStateBuilder,
@@ -186,6 +187,18 @@ export interface BuilderOptions {
    * phase). Pure projection — does not write to DB.
    */
   consentDefaults?: StudentState['consent'];
+  /**
+   * The `ff_quiz_v2` resume interlock, injected so tests can pin both the
+   * "flag on → no card" and "flag off → card" halves without a live flag
+   * service. Defaults to the real FAIL-CLOSED reader; see
+   * `packages/lib/src/quiz/resume-gate.ts` for why undetermined means refuse.
+   *
+   * Returns true when the resume card must NOT be offered.
+   */
+  isResumeBlocked?: (ctx: {
+    userId?: string;
+    roles?: string[];
+  }) => Promise<boolean>;
 }
 
 export function createStudentStateBuilder(
@@ -197,6 +210,13 @@ export function createStudentStateBuilder(
     parentLinkVerified: false,
     analyticsConsent: true,
   };
+  const isResumeBlocked =
+    opts.isResumeBlocked ??
+    (ctx =>
+      isResumeBlockedByImmediateFeedback({
+        ...ctx,
+        environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
+      }));
 
   return async function buildStudentState(
     authUserId: string,
@@ -288,6 +308,11 @@ export function createStudentStateBuilder(
         student.id,
         (latestSnapshotRes.data?.[0] ?? null) as OpenQuizSnapshotRow | null,
         now(),
+        // The person who will TAP the card is the student this state belongs
+        // to — the builder resolves `students` by `auth_user_id`, so the
+        // subject and the actor are the same person by construction. Their
+        // real role for flag scoping is 'student'.
+        () => isResumeBlocked({ userId: authUserId, roles: ['student'] }),
       );
       if (resumable) openQuiz = resumable;
     } catch {
@@ -450,6 +475,22 @@ function rollupMastery(rows: MasteryRow[]): SubjectMastery[] {
  *   4. the questions carry a positive chapter number — `LiveSessionState`'s
  *      `in_quiz` variant requires one, and the resume CTA copy is
  *      chapter-anchored.
+ *   5. THE RESUME ROUTE WOULD ACTUALLY HONOUR IT. Two gates were previously
+ *      enforced ONLY on the route that consumes the card, never on the
+ *      producer, so the product offered "Continue where you stopped" and then
+ *      refused it — and the client's fail-soft path shows no message, so the
+ *      student silently landed on the setup screen with their progress
+ *      apparently gone. That is exactly the defect Phase 4 existed to kill.
+ *      Both now gate the CARD:
+ *        (a) the `ff_quiz_v2` immediate-feedback interlock, read fail-closed
+ *            (undetermined → suppress) via `isResumeBlockedByImmediateFeedback`;
+ *        (b) the INSTRUMENT. An `exam` session is not resumable at all (a
+ *            timed test is taken in one sitting), and a session whose
+ *            `session_mode` is unrecorded cannot be proven not to have been
+ *            one, so both suppress the card. Migration 20260814000015 added
+ *            the column; the resume route returns `exam_not_resumable` /
+ *            `mode_unknown` for the same two cases.
+ *      RULE: never promise what you will refuse.
  *
  * Read-only. No writes, no scoring, no XP.
  */
@@ -458,6 +499,7 @@ async function resolveResumableQuiz(
   studentId: string,
   latest: OpenQuizSnapshotRow | null,
   now: Date,
+  isBlockedByImmediateFeedback: () => Promise<boolean>,
 ): Promise<QuizSessionRow | null> {
   if (!latest?.session_id) return null;
 
@@ -469,17 +511,29 @@ async function resolveResumableQuiz(
 
   const rowsRes = await sb
     .from('quiz_session_shuffles')
-    .select('question_id, student_answered_at')
+    .select('question_id, student_answered_at, session_mode')
     .eq('session_id', latest.session_id)
     .eq('student_id', studentId);
   const rows = (rowsRes.data ?? []) as Array<{
     question_id: string;
     student_answered_at: string | null;
+    session_mode?: string | null;
   }>;
   if (rows.length === 0) return null;
 
   const answered = rows.filter(r => r.student_answered_at !== null).length;
   if (answered === 0) return null;
+
+  // (5b) INSTRUMENT GATE — cheap, local, and decided before any further IO.
+  // `resolveSessionMode` returns null for both "no row carries a mode" and
+  // "the value is not one we recognise"; neither is evidence the attempt was
+  // untimed, so both suppress.
+  const mode = resolveSessionMode(rows);
+  if (mode === null || mode === 'exam') return null;
+
+  // (5a) FLAG INTERLOCK — the resume route would refuse this session, so the
+  // card must never be offered. Fail-closed inside the gate.
+  if (await isBlockedByImmediateFeedback()) return null;
 
   const gradedRes = await sb
     .from('quiz_sessions')

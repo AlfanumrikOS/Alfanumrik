@@ -48,8 +48,14 @@ interface Question {
   explanation: string | null;
   explanation_hi: string | null;
   hint: string | null;
-  difficulty: number;
-  bloom_level: string;
+  /** `question_bank.difficulty` / `question_bank.bloom_level` VERBATIM — both
+   *  are NULLABLE columns. Declared non-null until 2026-08-11 while every
+   *  consumer here already coped (`q.bloom_level || 'remember'`); the untrue
+   *  declaration is what let the resume payload builder justify defaulting
+   *  them, which diverged a resumed session's persisted `error_type` from an
+   *  identical fresh one. Fallbacks belong at consumption, never construction. */
+  difficulty: number | null;
+  bloom_level: string | null;
   chapter_number: number;
 }
 

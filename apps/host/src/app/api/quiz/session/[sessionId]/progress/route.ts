@@ -46,17 +46,29 @@
  *
  * Response shapes (house `{ success, data?, error? }`):
  *   200 → { success: true, data: … }
- *   400 → { success: false, error: 'invalid_session_id' | 'invalid_body' | … }
+ *   400 → { success: false, error: 'invalid_session_id' | 'invalid_body' |
+ *          'invalid_question_id' | 'invalid_selected_index' |
+ *          'invalid_time_spent' | 'invalid_mode' }
  *   401 → from authorizeRequest
  *   403 → { success: false, error: 'student_profile_required' | 'forbidden' }
  *   404 → { success: false, error: 'not_found' }
  *   500 → { success: false, error: 'internal_server_error' }
+ *
+ * A NON-resumable session is a 200 with `{ resumable: false, reason }`, not an
+ * error — the client falls soft to the setup screen. Reasons: 'not_found',
+ * 'not_started', 'already_submitted', 'expired', 'corrupt',
+ * 'blocked_immediate_feedback', 'exam_not_resumable', 'mode_unknown'.
+ * EVERY one of these is ALSO checked by `resolveResumableQuiz`
+ * (packages/lib/src/state/student-state-builder.ts) before `/today` offers the
+ * "Continue where you stopped" card, so a refusal here should be unreachable
+ * from the CTA. This route is the enforcement boundary; that is the promise
+ * boundary. Adding a reason here without adding it there re-creates the
+ * "the CTA said resume and started over" defect for that case.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
-import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { logger } from '@alfanumrik/lib/logger';
 import {
   SHUFFLE_RESUME_COLUMNS,
@@ -67,8 +79,10 @@ import {
   type QuestionBankResumeRow,
   type QuizResumeBlockedReason,
   type QuizResumeResult,
+  type QuizSessionMode,
   type ShuffleResumeRow,
 } from '@alfanumrik/lib/quiz/resume';
+import { isResumeBlockedByImmediateFeedback } from '@alfanumrik/lib/quiz/resume-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,16 +91,15 @@ const isUuid = (s: unknown): s is string => typeof s === 'string' && UUID_RE.tes
 
 const ROUTE = '/api/quiz/session/[sessionId]/progress';
 
-/**
- * `ff_quiz_v2` = Screen 07 Practice's immediate per-question correctness.
- * While it is ON, resume is refused — see the GET handler's interlock note.
- */
-const IMMEDIATE_FEEDBACK_FLAG = 'ff_quiz_v2';
+/** The closed set of instruments `/quiz` runs; mirrors the DB CHECK (20260814000015). */
+const VALID_MODES: readonly QuizSessionMode[] = ['practice', 'cognitive', 'exam'];
 
 interface OwnershipProbe {
   ok: true;
   studentId: string;
   userId: string;
+  /** The caller's REAL roles, for flag scoping. Never a hardcoded guess. */
+  roles: string[];
 }
 interface OwnershipDenied {
   ok: false;
@@ -157,7 +170,12 @@ async function requireOwnedSession(
     };
   }
 
-  return { ok: true, studentId, userId: auth.userId ?? '' };
+  return {
+    ok: true,
+    studentId,
+    userId: auth.userId ?? '',
+    roles: (auth.roles ?? []).map(r => String(r)),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -168,6 +186,13 @@ interface ProgressBody {
   questionId: string;
   selectedDisplayedIndex: number;
   timeSpentSeconds: number;
+  /**
+   * The instrument this session is running as. Optional ONLY so an older cached
+   * client bundle still persists its answers; a session whose rows never get a
+   * mode is simply refused at resume time (`mode_unknown`) rather than assumed
+   * to be untimed.
+   */
+  mode: QuizSessionMode | null;
 }
 
 function parseBody(raw: unknown): ProgressBody | { error: string } {
@@ -186,11 +211,20 @@ function parseBody(raw: unknown): ProgressBody | { error: string } {
     return { error: 'invalid_time_spent' };
   }
 
+  // A present-but-unrecognised mode is a client contract violation, not
+  // something to coerce — the DB CHECK would reject it anyway, and silently
+  // dropping it would leave the session looking like an older client's.
+  const m = o.mode;
+  if (m !== undefined && m !== null && !VALID_MODES.includes(m as QuizSessionMode)) {
+    return { error: 'invalid_mode' };
+  }
+
   return {
     questionId: o.questionId,
     selectedDisplayedIndex: idx,
     // P3: clamp before it can ever influence a reconstructed total time.
     timeSpentSeconds: Math.min(Math.floor(t), MAX_QUESTION_SECONDS),
+    mode: (m as QuizSessionMode | undefined) ?? null,
   };
 }
 
@@ -230,13 +264,24 @@ export async function POST(
     // the identical replay-lock `check_quiz_answer()` applies, so the two
     // writers are mutually safe in any interleaving: whichever lands first
     // wins and the other is a no-op.
+    //
+    // `session_mode` (migration 20260814000015) rides this SAME statement, so
+    // the instrument is recorded ATOMICALLY WITH THE FIRST PERSISTED ANSWER.
+    // Because a session only becomes resumable once it has ≥ 1 persisted
+    // answer, there is no interleaving in which a session is resumable but its
+    // instrument is unknown. It inherits the same first-write-wins
+    // immutability: the `.is(...)` predicate means a later request cannot
+    // relabel an in-flight attempt as a different instrument.
+    const update: Record<string, unknown> = {
+      student_selected_displayed_index: parsed.selectedDisplayedIndex,
+      student_time_spent_seconds: parsed.timeSpentSeconds,
+      student_answered_at: new Date().toISOString(),
+    };
+    if (parsed.mode !== null) update.session_mode = parsed.mode;
+
     const { data, error } = await admin
       .from('quiz_session_shuffles')
-      .update({
-        student_selected_displayed_index: parsed.selectedDisplayedIndex,
-        student_time_spent_seconds: parsed.timeSpentSeconds,
-        student_answered_at: new Date().toISOString(),
-      })
+      .update(update)
       .eq('session_id', sessionId)
       .eq('question_id', parsed.questionId)
       .is('student_selected_displayed_index', null)
@@ -298,7 +343,7 @@ export async function GET(
         { headers: { 'Cache-Control': 'no-store' } },
       );
 
-    // ── INTERLOCK ────────────────────────────────────────────────────────
+    // ── INTERLOCK (defence in depth) ─────────────────────────────────────
     // Resume is refused while `ff_quiz_v2` is ON for this caller.
     //
     // `submit_quiz_results_v2` grades from the CLIENT-supplied responses, not
@@ -315,9 +360,27 @@ export async function GET(
     // console. Removing it requires `submit_quiz_results_v2` to prefer
     // `student_selected_displayed_index` when non-NULL — an assessment +
     // architect change to a P1 surface, not something this route may assume.
-    const immediateFeedbackOn = await isFeatureEnabled(IMMEDIATE_FEEDBACK_FLAG, {
+    //
+    // TWO CORRECTIONS live in `isResumeBlockedByImmediateFeedback`:
+    //
+    //   1. This is now the SECOND line of defence, not the only one.
+    //      `resolveResumableQuiz` (student-state-builder) consults the same
+    //      gate where the `/today` "Continue where you stopped" card is
+    //      PRODUCED. Previously the card was offered unconditionally and only
+    //      refused here, and the client's fail-soft path shows no message —
+    //      so a flagged student tapped "continue" and silently landed on the
+    //      setup screen with their progress apparently gone. Never promise
+    //      what you will refuse.
+    //
+    //   2. The read FAILS CLOSED. `isFeatureEnabled` returns `false` for a
+    //      missing flag, a malformed payload, a failed fetch or missing env —
+    //      and `false` here means ALLOW RESUME. An unreachable flag service
+    //      therefore re-opened the exploit silently. Only a positive,
+    //      successfully-read "off" now permits resume; the caller's REAL roles
+    //      are used for scoping instead of a hardcoded `'student'`.
+    const immediateFeedbackOn = await isResumeBlockedByImmediateFeedback({
       userId: owned.userId || undefined,
-      role: 'student',
+      roles: owned.roles,
       environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
     });
     if (immediateFeedbackOn) return blocked('blocked_immediate_feedback');

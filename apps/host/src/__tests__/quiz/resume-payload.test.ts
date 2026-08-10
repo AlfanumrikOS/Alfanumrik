@@ -32,6 +32,7 @@ import {
   orderResumeRows,
   isResumeExpired,
   isResumeSessionId,
+  resolveSessionMode,
   type QuestionBankResumeRow,
   type ShuffleResumeRow,
 } from '@alfanumrik/lib/quiz/resume';
@@ -51,6 +52,9 @@ function shuffleRow(overrides: Partial<ShuffleResumeRow> & { question_id: string
     student_time_spent_seconds: null,
     student_answered_at: null,
     created_at: T0,
+    // Default fixture is an untimed session. The instrument gate is exercised
+    // explicitly in its own describe block below.
+    session_mode: 'cognitive',
     ...overrides,
   };
 }
@@ -440,5 +444,150 @@ describe('resume payload: blocked reasons', () => {
     expect(isResumeSessionId('')).toBe(false);
     expect(isResumeSessionId(null)).toBe(false);
     expect(isResumeSessionId(42)).toBe(false);
+  });
+});
+
+// ── 5. THE INSTRUMENT never silently changes across a resume ──────────────
+
+describe('resume payload: a resumed session runs the instrument it was started as', () => {
+  const answered = (mode: string | null) =>
+    shuffleRow({
+      question_id: Q1,
+      student_selected_displayed_index: 1,
+      student_time_spent_seconds: 10,
+      student_answered_at: '2026-08-11T10:01:00.000Z',
+      session_mode: mode,
+    });
+
+  it('refuses an EXAM session outright — a timed test is taken in one sitting', () => {
+    // The defect: the session's mode was persisted NOWHERE, and the resume
+    // deep link `/quiz?session=<uuid>` carries no `?mode=`, so a resumed exam
+    // attempt mounted with the DEFAULT (untimed) and was recorded in
+    // quiz_sessions as though it were the same instrument. The page's
+    // `if (quizMode === 'exam') setQuizMode('cognitive')` safeguard was dead
+    // code — on a fresh session load quizMode was ALREADY the default, so the
+    // branch could never fire.
+    expect(buildQuizResumePayload(SESSION, [answered('exam')], qMap([qbRow(Q1)]))).toEqual({
+      resumable: false,
+      reason: 'exam_not_resumable',
+    });
+  });
+
+  it('refuses when NO row records an instrument — never assumes untimed', () => {
+    expect(buildQuizResumePayload(SESSION, [answered(null)], qMap([qbRow(Q1)]))).toEqual({
+      resumable: false,
+      reason: 'mode_unknown',
+    });
+  });
+
+  it('refuses an unrecognised instrument — an unmappable value is not evidence of safety', () => {
+    expect(buildQuizResumePayload(SESSION, [answered('timed')], qMap([qbRow(Q1)]))).toEqual({
+      resumable: false,
+      reason: 'mode_unknown',
+    });
+  });
+
+  it('carries the real instrument on a resumable payload, so the runtime restores it', () => {
+    for (const mode of ['practice', 'cognitive'] as const) {
+      const result = buildQuizResumePayload(SESSION, [answered(mode)], qMap([qbRow(Q1)]));
+      expect(result.resumable).toBe(true);
+      if (!result.resumable) return;
+      expect(result.mode).toBe(mode);
+    }
+  });
+
+  it('the instrument gate runs BEFORE any per-question work', () => {
+    // An exam session with unusable metadata must report the instrument, not
+    // `corrupt` — otherwise the reason a student is refused depends on an
+    // unrelated data problem.
+    expect(buildQuizResumePayload(SESSION, [answered('exam')], new Map())).toEqual({
+      resumable: false,
+      reason: 'exam_not_resumable',
+    });
+  });
+
+  it('resolveSessionMode reads the mode off whichever row carries it', () => {
+    expect(resolveSessionMode([{ session_mode: null }, { session_mode: 'exam' }])).toBe('exam');
+    expect(resolveSessionMode([{ session_mode: null }])).toBeNull();
+    expect(resolveSessionMode([{ session_mode: 'nonsense' }])).toBeNull();
+    expect(resolveSessionMode([])).toBeNull();
+  });
+});
+
+// ── 6. Bloom / difficulty are NOT fabricated (learner-state integrity) ────
+
+describe('resume payload: nullable question metadata passes through VERBATIM', () => {
+  it('a NULL bloom_level stays NULL instead of becoming "remember"', () => {
+    // WHY THIS IS A CORRECTNESS DEFECT, not a cosmetic one:
+    // `classifyQuizError` branches on bloom_level — 'remember' →
+    // 'knowledge_gap', 'apply'|'analyze'|'evaluate'|'create' → 'conceptual',
+    // otherwise 'procedural'. question_bank.bloom_level is NULLABLE. A FRESH
+    // serve passes the NULL through and classifies 'procedural'; the resume
+    // builder used to stamp 'remember' and classify 'knowledge_gap' — for the
+    // SAME question answered wrong the SAME way. That error_type is persisted
+    // to quiz_responses.error_type and feeds update_learner_state_post_quiz
+    // and misconception analysis, so the default was silently corrupting
+    // learner state as a function of whether a session had been interrupted.
+    const rows = [
+      shuffleRow({
+        question_id: Q1,
+        student_selected_displayed_index: 0,
+        student_time_spent_seconds: 8,
+        student_answered_at: '2026-08-11T10:01:00.000Z',
+      }),
+    ];
+    const result = buildQuizResumePayload(
+      SESSION,
+      rows,
+      qMap([qbRow(Q1, { bloom_level: null, difficulty: null })]),
+    );
+    expect(result.resumable).toBe(true);
+    if (!result.resumable) return;
+
+    expect(result.questions[0].bloom_level).toBeNull();
+    expect(result.questions[0].bloom_level).not.toBe('remember');
+    expect(result.questions[0].difficulty).toBeNull();
+    expect(result.questions[0].difficulty).not.toBe(2);
+  });
+
+  it('a real bloom_level / difficulty is preserved exactly', () => {
+    const rows = [
+      shuffleRow({
+        question_id: Q1,
+        student_selected_displayed_index: 0,
+        student_time_spent_seconds: 8,
+        student_answered_at: '2026-08-11T10:01:00.000Z',
+      }),
+    ];
+    const result = buildQuizResumePayload(
+      SESSION,
+      rows,
+      qMap([qbRow(Q1, { bloom_level: 'analyze', difficulty: 3 })]),
+    );
+    expect(result.resumable).toBe(true);
+    if (!result.resumable) return;
+    expect(result.questions[0].bloom_level).toBe('analyze');
+    expect(result.questions[0].difficulty).toBe(3);
+  });
+
+  it('a non-string / non-number value is nulled, never coerced into a plausible one', () => {
+    const rows = [
+      shuffleRow({
+        question_id: Q1,
+        student_selected_displayed_index: 0,
+        student_time_spent_seconds: 8,
+        student_answered_at: '2026-08-11T10:01:00.000Z',
+      }),
+    ];
+    const junk = {
+      ...qbRow(Q1),
+      bloom_level: 42,
+      difficulty: 'hard',
+    } as unknown as QuestionBankResumeRow;
+    const result = buildQuizResumePayload(SESSION, rows, qMap([junk]));
+    expect(result.resumable).toBe(true);
+    if (!result.resumable) return;
+    expect(result.questions[0].bloom_level).toBeNull();
+    expect(result.questions[0].difficulty).toBeNull();
   });
 });

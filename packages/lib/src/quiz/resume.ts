@@ -91,7 +91,7 @@
  */
 export const SHUFFLE_RESUME_COLUMNS =
   'question_id, shuffle_map, options_snapshot, student_selected_displayed_index, ' +
-  'student_time_spent_seconds, student_answered_at, created_at';
+  'student_time_spent_seconds, student_answered_at, created_at, session_mode';
 
 /**
  * The ONLY columns the resume route selects from `question_bank`.
@@ -127,6 +127,12 @@ export interface ShuffleResumeRow {
   student_time_spent_seconds: number | null;
   student_answered_at: string | null;
   created_at: string | null;
+  /**
+   * Which INSTRUMENT this session is (migration 20260814000015). `null` on any
+   * row written before that column existed, or by a writer that did not stamp
+   * it — treated as NOT resumable, never as a default. See `resolveSessionMode`.
+   */
+  session_mode?: string | null;
 }
 
 export interface QuestionBankResumeRow {
@@ -145,6 +151,41 @@ export interface QuestionBankResumeRow {
 
 // ── Payload shapes ────────────────────────────────────────────────────────
 
+/**
+ * The three instruments `/quiz` can run. `exam` is TIMED with an auto-submit;
+ * the other two are untimed. Mirrors the `QuizMode` union in the quiz
+ * orchestrator and the CHECK constraint in migration 20260814000015 — all three
+ * must agree.
+ */
+export type QuizSessionMode = 'practice' | 'cognitive' | 'exam';
+
+const QUIZ_SESSION_MODES: readonly string[] = ['practice', 'cognitive', 'exam'];
+
+/**
+ * Read the session's instrument off its snapshot rows.
+ *
+ * Returns `null` when NO row carries a recognised mode. That is deliberately
+ * indistinguishable from "we do not know", because it is the same thing: the
+ * caller must refuse rather than assume `cognitive`. An unrecognised string
+ * (schema drift, a hand-edited row) is also `null` — a value we cannot map to
+ * an instrument tells us nothing about whether it was timed.
+ */
+export function resolveSessionMode(
+  // Structurally minimal on purpose: the `/today` producer
+  // (`resolveResumableQuiz`) selects only the three columns it needs and must
+  // be able to reuse the SAME resolver as the resume route, or the card and the
+  // route could disagree about what counts as an exam.
+  rows: Array<Pick<ShuffleResumeRow, 'session_mode'>>,
+): QuizSessionMode | null {
+  for (const row of rows) {
+    const m = row.session_mode;
+    if (typeof m === 'string' && QUIZ_SESSION_MODES.includes(m)) {
+      return m as QuizSessionMode;
+    }
+  }
+  return null;
+}
+
 export interface QuizResumeQuestion {
   question_id: string;
   question_text: string;
@@ -155,8 +196,27 @@ export interface QuizResumeQuestion {
   explanation: string | null;
   explanation_hi: string | null;
   hint: string | null;
-  difficulty: number;
-  bloom_level: string;
+  /**
+   * `question_bank.difficulty` / `question_bank.bloom_level` VERBATIM, including
+   * NULL. These are NULLABLE columns and this payload must not invent values
+   * for them.
+   *
+   * WHY THIS IS NOT A NICETY. `classifyQuizError` in the quiz orchestrator
+   * branches on `bloom_level`: `'remember'` → `'knowledge_gap'`, `'apply' |
+   * 'analyze' | 'evaluate' | 'create'` → `'conceptual'`, otherwise
+   * `'procedural'`. This module used to default a NULL bloom to `'remember'`.
+   * A FRESH serve passes the real NULL through and classifies `'procedural'`;
+   * a RESUMED serve stamped `'remember'` and classified `'knowledge_gap'` —
+   * for the SAME question answered wrong the SAME way. That `error_type` is
+   * persisted to `quiz_responses.error_type` and feeds
+   * `update_learner_state_post_quiz` and misconception analysis, so the
+   * fabricated default was silently corrupting learner state as a function of
+   * whether a session had been interrupted. Any consumer that needs a concrete
+   * value must apply its fallback at the point of CONSUMPTION, where the fresh
+   * and resumed paths share code and therefore cannot diverge.
+   */
+  difficulty: number | null;
+  bloom_level: string | null;
   chapter_number: number;
   /** True when this question already has a durable, immutable answer. */
   answered: boolean;
@@ -168,6 +228,13 @@ export interface QuizResumeQuestion {
 export interface QuizResumeSession {
   resumable: true;
   session_id: string;
+  /**
+   * The instrument this session was started as. Always a concrete non-exam
+   * mode: an `exam` session is refused (`exam_not_resumable`) and an unknown
+   * one is refused (`mode_unknown`), so a resumable payload can only ever carry
+   * an instrument the runtime can honestly reproduce.
+   */
+  mode: Exclude<QuizSessionMode, 'exam'>;
   subject: string;
   chapter_number: number | null;
   total_questions: number;
@@ -203,7 +270,32 @@ export type QuizResumeBlockedReason =
    * be removed once the submit RPC prefers the persisted answer, which is an
    * assessment + architect change.
    */
-  | 'blocked_immediate_feedback';
+  | 'blocked_immediate_feedback'
+  /**
+   * The session was started in `exam` mode. A timed test is taken in ONE
+   * SITTING — it is not resumable, by assessment's ruling.
+   *
+   * Before migration 20260814000015 the mode was persisted nowhere, so a
+   * resumed exam attempt silently ran untimed and was recorded in
+   * `quiz_sessions` as though it were the same instrument. The page carried an
+   * `if (quizMode === 'exam') setQuizMode('cognitive')` line meant as the
+   * safeguard, but on a fresh `/quiz?session=<uuid>` load — the ONLY way the
+   * resume CTA arrives — the URL carries no `?mode=exam`, so `quizMode` was
+   * already the default and the branch could never fire.
+   *
+   * Resuming an exam CORRECTLY needs server-computed remaining time (never
+   * client state) and is deliberately not built here. Until it is, refusing is
+   * the honest answer, and `/today` suppresses the card so the refusal is never
+   * a broken promise.
+   */
+  | 'exam_not_resumable'
+  /**
+   * No snapshot row carries a recognised `session_mode`, so we cannot prove the
+   * attempt was not a timed one. Fail-closed: refuse rather than assume
+   * `cognitive`. Mirrors the `blocked_immediate_feedback` posture — an
+   * interlock that cannot read its input must not open.
+   */
+  | 'mode_unknown';
 
 export interface QuizResumeBlocked {
   resumable: false;
@@ -308,6 +400,12 @@ export function buildQuizResumePayload(
 ): QuizResumeResult {
   if (rows.length === 0) return { resumable: false, reason: 'not_found' };
 
+  // INSTRUMENT GATE — before any per-question work, because the answer here is
+  // "do not resume this at all", not "resume it differently".
+  const mode = resolveSessionMode(rows);
+  if (mode === null) return { resumable: false, reason: 'mode_unknown' };
+  if (mode === 'exam') return { resumable: false, reason: 'exam_not_resumable' };
+
   const ordered = orderResumeRows(rows);
   const questions: QuizResumeQuestion[] = [];
 
@@ -332,8 +430,12 @@ export function buildQuizResumePayload(
       explanation: meta.explanation ?? null,
       explanation_hi: meta.explanation_hi ?? null,
       hint: meta.hint ?? null,
-      difficulty: typeof meta.difficulty === 'number' ? meta.difficulty : 2,
-      bloom_level: meta.bloom_level ?? 'remember',
+      // VERBATIM, including NULL — see the field docs on QuizResumeQuestion.
+      // Defaulting these to 2 / 'remember' made a resumed answer classify into
+      // a DIFFERENT error_type than the identical fresh answer, corrupting
+      // learner state as a function of interruption.
+      difficulty: typeof meta.difficulty === 'number' ? meta.difficulty : null,
+      bloom_level: typeof meta.bloom_level === 'string' ? meta.bloom_level : null,
       chapter_number: typeof meta.chapter_number === 'number' ? meta.chapter_number : 0,
       answered,
       selected_displayed_index: answered && validPick ? picked : null,
@@ -360,6 +462,8 @@ export function buildQuizResumePayload(
   return {
     resumable: true,
     session_id: sessionId,
+    // Narrowed by the instrument gate at the top of this function.
+    mode,
     subject: firstMeta?.subject ?? '',
     chapter_number: chapter,
     total_questions: questions.length,
@@ -429,6 +533,14 @@ type AuthHeaderFn = () => Promise<Record<string, string>>;
  * Fire-and-forget by contract: never blocks the quiz, never throws, and its
  * failure costs only resumability — grading still happens exactly once at
  * final submit, unchanged (P1/P2/P4 untouched).
+ *
+ * `mode` rides along on the SAME request, and the server stamps it onto the
+ * same row in the SAME first-write-wins UPDATE. That coupling is the point:
+ * a session becomes resumable only once it has ≥ 1 persisted answer, so there
+ * is no interleaving in which a session is resumable but its instrument is
+ * unknown. A separate "record the mode" call would have created exactly that
+ * window — and an exam attempt whose mode write failed would have resumed
+ * untimed, which is the defect this is closing.
  */
 export async function saveQuizAnswerProgress(
   sessionId: string,
@@ -436,6 +548,7 @@ export async function saveQuizAnswerProgress(
   selectedDisplayedIndex: number,
   timeSpentSeconds: number,
   authHeaderFn: AuthHeaderFn,
+  mode: QuizSessionMode,
 ): Promise<boolean> {
   if (!isResumeSessionId(sessionId) || !isResumeSessionId(questionId)) return false;
   try {
@@ -449,6 +562,7 @@ export async function saveQuizAnswerProgress(
           questionId,
           selectedDisplayedIndex,
           timeSpentSeconds: clampSeconds(timeSpentSeconds),
+          mode,
         }),
       },
     );

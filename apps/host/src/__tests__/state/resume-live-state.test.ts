@@ -20,6 +20,19 @@
  *     quiz; the graded row is found via its idempotency key);
  *   - a session older than the 24h window → idle;
  *   - the read is best-effort: a failure degrades to idle, never a throw.
+ *
+ * ── NEVER PROMISE WHAT YOU WILL REFUSE (added 2026-08-11) ────────────────
+ *
+ * Two gates were previously enforced ONLY on the resume ROUTE and not here,
+ * where the card is PRODUCED. Because the client's resume consumer fails soft
+ * with NO message, a student on the affected cohort tapped "Continue where you
+ * stopped" and silently landed on the setup screen with their progress
+ * apparently gone — exactly the defect Phase 4 existed to kill. Both now
+ * suppress the card:
+ *   - the `ff_quiz_v2` immediate-feedback interlock, read FAIL-CLOSED
+ *     (undetermined → suppress);
+ *   - the INSTRUMENT: an `exam` session is not resumable, and an unrecorded
+ *     `session_mode` cannot be proven not to have been one.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -115,6 +128,9 @@ function shuffle(overrides: Row = {}): Row {
     student_id: STUDENT_ID,
     student_answered_at: null,
     created_at: FRESH,
+    // Default fixture is an untimed session; the instrument gate has its own
+    // cases below.
+    session_mode: 'cognitive',
     ...overrides,
   };
 }
@@ -124,9 +140,17 @@ function build(opts: {
   graded?: Row[];
   questionBank?: Row[];
   shufflesError?: string;
+  /**
+   * The `ff_quiz_v2` interlock. Injected rather than left to the real reader so
+   * these tests pin BOTH halves without a live flag service — and so the
+   * default here (`false` = not blocked) is an explicit statement that every
+   * other case in this file is testing the flag-OFF world.
+   */
+  resumeBlocked?: boolean;
 }) {
   return createStudentStateBuilder({
     now: () => NOW,
+    isResumeBlocked: async () => opts.resumeBlocked ?? false,
     sb: makeFakeSb({
       students: { rows: [studentRow()] },
       learner_mastery: { rows: [] },
@@ -200,5 +224,55 @@ describe('student-state-builder: in-flight quiz → live.in_quiz', () => {
   it('degrades to idle (never throws) when the snapshot read fails', async () => {
     const state = await build({ shuffles: [], shufflesError: 'connection reset' });
     expect(state.live.kind).toBe('idle');
+  });
+});
+
+describe('student-state-builder: the card is never offered when the route would refuse it', () => {
+  const ANSWERED = { question_id: Q1, student_answered_at: '2026-08-11T11:05:00.000Z' };
+
+  it('suppresses the card when the ff_quiz_v2 interlock blocks resume', async () => {
+    // THE DEFECT: the interlock lived only on the resume route's GET. On the
+    // ramp, /today rendered "Continue where you stopped" → tap →
+    // /quiz?session=<id> → GET returned blocked_immediate_feedback → the
+    // client's fail-soft path cleared the breadcrumb and showed NO message →
+    // the student landed on the setup screen. Progress apparently gone, with
+    // no explanation. The producer must consult the same gate as the consumer.
+    const state = await build({ shuffles: [shuffle(ANSWERED)], resumeBlocked: true });
+    expect(state.live.kind).toBe('idle');
+  });
+
+  it('offers the card when the interlock does NOT block (the flag-OFF world still works)', async () => {
+    // Guards against over-correcting: the fix must suppress the promise, not
+    // the feature.
+    const state = await build({ shuffles: [shuffle(ANSWERED)], resumeBlocked: false });
+    expect(state.live.kind).toBe('in_quiz');
+  });
+
+  it('suppresses the card for an EXAM session — a timed test is taken in one sitting', async () => {
+    const state = await build({
+      shuffles: [shuffle({ ...ANSWERED, session_mode: 'exam' })],
+    });
+    expect(state.live.kind).toBe('idle');
+  });
+
+  it('suppresses the card when the instrument was never recorded, rather than assuming untimed', async () => {
+    const state = await build({
+      shuffles: [shuffle({ ...ANSWERED, session_mode: null })],
+    });
+    expect(state.live.kind).toBe('idle');
+  });
+
+  it('suppresses the card for an unrecognised instrument', async () => {
+    const state = await build({
+      shuffles: [shuffle({ ...ANSWERED, session_mode: 'timed' })],
+    });
+    expect(state.live.kind).toBe('idle');
+  });
+
+  it('offers the card for a practice session (both non-exam instruments resume)', async () => {
+    const state = await build({
+      shuffles: [shuffle({ ...ANSWERED, session_mode: 'practice' })],
+    });
+    expect(state.live.kind).toBe('in_quiz');
   });
 });

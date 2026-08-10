@@ -123,8 +123,23 @@ interface Question {
   explanation: string | null;
   explanation_hi: string | null;
   hint: string | null;
-  difficulty: number;
-  bloom_level: string;
+  /**
+   * `question_bank.difficulty` / `question_bank.bloom_level` are NULLABLE
+   * columns, and the fresh-serve path has always passed their NULLs straight
+   * through — the old non-nullable declarations were simply untrue at runtime
+   * (see `classifyQuizError` below, which already handled `bloom_level` being
+   * absent). The lie mattered: it let the resume payload builder "safely"
+   * default a NULL bloom to `'remember'`, which made the SAME question answered
+   * wrong the SAME way classify as `'knowledge_gap'` on a resumed session and
+   * `'procedural'` on a fresh one. That `error_type` is persisted to
+   * `quiz_responses.error_type` and feeds `update_learner_state_post_quiz`.
+   *
+   * The types are now honest. Any fallback belongs at the point of CONSUMPTION
+   * (where the fresh and resumed paths share code and therefore cannot
+   * diverge), never at construction.
+   */
+  difficulty: number | null;
+  bloom_level: string | null;
   chapter_number: number;
   // Written answer fields (SA/MA/LA from NCERT sources)
   marks_possible?: number;
@@ -1142,11 +1157,21 @@ export default function QuizPage() {
         setQuestionCount(restoredQuestions.length);
         // P3: seed the total-time counter with real on-task time (see above).
         setTimer(result.elapsed_seconds);
-        // Session mode is not persisted, so a resumed session always runs in
-        // the untimed lane. Resuming into exam mode would start a FRESH
-        // countdown that could auto-submit the moment it expires — a worse
-        // outcome than losing the timed framing of an abandoned attempt.
-        if (quizMode === 'exam') setQuizMode('cognitive');
+        // The session's REAL instrument, read back from the server snapshot
+        // (`quiz_session_shuffles.session_mode`, migration 20260814000015).
+        // `result.mode` can only ever be 'practice' or 'cognitive': the payload
+        // builder refuses an `exam` session outright (`exam_not_resumable`) and
+        // refuses an unrecorded one (`mode_unknown`), both of which land on the
+        // `!result.resumable` branch above.
+        //
+        // This REPLACES a line that read `if (quizMode === 'exam')
+        // setQuizMode('cognitive')`, which was dead code: on a fresh
+        // `/quiz?session=<uuid>` load — the only way the resume CTA arrives —
+        // the URL carries no `?mode=exam`, so `quizMode` was already the
+        // default and the branch never fired. A timed exam attempt therefore
+        // resumed silently as an untimed one and was recorded in
+        // `quiz_sessions` as though it were the same instrument.
+        setQuizMode(result.mode);
         setExamTimerActive(false);
         examAutoSubmittedRef.current = false;
         setIsResumedSession(true);
@@ -1229,7 +1254,14 @@ export default function QuizPage() {
     // (or the fire-and-forget fetch hasn't resolved / failed) — the previous
     // hardcoded 0.5 disabled classifyError's two mastery-dependent branches.
     const studentMastery = masteryByQidRef.current[q.id] ?? 0.5;
-    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty, studentMastery);
+    // `difficulty` is a NULLABLE column. The fallback lives HERE — at the
+    // single point of CONSUMPTION that the fresh and resumed paths both flow
+    // through — rather than in whichever loader built the question, which is
+    // what let the two paths diverge. It is also behaviour-preserving: this
+    // call site previously received a raw NULL on the fresh path, and
+    // `classifyError`'s only two difficulty branches (`<= 2`, `>= 3`) take the
+    // identical arm for `null` (coerces to 0) and for 2.
+    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty ?? 2, studentMastery);
 
     setResponses(prev => [...prev, {
       question_id: q.id,
@@ -1265,6 +1297,10 @@ export default function QuizPage() {
     // (migration 20260802130000). Both writers are replay-locked, so a double
     // write would be harmless — but letting only one own the write keeps
     // check_quiz_answer's `already_answered` flag meaningful for the UI.
+    // (The practice-v2 writer does NOT stamp `session_mode`, so such a session
+    // resolves to `mode_unknown` and is refused at resume. That is coherent
+    // rather than a gap: `practiceV2On` IS `ff_quiz_v2`, and the immediate-
+    // feedback interlock already refuses resume for that whole cohort.)
     const practiceV2OwnsPersist = practiceV2On && quizMode === 'practice' && isQuestionMCQ(q);
     if (serverSessionId && !practiceV2OwnsPersist && isQuestionMCQ(q) && selectedOption >= 0) {
       void saveQuizAnswerProgress(
@@ -1273,6 +1309,10 @@ export default function QuizPage() {
         selectedOption,
         questionTimer,
         authHeader,
+        // The instrument, recorded ATOMICALLY with the first persisted answer
+        // (migration 20260814000015). Without it a resumed exam attempt ran
+        // untimed and nothing on the record could even detect the swap.
+        quizMode,
       );
     }
 

@@ -26,7 +26,9 @@
  * (`state/learner-loop/types.ts`). They are TELEMETRY IDENTIFIERS, never
  * student-visible text. `todayReasonCopy()` below is the ONLY place a machine
  * reason becomes learner-facing language, and it can only ever produce one of
- * the six approved phrases:
+ * the six approved phrases — OR nothing at all, for the three calendar-driven
+ * reasons that have no honest claim to make about the learner (see
+ * `REASONS_WITH_NO_CHIP`):
  *
  *   Review due · Continue where you stopped · Build this prerequisite ·
  *   Teacher assigned · Prepare for your test · Ready for the next concept
@@ -268,19 +270,59 @@ const COPY: Record<string, CopyEntry> = {
 };
 
 /**
+ * Reasons that DELIBERATELY render no chip.
+ *
+ * A reason line is a CLAIM ABOUT THE LEARNER: "we looked at your work and this
+ * is why this is next". A reason whose resolver branch consulted nothing about
+ * the learner has no such claim to make, and inventing one is worse than
+ * silence — it teaches a child that the system's explanations are decorative.
+ *
+ * These three are enumerated (never a catch-all) so a NEW unmapped reason still
+ * fails the completeness test rather than quietly inheriting "render nothing".
+ *
+ *   sunday_default   — the branch predicate is `isSundayIst(ctx.now)` and
+ *     NOTHING else. The item is a weekly Curiosity Dive, deliberately OUTSIDE
+ *     the concept sequence. "Ready for the next concept" would tell a child we
+ *     assessed them as ready when we in fact read a calendar — and would point
+ *     at a "next concept" the Dive is expressly not.
+ *
+ *   month_end_default — the predicate is `isMonthEndDayIst(ctx.now)`; the item
+ *     is a monthly synthesis. "Review due" asserts two false things (something
+ *     is due; something is being reviewed) and, worse, COLLIDES with
+ *     `today.item.srs_due.label` ("Reviews due"). A student who has learned
+ *     "Review due = flashcards waiting" is then actively misled.
+ *
+ *   no_signals_yet — the cold-start branch. It fires precisely because we know
+ *     nothing about this learner, so "Ready for the next concept" is a
+ *     readiness judgement made from zero evidence. It also contradicts its own
+ *     card, which says "Find your starting point / a quick diagnostic": the
+ *     chip claims we know where they are while the card says we are about to
+ *     find out.
+ *
+ * All three cards are self-explanatory ("Weekly Curiosity Dive", "Your monthly
+ * summary is ready", "Find your starting point"). Nothing is lost by silence.
+ */
+const REASONS_WITH_NO_CHIP: readonly string[] = [
+  'sunday_default',
+  'month_end_default',
+  'no_signals_yet',
+];
+
+/**
  * The reason → approved-phrase map. THE single place a machine `reason`
  * becomes student language.
  *
- * Every one of the resolver's 12 reasons is listed. Grouping rationale:
- *   - `decay_above_threshold` and `month_end_default` both land on
- *     "Review due" — a topic going stale and a month-end look-back are both
+ * Every one of the resolver's 12 reasons is accounted for: 9 map to a phrase
+ * here, 3 map deliberately to no chip (see REASONS_WITH_NO_CHIP above).
+ * Grouping rationale for the 9:
+ *   - `decay_above_threshold` lands on "Review due" — a topic going stale IS
  *     "come back to something you already met". The word "decay" itself is
  *     forbidden student-side.
  *   - `todays_zpd` and `weakest_topic_practice` both land on "Build this
  *     prerequisite" — both point at the weakest chapter. "ZPD" never ships.
- *   - `no_signals_yet`, `unstarted_chapter_available` and `sunday_default`
- *     land on "Ready for the next concept" — all three are "here is the next
- *     new thing", whether it's the very first one or the weekly explore slot.
+ *   - `unstarted_chapter_available` lands on "Ready for the next concept" —
+ *     it is the one branch that genuinely means "you have finished what came
+ *     before, here is the next new thing in sequence".
  *
  * "Prepare for your test" is the sixth approved phrase. NO resolver reason
  * produces it (the loop has no exam-driven branch), so it is not in this map
@@ -293,22 +335,33 @@ const REASON_TO_COPY_KEY: Record<string, string> = {
   reviews_stacking:            'today.reason.review',
   reviews_due_today:           'today.reason.review',
   decay_above_threshold:       'today.reason.review',
-  month_end_default:           'today.reason.review',
   teacher_assigned:            'today.reason.teacher',
   todays_zpd:                  'today.reason.prerequisite',
   weakest_topic_practice:      'today.reason.prerequisite',
-  no_signals_yet:              'today.reason.nextConcept',
   unstarted_chapter_available: 'today.reason.nextConcept',
-  sunday_default:              'today.reason.nextConcept',
 };
 
 /**
- * Resolve a machine `reason` into one of the six approved learner-facing
- * phrases, or `null` when the reason is unknown to this map.
+ * True when `reason` is a KNOWN reason that deliberately renders no chip.
  *
- * `null` is a DELIBERATE contract: an unmapped reason (a resolver branch added
- * without updating this table) renders no reason line at all. It must never
- * degrade into printing the raw identifier — see the module header.
+ * Exported so the completeness test can tell "deliberately silent" apart from
+ * "nobody mapped this yet" — both return `null` from `todayReasonCopy`, and
+ * collapsing them would let a new unmapped resolver branch ship unnoticed.
+ */
+export function isSilentTodayReason(reason: string): boolean {
+  return REASONS_WITH_NO_CHIP.includes(reason);
+}
+
+/**
+ * Resolve a machine `reason` into one of the six approved learner-facing
+ * phrases, or `null` when no chip should render.
+ *
+ * `null` covers two cases, both of which must render nothing:
+ *   - a reason on the deliberate no-chip list (the branch determined nothing
+ *     about the learner, so there is no honest claim to print);
+ *   - an UNKNOWN reason (a resolver branch added without updating this table).
+ * It must never degrade into printing the raw identifier — see the module
+ * header. Use `isSilentTodayReason` to distinguish the two.
  */
 export function todayReasonCopy(reason: string, isHi: boolean): string | null {
   const key = REASON_TO_COPY_KEY[reason];
