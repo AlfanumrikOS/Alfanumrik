@@ -1,20 +1,51 @@
 #!/usr/bin/env node
 // scripts/verify-20260814-migrations.mjs
 //
-// Deploy gate for the unapplied `20260814*` migrations
+// Deploy gate for the `20260814*` migration block
 // (20260814000007-11 and 20260814000018-23 — NON-CONTIGUOUS; see the
 // MIGRATION_VERSIONS comment for why 0012-0017 are deliberately absent).
 //
 // Companion to docs/runbooks/2026-08-11-unapplied-migrations-20260814-apply.md.
 // That runbook carries the reasoning; this file carries the assertions, so the
 // post-apply check is a GATE that exits non-zero rather than a checklist
-// somebody skims at 2am.
+// somebody skims at 2am. (The runbook's FILENAME still says "unapplied" — that
+// is now historical, it names the day of the apply, not today's state.)
 //
-// ─── STATUS OF THE MIGRATIONS THIS VERIFIES ─────────────────────────────────
-// UNEXECUTED. As of authoring, none of them has been applied to any
-// database. Every expectation below was DERIVED from the migration source, not
-// observed. This script itself has only ever been run in its no-database
-// degradation path.
+// ─── STATUS OF THE MIGRATIONS THIS VERIFIES — as of 2026-08-11 ──────────────
+// APPLIED TO PRODUCTION (project shktyoxqhundlvkiwguu), 10 of the 11 covered:
+//   20260814000007-11  applied earlier
+//   20260814000018-22  applied 2026-08-11 via `supabase db push --db-url`, exit 0
+//
+// STILL PENDING — 20260814000023, and it is being held ON PURPOSE. It strips
+// correct_answer_index out of the serving RPC payloads. The repointed client
+// that no longer needs that field is COMMITTED BUT NOT DEPLOYED, so applying
+// 0023 first would fail the live client's P6 gate and render EMPTY QUIZZES in
+// production. It ships only after the frontend does.
+//
+// Consequence for how you run this: the POST-APPLY lane (no flag) is now the
+// CORRECT lane for 0007-0022 — it measures a real database rather than a
+// hypothesis, and it has still never been run. `--preflight` is now meaningful
+// only for 0023 (PF-9) and for a fresh/staging database.
+//
+// ─── WHAT THE 2026-08-11 APPLY DID *NOT* ESTABLISH ──────────────────────────
+// Do not read "db push exit 0" as "verified clean". The preflight DB lane could
+// not run at all — `psql` was not on PATH, so this script degraded to exit 3 and
+// PF-6, PF-7a and PF-7b were NEVER checked. The push proceeded relying on each
+// migration's in-transaction post-conditions to ABORT rather than half-apply.
+// PF-2b and PF-4 were closed independently via PostgREST.
+//
+// >>> HIGHEST-VALUE UNRUN CHECK — PF-7a, retroactively WA-1 <<<
+// 20260814000022 is a CREATE OR REPLACE against an EXACT 11-argument signature.
+// If the deployed signature differed by even one argument, Postgres does not
+// error: it creates a SECOND OVERLOAD, the migration COMMITS GREEN, and callers
+// break at runtime on an ambiguity error. A successful `db push` does not rule
+// this out and never could. WA-1 in the post-apply lane is the retroactive form
+// of PF-7a — it fails unless there is exactly ONE overload with that exact
+// signature. Nobody has run it. Run it.
+//
+// Every expectation below is still DERIVED from the migration source, not
+// observed: this script's database lane has never executed anywhere, on either
+// side of the apply. Its output has only ever been the no-database degradation.
 //
 // ─── HONEST DEGRADATION (the whole point of the exit codes) ─────────────────
 // A verification tool that exits 0 when it verified NOTHING is worse than no
@@ -42,7 +73,11 @@
 //
 // ─── MODES ──────────────────────────────────────────────────────────────────
 //   node scripts/verify-20260814-migrations.mjs              # post-apply verify
+//                                                            # ← the lane to run
+//                                                            #   NOW, for 0007-0022
 //   node scripts/verify-20260814-migrations.mjs --preflight  # BEFORE db push
+//                                                            #   (only 0023 is left
+//                                                            #   to push)
 //   node scripts/verify-20260814-migrations.mjs --offline    # static only
 //   node scripts/verify-20260814-migrations.mjs --json       # machine output
 //
@@ -60,7 +95,11 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const MIGRATIONS_DIR = path.join(REPO_ROOT, 'supabase', 'migrations');
 const RUNBOOK = 'docs/runbooks/2026-08-11-unapplied-migrations-20260814-apply.md';
 
-/** The exact set this gate covers, lowest first. Apply order == this order. */
+/**
+ * The exact set this gate covers, lowest first. Apply order == this order.
+ * As of 2026-08-11 every entry except the last is APPLIED TO PRODUCTION; see
+ * APPLIED_VERSIONS / PENDING_VERSIONS below, which is what the checks key off.
+ */
 const MIGRATION_SET = [
   '20260814000007_subject_catalogue_restrict_math_science.sql',
   '20260814000008_grade_subject_map_restrict_and_destream.sql',
@@ -76,6 +115,12 @@ const MIGRATION_SET = [
   // full, and folded in. If ST-4 warns again, do the same for the new file —
   // this array is the gate's coverage boundary and a file outside it is
   // unverified, not verified-clean.
+  //
+  // THE ONE STILL PENDING (2026-08-11). Held deliberately: it removes
+  // correct_answer_index from the serving RPC payloads, and the client that no
+  // longer needs it is committed but NOT deployed. Push this before the
+  // frontend ships and the live client's P6 gate rejects every question —
+  // empty quizzes in production. Order is frontend deploy, THEN this.
   '20260814000023_keyless_question_serving_and_server_side_p6.sql',
 ];
 
@@ -98,6 +143,25 @@ const MIGRATION_SET = [
  */
 const MIGRATION_VERSIONS = MIGRATION_SET.map((f) => f.slice(0, 14));
 const MIGRATION_VERSIONS_SQL = MIGRATION_VERSIONS.map((v) => `'${v}'`).join(',');
+
+/**
+ * The apply split as of 2026-08-11. PENDING is the source of truth; APPLIED is
+ * derived so the two cannot drift or overlap.
+ *
+ * PF-1 used to assert that NONE of MIGRATION_VERSIONS was recorded applied.
+ * That assertion was correct only before 2026-08-11 and is now guaranteed to
+ * fire on production for a reason that is not a defect — a blocking gate that
+ * always fails is a gate operators learn to ignore. PF-1 now asserts the thing
+ * that is still actually true and still actually dangerous (a version you are
+ * about to push already being recorded); PF-1b reports the batch state without
+ * being able to fail the run.
+ *
+ * When 0023 ships, move it out of PENDING_VERSIONS — leaving it here would make
+ * PF-1 stop protecting the next push.
+ */
+const PENDING_VERSIONS = ['20260814000023'];
+const APPLIED_VERSIONS = MIGRATION_VERSIONS.filter((v) => !PENDING_VERSIONS.includes(v));
+const APPLIED_VERSIONS_SQL = APPLIED_VERSIONS.map((v) => `'${v}'`).join(',');
 
 /**
  * The question-serving surface 20260814000023 rebuilds: FOUR distinct names but
@@ -212,16 +276,40 @@ function preview(rows, n = 5) {
 const PREFLIGHT_CHECKS = [
   {
     id: 'PF-1', migration: 'all', severity: 'blocking',
-    title: 'none of the covered migrations is already recorded applied',
+    title: 'nothing still PENDING is already recorded applied',
     // Deliberately an EXPLICIT IN-list, not a BETWEEN range. After the 2026-08-11
     // renumber this gate's set is NON-CONTIGUOUS (0007-0011 + 0018-0023): versions
     // 0012-0017 now belong to a DIFFERENT branch's migrations, so a range would
     // report those as "already applied" and abort a release for a false reason.
     // The old range also silently ended one version short of the set's own tail.
+    //
+    // The expectation is no longer `empty`: 10 of these 11 versions ARE recorded
+    // on production since 2026-08-11 and that is the desired state, not a
+    // finding. Only a PENDING version showing up here is a defect.
     sql: `SELECT version FROM supabase_migrations.schema_migrations
            WHERE version IN (${MIGRATION_VERSIONS_SQL}) ORDER BY version`,
-    expect: empty,
-    hint: 'A recorded version makes `db push` a NO-OP for it. Confirm its objects exist (post-apply lane); if not you are in the repair-skip case — stream the body via STDIN. Runbook §3.2.',
+    expect: (rows) => {
+      const recorded = rows.map((r) => r[0].trim());
+      const wrongly = PENDING_VERSIONS.filter((v) => recorded.includes(v));
+      return wrongly.length === 0
+        ? null
+        : `recorded applied but supposed to be PENDING: ${wrongly.join(', ')}`;
+    },
+    hint: 'A recorded version makes `db push` a NO-OP for it. Confirm its objects exist (post-apply lane); if not you are in the repair-skip case — stream the body via STDIN. Runbook §3.2. For 20260814000023 specifically, also confirm the repointed client is DEPLOYED — a recorded-but-unshipped 0023 means the live client is already being served keyless payloads.',
+  },
+  {
+    id: 'PF-1b', migration: 'all', severity: 'advisory',
+    title: 'how much of the 2026-08-11 production batch this database actually has',
+    sql: `SELECT version FROM supabase_migrations.schema_migrations
+           WHERE version IN (${APPLIED_VERSIONS_SQL}) ORDER BY version`,
+    expect: (rows) => {
+      const recorded = rows.map((r) => r[0].trim());
+      const absent = APPLIED_VERSIONS.filter((v) => !recorded.includes(v));
+      return absent.length === 0
+        ? `all ${APPLIED_VERSIONS.length} recorded — matches production as of 2026-08-11`
+        : `${recorded.length}/${APPLIED_VERSIONS.length} recorded; ABSENT: ${absent.join(', ')}. Normal on a fresh or staging database (db push will apply them). On PRODUCTION it means the 2026-08-11 apply did not land the way it was reported — stop and reconcile before pushing anything else.`;
+    },
+    hint: 'Recorded is not the same as present. This reads supabase_migrations.schema_migrations only; the post-apply lane is the only thing that proves the objects exist.',
   },
   {
     id: 'PF-2a', migration: '20260814000018', severity: 'advisory',
@@ -255,7 +343,7 @@ const PREFLIGHT_CHECKS = [
         ? null
         : `not content-ready: ${notReady.join(', ')}. If PF-2a says GATED, STOP and run SELECT * FROM public.compute_subject_content_readiness_v2(); then re-check. If PF-2a says not gated, this is informational only.`;
     },
-    hint: 'Written only by public.compute_subject_content_readiness_v2() (20260622000000). Nothing in the 20260814 set recomputes it.',
+    hint: 'Written only by public.compute_subject_content_readiness_v2() (20260622000000). Nothing in the 20260814 set recomputes it. (2026-08-11: this one WAS closed before the apply, out of band via PostgREST rather than through this script.)',
   },
   {
     id: 'PF-3', migration: '20260814000008', severity: 'blocking',
@@ -293,7 +381,7 @@ const PREFLIGHT_CHECKS = [
       const [total, zero, partial] = rows[0].map((v) => v.trim());
       return `RECORD THIS → teachers_total=${total} would_be_left_with_zero=${zero} would_be_partially_trimmed=${partial}`;
     },
-    hint: 'Mirrors Q1 of docs/subject-restriction-teacher-impact.sql. Post-apply check M8-4 must reproduce would_be_left_with_zero exactly; a disagreement means the catalogue changed between runs.',
+    hint: 'Mirrors Q1 of docs/subject-restriction-teacher-impact.sql. Post-apply check M8-4 must reproduce would_be_left_with_zero exactly; a disagreement means the catalogue changed between runs. (2026-08-11: closed before the apply out of band via PostgREST, not through this script — M8-4 reconciles against THAT recorded number, so retrieve it from the runbook rather than re-running this against an already-trimmed catalogue, which would now return the post-trim shape.)',
   },
   {
     id: 'PF-5', migration: '20260814000018/19', severity: 'blocking',
@@ -312,11 +400,11 @@ const PREFLIGHT_CHECKS = [
                               WHERE table_schema='public' AND table_name='quiz_session_shuffles'
                                 AND column_name = c)`,
     expect: empty,
-    hint: 'The GRANT is a LITERAL allowlist; a missing column errors and rolls the whole ACL transaction back. Apply the earlier migration that adds it first (20260504100500 / 20260801100900 / 20260802130000).',
+    hint: 'The GRANT is a LITERAL allowlist; a missing column errors and rolls the whole ACL transaction back. Apply the earlier migration that adds it first (20260504100500 / 20260801100900 / 20260802130000). NOTE (2026-08-11): this never ran before the apply — psql was not on PATH. 20260814000020 is already applied, so the post-apply ACL-1..ACL-4 checks now supersede it; run those instead of this.',
   },
   {
     id: 'PF-7a', migration: '20260814000022', severity: 'blocking',
-    title: 'exactly one submit_quiz_results_v2 overload, with the 11-arg signature',
+    title: 'exactly one submit_quiz_results_v2 overload, with the 11-arg signature (NEVER RUN pre-apply — see WA-1 for the retroactive form)',
     sql: `SELECT p.oid::regprocedure::text FROM pg_proc p
            WHERE p.pronamespace='public'::regnamespace AND p.proname='submit_quiz_results_v2'
            ORDER BY 1`,
@@ -328,7 +416,7 @@ const PREFLIGHT_CHECKS = [
       const got = rows[0][0].replace(/\s+/g, '');
       return got === want ? null : `signature mismatch — expected ${want}, got ${got}`;
     },
-    hint: 'Runbook §2 PF-7.',
+    hint: 'Runbook §2 PF-7. This was SKIPPED on 2026-08-11 (psql not on PATH) and 20260814000022 was pushed anyway, so its premise — that CREATE OR REPLACE would replace rather than ADD an overload — is assumed, not established. Post-apply, WA-1 asserts the same thing on the resulting database; that is the check that actually closes this.',
   },
   {
     id: 'PF-7b', migration: '20260814000022', severity: 'blocking',
@@ -337,7 +425,7 @@ const PREFLIGHT_CHECKS = [
            WHERE NOT EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations m
                               WHERE m.version = v)`,
     expect: empty,
-    hint: '20260801100800 is what makes start_quiz_session write an identity-shuffle/empty-snapshot row for a non-MCQ — the exact server-side marker 20260814000022 keys the written lane off.',
+    hint: '20260801100800 is what makes start_quiz_session write an identity-shuffle/empty-snapshot row for a non-MCQ — the exact server-side marker 20260814000022 keys the written lane off. NOTE (2026-08-11): also never run before the apply. If one of these three is in fact absent, 20260814000022 is applied but its written lane keys off a marker nothing writes — still worth running now.',
   },
   {
     id: 'PF-9', migration: '20260814000023', severity: 'blocking',
@@ -764,7 +852,7 @@ const VERIFY_CHECKS = [
   // ── 20260814000022 — written-answer scoring (P0) ───────────────────────────
   {
     id: 'WA-1', migration: '20260814000022', severity: 'blocking',
-    title: 'P0: submit_quiz_results_v2 carries the written lane, one overload, anon denied',
+    title: 'P0 + RETROACTIVE PF-7a (never run — run this first): submit_quiz_results_v2 has EXACTLY one overload, carries the written lane, anon denied',
     sql: `SELECT p.oid::regprocedure::text,
                  position('v_is_written' IN pg_get_functiondef(p.oid)) > 0,
                  position('v_marks_possible * 0.5' IN pg_get_functiondef(p.oid)) > 0,
@@ -787,7 +875,7 @@ const VERIFY_CHECKS = [
       if (svc !== 't') bad.push('service_role lost EXECUTE');
       return bad.length === 0 ? null : bad.join('; ');
     },
-    hint: 'Static proof only. The real acceptance is WA-2 in the runbook: submit a real MIXED quiz and a real PURE-WRITTEN quiz end to end in the browser. The pure-written case additionally needs the client half (collectSessionQuestionIds) shipped in the same release.',
+    hint: 'THE OVERLOAD COUNT IS THE URGENT PART. 20260814000022 was applied to production on 2026-08-11 WITHOUT its PF-7a preflight ever running (psql was not on PATH), and it is a CREATE OR REPLACE on an exact 11-arg signature: if the deployed signature differed, Postgres created a SECOND overload, the migration committed green, and callers now break at runtime on an ambiguity error. `db push` exit 0 does not exclude that; this check is the only thing that does. Beyond that: static proof only — the real acceptance is WA-2 in the runbook: submit a real MIXED quiz and a real PURE-WRITTEN quiz end to end in the browser. The pure-written case additionally needs the client half (collectSessionQuestionIds) shipped in the same release.',
   },
 
   // ── 20260814000023 — keyless serving + server-side P6 ──────────────────────
@@ -974,6 +1062,12 @@ Runbook: ${RUNBOOK}
   node scripts/verify-20260814-migrations.mjs --offline    static checks only (NOT a gate)
   node scripts/verify-20260814-migrations.mjs --json       machine-readable output
 
+As of 2026-08-11, ${APPLIED_VERSIONS.length} of these ${MIGRATION_VERSIONS.length} migrations are APPLIED to production
+(20260814000007-11, 20260814000018-22); only ${PENDING_VERSIONS.join(', ')} is still pending,
+held until the repointed client deploys. So POST-APPLY is the lane that matters
+for 0007-0022 and has never been run — most of all WA-1, the retroactive form of
+the PF-7a overload check that the 2026-08-11 apply skipped.
+
 Database channel: psql on PATH + DB_URL | SUPABASE_DB_URL | DATABASE_URL.
 
 Exit codes
@@ -1095,8 +1189,28 @@ function report(results, checks, lane, asJson, degradedReason) {
       (lane === 'PRE-FLIGHT' ? ' --preflight' : ''),
     );
     console.error(
-      '\nNOTE: the migrations this gate covers are UNEXECUTED and syntax-validated\n' +
-      'only. Nothing here has been applied to any database.',
+      `\nSTATE OF THE WORLD (2026-08-11) — ${APPLIED_VERSIONS.length} of the ` +
+      `${MIGRATION_VERSIONS.length} migrations this gate\n` +
+      'covers ARE APPLIED TO PRODUCTION: 20260814000007-11 earlier, and\n' +
+      '20260814000018-22 on 2026-08-11 via `supabase db push --db-url` (exit 0).\n' +
+      `Still pending, ON PURPOSE: ${PENDING_VERSIONS.join(', ')} — it strips\n` +
+      'correct_answer_index from the serving RPCs, and the client that no longer\n' +
+      'needs it is committed but NOT deployed. Pushing it first would fail the live\n' +
+      'client P6 gate and serve EMPTY QUIZZES.\n' +
+      '\nSo these checks are not hypothetical any more: the POST-APPLY lane is the\n' +
+      'right lane for 0007-0022, and it has still never been run against anything.\n' +
+      '`db push` exiting 0 is not verification.\n' +
+      '\nThe 2026-08-11 apply was NOT a clean verified apply either — its preflight\n' +
+      'DB lane never ran (psql was not on PATH), so PF-6, PF-7a and PF-7b were never\n' +
+      'checked; the push relied on each migration aborting in-transaction rather\n' +
+      'than half-applying. PF-2b and PF-4 were closed separately via PostgREST.\n' +
+      '\n>>> MOST VALUABLE UNRUN CHECK — PF-7a, retroactively WA-1 <<<\n' +
+      '20260814000022 is a CREATE OR REPLACE on an exact 11-argument signature. If\n' +
+      'the deployed signature differed, Postgres created a SECOND OVERLOAD, the\n' +
+      'migration still COMMITTED GREEN, and callers break at runtime. A successful\n' +
+      'db push cannot rule this out. Run the post-apply lane and read WA-1.\n' +
+      '\nNothing above was verified against a database on THIS run: every check\n' +
+      'marked ???? is UNKNOWN, not passing.',
     );
     console.error('='.repeat(78));
   }

@@ -41,30 +41,52 @@
 >
 > ---
 >
-> ## STATUS OF EVERY MIGRATION IN THIS RUNBOOK: **UNEXECUTED**
+> ## STATUS: **APPLIED TO PRODUCTION 2026-08-11 — 5 of 6 of the security/pricing slice**
 >
-> Nothing below has been applied or run against any database. The environment
-> this runbook was authored in has **no database, no Docker and no linked
-> Supabase project**. Every migration here is **syntax-validated only** — meaning
-> it has been read end to end and its stated post-conditions derived from its own
-> source. No `supabase db push`, no `psql`, no `db query` has been executed.
-> Every "expected result" below is *derived from the migration source*, never
-> observed — **except** where the *Verified production state (2026-08-11)*
-> section immediately below records an actual measurement. Treat the first real
-> run as the first run.
+> **This section previously read "STATUS OF EVERY MIGRATION IN THIS RUNBOOK:
+> UNEXECUTED". That is no longer true and the old text has been replaced rather
+> than annotated, because leaving it would misreport production.**
 >
-> The companion gate script `scripts/verify-20260814-migrations.mjs` has likewise
-> only been executed in its no-database degradation path.
+> On **2026-08-11**, against the production project **`shktyoxqhundlvkiwguu`**,
+> via `supabase db push --db-url`, **exit 0**:
 >
-> **Amended 2026-08-11** — read-only measurements have since been taken against
-> production and are recorded in *Verified production state (2026-08-11)*
-> immediately below. They **do not** change this status — nothing has been
-> applied **by this runbook** — but they do settle the applied/unapplied question
-> for the migrations that matter, which this section previously could not:
-> `…0020` and `…0021` are **MEASURED not applied** on production; `…0022` and
-> `…0023` are **INFERRED not applied**; and the session-scoped answer-key leak
-> `…0020` exists to close is therefore **confirmed live in production** — measured
-> behaviour, no longer an inference from migration source.
+> | Version | File | Status |
+> |---|---|---|
+> | `20260814000018` | `plan_subject_access_restrict` | ✅ **APPLIED** |
+> | `20260814000019` | `trim_teacher_subjects_taught` | ✅ **APPLIED** |
+> | `20260814000020` | `quiz_session_shuffles_answer_key_column_acl` | ✅ **APPLIED** |
+> | `20260814000021` | `quiz_session_shuffles_session_mode` | ✅ **APPLIED** |
+> | `20260814000022` | `submit_quiz_v2_written_answer_scoring` | ✅ **APPLIED** |
+> | `20260814000023` | `keyless_question_serving_and_server_side_p6` | 🔴 **STILL PENDING — deliberately held. See PF-9.** |
+>
+> **🔴 R1 — the session-scoped answer-key leak — is CLOSED.** Proven by a
+> before/after anon-key probe whose *control* flipped, not merely by the absence
+> of an error. Evidence in *Verified production state* below and in §4 `…0020`.
+> This is the discharge of REG-380's central claim.
+>
+> **`…0023` was held back on purpose and MUST NOT be applied until the frontend
+> deploys.** It strips `correct_answer_index` from the serving RPC payloads. The
+> client half is committed but **not deployed**; the live client's P6 gate
+> (`packages/lib/src/quiz/question-validation.ts`) still treats an absent index as
+> a validation failure, so applying `…0023` against today's production frontend
+> would fail P6 on **every** served question and render **empty quizzes in
+> production**. It ships in the same release as the client, or after it — never
+> before. See PF-9.
+>
+> **What is still derived-not-observed.** Everything in this runbook that was not
+> exercised by the 2026-08-11 apply remains **syntax-validated only** — read end
+> to end with its post-conditions derived from its own source. In particular
+> `…0007`-`…0011` were **already applied before this runbook existed** (see PF-1)
+> and were not re-verified by it, and the whole of `…0023` (§4 K-1..K-5, §5.10) is
+> still unexecuted.
+>
+> **The pre-flight gate did NOT fully run — see the honest accounting in §2.**
+> `psql` is not on PATH in the executing environment, so the gate's entire DB lane
+> could not run: **10 checks are UNVERIFIED, not passed.** PF-2b and PF-4 were
+> closed independently over PostgREST. **PF-6, PF-7a and PF-7b were never verified
+> at all**; the apply proceeded without them, relying on each migration's
+> in-transaction post-conditions to abort rather than half-apply. It worked, but
+> that was a risk accepted, not a risk retired.
 
 ---
 
@@ -97,21 +119,45 @@ anyway** — it is now your only rollback source for the catalogue.
 PF-2's blocking risk; the measured values and what still has to be re-checked are
 in PF-2 below.
 
-**3. The migration ledger is UNREADABLE over PostgREST. Do not retry this route.**
-`GET /rest/v1/schema_migrations` with `Accept-Profile: supabase_migrations`
-returns:
+**3. The migration ledger is unreadable over PostgREST — but it WAS read at apply
+time over a direct connection. ✅ CORRECTED 2026-08-11 (post-apply).**
+
+The PostgREST half stands: `GET /rest/v1/schema_migrations` with
+`Accept-Profile: supabase_migrations` returns
 
 ```
 PGRST106 — Invalid schema: supabase_migrations.
 Only the following schemas are exposed: public, graphql_public
 ```
 
-The `supabase_migrations` schema is not in PostgREST's exposed-schema list, so
-`schema_migrations` cannot be read with an API key of any role, and
-`supabase migration list` is unavailable without a direct DB connection string.
-**PF-1 as literally written — "query `supabase_migrations.schema_migrations`" —
-cannot be satisfied through PostgREST.** Nobody should burn time rediscovering
-this; get a connection string, or use the behavioural probe in fact 4.
+because `supabase_migrations` is not in PostgREST's exposed-schema list, for an
+API key of any role. **Do not retry that route.**
+
+**But the blanket claim "the ledger is unreadable" was too strong, and this
+paragraph previously left it standing.** With a connection string,
+`supabase migration list --db-url` reads it fine. That is what was done
+immediately before the apply, and it settles PF-1 directly rather than
+behaviourally:
+
+| Versions | Ledger state before the apply |
+|---|---|
+| `…0007` – `…0011` | **already applied** |
+| `…0012` – `…0017` | applied on **neither** branch |
+| `…0018` – `…0023` | not applied |
+
+**The `…0012`-`…0017` row is the important one: the version collision had not yet
+bitten.** Neither `main` nor `fix/ci-structural-defects` had recorded any of those
+six versions, so no file had yet been silently skipped. **The renumber was
+preventive — and is now *provably* preventive rather than merely argued.** Had it
+been done a release later, the first branch to land would have burned those
+versions and the other branch's files (including the answer-key ACL) would have
+been skipped forever with no error. Record this as the outcome: the hazard was
+real, and it was closed before it fired.
+
+*Consequence for `…0007`-`…0011`:* they were applied by some earlier route, not by
+this runbook, and **this runbook never verified them**. Fact 1's observation that
+production state matches M1's keep-set is consistent with that, but §4's M1/M2/M4/
+M5/M6 checks remain **unrun**.
 
 **4. ✅ PF-1 is RESOLVED for the migrations that matter — behaviourally, and the
 answer is: the security slice is NOT applied.** A behavioural probe replaced the
@@ -197,6 +243,71 @@ because it is a second live P0 and it is easy to read past:
 
 Production can drift between this measurement and your apply. Re-measure all four
 at apply time; treat the above as dated evidence, not as current state.
+
+---
+
+## Verified production state AFTER the apply (2026-08-11)
+
+Everything above this line is the **pre-apply** measurement. This section is what
+was measured **after** `supabase db push --db-url` returned exit 0.
+
+### R1 IS CLOSED — the anon-key probe, re-run identically before and after
+
+The probe from fact 4 was re-run **unchanged** against the same project with the
+same anon key. Running it identically on both sides is what makes it evidence
+rather than an anecdote:
+
+| Probe | Before | After |
+|---|---|---|
+| `select=question_id` (**decisive control**) | `[]` | **`42501 permission denied`** |
+| `select=correct_answer_index_snapshot` | `[]` | **`42501 permission denied`** |
+| `select=session_mode` | `42703 column does not exist` | **`42501`** (column now exists) |
+
+**Read the control first.** `question_id` is not a column `…0020` mentions
+anywhere. It flipped from `[]` to `42501` **only** because
+`REVOKE ALL ON TABLE public.quiz_session_shuffles FROM anon` (`…0020:127`)
+executed and took the table-level grant away wholesale. That is a positive proof
+that the REVOKE ran — not the absence of an error, and not something a
+row-filtered empty read could imitate. The answer-key column returning `42501` is
+then the leak itself being shut.
+
+`session_mode` moving from `42703` (column absent) to `42501` (column present,
+privilege denied) simultaneously confirms **`…0021`** landed: the error class
+changed from *schema* to *privilege*, which only happens if the column now exists
+**and** the ACL now covers it.
+
+**🔴 R1 — the session-scoped answer-key read — is CLOSED.** It was confirmed live
+in production earlier the same day; it is now confirmed shut, by measurement on
+both sides. **This is the discharge of REG-380's central claim** (see §6 for what
+that does and does not discharge — Lane B's 6 wire-level tests are still unrun).
+
+### `…0018` — verified over PostgREST
+
+- `subscription_plans.max_subjects` is **`NULL` on all four plans**
+  (`free`, `starter`, `pro`, `unlimited`) — M3-3's expectation, met.
+- `plan_subject_access` holds **exactly 5 rows per plan** — M3-1's expectation,
+  met, and non-vacuously: `plan_codes` is non-empty, so the vacuous-pass warning
+  at M3 does not apply.
+
+M3-2 (that those 5 *are* the keep-set) and M3-4 (the audit row carrying both
+rollback payloads) were **not** separately re-queried. M3-5, the customer-visible
+acceptance as a real grade-11 free-plan student, was **not** performed.
+
+### `…0019` — blast radius measured BEFORE the apply, and it was nil
+
+PF-4's diagnostic was taken ahead of the apply: **8 teachers total, every one of
+them with an empty `subjects_taught`.** Therefore **zero teachers were trimmed and
+zero were left stranded**.
+
+**PF-4 is closed with a measured value, not an assumption.** It also makes M8-4's
+reconciliation trivially satisfiable — `left_with_zero` must be `0` — and means
+there is **no support hand-off population** from this migration.
+
+### 🔴 Now-live discrepancy created by the apply — pricing copy is factually wrong
+
+`…0018` has landed, so **PF-8 did not hold**: the migration shipped *ahead* of the
+copy, which is the exact failure PF-8 exists to prevent. See PF-8 for the full
+surface list and the open action.
 
 ---
 
@@ -317,6 +428,40 @@ still broken.
 
 ## 2. Pre-flight — run every one of these BEFORE `db push`
 
+> ### ⚠️ WHAT ACTUALLY RAN ON 2026-08-11 — stated plainly
+>
+> **The gate's DB lane could not run at all: `psql` is not on PATH in the
+> executing environment.** So for the 2026-08-11 production apply:
+>
+> | Check | Status on 2026-08-11 |
+> |---|---|
+> | PF-1 ledger | ✅ **VERIFIED** — read via `supabase migration list --db-url` (see *Verified production state*, fact 3) |
+> | PF-2b keep-set readiness | ✅ **VERIFIED** — closed independently over PostgREST |
+> | PF-4 teacher blast radius | ✅ **VERIFIED** — closed independently over PostgREST: 8 teachers, all empty |
+> | PF-2a deployed-picker gate | ⚠️ **UNVERIFIED** |
+> | PF-3 stranded `(grade, board)` pairs | ⚠️ **UNVERIFIED** |
+> | PF-5 keep-set codes present | ⚠️ **UNVERIFIED** |
+> | **PF-6 ACL column existence** | 🔴 **NEVER VERIFIED** |
+> | **PF-7a `submit_quiz_results_v2` signature** | 🔴 **NEVER VERIFIED** |
+> | **PF-7b chain-dep ledger rows** | 🔴 **NEVER VERIFIED** |
+> | PF-8 pricing copy staged | 🔴 **DID NOT HOLD** — see PF-8 |
+> | PF-9 `…0023` client half deployed | 🔴 **DID NOT HOLD** — `…0023` was held back instead; see PF-9 |
+>
+> **10 checks are UNVERIFIED, not passed.** Do not read this table as a pass with
+> caveats. The apply went ahead **without** PF-6, PF-7a and PF-7b, relying instead
+> on each migration's own in-transaction post-conditions to abort rather than
+> half-apply — every file in this set is wrapped `BEGIN; … COMMIT;` and asserts
+> its own outcome before committing.
+>
+> **That reliance was a risk accepted, not a risk retired.** It happened to hold:
+> `db push` returned exit 0 and the post-apply probes agree. But PF-6 and PF-7
+> exist to catch failure modes the post-conditions cannot — PF-7a in particular
+> guards against `CREATE OR REPLACE` silently creating a *second* overload rather
+> than replacing, which this repo has been burned by twice (`20260702170000`,
+> `20260729130000`) and which an in-transaction assertion on the new body would
+> not necessarily notice. **Run PF-6 and PF-7 retroactively when a connection with
+> `psql` is available**, and run all of them before any future apply.
+
 Run against the target DB with the service role / `postgres` connection. All
 read-only.
 
@@ -379,6 +524,28 @@ failure mode has happened on this prod before; see
 > path, so `db push` will apply them. **This check stays mandatory and unskipped
 > at apply time** for `…0007`-`…0011` + `…0018`/`…0019`, and the two INFERRED rows must be
 > confirmed (PF-7 and PF-9 both distinguish the states from `pg_proc` alone).
+
+> ### ✅ PF-1 was then read DIRECTLY, 2026-08-11, immediately before the apply
+>
+> `supabase migration list --db-url` — the connection-string route this section
+> says is required — returned the ledger without difficulty. **This supersedes the
+> behavioural inference above with a direct read**, and it also settles the row
+> the behavioural probe could not reach at all (`…0007`-`…0011`):
+>
+> | Versions | Ledger state before the apply |
+> |---|---|
+> | `…0007` – `…0011` | **already applied** — by an earlier route, not by this runbook, and **not verified by it** |
+> | `…0012` – `…0017` | applied on **neither** branch |
+> | `…0018` – `…0023` | not applied — consistent with, and now stronger than, the behavioural probe |
+>
+> **`…0012`-`…0017` being applied on neither branch is the finding worth keeping.**
+> It means the version collision this whole renumber existed to prevent **had not
+> yet bitten** — no file had been silently skipped. The renumber was
+> **preventive**, and this ledger read is the proof; previously that was an
+> argument, not evidence. Nothing had to be repaired.
+>
+> There was therefore **no repair-skip case for any version in the set**, and
+> §3.1's normal path was the correct one.
 
 ### PF-2 — ✅ the `is_content_ready` question (M3's real dependency) — measured green 2026-08-11
 
@@ -500,7 +667,24 @@ says the same (`…0008:190`).
 > declared exactly once per file on purpose. An abort here is the safety net
 > doing its job.
 
-### PF-4 — the teacher blast radius (M8's precondition)
+### PF-4 — ✅ the teacher blast radius (M8's precondition) — MEASURED 2026-08-11, and it was nil
+
+> **✅ CLOSED WITH A MEASURED VALUE, taken BEFORE the apply.** `psql` was
+> unavailable, so the diagnostic below could not be run as written; the same
+> question was answered over PostgREST instead:
+>
+> - `teachers_total` = **8**
+> - **every one of the 8 has an empty `subjects_taught`**
+> - ⇒ `would_be_left_with_zero` = **0**, `would_be_partially_trimmed` = **0**
+>
+> So `…0019` trimmed **zero teachers** and stranded **zero teachers**. PF-4 is
+> closed on a measurement, not an assumption, and there is **no support hand-off
+> population** from this migration.
+>
+> A teacher with an empty `subjects_taught` cannot be *trimmed* (nothing to
+> remove) and cannot be *newly stranded* (already effectively stranded). M8-4's
+> reconciliation is therefore satisfied by `left_with_zero = 0`; anything else
+> means the population changed after this measurement.
 
 M8's audit row reports `teachers_left_with_zero`. That number is only meaningful
 if it agrees with the diagnostic taken beforehand. Run **Q1 of
@@ -545,7 +729,17 @@ A missing code fails **twice, loudly**: M3 step 3 aborts on
 M8 step 1 aborts with *"missing from active"* (`…0019:135-149`). Both are correct
 failures. Insert the missing `subjects` row; do not shrink the keep-set.
 
-### PF-6 — every column `…0020` grants must already exist
+### PF-6 — 🔴 every column `…0020` grants must already exist — **NEVER VERIFIED**
+
+> **🔴 NOT RUN on 2026-08-11.** `psql` was not on PATH and this query was never
+> executed by any other route. **`…0020` was applied without it.**
+>
+> The apply succeeded, which after the fact tells us the columns *were* all
+> present — a missing one would have errored the `GRANT` and rolled the
+> transaction back, exactly as this section describes. **That is retrospective
+> inference from a green apply, not a pre-flight check**, and it would have been
+> no comfort at all had the transaction aborted mid-release. Run this
+> retroactively when `psql` is available, and never skip it again.
 
 `…0020` grants a **literal** 10-column allowlist. If any column is absent on the
 target DB the `GRANT` errors and the whole transaction rolls back — deliberate
@@ -567,7 +761,32 @@ student_time_spent_seconds, student_answered_at`.
 `20260801100900`; the three `student_*` durability columns from `20260802130000`.
 If any is missing, that earlier migration has not landed — apply it first.
 
-### PF-7 — `…0022` prerequisites
+### PF-7 — 🔴 `…0022` prerequisites — **NEVER VERIFIED**
+
+> **🔴 NEITHER query was run on 2026-08-11.** `psql` was not on PATH. **`…0022`
+> was applied without PF-7a (the overload-signature check) or PF-7b (the
+> chain-dep ledger rows).**
+>
+> **PF-7a is the one to run retroactively, and soon.** The failure it guards is
+> *silent*: if the deployed `submit_quiz_results_v2` had a different argument-type
+> list, `CREATE OR REPLACE` creates a **second overload** instead of replacing,
+> the migration still commits green, and every caller then hits an ambiguity error
+> at runtime. A green `db push` does **not** rule this out — that is precisely why
+> the check is a pre-flight and not a post-condition. This repo has been burned by
+> exactly this twice (`20260702170000`, `20260729130000`).
+>
+> Run the first query now and confirm it returns **exactly one row**:
+>
+> ```sql
+> SELECT p.oid::regprocedure::text
+>   FROM pg_proc p
+>  WHERE p.pronamespace = 'public'::regnamespace
+>    AND p.proname = 'submit_quiz_results_v2'
+>  ORDER BY 1;
+> ```
+>
+> More than one row means the overload was created and written-answer scoring is
+> broken in production.
 
 ```sql
 -- exactly ONE overload must exist, with the 11-arg signature
@@ -596,7 +815,49 @@ what makes `start_quiz_session` write an identity-shuffle / empty-snapshot row
 for a non-MCQ, which is the exact server-side marker `…0022` keys the written
 lane off (`…0022:20-28`).
 
-### PF-8 — pricing reconciliation is staged in the same release (M3)
+### PF-8 — 🔴 pricing reconciliation is staged in the same release (M3) — **THIS GATE DID NOT HOLD**
+
+> ## 🔴 OPEN — THE PRICING COPY IS NOW FACTUALLY WRONG IN PRODUCTION
+>
+> **`…0018` was applied to production on 2026-08-11. The copy was not.** This gate
+> says the migration passes "only when the copy change is merged and staged for
+> the same deploy"; it shipped ahead of the copy instead. **This is exactly the
+> failure PF-8 exists to prevent, and it is live now.**
+>
+> **What is true in the database as of 2026-08-11:** `max_subjects` is `NULL` on
+> all four plans and every plan grants all five keep-set subjects.
+> **Free and starter now grant all five subjects with no cap.**
+>
+> **What the product still tells customers:**
+>
+> | Surface | Location | The false claim |
+> |---|---|---|
+> | Plan config (EN + HI) | `packages/lib/src/plans.ts` | `'2 subjects'` / `'2 विषय'`, `'4 subjects'` / `'4 विषय'` |
+> | Public pricing page | `packages/ui/src/landing/v3/PricingPlansV3.tsx` | second, independent hardcoded `'2 subjects'` / `'4 subjects'` |
+> | **Structured data → search results** | `packages/ui/src/JsonLd.tsx` | inherits `PLANS`; **feeds Google, so the stale claim propagates off-site** |
+>
+> **`JsonLd.tsx` is the one to weight highest.** The other two are wrong to a
+> visitor already on the page; structured data pushes the wrong offer into search
+> results, where it is cached, attributed to us, and not visible to anyone
+> checking the site. It is also the surface least likely to be remembered in a
+> copy fix.
+>
+> **Direction of the error is mitigating, not exculpating.** Customers are being
+> under-promised and over-delivered — free/starter users get *more* than the page
+> claims, so nobody is short-changed and there is no refund exposure. It remains a
+> misrepresentation of the product and a brand/legal accuracy problem, and it
+> makes the free tier look weaker than it is at the exact moment of the pricing
+> decision.
+>
+> **Action — not owned by this runbook.** Ops owns neither `packages/lib/**` nor
+> `packages/ui/**`. Hand to **frontend** (all three surfaces above) with
+> **backend** (DB-held `subscription_plans.tagline` / `price_display`, also
+> untouched by the migration), and get CEO sign-off on the new wording. Until it
+> ships, treat this as a **known live discrepancy**, not a latent risk.
+>
+> Also brief the admin: `/super-admin/subjects/plan-access` reads live from the DB
+> and self-updates, so its `max_subjects` input now shows "unlimited" for every
+> plan. That is correct, not a bug.
 
 `…0018` is a customer-facing pricing change. **Applying it makes existing pricing
 copy false the moment it commits.** The migration updates *no* copy
@@ -618,7 +879,39 @@ hand this to **frontend** (copy) with **backend** (DB-held `tagline`/
 migration ahead of the copy is a live misrepresentation of what customers are
 paying for.
 
-### PF-9 — 🔴 `…0023`'s client half is in the same deploy
+### PF-9 — 🔴 `…0023`'s client half is in the same deploy — **GATE HELD; `…0023` WAS NOT APPLIED**
+
+> ## 🔴 `20260814000023` IS STILL PENDING — DELIBERATELY HELD BACK ON 2026-08-11
+>
+> **PF-9 did not pass, so `…0023` was excluded from the apply.** The other five
+> migrations went to production; this one was physically moved out of
+> `supabase/migrations/` for the duration of the `db push` so it could not be
+> picked up, then restored afterwards. **The file is unchanged — same bytes,
+> verified by hash.** It is committed and ready; it simply must not be applied
+> yet.
+>
+> **Why it was held — the failure is total, not partial.** `…0023` strips
+> `correct_answer_index` from the serving RPC payloads. The client that consumes
+> those payloads **has been repointed and committed, but is NOT deployed to
+> production.** The live client's P6 gate
+> (`packages/lib/src/quiz/question-validation.ts`) still treats an absent
+> `correct_answer_index` as a validation failure. So against today's deployed
+> frontend, applying `…0023` would make **every served question fail P6** and
+> render **empty quizzes in production** — every student, every subject, every
+> grade, immediately. Not a degraded experience: no questions at all.
+>
+> **The rule: `…0023` ships in the same release as the client, or after it. Never
+> before.** There is no flag to hedge with and no partial rollout — the coupling
+> is in the payload shape itself.
+>
+> **This ordering constraint is the opposite of the rest of the set.** `…0018`
+> through `…0022` were safe to apply ahead of their frontend (that is *why* the
+> pricing-copy discrepancy in PF-8 is survivable). `…0023` is not. Do not
+> generalise "the DB went first and it was fine" from those five to this one.
+>
+> **Before applying it, re-run this whole section**: confirm the client half is
+> **deployed** (not merely merged), then confirm behaviourally in staging with K-5
+> (§4). The signature query below must also still return its five rows.
 
 `…0023` is the one migration in this set that **breaks the product if deployed
 alone**. Two coupled client changes must ship with it:
@@ -669,6 +962,35 @@ exactly that twice (`20260702170000`, `20260729130000`). Stop and reconcile.
 ---
 
 ## 3. Apply
+
+> ### ✅ EXECUTED 2026-08-11 — production `shktyoxqhundlvkiwguu`, exit 0
+>
+> The **normal path (§3.1)** was used, invoked as `supabase db push --db-url`
+> rather than via `supabase link`. **No repair-skip (§3.2) was needed** — PF-1's
+> direct ledger read showed no version in the set already recorded applied.
+>
+> **Applied, in version order:**
+>
+> - `20260814000018_plan_subject_access_restrict`
+> - `20260814000019_trim_teacher_subjects_taught`
+> - `20260814000020_quiz_session_shuffles_answer_key_column_acl`
+> - `20260814000021_quiz_session_shuffles_session_mode`
+> - `20260814000022_submit_quiz_v2_written_answer_scoring`
+>
+> **Not applied — held back deliberately:** `20260814000023`. It was moved out of
+> `supabase/migrations/` before the push so `db push` could not pick it up, and
+> restored unchanged afterwards. See PF-9 for why; see §4 `…0023` for what remains
+> unverified as a result.
+>
+> **No staging rehearsal was performed**, contrary to §3.1's instruction below.
+> Recorded as a deviation, not a footnote.
+>
+> **M1's rollback caveat still applies and was NOT discharged.** The
+> `SELECT code, is_active FROM public.subjects ORDER BY code` snapshot that §3.2
+> exception 2 calls "your real rollback source" is **not recorded as having been
+> taken**. `…0007`-`…0011` were already applied long before this apply, so nothing
+> in this release changed the catalogue — but if a catalogue rollback is ever
+> needed, that snapshot does not exist and will have to be reconstructed.
 
 ### 3.1 Normal path — `supabase db push`
 
@@ -951,7 +1273,23 @@ mapped only at 11-12) is a legitimate hit. Any rows returned are **grade/plan**
 violations, not catalogue violations. Triage them — with M4-1 green, the
 catalogue lane is clean by construction.
 
-### M3 — `20260814000018` (PRICING)
+### M3 — `20260814000018` (PRICING) — ✅ **APPLIED 2026-08-11; M3-1 + M3-3 verified**
+
+> **Verified over PostgREST** (the SQL below was not run — `psql` unavailable):
+> - **M3-3 ✅** — `subscription_plans.max_subjects` is `NULL` on all four plans
+>   (`free`, `starter`, `pro`, `unlimited`).
+> - **M3-1 ✅, non-vacuously** — `plan_subject_access` holds **exactly 5 rows per
+>   plan**, and `plan_codes` is non-empty, so the vacuous-pass warning below does
+>   not apply.
+>
+> **Not verified: M3-2** (that those 5 *are* the keep-set rather than 5 of
+> something else), **M3-4** (exactly one audit row carrying both rollback
+> payloads), and **M3-5** (the customer-visible check as a real grade-11 free-plan
+> student). M3-4 matters for rollback: §5.5's procedure reads its `before` payload
+> from that row, and nobody has confirmed it exists.
+>
+> 🔴 **This migration is what made the pricing copy false in production — see
+> PF-8.** The DB is correct; the product's claims about it are not.
 
 ```sql
 -- M3-1 (blocking): every plan grants exactly the 5 keep-set codes.
@@ -1002,7 +1340,18 @@ that student saw exactly one unlocked subject — `math` — because M2 removes
 `science` from 11-12 (`…0018:33-46`). If they still see only `math`, go back to
 **PF-2**: this is the `is_content_ready` failure mode.
 
-### M8 — `20260814000019`
+### M8 — `20260814000019` — ✅ **APPLIED 2026-08-11; blast radius measured nil**
+
+> **PF-4 was measured BEFORE the apply: 8 teachers total, every one with an empty
+> `subjects_taught`.** So `…0019` trimmed **zero** teachers and stranded **zero**.
+>
+> **M8-4's reconciliation therefore expects `left_with_zero = 0`** — but the audit
+> row was **not queried**, so the reconciliation is *predicted*, not *performed*.
+> M8-1, M8-2 and M8-3 were likewise not run.
+>
+> Consequences of the zero: **no support hand-off population** from this
+> migration, and `left_with_zero_live` (the number §4 says to route to support) is
+> `0`. Nothing to escalate.
 
 ```sql
 -- M8-1 (blocking): no teacher differs from their active-intersection.
@@ -1057,7 +1406,43 @@ state equal the effective state, so the stranded population becomes **countable*
 and a stale array can no longer be round-tripped back by the teacher-profile
 subject picker.
 
-### `20260814000020` — answer-key ACL 🔒
+### `20260814000020` — answer-key ACL 🔒 — ✅ **APPLIED 2026-08-11, R1 CLOSED**
+
+> **✅ VERIFIED ON THE WIRE, before and after.** The SQL probes below
+> (`has_column_privilege`) were **not** run — `psql` was unavailable. What was run
+> is the anon-key PostgREST probe from *Verified production state*, executed
+> **identically on both sides of the apply**:
+>
+> | Probe | Before | After |
+> |---|---|---|
+> | `select=question_id` (**decisive control**) | `[]` | **`42501 permission denied`** |
+> | `select=correct_answer_index_snapshot` | `[]` | **`42501 permission denied`** |
+> | `select=session_mode` | `42703 column does not exist` | **`42501`** |
+>
+> **The control is what makes this proof.** `question_id` is a column `…0020` never
+> mentions. It could only flip from `[]` to `42501` because
+> `REVOKE ALL ON TABLE public.quiz_session_shuffles FROM anon` (`…0020:127`)
+> executed and removed the table-level grant wholesale. An empty array on the
+> answer-key column alone would have been ambiguous — it is also what a
+> row-filtered read returns. The control removes that ambiguity in the affirmative
+> direction: privilege was *taken away*, observably.
+>
+> **🔴 R1 — the session-scoped answer-key read — is CLOSED**, measured on both
+> sides rather than inferred from migration source.
+>
+> **What this does NOT yet prove**, and must not be reported as proven:
+> - The **deny side for `authenticated`** (ACL-1's `auth_key_idx` / `auth_hash`).
+>   The probe used the **anon** key. `…0020` revokes from `anon` at table level but
+>   re-grants a 10-column allowlist to `authenticated` — so the authenticated deny
+>   is a *different* mechanism and is untested here. **ACL-5, with a real student
+>   JWT, is still outstanding.**
+> - The **allow side** (ACL-2 / probe 4): that the legitimate resume read still
+>   succeeds for the owner. A REVOKE that over-reaches would also produce `42501`
+>   everywhere. **Not verified — no false-positive check was performed.**
+> - That scoring still works service-side (probe 5) and that
+>   `submit_quiz_results_v2` still grades (probe 6).
+>
+> Run the SQL probes below and REG-380 Lane B (§6) to close those.
 
 **The two probes that actually prove it.**
 
@@ -1143,7 +1528,16 @@ have not yet submitted, defeating P3 and making the P1 score meaningless
 > just the caller's own session. Closing C2 needs a coordinated application
 > change. Say "the session-scoped vector and the hash oracle are closed".
 
-### `20260814000021` — `session_mode`
+### `20260814000021` — `session_mode` — ✅ **APPLIED 2026-08-11; column existence confirmed**
+
+> **Confirmed by the error class changing, not by a direct read.** The anon probe
+> `select=session_mode` returned `42703 column does not exist` before the apply
+> and **`42501 permission denied`** after. A *schema* error becoming a *privilege*
+> error is only possible if the column now exists — Postgres cannot deny privilege
+> on something absent.
+>
+> That establishes the column. **SM-1's CHECK constraint, and SM-2 onward, were
+> not verified.**
 
 ```sql
 -- SM-1 (blocking): column + CHECK exist.
@@ -1176,7 +1570,26 @@ is nullable so historical rows are not retro-labelled with a guess
 (`mode_unknown`), fail-closed, rather than assuming `cognitive` (`…0021:54-61`).
 Do not backfill it.
 
-### `20260814000022` — written-answer scoring (P0)
+### `20260814000022` — written-answer scoring (P0) — ✅ **APPLIED 2026-08-11; ⚠️ NOT VERIFIED**
+
+> **Applied (exit 0), but nothing about it was checked** — not before (PF-7 never
+> ran) and not after (WA-1/WA-2 never ran).
+>
+> **WA-1 is now the urgent one, and it is really PF-7a asked after the fact.**
+> `…0022` is a `CREATE OR REPLACE` on an exact 11-arg signature. If the deployed
+> function had a different argument-type list, the migration **created a second
+> overload and still committed green**, and every caller now hits an ambiguity
+> error — which would mean the P0 it was meant to fix (quizzes with a non-MCQ
+> question being unsubmittable) is *still broken*, in a new way. **A green
+> `db push` does not rule this out.** Run WA-1 / PF-7a as soon as `psql` is
+> available.
+>
+> **WA-2** — that a mixed quiz **and** a pure-written quiz both actually submit —
+> is the behavioural confirmation and is also outstanding. Note the client-side
+> half of the exam-mode P3 fix (`computeElapsedSeconds` in
+> `packages/lib/src/quiz/session-contract.ts`) rides the same undeployed frontend
+> release as `…0023`'s client half, so exam-mode anti-cheat remains inverted until
+> that deploys — a deploy-composition fact, not a database one.
 
 ```sql
 -- WA-1 (blocking): exactly one overload, the 11-arg one, with the written lane
@@ -1223,7 +1636,21 @@ migration.
 > restore-service fix. XP remains daily-capped in the meantime. **Do not report
 > written-answer scoring as tamper-proof.**
 
-### `20260814000023` — keyless serving + server-side P6 🔒
+### `20260814000023` — keyless serving + server-side P6 🔒 — 🔴 **NOT APPLIED; NONE OF THIS HAS RUN**
+
+> **🔴 `…0023` was held back from the 2026-08-11 apply — see PF-9.** Every check in
+> this subsection (**K-1 … K-5**) is therefore **UNEXECUTED**, and every "expect"
+> below is still derived from the migration source, never observed.
+>
+> **Do not run these against production today.** They will all fail, correctly:
+> `question_bank_p6_valid` and `check_formative_answer` do not exist there, and
+> the three serving RPCs still emit `correct_answer_index`. A failure here right
+> now is the expected state, not a defect.
+>
+> **K-5 is the one that matters most when the time comes.** It is the behavioural
+> check — MCQ quiz renders *and* submits — and it is what catches the empty-quiz
+> catastrophe PF-9 describes if the client half has not actually deployed. **Run
+> K-5 in staging before prod, without exception.**
 
 ```sql
 -- K-1 (blocking): the new P6 predicate exists, pure, and callable by both roles.
@@ -1610,10 +2037,42 @@ silently. **Target a database that has `20260814000020` applied** — that is th
 whole point; against an unmigrated DB tests 1-3 fail (correctly: the leak is
 open).
 
-> **Production is confirmed to be that unmigrated DB as of 2026-08-11** — `…0020`
-> is measured not applied (fact 4). Pointing Lane B at prod today reproduces the
-> leak and fails tests 1-3 by design; it is not a discharge run. Point it at a
-> staging or throwaway project **after** `…0020` has been applied there.
+> **⚠️ SUPERSEDED — this note is now out of date and is kept only to show the
+> sequence.** It read: *"Production is confirmed to be that unmigrated DB as of
+> 2026-08-11 — `…0020` is measured not applied (fact 4). Pointing Lane B at prod
+> today reproduces the leak and fails tests 1-3 by design."*
+>
+> **`…0020` was applied to production later the same day.** Production is no longer
+> the unmigrated DB. Tests 1-3 would now be expected to **pass** there — but
+> **do not point Lane B at production to discharge REG-380**: the fixtures create
+> and delete their own user, student, question and quiz session in
+> `beforeAll`/`afterAll`, which is not something to run against live customer data.
+> Point it at staging or a throwaway project with `…0020` applied.
+
+> ### ✅ REG-380's central claim IS discharged — by measurement, not by Lane B
+>
+> The claim REG-380 exists to pin is that the session-scoped answer-key read is
+> closed. **On 2026-08-11 that was proven on the wire in production**: an anon-key
+> probe run identically before and after the apply showed the **control column**
+> `question_id` flip from `[]` to `42501`, proving
+> `REVOKE ALL … FROM anon` executed, with
+> `correct_answer_index_snapshot` flipping the same way. See *Verified production
+> state AFTER the apply* and §4 `…0020`. **R1 is CLOSED.**
+>
+> **This does not by itself flip REG-380 from `P` to full.** The six Lane B tests
+> below are still **unrun**, and they cover things the anon probe did not:
+>
+> - the deny side for **`authenticated`** (the probe used the **anon** key — a
+>   different mechanism, since `…0020` re-grants a 10-column allowlist to
+>   `authenticated`)
+> - the **allow** side — that the legitimate owner resume read still succeeds
+>   (tests 3-4). An over-reaching REVOKE also yields `42501` everywhere, and
+>   nothing measured so far would distinguish that.
+> - that service-role scoring and `submit_quiz_results_v2` still work (5-6)
+>
+> **So: report R1 as closed — that is now a measurement. Do not yet report REG-380
+> as fully discharged.** Run Lane B against a migrated staging project and record
+> the run (project ref, date, vitest summary) in the change ticket.
 
 **These six passing IS the discharge condition for REG-380's `P` (partial)
 status.** Lane A proves the ACL in SQL; only Lane B proves it on the wire through
@@ -1656,37 +2115,59 @@ node scripts/verify-20260814-migrations.mjs
 npx vitest run apps/host/src/__tests__/security/quiz-session-shuffles-answer-key-acl.test.ts
 ```
 
-**Sign-off checklist**
+**Sign-off checklist** — state as of the 2026-08-11 production apply
 
-- [ ] PF-1 clean, or repair-skip path chosen — **resolved 2026-08-11 for the
-      security slice**: `…0020` + `…0021` MEASURED not applied, `…0022` + `…0023`
-      INFERRED not applied, `…0007`-`…0011` + `…0018`/`…0019` not determined. The ledger itself is
-      unreadable over PostgREST (`PGRST106`) — needs a DB connection string
-- [ ] PF-2 resolved — `is_content_ready` measured, not assumed (green on prod
-      2026-08-11; **re-measure at apply time**)
-- [ ] PF-3 zero stranded `(grade, board)` pairs, or seeded and re-checked
-- [ ] PF-4 `would_be_left_with_zero` recorded, with Q2 + Q3
-- [ ] PF-5 all five keep-set codes present in `public.subjects`
-- [ ] PF-6 all ten ACL columns present
-- [ ] PF-7 exactly one 11-arg `submit_quiz_results_v2`
-- [ ] PF-8 pricing copy merged and staged in the same deploy — **CEO signed off**
-- [ ] PF-9 `…0023`'s client half in the same deploy; all five serving-function
-      signatures match
-- [ ] `ST-4` clean — no `20260814*` migration newer than `…0023` has appeared
-- [ ] `ST-5` clean (**blocking**) — no `20260814*` migration exists outside this
+- [x] PF-1 clean, or repair-skip path chosen — **READ DIRECTLY** via
+      `supabase migration list --db-url`: `…0007`-`…0011` already applied,
+      `…0012`-`…0017` applied on **neither** branch (the collision never bit — the
+      renumber was provably preventive), `…0018`-`…0023` not applied. **No
+      repair-skip needed.** The ledger is unreadable over PostgREST (`PGRST106`)
+      but reads fine over a connection string
+- [x] PF-2 resolved — `is_content_ready` measured green on prod 2026-08-11
+      (PF-2b, over PostgREST). PF-2a **not** measured; informational only
+- [ ] PF-3 zero stranded `(grade, board)` pairs — ⚠️ **UNVERIFIED** (`psql` absent)
+- [x] PF-4 `would_be_left_with_zero` recorded — **MEASURED: 8 teachers total, all
+      with empty `subjects_taught` ⇒ 0 trimmed, 0 stranded.** Q2/Q3 not run (moot
+      at zero)
+- [ ] PF-5 all five keep-set codes present — ⚠️ **UNVERIFIED**
+- [ ] PF-6 all ten ACL columns present — 🔴 **NEVER VERIFIED; `…0020` applied
+      without it.** Run retroactively
+- [ ] PF-7 exactly one 11-arg `submit_quiz_results_v2` — 🔴 **NEVER VERIFIED;
+      `…0022` applied without it.** Run retroactively — a silent second overload
+      would not have shown up in a green `db push`
+- [ ] PF-8 pricing copy merged and staged in the same deploy — 🔴 **DID NOT HOLD.
+      `…0018` shipped ahead of the copy; `plans.ts`, `PricingPlansV3.tsx` and
+      `JsonLd.tsx` are FACTUALLY WRONG IN PRODUCTION NOW.** Open action on
+      frontend + backend; CEO sign-off on new wording still required
+- [ ] PF-9 `…0023`'s client half in the same deploy — 🔴 **DID NOT HOLD, so
+      `…0023` WAS HELD BACK and is still pending.** Client is committed but **not
+      deployed**; applying `…0023` first = empty quizzes in production. Serving-
+      function signature check also **not** run
+- [x] `ST-4` clean — no `20260814*` migration newer than `…0023` has appeared
+- [x] `ST-5` clean (**blocking**) — no `20260814*` migration exists outside this
       gate at *any* version, including the `…0012`-`…0017` hole the renumber
       left. A file there is another branch's, and is the collision this whole
       renumber existed to prevent
-- [ ] `subjects` snapshot taken (M1 rollback insurance, §3.2)
-- [ ] Staging rehearsal done
-- [ ] `verify-20260814-migrations.mjs` exit 0 on prod
-- [ ] M8-4 reconciles against PF-4
-- [ ] M3-5 checked as a real grade-11 free-plan student
-- [ ] ACL-5 returns 42501 with a real student JWT
-- [ ] WA-2 checked: mixed quiz **and** pure-written quiz both submit
+- [ ] `subjects` snapshot taken (M1 rollback insurance, §3.2) — ⚠️ **not recorded
+      as taken**; catalogue rollback source does not exist
+- [ ] Staging rehearsal done — 🔴 **NOT DONE.** Applied straight to production
+- [ ] `verify-20260814-migrations.mjs` exit 0 on prod — ⚠️ **not run against the
+      DB** (`--offline` structural lane only; the DB lane needs `psql`)
+- [ ] M8-4 reconciles against PF-4 — expect `left_with_zero = 0`; **not queried**
+- [ ] M3-5 checked as a real grade-11 free-plan student — **not done**
+- [ ] ACL-5 returns 42501 with a real student JWT — **not done** (the 2026-08-11
+      probe used the **anon** key, which does not exercise the `authenticated`
+      deny path)
+- [ ] WA-2 checked: mixed quiz **and** pure-written quiz both submit — **not done**
 - [ ] K-5 checked in staging: MCQ quiz renders **and** submits (this is what a
-      missing `…0023` client half breaks), payloads keyless, Quick Check works
-- [ ] REG-380 Lane B run recorded → `P` discharged
+      missing `…0023` client half breaks), payloads keyless, Quick Check works —
+      **not done; blocked until `…0023` is applied to staging**
+- [x] **R1 (session-scoped answer-key leak) CLOSED** — anon probe re-run
+      identically before/after; the `question_id` control flipped `[]` → `42501`,
+      proving `REVOKE ALL … FROM anon` executed
+- [ ] REG-380 Lane B run recorded → `P` discharged — **still unrun.** R1's central
+      claim is discharged by measurement, but the 6 wire-level tests (incl. the
+      `authenticated` deny and the allow-side false-positive check) have not run
 - [ ] Report wording checked: "the session-scoped answer-key vector is closed and
       the serving payloads are keyless; finding **C2** (the `question_bank`
       column ACL) is **unblocked but still open**" — never "the answer key is
