@@ -290,7 +290,26 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // DEFINER persist_quiz_answer_progress RPC, after which BOTH verbs move to the
 // RLS-scoped client and this entry is pruned) in
 // scripts/admin-client-allowlist.json.
-const EXPECTED_COUNT = 269;
+// 269 -> 270 (2026-08-11): src/app/api/teacher/worksheets/answer-key/route.ts.
+// Created expressly to UNBLOCK the question_bank answer-key column ACL: the
+// teacher worksheet page previously read question_bank.correct_answer_index IN
+// THE BROWSER under the caller's own role, and because students, parents and
+// teachers all authenticate as the same `authenticated` Postgres role, that one
+// call site made the column un-ACL-able for all ~12.8k questions. Service-role
+// is structurally required, not convenient — the pending ACL revokes
+// SELECT (correct_answer_index) from `authenticated` (mirroring 20260814000014
+// on quiz_session_shuffles), so an RLS-scoped client is denied the column by
+// construction. Read-only: one table, SELECT only, six columns, no write verb
+// and no RPC anywhere in the route. Gated by authorizeRequest('worksheet.create')
+// — an EXISTING permission already granted to the teacher role by
+// 20260612123200, so no new permission code — plus a second, content-side
+// tenancy gate (resolveTeacherContentScope) that restricts the read to
+// (subject, grade) pairs the caller actually teaches and fails closed on an
+// empty scope. Full justification + RATCHET-DOWN PATH (an auth.uid()-anchored
+// SECURITY DEFINER get_worksheet_answer_key RPC, after which the route moves to
+// the RLS-scoped client and this entry is pruned) in
+// scripts/admin-client-allowlist.json.
+const EXPECTED_COUNT = 270;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

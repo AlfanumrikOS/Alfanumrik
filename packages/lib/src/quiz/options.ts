@@ -134,17 +134,36 @@ export interface McqCandidate {
  * "can this be drawn as A/B/C/D?" so a short/long-answer row is never fed to
  * an option grid. The P6 contract (four DISTINCT non-empty options, non-empty
  * text, non-empty explanation) is enforced by `./question-validation`.
+ *
+ * ── KEYLESS SERVING (migration 20260814000017) ───────────────────────────────
+ * The shape branch used to ALSO require `correct_answer_index` to be a number in
+ * 0..3. That clause is removed, and its removal is a BUG FIX rather than a
+ * loosening, for two independent reasons:
+ *
+ *   1. It was never a renderability signal. Whether a question can be drawn as
+ *      A/B/C/D depends on having four options — not on which one is right. The
+ *      module's own note above already said so; the clause contradicted it.
+ *
+ *   2. No serving path supplies the value any more. Every serving RPC and every
+ *      direct `question_bank` projection stopped returning the answer key, and
+ *      the server-shuffle / resume paths stamp the fail-loud `-1` sentinel. With
+ *      the clause in place, a legacy row whose `question_type` is NULL — i.e.
+ *      exactly the row shape detection exists FOR — would have been classified
+ *      NON-MCQ and rendered in a written-answer box. The same was already true
+ *      for any `-1`-stamped resumed question whose snapshot carried a NULL
+ *      `question_type`.
+ *
+ * The rule the clause was standing in for — "correct_answer_index is present
+ * and in 0..3" — is still enforced, in two places that cannot be bypassed by a
+ * client: `public.question_bank_p6_valid` filters it out of every serving RPC,
+ * and `start_quiz_session` refuses to snapshot a row that fails it. The
+ * TypeScript gate in `./question-validation` still rejects a PRESENT-but-
+ * out-of-range index too.
  */
 export function isMcqQuestion(q: McqCandidate | null | undefined): boolean {
   if (!q) return false;
   if (q.question_type === 'mcq' || q.cbse_type === 'mcq') return true;
-  const opts = parseOptions(q.options);
-  return (
-    opts.length === 4 &&
-    typeof q.correct_answer_index === 'number' &&
-    q.correct_answer_index >= 0 &&
-    q.correct_answer_index <= 3
-  );
+  return parseOptions(q.options).length === 4;
 }
 
 /**

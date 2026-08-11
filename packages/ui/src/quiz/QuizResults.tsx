@@ -44,7 +44,16 @@ interface Question {
   question_hi: string | null;
   question_type: string;
   options: string | string[];
-  correct_answer_index: number;
+  /**
+   * KEYLESS SERVING (migration 20260814000017). No serving path returns
+   * `question_bank.correct_answer_index` any more, and the server-shuffle path
+   * stamps `-1`. Optional because "absent" is now the normal case. Every read
+   * below goes through `localCorrectIndex()`, which collapses absent and the
+   * `-1` sentinel to the same "client does not know" answer — the server's
+   * `serverReview[].correct_option_text` is the source of truth for the review
+   * screen and was already preferred everywhere.
+   */
+  correct_answer_index?: number;
   explanation: string | null;
   explanation_hi: string | null;
   hint: string | null;
@@ -57,6 +66,22 @@ interface Question {
   difficulty: number | null;
   bloom_level: string | null;
   chapter_number: number;
+}
+
+/**
+ * The client's local answer index for a question, or -1 when it does not have
+ * one.
+ *
+ * KEYLESS SERVING (migration 20260814000017) made "absent" the normal case, and
+ * the server-shuffle path has stamped the `-1` sentinel since 20260428160000.
+ * Both mean the same thing — the client must not claim to know the answer — so
+ * they collapse here into a single value that every downstream `>= 0` /
+ * `indexOf` / `===` check already treats as "no". This is a normaliser, NOT a
+ * fallback: it never invents an index.
+ */
+function localCorrectIndex(q: { correct_answer_index?: number }): number {
+  const k = q.correct_answer_index;
+  return typeof k === 'number' && k >= 0 && k <= 3 ? k : -1;
 }
 
 interface Response {
@@ -320,8 +345,9 @@ export default function QuizResults({
             // answer text. Fall back to local derivation only when the
             // server review payload is unavailable (legacy / v1 path).
             const sRow = reviewByQid.get(q.id);
+            const qKey = localCorrectIndex(q);
             const correctAnswer = sRow?.correct_option_text
-              ?? (q.correct_answer_index >= 0 ? (opts[q.correct_answer_index] || '') : '');
+              ?? (qKey >= 0 ? (opts[qKey] || '') : '');
             const explanation = isHi && q.explanation_hi ? q.explanation_hi : (q.explanation || '');
             return {
               student_id: student.id, // RLS sr_own: must be the caller's own student id
@@ -1101,9 +1127,10 @@ export default function QuizResults({
               // bug class this PR closes. In v2 mode, the question's
               // correct_answer_index is set to -1 client-side, so we MUST
               // pull from serverRow.
+              const questionKey = localCorrectIndex(question);
               const correctAnswerText = serverRow?.correct_option_text
-                ?? (question.correct_answer_index >= 0
-                  ? (origOpts[question.correct_answer_index] || '')
+                ?? (questionKey >= 0
+                  ? (origOpts[questionKey] || '')
                   : '');
               const questionText = isHi && question.question_hi ? question.question_hi : question.question_text;
               const explanation = isHi && question.explanation_hi ? question.explanation_hi : question.explanation;
@@ -1238,9 +1265,12 @@ export default function QuizResults({
                                   correctDisplayIdx = opts.findIndex(o => o === serverRow.correct_option_text);
                                   if (correctDisplayIdx < 0) correctDisplayIdx = -1;
                                 } else if (shuffleMap && origOpts.length === 4) {
-                                  correctDisplayIdx = shuffleMap.indexOf(question.correct_answer_index);
+                                  // localCorrectIndex returns -1 when the client
+                                  // has no key (keyless serving / v2 sentinel);
+                                  // indexOf(-1) is -1, i.e. "highlight nothing".
+                                  correctDisplayIdx = shuffleMap.indexOf(questionKey);
                                 } else {
-                                  correctDisplayIdx = question.correct_answer_index;
+                                  correctDisplayIdx = questionKey;
                                 }
                                 const isCorrectOpt = oi === correctDisplayIdx;
                                 const isSelected = oi === resp?.selected_option;

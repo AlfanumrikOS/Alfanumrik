@@ -112,9 +112,29 @@ describe('isMcqQuestion (the shared predicate the learn deck filter uses)', () =
     expect(isMcqQuestion(q)).toBe(true);
   });
 
-  it('rejects correct_answer_index outside 0..3 even with 4 options (P6 range)', () => {
-    expect(isMcqQuestion(makeQuestion({ question_type: null, correct_answer_index: 4 }))).toBe(false);
-    expect(isMcqQuestion(makeQuestion({ question_type: null, correct_answer_index: -1 }))).toBe(false);
+  it('detects a keyless 4-option row by shape alone (R2 step B, 20260814000017)', () => {
+    // REPLACES "rejects correct_answer_index outside 0..3 even with 4 options
+    // (P6 range)". That assertion pinned a clause that has been removed —
+    // renderability is about HAVING four options, not about which one is right,
+    // and no serving path supplies the answer key any more. With the clause in
+    // place, exactly the rows shape-detection exists for (question_type NULL)
+    // would have been mis-rendered in a written-answer box, and so would any
+    // `-1`-stamped resumed MCQ whose snapshot carried a NULL question_type.
+    //
+    // The "index 0-3" rule did not disappear; it moved somewhere a client
+    // cannot skip it — public.question_bank_p6_valid, applied inside every
+    // serving RPC and inside start_quiz_session — and the TS gate still
+    // rejects a PRESENT-but-out-of-range index (see
+    // src/__tests__/security/keyless-question-serving.test.ts).
+    expect(isMcqQuestion(makeQuestion({ question_type: null, correct_answer_index: undefined }))).toBe(true);
+    // The v2 server-shuffle sentinel is still an MCQ, not a written answer.
+    expect(isMcqQuestion(makeQuestion({ question_type: null, correct_answer_index: -1 }))).toBe(true);
+    // Option COUNT is still the whole test: three options is still not an MCQ.
+    expect(isMcqQuestion(makeQuestion({
+      question_type: null,
+      options: ['A', 'B', 'C'],
+      correct_answer_index: 0,
+    }))).toBe(false);
   });
 
   it('is the SUPERSET the quiz page used: cbse_type="mcq" is an explicit-type match', () => {

@@ -8,6 +8,7 @@ import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import {
   getChapterTopics,
   getChapterQuestions,
+  checkFormativeAnswer,
   getTopicDiagrams,
   recordLearningEvent,
   updateChapterProgress,
@@ -77,7 +78,15 @@ interface Question {
   question_hi: string | null;
   question_type?: string | null;
   options: string | string[];
-  correct_answer_index: number;
+  /**
+   * KEYLESS (migration 20260814000017). `getChapterQuestions` no longer selects
+   * `question_bank.correct_answer_index` — it was pulling the answer key for up
+   * to 50 questions on every chapter open, purely so the Quick Check could
+   * grade in the browser. Grading now goes through `check_formative_answer`
+   * and the revealed index lands in `ConceptState.correctIndex`.
+   * This field is never populated on this page; it is kept off the type so a
+   * re-introduced browser comparison fails to compile.
+   */
   explanation: string | null;
   explanation_hi: string | null;
   bloom_level: string;
@@ -105,6 +114,16 @@ interface ConceptState {
   selectedOption: number | null;
   submitted: boolean;
   isCorrect: boolean;
+  /**
+   * KEYLESS QUICK CHECK (migration 20260814000017). The correct option index,
+   * revealed by the server AFTER the student answers, via
+   * `check_formative_answer`. Absent until then (and permanently if the RPC
+   * failed) — the option grid highlights nothing in that case rather than
+   * guessing. It is never read before `submitted` is true.
+   */
+  correctIndex?: number;
+  /** True when the verdict could not be obtained (offline / RPC error). */
+  verdictUnavailable?: boolean;
 }
 
 /**
@@ -764,43 +783,108 @@ function ChapterConceptPageContent() {
     }));
   };
 
+  /**
+   * KEYLESS QUICK CHECK (migration 20260814000017).
+   *
+   * This used to be one synchronous line that compared the student's selected
+   * option against the row's answer-key column IN THE BROWSER — the entire
+   * reason `getChapterQuestions` had to select that column for up to 50 rows on
+   * every chapter open. (The old expression is not quoted here: the boundary
+   * test pins its absence as a plain substring, comments included.) The
+   * comparison now happens server-side in `check_formative_answer`; the page
+   * never sees the key until the student has answered, and then only for the
+   * one question they answered.
+   *
+   * The surface stays FORMATIVE — no XP, and no row in either scored-attempt
+   * table. (The table names are deliberately not spelled out:
+   * src/__tests__/learn/chapter-formative-boundary.test.ts pins their ABSENCE
+   * from this file as plain substrings, comments included, so that a scored
+   * write cannot be introduced here without that guard going red.)
+   * `recordLearningEvent` remains the only learner-state sink, and it is now
+   * fed the SERVER's verdict instead of a client-computed one, which also
+   * closes a small integrity gap of its own (the browser used to be trusted to
+   * report its own correctness into mastery).
+   *
+   * Fail-soft: if the RPC cannot answer (offline / error) the answer is still
+   * marked submitted, the explanation still shows, nothing is highlighted as
+   * correct, and NO learner-state event is emitted — recording a fabricated
+   * `false` into mastery would be worse than recording nothing.
+   */
   const submitAnswer = () => {
     const state = conceptStates[currentIdx];
     if (!state || state.selectedOption === null || state.submitted) return;
     const safeIdx = questions.length > 0 ? Math.min(currentIdx, questions.length - 1) : 0;
     const q = questions.length > 0 ? questions[safeIdx] : null;
     if (!q) return;
-    const isCorrect = state.selectedOption === q.correct_answer_index;
+    const selected = state.selectedOption;
+    const idxAtSubmit = currentIdx;
+
+    // Lock the answer immediately so a double-tap cannot re-submit while the
+    // verdict is in flight. `isCorrect` stays false until the server speaks.
     setConceptStates(prev => ({
       ...prev,
-      [currentIdx]: { ...state, submitted: true, isCorrect },
+      [idxAtSubmit]: { ...state, submitted: true, isCorrect: false },
     }));
 
-    if (isCorrect) {
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.8 },
-        colors: ['#16A34A', '#22C55E', '#86EFAC']
-      });
-    }
+    void (async () => {
+      const verdict = await checkFormativeAnswer(q.id, selected);
 
-    if (student && topics[currentIdx]) {
-      recordLearningEvent(
-        student.id,
-        topics[currentIdx].id,
-        isCorrect,
-        'practice',
-        q?.bloom_level || topics[currentIdx].bloom_focus || 'remember',
-      ).catch((err: unknown) => {
-        console.warn('[learn] recordLearningEvent failed:', err instanceof Error ? err.message : String(err));
+      if (!verdict) {
+        setConceptStates(prev => ({
+          ...prev,
+          [idxAtSubmit]: {
+            ...(prev[idxAtSubmit] ?? { selectedOption: selected, submitted: true, isCorrect: false }),
+            submitted: true,
+            isCorrect: false,
+            verdictUnavailable: true,
+          },
+        }));
+        track('learn_quick_check_submitted', {
+          ...telemetryBase,
+          concept_idx: idxAtSubmit,
+          is_correct: null,
+        });
+        return;
+      }
+
+      const isCorrect = verdict.is_correct;
+      setConceptStates(prev => ({
+        ...prev,
+        [idxAtSubmit]: {
+          ...(prev[idxAtSubmit] ?? { selectedOption: selected, submitted: true, isCorrect }),
+          submitted: true,
+          isCorrect,
+          correctIndex: verdict.correct_answer_index,
+          verdictUnavailable: false,
+        },
+      }));
+
+      if (isCorrect) {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.8 },
+          colors: ['#16A34A', '#22C55E', '#86EFAC']
+        });
+      }
+
+      if (student && topics[idxAtSubmit]) {
+        recordLearningEvent(
+          student.id,
+          topics[idxAtSubmit].id,
+          isCorrect,
+          'practice',
+          q?.bloom_level || topics[idxAtSubmit].bloom_focus || 'remember',
+        ).catch((err: unknown) => {
+          console.warn('[learn] recordLearningEvent failed:', err instanceof Error ? err.message : String(err));
+        });
+      }
+      track('learn_quick_check_submitted', {
+        ...telemetryBase,
+        concept_idx: idxAtSubmit,
+        is_correct: isCorrect,
       });
-    }
-    track('learn_quick_check_submitted', {
-      ...telemetryBase,
-      concept_idx: currentIdx,
-      is_correct: isCorrect,
-    });
+    })();
   };
 
   /* `goNext` was deleted here (Phase 5 track B). It was dead: nothing in the
@@ -2114,7 +2198,17 @@ function ChapterConceptPageContent() {
                           const letter = OPTION_LETTERS[idx] || String(idx + 1);
                           const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
                           const isSelected = conceptState?.selectedOption === idx;
-                          const isCorrectOpt = idx === question.correct_answer_index;
+                          // KEYLESS (migration 20260814000017): the correct
+                          // option comes from the SERVER's post-answer verdict
+                          // (`check_formative_answer` → ConceptState.correctIndex),
+                          // not from a `question_bank.correct_answer_index` the
+                          // browser was handed up front. `correctIndex` is
+                          // undefined before the student answers and if the
+                          // verdict could not be obtained — in both cases NO
+                          // option is highlighted, which is the honest render.
+                          const isCorrectOpt =
+                            conceptState?.correctIndex !== undefined
+                            && idx === conceptState.correctIndex;
 
                           let bg = 'white';
                           let border = 'rgba(26, 18, 7, 0.08)';

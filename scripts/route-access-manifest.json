@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 401,
+  "routeCount": 402,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -2765,6 +2765,14 @@
       "owner": "teacher-backend",
       "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks.",
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/teacher/worksheets/answer-key",
+      "file": "apps/host/src/app/api/teacher/worksheets/answer-key/route.ts",
+      "access": "teacher",
+      "owner": "teacher-backend",
+      "rationale": "Teacher endpoint; read-only answer key for the worksheet generator. Two gates, both server-side: authorizeRequest('worksheet.create') — an existing permission already granted to the teacher role by 20260612123200 — runs above any parsing or DB access, then resolveTeacherContentScope restricts the read to (subject, grade) pairs the caller actually teaches (teachers.subjects_taught/grades_taught UNION active class assignments via the canonical resolveTeacherRosterScope). Fails closed on both: no active teachers row or an empty scope union denies 403 with no answer key in the body. Exists to replace a browser-side question_bank.correct_answer_index read on /teacher/worksheets, unblocking the answer-key column ACL.",
+      "serviceRoleUse": "Service-role is structurally required, not RCA-01/XC-3 compatibility debt: the pending question_bank ACL revokes SELECT (correct_answer_index) from authenticated (mirroring 20260814000014 on quiz_session_shuffles), so an RLS-scoped client running as the caller's authenticated role is denied the column by construction. Bounded surface: one table, SELECT only, six columns, filtered subject + grade + is_active with a count*3 limit (count validated to [1,30]); question_bank carries no student_id/school_id/class_id so no tenant data or PII is reachable. Ratchet-down path recorded in scripts/admin-client-allowlist.json."
     },
     {
       "path": "/api/telemetry/irt-shadow",

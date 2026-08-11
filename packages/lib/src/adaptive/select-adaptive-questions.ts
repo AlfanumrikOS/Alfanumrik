@@ -245,6 +245,15 @@ function toIrtItemParams(q: any): IrtItemParams {
  * (which still runs downstream) — its only job is to avoid surfacing obviously
  * unusable rows as "weak-topic candidates". The authoritative P6 gate remains
  * validateQuestion in quiz-assembler.ts.
+ *
+ * KEYLESS (migration 20260814000017): the `correct_answer_index` 0-3 check that
+ * used to be the last clause below is GONE FROM HERE and now lives in
+ * `public.question_bank_p6_valid`, enforced inside `start_quiz_session` — the
+ * server checkpoint every candidate this provider emits must pass through
+ * before it can be rendered. It could not stay: this function runs in the
+ * BROWSER, so keeping it meant this query had to keep selecting the answer key.
+ * Nothing is unchecked as a result; the check simply moved somewhere a modified
+ * client cannot skip it.
  */
 function isUsableCandidate(q: any): boolean {
   if (!q || typeof q.id !== 'string') return false;
@@ -257,8 +266,6 @@ function isUsableCandidate(q: any): boolean {
       ? safeParseOptions(q.options)
       : [];
   if (opts.length !== 4) return false;
-  if (typeof q.correct_answer_index !== 'number' || q.correct_answer_index < 0 || q.correct_answer_index > 3)
-    return false;
   return true;
 }
 
@@ -388,7 +395,12 @@ export async function selectAdaptiveQuestions(
     let qb = client
       .from('question_bank')
       .select(
-        'id, question_text, question_hi, question_type, options, correct_answer_index, ' +
+        // KEYLESS (migration 20260814000017) — no `correct_answer_index`. This
+        // provider runs IN THE BROWSER (invoked from supabase.ts's
+        // getQuizQuestionsV2), so selecting it here was a direct client read of
+        // the answer key. See isUsableCandidate below for where the shape guard
+        // went.
+        'id, question_text, question_hi, question_type, options, ' +
           'explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number, ' +
           'concept_tag, subject, irt_a, irt_b, irt_calibration_n, irt_difficulty',
       )
@@ -421,7 +433,12 @@ export async function selectAdaptiveQuestions(
         const { data, error } = await client
           .from('question_bank')
           .select(
-            'id, question_text, question_hi, question_type, options, correct_answer_index, ' +
+            // KEYLESS (migration 20260814000017) — no `correct_answer_index`. This
+        // provider runs IN THE BROWSER (invoked from supabase.ts's
+        // getQuizQuestionsV2), so selecting it here was a direct client read of
+        // the answer key. See isUsableCandidate below for where the shape guard
+        // went.
+        'id, question_text, question_hi, question_type, options, ' +
               'explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number, ' +
               'concept_tag, subject, irt_a, irt_b, irt_calibration_n, irt_difficulty',
           )

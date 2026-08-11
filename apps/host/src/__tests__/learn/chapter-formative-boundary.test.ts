@@ -91,18 +91,35 @@ describe('the second in-page assessment loop is gone and stays gone (Phase 5 tra
     expect(source.includes('setQuizSelectedOption(')).toBe(false);
   });
 
-  it('mentions correct_answer_index in exactly 3 places — the type, and the 2 formative Quick Check reads', () => {
-    // The deleted loop carried two more browser-side correctness reads over
-    // the SAME deck: the grader (`quizSelectedOption === q.correct_answer_index`)
-    // and the answer-reveal highlight (`idx === q.correct_answer_index`). What
-    // survives is the `Question` interface field plus the Quick Check's own
-    // two (submitAnswer's grade + its option highlight). A 4th occurrence means
-    // a new client-scored surface has appeared on this page.
-    const mentions = source.match(/correct_answer_index/g) ?? [];
-    expect(mentions.length).toBe(3);
-    // Pin the two survivors so the count can't be satisfied by different reads.
-    expect(source.includes('state.selectedOption === q.correct_answer_index')).toBe(true);
-    expect(source.includes('idx === question.correct_answer_index')).toBe(true);
+  it('performs NO browser-side answer-key comparison at all', () => {
+    // ── UPDATED 2026-08-14 (R2 steps A+B, migration 20260814000017) ──────────
+    // This assertion used to read "mentions correct_answer_index in exactly 3
+    // places — the type, and the 2 formative Quick Check reads", and pinned:
+    //     state.selectedOption === q.correct_answer_index   (the grader)
+    //     idx === question.correct_answer_index             (the reveal)
+    // Both are GONE. They were the entire reason getChapterQuestions had to
+    // select question_bank.correct_answer_index — i.e. why opening a chapter
+    // pulled the answer key for up to 50 questions into the browser, where any
+    // signed-in student could read it out of the network tab.
+    //
+    // Grading now happens in the check_formative_answer RPC; the correct index
+    // comes back in the server's post-answer verdict and is held in
+    // ConceptState.correctIndex. The Question interface no longer declares the
+    // field at all, so a re-introduced comparison fails to COMPILE as well as
+    // failing here.
+    //
+    // The count pin is replaced by a behavioural one: no comparison operator
+    // may ever appear next to that column name in this file again.
+    expect(source).not.toMatch(/===\s*\w+\.correct_answer_index/);
+    expect(source).not.toMatch(/\w+\.correct_answer_index\s*===/);
+    expect(source.includes('state.selectedOption === q.correct_answer_index')).toBe(false);
+    expect(source.includes('idx === question.correct_answer_index')).toBe(false);
+
+    // The formative grader is the server RPC helper, and nothing else.
+    expect(source.includes('checkFormativeAnswer')).toBe(true);
+
+    // The Question interface must not re-declare the key.
+    expect(source).not.toMatch(/^\s*correct_answer_index\??\s*:/m);
   });
 });
 

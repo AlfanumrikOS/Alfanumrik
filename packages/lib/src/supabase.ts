@@ -268,8 +268,15 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
 
   // Direct table query fallback — fetch more to ensure enough unseen questions
   const fetchLimit = Math.min(count * 4, 120);
+  // KEYLESS (migration 20260814000017): `correct_answer_index` is deliberately
+  // absent from this projection. It used to be here so the client-side P6 gate
+  // could check "index 0-3"; that check now runs SERVER-side —
+  // `public.question_bank_p6_valid` filters the serving RPCs, and
+  // `start_quiz_session` (which every question served from this fallback passes
+  // through before it is rendered) skips any row that fails it. Do NOT re-add
+  // the column: it is the ~12.8k-row answer key and this is a browser query.
   let query = supabase.from('question_bank')
-    .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
+    .select('id, question_text, question_hi, question_type, options, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
     .eq('subject', subject)
     .eq('grade', grade)
     .eq('is_active', true)
@@ -318,7 +325,13 @@ interface QuestionRecord {
   question_hi: string | null;
   question_type: string;
   options: string | string[];
-  correct_answer_index: number;
+  /**
+   * KEYLESS SERVING (migration 20260814000017). Neither the RPC payloads nor the
+   * direct-query fallback return the answer key any more, so this is optional
+   * and is `undefined` on every live serving path. It survives in the type only
+   * because super-admin/CMS callers reuse this shape with the real row.
+   */
+  correct_answer_index?: number;
   explanation: string | null;
   explanation_hi: string | null;
   hint: string | null;
@@ -332,8 +345,15 @@ async function validateQuestions(questions: QuestionRecord[]): Promise<QuestionR
   // Dynamic import (P10): keeps the canonical gate out of the shared first-load
   // bundle; only the question-fetch path loads it, at call time. Same canonical
   // module, same defaults (allowNonMcq: false, enforceBloomLevel: false).
+  //
+  // `keylessServing: true` (migration 20260814000017): every row reaching here
+  // came from `get_quiz_questions` or from the direct-query fallback above,
+  // both of which now filter on `public.question_bank_p6_valid` server-side and
+  // return NO `correct_answer_index`. Without this flag the gate would reject
+  // 100% of MCQs on `missing_answer_index` and the quiz would be empty. Every
+  // other P6 check — including a PRESENT-but-out-of-range index — still applies.
   const { validateQuestions: validateQuestionsP6 } = await import('./quiz/question-validation');
-  return validateQuestionsP6(questions);
+  return validateQuestionsP6(questions, { keylessServing: true });
 }
 
 /**
@@ -475,6 +495,62 @@ export async function checkQuizAnswer(
     return parsed as QuizAnswerCheck;
   } catch (e) {
     console.warn('check_quiz_answer error:', e);
+    return null;
+  }
+}
+
+/**
+ * Server-side verdict for ONE formative (un-scored) question — the /learn
+ * chapter "Quick Check".
+ *
+ * WHY THIS EXISTS (migration 20260814000017): the Quick Check used to grade in
+ * the browser (`state.selectedOption === q.correct_answer_index`), which is the
+ * only reason `getChapterQuestions` had to select the answer key for up to 50
+ * questions on every chapter open. The comparison now happens in
+ * `public.check_formative_answer`, so the page never receives the key.
+ *
+ * NOT `checkQuizAnswer`: that RPC grades against a `quiz_session_shuffles` row,
+ * which only exists for a session minted by `start_quiz_session`. Minting one
+ * here would make the /today "Continue where you stopped" card suppress a
+ * genuinely resumable older quiz (`resolveResumableQuiz` reads the student's
+ * NEWEST snapshot row and refuses on an unrecognised `session_mode`). A
+ * formative surface must not be able to cancel a summative affordance.
+ *
+ * Touches NO scoring state — no XP, no quiz_sessions, no quiz_responses. The
+ * Quick Check's only learner-state sink remains `recordLearningEvent`
+ * (P1/P2/P4 untouched).
+ *
+ * Returns null on any failure so the caller can degrade to a neutral
+ * "answer recorded" state rather than blocking the page.
+ */
+export interface FormativeAnswerCheck {
+  question_id: string;
+  is_correct: boolean;
+  correct_answer_index: number;
+  explanation: string | null;
+  explanation_hi: string | null;
+}
+export async function checkFormativeAnswer(
+  questionId: string,
+  selectedIndex: number,
+): Promise<FormativeAnswerCheck | null> {
+  try {
+    const { data, error } = await supabase.rpc('check_formative_answer', {
+      p_question_id: questionId,
+      p_selected_index: selectedIndex,
+    });
+    if (error) {
+      console.warn('check_formative_answer RPC failed:', error.message);
+      return null;
+    }
+    if (!data || typeof data !== 'object') return null;
+    const parsed = (typeof data === 'string' ? JSON.parse(data) : data) as Partial<FormativeAnswerCheck>;
+    if (typeof parsed?.is_correct !== 'boolean' || typeof parsed?.correct_answer_index !== 'number') {
+      return null;
+    }
+    return parsed as FormativeAnswerCheck;
+  } catch (e) {
+    console.warn('check_formative_answer error:', e);
     return null;
   }
 }
@@ -1195,8 +1271,13 @@ export async function getChapterTopics(
  * /learn/[subject]/[chapter] — an assertion about the question bank, false when
  * the read failed. P1/P6: the select list, filters and shuffle are unchanged. */
 export async function getChapterQuestions(subject: string, grade: string, chapterNumber: number, count = 20, difficulty?: number | null): Promise<ServiceResult<any[]>> {
+  // KEYLESS (migration 20260814000017): `correct_answer_index` removed. This
+  // query fed the /learn chapter "Quick Check", which compared the student's tap
+  // against the key IN THE BROWSER — so it was pulling the answer key for up to
+  // 50 questions on every chapter open. Grading now goes through the
+  // `check_formative_answer` RPC (see `checkFormativeAnswer` below).
   let query = supabase.from('question_bank')
-    .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
+    .select('id, question_text, question_hi, question_type, options, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
     .eq('subject', subject)
     .eq('grade', grade)
     .eq('is_active', true)
@@ -1694,9 +1775,14 @@ export async function getQuestionHistoryStats(
   try {
     const studentId = await resolveStudentId();
 
-    // Total questions available
+    // Total questions available.
+    // `select('id', ...)` NOT `select('*')`: this is a head-only COUNT, so the
+    // projection is never materialised — but `*` names every column, including
+    // `correct_answer_index`, and PostgreSQL requires SELECT privilege on every
+    // column a query names. Under the question_bank answer-key column ACL a
+    // `*` count would 403 outright (migration 20260814000017 companion).
     let totalQuery = supabase.from('question_bank')
-      .select('*', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true })
       .eq('subject', subject)
       .eq('grade', grade)
       .eq('is_active', true);

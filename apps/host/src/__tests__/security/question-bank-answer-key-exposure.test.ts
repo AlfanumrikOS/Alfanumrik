@@ -260,29 +260,41 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
     const findings = scanCallerRoleReads();
 
     it('is exactly the known blocker inventory — no more, no fewer', () => {
-      // Frozen 2026-08-11. Every entry must be repointed to a server route or a
-      // keyless RPC before the column ACL can be applied.
+      // EMPTY as of 2026-08-14 (migration 20260814000017 + its companion client
+      // change). The inventory is now a REGRESSION GUARD rather than a backlog:
+      // any file appearing here is a NEW caller-role read of a withheld column,
+      // i.e. R2 re-opening.
       //
-      // A NEW entry  => R2 just got wider; do not merge without a plan.
-      // A GONE entry => a blocker was cleared; shrink this list in the same PR
-      //                 and update the ship set in the drafted migration.
-      const expected = [
-        // FALLBACK 3 of the live quiz ladder (getQuizQuestionsV2 -> :1608)
-        'packages/lib/src/supabase.ts',
-        // /learn chapter quiz + the browser-invoked adaptive provider (:1432)
-        'packages/lib/src/adaptive/select-adaptive-questions.ts',
-        // /pyq -> /quiz handoff, PYQ_COLUMNS (:83-85)
-        'packages/lib/src/quiz-assembler.ts',
-        // domain-layer quiz fetch
-        'packages/lib/src/domains/quiz.ts',
-        // qid deep link + SRS review, QB_COLUMNS (:262-265)
-        'apps/host/src/app/(student)/quiz/page.tsx',
-        // teacher worksheet + printable answer key — a LEGITIMATE caller-role
-        // need for the key. RLS/ACL cannot tell a teacher from a student (both
-        // are the `authenticated` DB role), so this must move behind
-        // authorizeRequest() on the server before the ACL can land.
-        'apps/host/src/app/teacher/worksheets/page.tsx',
-      ].sort();
+      // Where each former blocker went — all seven cleared, none deferred:
+      //
+      //  packages/lib/src/supabase.ts
+      //    getQuizQuestions' direct-query FALLBACK 3 and getChapterQuestions
+      //    both dropped `correct_answer_index` from their projections; the
+      //    `select('*', { count })` in getQuestionHistoryStats became
+      //    `select('id', { count })` (a `*` count still NAMES every column and
+      //    so needs SELECT on all of them).
+      //  packages/lib/src/adaptive/select-adaptive-questions.ts
+      //    both question_bank projections dropped it; isUsableCandidate's
+      //    "index 0-3" clause moved into start_quiz_session's server-side gate.
+      //  packages/lib/src/quiz-assembler.ts       PYQ_COLUMNS dropped it.
+      //  packages/lib/src/domains/quiz.ts         direct-query fallback dropped it.
+      //  apps/host/src/app/(student)/quiz/page.tsx
+      //    QB_COLUMNS (qid deep link + SRS review) dropped it; isValidQuestion
+      //    lost its "index 0-3" clause to the same server-side gate.
+      //  apps/host/src/app/(student)/learn/[subject]/[chapter]/page.tsx
+      //    the Quick Check stopped grading in the browser; it calls the new
+      //    check_formative_answer RPC.
+      //  apps/host/src/app/teacher/worksheets/page.tsx
+      //    CLEARED 2026-08-11 (R2 step C) — the one LEGITIMATE caller-role need
+      //    for the key on this list. RLS/ACL cannot tell a teacher from a
+      //    student (both are the `authenticated` DB role), so it moved behind
+      //    GET /api/teacher/worksheets/answer-key, gated by
+      //    authorizeRequest(request, 'worksheet.create') plus a server-side
+      //    (subject, grade) content-scope check. Pinned by
+      //    src/__tests__/api/teacher/worksheet-answer-key-authz.test.ts.
+      //
+      // A NEW entry => R2 just got wider; do not merge without a plan.
+      const expected: string[] = [];
 
       expect([...new Set(findings.map(f => f.file))].sort()).toEqual(expected);
     });
@@ -305,7 +317,11 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
       // SELECT on EVERY column — so these fail regardless of which columns are
       // withheld. They are the hardest blockers, not the softest.
       const stars = findings.filter(f => f.isStar).map(f => f.file).sort();
-      expect(stars).toEqual(['packages/lib/src/supabase.ts']); // getQuestionAvailability:1698
+      // Cleared 2026-08-14: the last one was getQuestionHistoryStats' head-only
+      // COUNT in packages/lib/src/supabase.ts, now `select('id', { count })`.
+      // "head: true" does not help — PostgreSQL checks column privilege on
+      // every column a query NAMES, materialised or not.
+      expect(stars).toEqual([]);
     });
 
     it('the installed mobile base still reads question_bank directly (forced upgrade required)', () => {
@@ -343,11 +359,14 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
     const RPCS: Record<string, string> = {
       // fn name -> migration that last (re)defines it
       submit_quiz_results_v2: '20260814000016_submit_quiz_v2_written_answer_scoring.sql',
-      start_quiz_session: '20260801100900_fix_start_quiz_session_digest_schema_qualify.sql',
+      // Repointed 2026-08-14: 20260814000017 is now the LAST definition of
+      // start_quiz_session and of all three serving RPCs.
+      start_quiz_session: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
       check_quiz_answer: '20260802130000_check_quiz_answer_rpc.sql',
-      select_quiz_questions_rag: '20260802100000_select_quiz_questions_rag_verification_gate.sql',
-      select_quiz_questions_v2: '20260625000200_fix_pool_reset_min_pool_guard.sql',
-      get_quiz_questions: '20260505155525_fix_get_quiz_questions_verified_filter.sql',
+      select_quiz_questions_rag: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
+      select_quiz_questions_v2: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
+      get_quiz_questions: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
+      check_formative_answer: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
       get_adaptive_questions: '20260702200000_fix_get_adaptive_questions_srs_due_predicate.sql',
     };
 
@@ -364,17 +383,74 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
       },
     );
 
-    it('the serving RPCs still return the key, so the ACL alone is not full closure', () => {
-      // Honest residual: even after the column ACL lands, a signed-in student
-      // can call select_quiz_questions_rag / _v2 for their own grade+subject and
-      // harvest keys. Full R2 closure needs the key stripped from these payloads
-      // and per-answer feedback routed through check_quiz_answer.
-      for (const m of [
-        '20260802100000_select_quiz_questions_rag_verification_gate.sql',
-        '20260625000200_fix_pool_reset_min_pool_guard.sql',
-      ]) {
-        expect(readFileSync(resolve(MIGRATIONS, m), 'utf8')).toContain('correct_answer_index');
+    it('the serving RPCs no longer return the key (the residual this file used to record)', () => {
+      // INVERTED 2026-08-14. This assertion previously read "the serving RPCs
+      // STILL return the key, so the ACL alone is not full closure" — because
+      // they did, and a SECURITY DEFINER function is invisible to a caller-role
+      // column ACL, so shipping the ACL alone would have left the bulk harvest
+      // wide open. Migration 20260814000017 removed the member from all three
+      // payloads (both get_quiz_questions overloads included), which is what
+      // makes the ACL worth shipping.
+      const sql = readFileSync(
+        resolve(MIGRATIONS, '20260814000017_keyless_question_serving_and_server_side_p6.sql'),
+        'utf8',
+      );
+
+      // Isolate the body of each SERVING function by name, so migration PROSE
+      // about the key — and check_formative_answer, which legitimately reveals
+      // ONE question's key after the student has answered — are not mistaken
+      // for a serving payload.
+      //
+      // The regex mirrors the migration's own section-7a post-condition, which
+      // greps pg_proc.prosrc for the same quoted literal: comments count, which
+      // is why the migration deliberately avoids quoting the member name inside
+      // a function body.
+      const bodyOf = (needle: string): string => {
+        const at = sql.indexOf(needle);
+        expect(at, `${needle} not found in the keyless-serving migration`).toBeGreaterThan(-1);
+        const m = /\$function\$([\s\S]*?)\$function\$/.exec(sql.slice(at));
+        expect(m, `no body found for ${needle}`).not.toBeNull();
+        return m![1];
+      };
+
+      const serving = [
+        'FUNCTION public.select_quiz_questions_rag(',
+        'FUNCTION public.select_quiz_questions_v2(',
+        // both get_quiz_questions overloads
+        'FUNCTION public.get_quiz_questions(\n  p_subject       text',
+        'FUNCTION public.get_quiz_questions(\n  p_subject    text',
+      ];
+      for (const needle of serving) {
+        // The quoted form is the jsonb_build_object key. The bare identifier
+        // legitimately survives as an ARGUMENT to question_bank_p6_valid, which
+        // is the whole point of the change.
+        expect(bodyOf(needle), `${needle} still emits the key`).not.toMatch(/'correct_answer_index'/);
       }
+    });
+
+    it('every serving RPC enforces P6 server-side, so the keyless payload is safe', () => {
+      // A keyless payload WITHOUT this would be strictly worse than the leak: the
+      // browser could no longer run the "correct_answer_index 0-3" half of P6 and
+      // nothing else would. The check moved, it did not disappear.
+      const sql = readFileSync(
+        resolve(MIGRATIONS, '20260814000017_keyless_question_serving_and_server_side_p6.sql'),
+        'utf8',
+      );
+      const uncom = uncommented(sql);
+      for (const fn of [
+        'select_quiz_questions_rag',
+        'select_quiz_questions_v2',
+        'get_quiz_questions',
+        'start_quiz_session',
+      ]) {
+        const start = uncom.indexOf(fn);
+        expect(start, `${fn} missing from 20260814000017`).toBeGreaterThan(-1);
+      }
+      // Count the call sites rather than merely asserting presence: rag/v2 apply
+      // it to four predicate blocks each, get_quiz_questions to one per overload,
+      // start_quiz_session once.
+      const calls = [...uncom.matchAll(/question_bank_p6_valid\(/g)].length;
+      expect(calls).toBeGreaterThanOrEqual(12);
     });
   });
 });

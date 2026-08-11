@@ -93,6 +93,9 @@ interface QueryLog {
   table: string;
   filters: Record<string, unknown>;
   inFilter?: { col: string; vals: unknown[] };
+  /** The literal column list handed to `.select(...)`, recorded so the
+   *  keyless-projection assertion (R2 step B) can inspect it. */
+  select?: string;
 }
 
 function makeFakeClient(cfg: FakeConfig): { client: AdaptiveClient; log: QueryLog[] } {
@@ -107,7 +110,8 @@ function makeFakeClient(cfg: FakeConfig): { client: AdaptiveClient; log: QueryLo
       log.push(entry);
 
       const builder: AdaptiveQueryBuilder = {
-        select() {
+        select(cols: string) {
+          entry.select = cols;
           return builder;
         },
         eq(col: string, val: unknown) {
@@ -656,7 +660,25 @@ describe('selectAdaptiveQuestions — assertion 7 (P6/P5/subject integrity)', ()
     expect(res.questions.some((q: any) => q.id === 'good-one')).toBe(true);
   });
 
-  it('rejects rows with wrong option count or out-of-range correct index', async () => {
+  it('rejects rows with the wrong option count (the shape check it can still make)', async () => {
+    // ── UPDATED 2026-08-14 (R2 steps A+B, migration 20260814000017) ──────────
+    // This used to be "rejects rows with wrong option count OR out-of-range
+    // correct index". The index half is GONE from this module, deliberately:
+    // selectAdaptiveQuestions runs IN THE BROWSER (it is invoked from
+    // getQuizQuestionsV2 in packages/lib/src/supabase.ts), so keeping that
+    // check meant its two question_bank projections had to keep selecting
+    // question_bank.correct_answer_index — i.e. this provider was a live
+    // browser read of the answer key.
+    //
+    // The rule did not disappear. `public.question_bank_p6_valid` enforces
+    // "correct_answer_index IS NOT NULL AND BETWEEN 0 AND 3" inside
+    // start_quiz_session, which EVERY candidate this provider emits must pass
+    // through before it can be rendered — a place a modified client cannot
+    // skip. That relocation is pinned by
+    // src/__tests__/security/keyless-question-serving.test.ts.
+    //
+    // What this module still owns is the shape question it can answer without
+    // the key: can this be drawn as A/B/C/D at all?
     const { client } = makeFakeClient({
       subject: { data: { id: 'subj-uuid-1' }, error: null },
       mastery: { data: [masteryRow(0.6)], error: null },
@@ -666,7 +688,6 @@ describe('selectAdaptiveQuestions — assertion 7 (P6/P5/subject integrity)', ()
         return {
           data: [
             makeQuestion({ id: 'three-opts', bloom_level: bloom, options: ['A', 'B', 'C'] }),
-            makeQuestion({ id: 'bad-index', bloom_level: bloom, correct_answer_index: 7 }),
             makeQuestion({ id: 'ok', bloom_level: bloom }),
           ],
           error: null,
@@ -676,8 +697,28 @@ describe('selectAdaptiveQuestions — assertion 7 (P6/P5/subject integrity)', ()
     const res = await selectAdaptiveQuestions(client, BASE_PARAMS);
     const ids = res.questions.map((q: any) => q.id);
     expect(ids).not.toContain('three-opts');
-    expect(ids).not.toContain('bad-index');
     expect(ids).toContain('ok');
+  });
+
+  it('never asks question_bank for the answer key (R2 step B)', async () => {
+    // The reason the index check above had to move. Both projections in this
+    // module — the primary weak-topic pull and the concept_tag-relaxed
+    // fallback — must be keyless.
+    const { client, log } = makeFakeClient({
+      subject: { data: { id: 'subj-uuid-1' }, error: null },
+      mastery: { data: [masteryRow(0.6)], error: null },
+      questionBank: () => ({ data: [], error: null }),
+    });
+    await selectAdaptiveQuestions(client, BASE_PARAMS);
+    const seenSelects = log
+      .filter(e => e.table === 'question_bank')
+      .map(e => e.select ?? '*');
+    expect(seenSelects.length).toBeGreaterThan(0);
+    for (const sel of seenSelects) {
+      expect(sel).not.toContain('correct_answer_index');
+      expect(sel).not.toContain('correct_answer_text');
+      expect(sel).not.toBe('*');
+    }
   });
 
   it('passes grade through verbatim as a STRING (P5) — never coerced to int', async () => {

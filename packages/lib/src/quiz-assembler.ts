@@ -80,8 +80,14 @@ export interface AssembleQuizResult {
 /** `question_bank` columns the PYQ preferred-fetch needs — same projection the
  *  direct-query fallback inside `getQuizQuestionsV2` uses, so rows from either
  *  path are shape-identical downstream. */
+// KEYLESS (migration 20260814000017): `correct_answer_index` is deliberately
+// absent. It was here only so the P6 gate below could check "index 0-3"; that
+// check now runs SERVER-side (`public.question_bank_p6_valid` filters the
+// serving RPCs and `start_quiz_session` skips any row that fails it, and every
+// PYQ row reaches the student through `start_quiz_session`). Re-adding it would
+// re-open a browser read of the ~12.8k-row answer key.
 const PYQ_COLUMNS =
-  'id, question_text, question_hi, question_type, options, correct_answer_index, ' +
+  'id, question_text, question_hi, question_type, options, ' +
   'explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number, tags';
 
 // ── Question Validation (P6) ───────────────────────────────────
@@ -105,8 +111,18 @@ const PYQ_COLUMNS =
 // Re-exported so existing importers of `validateQuestion` from this module keep
 // resolving; new code should import from the canonical module directly.
 
+//
+// `keylessServing: true` (migration 20260814000017): this is THE live serving
+// path, and no source it draws from returns `correct_answer_index` any more —
+// the quiz-generator Edge Function, `select_quiz_questions_rag`,
+// `select_quiz_questions_v2`, the v1 direct-query fallback and RUNG 0P above
+// all withhold it, because the "index 0-3" half of P6 moved into
+// `public.question_bank_p6_valid` server-side. Without this flag every MCQ is
+// rejected on `missing_answer_index` and `assembleQuiz` returns zero questions.
+// Every other P6 check is unchanged, and a PRESENT-but-invalid index is still
+// rejected.
 export function validateQuestion(q: any): { valid: boolean; reason?: string } {
-  return validateQuestionP6(q, { allowNonMcq: true });
+  return validateQuestionP6(q, { allowNonMcq: true, keylessServing: true });
 }
 
 // ── Deduplication ──────────────────────────────────────────────
