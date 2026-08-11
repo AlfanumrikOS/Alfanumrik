@@ -24,6 +24,55 @@
 >
 > The companion gate script `scripts/verify-20260814-migrations.mjs` has likewise
 > only been executed in its no-database degradation path.
+>
+> **Amended 2026-08-11** — three read-only measurements have since been taken
+> against production and are recorded in *Verified production state (2026-08-11)*
+> immediately below. They **do not** change this status: nothing has been applied
+> **by this runbook**, and the applied-migration list could not be read.
+
+---
+
+## Verified production state (2026-08-11)
+
+Three facts were measured **read-only** against the production project on
+2026-08-11. Nothing was written and no migration was applied. Two of them change
+what you should expect at apply time; the third is what you must **not** conclude.
+
+**1. The catalogue restriction is already the live state.**
+`GET /rest/v1/subjects?select=code,is_active,is_content_ready` returns
+`is_active = true` for exactly five codes — `math`, `science`, `physics`,
+`chemistry`, `biology` — and `false` for the other 18 (`accountancy`,
+`business_studies`, `coding`, `computer_science`, `economics`, `english`,
+`fine_arts`, `geography`, `health_fitness`, `hindi`, `history_sr`,
+`home_science`, `informatics_practices`, `political_science`, `psychology`,
+`sanskrit`, `social_studies`, `sociology`). That is exactly the keep-set M1
+(`20260814000007`) targets, so **either M1 or an equivalent out-of-band change
+has already been applied.**
+
+*Consequence*: on this database M1 is an **idempotent no-op, not a conflict** —
+its `WHERE is_active IS DISTINCT FROM …` guards are precisely what makes
+re-applying it change nothing. It will therefore also write **no audit row**
+(§3.2 exception 2), which means M1's declared rollback source will be absent.
+**Take the `SELECT code, is_active FROM public.subjects ORDER BY code` snapshot
+anyway** — it is now your only rollback source for the catalogue.
+
+**2. `is_content_ready = true` for all five keep-set subjects.** This retires
+PF-2's blocking risk; the measured values and what still has to be re-checked are
+in PF-2 below.
+
+**3. 🔴 The applied-migration list could NOT be read — the query was blocked.**
+`supabase_migrations.schema_migrations` was not readable, so **PF-1 is still
+unanswered** and the applied/unapplied status of `…0014` (the answer-key ACL),
+`…0015`, `…0016` and `…0017` **remains unknown**.
+
+> **Do not infer from fact 1 that the security migrations are applied.** Fact 1 is
+> evidence about the `subjects` table and nothing else. It says nothing about the
+> `quiz_session_shuffles` column ACL, `session_mode`, the written-answer scoring
+> P0, or keyless serving. Every pre-flight and post-apply check in this runbook
+> still has to be run, and REG-380 stays `P` (§6).
+
+Production can drift between this measurement and your apply. Re-measure all
+three at apply time; treat the above as dated evidence, not as current state.
 
 ---
 
@@ -164,7 +213,13 @@ in the **repair-skip** case and must stream the body via STDIN (§3.2). This
 failure mode has happened on this prod before; see
 `docs/runbooks/school-admin-portal-db-apply.md` §A.2.
 
-### PF-2 — 🔴 the `is_content_ready` question (M3's real dependency)
+> **PF-1 is UNANSWERED as of 2026-08-11.** The 2026-08-11 read-only measurement
+> could not read `supabase_migrations.schema_migrations` — the query was blocked.
+> Nothing is known about which versions in this range are recorded applied. This
+> check is mandatory and unskipped. (See *Verified production state (2026-08-11)*,
+> fact 3.)
+
+### PF-2 — ✅ the `is_content_ready` question (M3's real dependency) — measured green 2026-08-11
 
 `subjects.is_content_ready` is **COMPUTED, never seeded**. It is written only by
 `public.compute_subject_content_readiness_v2()`
@@ -210,13 +265,30 @@ SELECT code, is_active, is_content_ready
  ORDER BY code;
 ```
 
-**Expected / decision table**:
+**Measured on production, read-only, 2026-08-11 — the blocking risk is RETIRED.**
+PF-2b returned `is_content_ready = true` for **all five** keep-set codes
+(`math`, `science`, `physics`, `chemistry`, `biology`), all five also
+`is_active = true`. So the STOP case below — M3 granting physics/chemistry/
+biology while grade 11-12 free/starter students still see only `math` — **cannot
+be reached at these values**, and it no longer matters whether the deployed
+picker gates on `is_content_ready`: with all five ready, both branches of PF-2a
+proceed. PF-2a itself was **not** measured and is now informational rather than
+blocking.
 
-| PF-2a `gates_on_content_ready` | PF-2b physics/chemistry/biology | Action |
-|---|---|---|
-| both `false` | anything | The gate is not live. M3's grants are visible on `is_active` alone. Proceed. |
-| either `true` | all `true` | Gated, but ready. Proceed. |
-| either `true` | any `false` | **STOP.** M3 will grant physics/chemistry/biology and grade 11-12 free/starter students will still see only `math`. Run `SELECT * FROM public.compute_subject_content_readiness_v2();` (service role), re-run PF-2b, and only proceed once all five read `true`. If a subject *cannot* be made ready (no `cbse_syllabus`/`question_bank` content), that is a **content** blocker, not a migration blocker — escalate; do not ship M3 into it. |
+> Also measured, and consistent: `computer_science`, `english`, `hindi`,
+> `informatics_practices`, `sanskrit` and `social_studies` are content-ready but
+> **inactive**. Readiness is computed per subject and is independent of the
+> catalogue flip, so ready-but-inactive is the expected shape, not an anomaly.
+
+**Still run both probes immediately before applying — production can drift
+between the measurement above and your deploy.** The re-run is a pass when all
+five keep-set codes read `is_content_ready = true` (any PF-2a result). If a
+keep-set code has since flipped to `false` **and** PF-2a shows either picker
+gating on `is_content_ready`, the original blocker is back: **STOP**, run
+`SELECT * FROM public.compute_subject_content_readiness_v2();` (service role),
+re-run PF-2b, and only proceed once all five read `true`. If a subject *cannot*
+be made ready (no `cbse_syllabus` / `question_bank` content), that is a
+**content** blocker, not a migration blocker — escalate; do not ship M3 into it.
 
 > Note `compute_subject_content_readiness_v2()` loops only over
 > `subjects WHERE is_active`, so running it **after** M1 covers exactly the
@@ -1412,8 +1484,10 @@ npx vitest run apps/host/src/__tests__/security/quiz-session-shuffles-answer-key
 
 **Sign-off checklist**
 
-- [ ] PF-1 clean, or repair-skip path chosen
-- [ ] PF-2 resolved — `is_content_ready` measured, not assumed
+- [ ] PF-1 clean, or repair-skip path chosen — **still unanswered**; the
+      2026-08-11 read of `schema_migrations` was blocked
+- [ ] PF-2 resolved — `is_content_ready` measured, not assumed (green on prod
+      2026-08-11; **re-measure at apply time**)
 - [ ] PF-3 zero stranded `(grade, board)` pairs, or seeded and re-checked
 - [ ] PF-4 `would_be_left_with_zero` recorded, with Q2 + Q3
 - [ ] PF-5 all five keep-set codes present in `public.subjects`
