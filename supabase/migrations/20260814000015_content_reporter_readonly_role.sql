@@ -175,13 +175,92 @@
 -- This migration itself creates NO function and uses NO SECURITY DEFINER.
 --
 -- ============================================================================
--- 5. IDEMPOTENCY / SAFETY
+-- 5. WHAT SUPABASE'S `postgres` ROLE MAY ACTUALLY DO  (added 2026-08-11 after
+--    this migration FAILED on staging — read this before editing anything below)
+-- ============================================================================
+-- FIRST REAL-SERVER CONTACT, 2026-08-11 staging push:
+--
+--   ERROR: permission denied to alter role (SQLSTATE 42501)
+--   Only roles with the SUPERUSER attribute may alter roles with the SUPERUSER
+--   attribute.
+--   At statement: 2   -- i.e. the ALTER ROLE that used to live at line ~217
+--
+-- Migrations run as Supabase's `postgres`, which has CREATEROLE but is **NOT a
+-- superuser**. The distinction that bit us is between CREATE ROLE and ALTER ROLE:
+--
+--   CREATE ROLE — the superuser gate fires only when an attribute is being
+--     TURNED ON. Passing NOSUPERUSER / NOREPLICATION / NOBYPASSRLS is free,
+--     because they are already the defaults for a new role. Statement 1 (the
+--     guarded CREATE ROLE below) therefore SUCCEEDED on staging.
+--
+--   ALTER ROLE — the gate fires on the mere PRESENCE of the option, in either
+--     polarity. `NOSUPERUSER`, `NOREPLICATION` and `NOBYPASSRLS` each require
+--     superuser to *write*, even when writing the value the role already has.
+--
+--   ⚠ NOTE THE ERRDETAIL. It names SUPERUSER, not BYPASSRLS — the SUPERUSER
+--     check is evaluated first, so `NOSUPERUSER` alone was already fatal.
+--     Deleting only `NOBYPASSRLS` would have bought a SECOND failed push.
+--
+-- Permitted for this non-superuser (each justified where used):
+--   * CREATE ROLE with all-negative attributes                  — proven on staging
+--   * ALTER ROLE ... NOLOGIN/NOINHERIT/NOCREATEDB/NOCREATEROLE   — CREATEROLE + admin
+--       option on a role it created; attempted best-effort, never fatal
+--   * ALTER ROLE ... SET <PGC_USERSET guc>                       — precedent:
+--       _legacy/timestamped/20260325130000_add_statement_timeout.sql ran
+--       `ALTER ROLE authenticator/anon/authenticated SET statement_timeout`
+--       unguarded against production. Superuser-only (PGC_SUSET) GUCs would be
+--       refused; all three set below are PGC_USERSET. Still wrapped, because a
+--       connection-hygiene nicety must never abort a migration batch.
+--   * GRANT <role> TO authenticator                              — needs ADMIN
+--       OPTION on the GRANTED role only, which the creator holds. Nothing is
+--       required on the grantee. This is Supabase's documented PostgREST
+--       custom-role pattern. Load-bearing -> stays fatal, with remediation text.
+--   * GRANT USAGE ON SCHEMA public                               — precedent:
+--       _legacy/005_welcome_email_triggers.sql line 195. Wrapped anyway: PUBLIC
+--       already carries USAGE on `public`, so failure here is not load-bearing.
+--   * GRANT SELECT (cols) / ALTER TABLE ... ENABLE RLS / CREATE POLICY on the
+--       two target tables                                        — table owner.
+--   * COMMENT ON ROLE                                            — shared catalog,
+--       CREATEROLE-gated. Already wrapped; handler widened to WHEN OTHERS.
+--
+-- NOT permitted, and therefore NOT attempted anywhere in this file:
+--   * ALTER ROLE ... [NO]SUPERUSER / [NO]REPLICATION / [NO]BYPASSRLS
+--
+-- ENFORCEMENT REPLACED BY VERIFICATION (the deliberate design change):
+-- The deleted ALTER existed to converge a hand-created or drifted role onto the
+-- reviewed posture — "BYPASSRLS in particular must never drift on". That intent
+-- is NOT dropped. It is moved into the verification block in 5.6, which reads
+-- pg_roles and RAISES on rolsuper / rolbypassrls / rolreplication / rolcanlogin
+-- / rolcreatedb / rolcreaterole. On a security posture that is the stronger
+-- behaviour, not the weaker one: the ALTER only corrected drift at the instant
+-- the migration ran and then said nothing, whereas the assertion re-checks on
+-- every replay and converts undetected drift into a loud, blocking failure. We
+-- cannot silently fix a role that gained BYPASSRLS out of band; we can refuse to
+-- ship a credential while it has it.
+--
+-- Blind spot, stated: `pg_authid.rolpassword` is superuser-only readable, so
+-- this file CANNOT verify that no password was set out of band. NOLOGIN (which
+-- IS verified, and which we can also attempt to re-assert) makes a password
+-- unusable, so this is a defence-in-depth gap, not an open door.
+--
+-- ============================================================================
+-- 5A. IDEMPOTENCY / SAFETY
 -- ============================================================================
 -- CREATE ROLE has no IF NOT EXISTS, so it is guarded on pg_roles. GRANT and
 -- REVOKE are naturally replay-safe. Policies use DROP POLICY IF EXISTS +
 -- CREATE POLICY. No table, column, function, policy or index belonging to any
 -- other feature is dropped or altered. No DROP of any kind. Additive only.
 -- Safe to re-run.
+--
+-- Re-run against the HALF-APPLIED STAGING state (12/13/14 committed, 15 failed,
+-- 16 never ran): safe, and safe under either reading of what statement 1 left
+-- behind. CREATE ROLE is fully transactional and this file opens its own
+-- BEGIN (the failure was reported at "statement: 2", i.e. the CLI counted that
+-- BEGIN), so the role was almost certainly rolled back and does not exist. If it
+-- does exist — rolled forward, or hand-created by an operator — the pg_roles
+-- guard skips creation, the best-effort ALTER converges what a non-superuser is
+-- allowed to converge, the GRANTs and policies are replay-safe, and 5.6 asserts
+-- the final state either way. Both paths converge on the same posture.
 -- ============================================================================
 
 BEGIN;
@@ -211,25 +290,95 @@ BEGIN
 END
 $role$;
 
--- Reassert the attributes even when the role pre-existed, so a hand-created or
--- drifted role converges to the reviewed posture rather than silently keeping
--- whatever it was given out-of-band. BYPASSRLS in particular must never drift on.
-ALTER ROLE content_reporter
-  NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+-- ---------------------------------------------------------------------------
+-- 5.1a Attribute convergence, split by what a non-superuser may actually write.
+--
+-- WAS (removed 2026-08-11, this is the statement that failed on staging):
+--   ALTER ROLE content_reporter
+--     NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+--
+-- The intent — "a hand-created or drifted role converges to the reviewed
+-- posture rather than silently keeping whatever it was given out-of-band" — is
+-- preserved and split in two:
+--   * the four attributes CREATEROLE may write are still enforced here,
+--     best-effort (a failure to converge must not abort the batch); and
+--   * the three that require superuser (SUPERUSER, REPLICATION, BYPASSRLS) are
+--     asserted, fatally, in 5.6. See section 5 for the full reasoning.
+-- ---------------------------------------------------------------------------
+DO $attrs$
+BEGIN
+  ALTER ROLE content_reporter NOLOGIN NOINHERIT NOCREATEDB NOCREATEROLE;
+  RAISE NOTICE
+    'converged content_reporter to NOLOGIN/NOINHERIT/NOCREATEDB/NOCREATEROLE';
+EXCEPTION
+  -- Reachable if the role pre-existed and was created by another role (e.g. an
+  -- operator running as supabase_admin), leaving `postgres` without ADMIN
+  -- OPTION on it. Non-fatal here ON PURPOSE: 5.6 re-reads the catalog and fails
+  -- the migration if the posture is actually wrong, so a failure to *write* the
+  -- attributes cannot let a bad posture through unnoticed, and a failure to
+  -- write attributes that were already correct cannot strand the batch.
+  WHEN OTHERS THEN
+    RAISE WARNING
+      'Could not re-assert content_reporter attributes (SQLSTATE %). Not fatal: '
+      'the verification block below asserts the resulting posture directly. If '
+      'that block raises, remediate as supabase_admin.', SQLSTATE;
+END
+$attrs$;
 
--- Belt and braces: a runaway report query must not pin a production connection
--- all night. The nightly's own job timeout is 20 minutes; this is far tighter.
-ALTER ROLE content_reporter SET statement_timeout = '120s';
-ALTER ROLE content_reporter SET idle_in_transaction_session_timeout = '60s';
--- Defensive: RLS must be honoured even if a superuser-ish default ever changes.
-ALTER ROLE content_reporter SET row_security = on;
+-- ---------------------------------------------------------------------------
+-- 5.1b Per-role GUCs. Belt and braces: a runaway report query must not pin a
+--      production connection all night. The nightly's own job timeout is 20
+--      minutes; these are far tighter.
+--
+-- All three are PGC_USERSET, so a non-superuser may set them per-role (a
+-- PGC_SUSET parameter would be refused), and there is direct production
+-- precedent — _legacy/timestamped/20260325130000_add_statement_timeout.sql ran
+-- the same statement shape, unguarded, against authenticator/anon/authenticated.
+-- Each is nevertheless wrapped in its OWN sub-block so that one refusal degrades
+-- to a warning and still leaves the other two applied. None of the three is
+-- load-bearing: `row_security` already defaults to on, and for a NOBYPASSRLS
+-- role setting it off would raise an error rather than expose rows — it is
+-- defence-in-depth only.
+-- ---------------------------------------------------------------------------
+DO $rolegucs$
+BEGIN
+  BEGIN
+    ALTER ROLE content_reporter SET statement_timeout = '120s';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'Could not set statement_timeout on content_reporter (SQLSTATE %). '
+                  'Connection hygiene only - role, grants and policies unaffected.', SQLSTATE;
+  END;
+
+  BEGIN
+    ALTER ROLE content_reporter SET idle_in_transaction_session_timeout = '60s';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'Could not set idle_in_transaction_session_timeout on content_reporter '
+                  '(SQLSTATE %). Connection hygiene only.', SQLSTATE;
+  END;
+
+  BEGIN
+    ALTER ROLE content_reporter SET row_security = on;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'Could not set row_security=on on content_reporter (SQLSTATE %). '
+                  'Defence-in-depth only: on is already the cluster default, and this '
+                  'role has no BYPASSRLS to fall back on.', SQLSTATE;
+  END;
+END
+$rolegucs$;
 
 -- COMMENT ON ROLE is documentation only, but it targets a SHARED catalog object
--- and on some PostgreSQL versions requires superuser. Supabase's `postgres`
--- role is NOT a superuser, so an unguarded COMMENT here could abort this entire
--- migration over a docstring. Degraded to a warning deliberately: this is the
--- ONE statement in the file whose failure is genuinely harmless. Every
--- functional statement stays fatal (see the verification block in 5.5).
+-- whose "ownership" check is CREATEROLE-gated (and superuser-gated if the target
+-- is itself a superuser). Supabase's `postgres` role is NOT a superuser, so an
+-- unguarded COMMENT here could abort this entire migration over a docstring.
+-- Degraded to a warning deliberately: its failure is genuinely harmless.
+--
+-- HANDLER WIDENED 2026-08-11. The previous `WHEN insufficient_privilege` was
+-- correct for the case it named (that IS the condition name for 42501, the code
+-- COMMENT raises when the CREATEROLE check fails) — but naming one condition on
+-- a statement whose whole point is "must never abort the batch" leaves every
+-- other SQLSTATE fatal. Since nothing downstream depends on this comment
+-- existing, WHEN OTHERS is strictly correct here; SQLSTATE is echoed so a
+-- surprise is still diagnosable from the push log.
 DO $rolecomment$
 BEGIN
   COMMENT ON ROLE content_reporter IS
@@ -243,10 +392,10 @@ BEGIN
     'question_bank.correct_answer_text/solution_steps. See migration '
     '20260814000015 for the full derivation.';
 EXCEPTION
-  WHEN insufficient_privilege THEN
+  WHEN OTHERS THEN
     RAISE WARNING
-      'Could not COMMENT ON ROLE content_reporter (insufficient privilege). '
-      'Documentation only - the role, grants and policies are unaffected.';
+      'Could not COMMENT ON ROLE content_reporter (SQLSTATE %). Documentation '
+      'only - the role, grants and policies are unaffected.', SQLSTATE;
 END
 $rolecomment$;
 
@@ -258,12 +407,36 @@ $rolecomment$;
 -- grant every request returns 42501 and the nightly fails at the first query.
 -- Guarded because a non-Supabase Postgres (a bare CI live-DB fixture) has no
 -- `authenticator` role; there, the grant is simply not applicable.
+--
+-- PRIVILEGE CHECK (2026-08-11): granting a role requires ADMIN OPTION on the
+-- GRANTED role, and nothing at all on the grantee — so `postgres` needs no
+-- rights over `authenticator` here. It holds admin option on content_reporter
+-- because it created it (PG16+ grants the creator admin option automatically;
+-- on PG15 CREATEROLE alone suffices for a non-superuser target). This is the
+-- documented Supabase/PostgREST custom-role pattern.
+--
+-- This one stays FATAL. It is the single statement in the file whose absence
+-- produces exactly the failure this work item exists to eliminate: a credential
+-- that authenticates and reads nothing. The handler below only improves the
+-- diagnosis before re-raising — it does not swallow.
 -- ---------------------------------------------------------------------------
 DO $member$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticator') THEN
-    GRANT content_reporter TO authenticator;
-    RAISE NOTICE 'granted content_reporter to authenticator';
+    BEGIN
+      GRANT content_reporter TO authenticator;
+      RAISE NOTICE 'granted content_reporter to authenticator';
+    EXCEPTION
+      WHEN insufficient_privilege THEN
+        RAISE EXCEPTION
+          'Could not GRANT content_reporter TO authenticator (SQLSTATE %). This is '
+          'LOAD-BEARING: without it PostgREST cannot SET ROLE and every nightly '
+          'request 42501s, so the migration refuses to ship a dead credential. '
+          'Most likely cause: content_reporter pre-exists and was created by '
+          'another role, leaving postgres without ADMIN OPTION on it. Remediate '
+          'as supabase_admin with: GRANT content_reporter TO authenticator; '
+          '(or DROP ROLE content_reporter and re-run this migration).', SQLSTATE;
+    END;
   ELSE
     RAISE WARNING
       'role "authenticator" not found - skipping membership grant. This is '
@@ -274,7 +447,26 @@ END
 $member$;
 
 -- PostgREST also needs the role to be able to see the schema at all.
-GRANT USAGE ON SCHEMA public TO content_reporter;
+--
+-- Wrapped 2026-08-11: this needs GRANT OPTION on schema `public`, which
+-- `postgres` has here (precedent: _legacy/005_welcome_email_triggers.sql line
+-- 195 granted USAGE on this schema unguarded, against production). It is
+-- nevertheless not worth aborting a batch for, because PUBLIC already carries
+-- USAGE on `public` and every role is a member of PUBLIC — so the effective
+-- privilege survives a refusal. 5.6 asserts the EFFECTIVE privilege with
+-- has_schema_privilege(), which is the thing that actually matters, rather than
+-- assuming this statement succeeded.
+DO $schemausage$
+BEGIN
+  GRANT USAGE ON SCHEMA public TO content_reporter;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE WARNING
+      'Could not GRANT USAGE ON SCHEMA public TO content_reporter (SQLSTATE %). '
+      'PUBLIC already carries USAGE on this schema, so the effective privilege is '
+      'verified below rather than assumed.', SQLSTATE;
+END
+$schemausage$;
 
 -- ---------------------------------------------------------------------------
 -- 5.3 Column-level SELECT grants. Nothing else. No INSERT/UPDATE/DELETE, no
@@ -360,35 +552,102 @@ CREATE POLICY "question_bank_content_reporter_read"
   USING (true);
 
 -- ---------------------------------------------------------------------------
--- 5.5 Verification. This migration REFUSES TO COMMIT half-provisioned.
+-- 5.6 Verification. This migration REFUSES TO COMMIT half-provisioned.
+--     (Renumbered from 5.5 on 2026-08-11; section 5 is now the privilege model.)
 --
 --     A credential that authenticates but reads nothing is the single failure
 --     this work item exists to prevent, so every precondition is asserted here
 --     rather than discovered at 04:00 UTC by an alert.
+--
+--     This block also now carries the POSTURE ENFORCEMENT that used to live in
+--     the (superuser-only, staging-rejected) ALTER ROLE at 5.1a. The three
+--     attributes a non-superuser cannot write — SUPERUSER, REPLICATION,
+--     BYPASSRLS — are asserted here instead. We cannot silently correct a role
+--     that drifted; we can refuse to ship a credential while it is wrong, and
+--     re-check that on every replay, which the ALTER never did.
 -- ---------------------------------------------------------------------------
 DO $verify$
 DECLARE
-  v_bypassrls  boolean;
-  v_canlogin   boolean;
-  v_policies   integer;
-  v_rag_cols   integer;
-  v_qb_cols    integer;
-  v_is_member  boolean;
+  v_exists       boolean;
+  v_bypassrls    boolean;
+  v_canlogin     boolean;
+  v_super        boolean;
+  v_replication  boolean;
+  v_createdb     boolean;
+  v_createrole   boolean;
+  v_inherit      boolean;
+  v_policies     integer;
+  v_rag_cols     integer;
+  v_qb_cols      integer;
+  v_is_member    boolean;
+  v_schema_usage boolean;
+  v_leak         text;
 BEGIN
-  SELECT rolbypassrls, rolcanlogin
-    INTO v_bypassrls, v_canlogin
+  SELECT true, rolbypassrls, rolcanlogin, rolsuper, rolreplication,
+         rolcreatedb, rolcreaterole, rolinherit
+    INTO v_exists, v_bypassrls, v_canlogin, v_super, v_replication,
+         v_createdb, v_createrole, v_inherit
     FROM pg_roles WHERE rolname = 'content_reporter';
 
+  -- Guard the NULL path explicitly: without this, a missing role leaves every
+  -- boolean NULL, every `IF v_x THEN` below is false, and the posture checks
+  -- pass vacuously.
+  IF NOT COALESCE(v_exists, false) THEN
+    RAISE EXCEPTION
+      'role content_reporter does not exist at verification time. The guarded '
+      'CREATE ROLE in 5.1 must have been skipped or rolled back.';
+  END IF;
+
+  -- --- Attributes a non-superuser CANNOT write, and therefore must assert. ---
   IF v_bypassrls THEN
     RAISE EXCEPTION
       'content_reporter has BYPASSRLS. That contradicts the documented ruling in '
-      'section 2 of this migration and would make it a second service_role.';
+      'section 2 of this migration and would make it a second service_role. This '
+      'migration CANNOT clear the attribute (superuser-only), so it fails instead '
+      'of shipping. Remediate as supabase_admin: ALTER ROLE content_reporter '
+      'NOBYPASSRLS;';
   END IF;
 
+  IF v_super THEN
+    RAISE EXCEPTION
+      'content_reporter has SUPERUSER. Remediate as supabase_admin: ALTER ROLE '
+      'content_reporter NOSUPERUSER;';
+  END IF;
+
+  IF v_replication THEN
+    RAISE EXCEPTION
+      'content_reporter has REPLICATION - it could stream the entire WAL, which '
+      'trivially defeats every column-level grant below. Remediate as '
+      'supabase_admin: ALTER ROLE content_reporter NOREPLICATION;';
+  END IF;
+
+  -- --- Attributes 5.1a tries to converge; assert the outcome regardless. ---
   IF v_canlogin THEN
     RAISE EXCEPTION
       'content_reporter has LOGIN. This role must never be directly connectable; '
-      'it is reachable only via PostgREST SET ROLE. No password is provisioned.';
+      'it is reachable only via PostgREST SET ROLE. No password is provisioned '
+      '(and note pg_authid.rolpassword is not readable by a non-superuser, so '
+      'NOLOGIN is the only password-related guarantee this file can verify).';
+  END IF;
+
+  IF v_createdb THEN
+    RAISE EXCEPTION 'content_reporter has CREATEDB. A read-only reporting credential must not.';
+  END IF;
+
+  IF v_createrole THEN
+    RAISE EXCEPTION
+      'content_reporter has CREATEROLE - it could mint further roles and escalate '
+      'out of this containment entirely.';
+  END IF;
+
+  -- INHERIT is posture, not privilege, for this role: content_reporter is a
+  -- member of no role except PUBLIC, so there is nothing for it to inherit and
+  -- no escalation path. Warned, not fatal - it must not block the batch.
+  IF v_inherit THEN
+    RAISE WARNING
+      'content_reporter has INHERIT (expected NOINHERIT, mirroring anon/authenticated). '
+      'Harmless today - the role holds no memberships - but it means 5.1a could not '
+      'converge the attributes. Worth reconciling out of band.';
   END IF;
 
   SELECT count(*) INTO v_policies
@@ -423,7 +682,57 @@ BEGIN
     RAISE EXCEPTION 'Expected 20 granted columns on question_bank, found %.', v_qb_cols;
   END IF;
 
+  -- EFFECTIVE schema visibility, asserted rather than assumed - the GRANT USAGE
+  -- in 5.2 is now warning-degraded, and PUBLIC's own USAGE may be carrying this.
+  -- Either source is fine; zero visibility is not, because PostgREST would 42501.
+  SELECT has_schema_privilege('content_reporter', 'public', 'USAGE')
+    INTO v_schema_usage;
+  IF NOT v_schema_usage THEN
+    RAISE EXCEPTION
+      'content_reporter has no USAGE on schema public - every query would 42501. '
+      'Remediate as supabase_admin: GRANT USAGE ON SCHEMA public TO content_reporter;';
+  END IF;
+
+  -- --- NEGATIVE assertion: the least-privilege claim, made machine-checkable. --
+  -- The counts above prove "not too many columns"; these prove "not THE columns".
+  -- This is the file's headline promise (section 1: reading the licensed corpus
+  -- body must be physically impossible for this role, not merely unintended), so
+  -- it is asserted rather than left to review. Safe from false positives: the
+  -- baseline's ALTER DEFAULT PRIVILEGES grants tables to postgres/anon/
+  -- authenticated/service_role and never to PUBLIC, and content_reporter is a
+  -- member of none of those - so nothing else can be conferring these.
+  SELECT string_agg(t.label, ', ') INTO v_leak
+    FROM (
+      SELECT 'rag_content_chunks.chunk_text' AS label
+       WHERE has_column_privilege('content_reporter', 'public.rag_content_chunks', 'chunk_text', 'SELECT')
+      UNION ALL
+      SELECT 'rag_content_chunks.embedding'
+       WHERE has_column_privilege('content_reporter', 'public.rag_content_chunks', 'embedding', 'SELECT')
+      UNION ALL
+      SELECT 'question_bank.correct_answer_text'
+       WHERE has_column_privilege('content_reporter', 'public.question_bank', 'correct_answer_text', 'SELECT')
+      UNION ALL
+      SELECT 'question_bank.solution_steps'
+       WHERE has_column_privilege('content_reporter', 'public.question_bank', 'solution_steps', 'SELECT')
+      UNION ALL
+      SELECT 'question_bank.expected_answer'
+       WHERE has_column_privilege('content_reporter', 'public.question_bank', 'expected_answer', 'SELECT')
+      UNION ALL
+      SELECT 'question_bank.answer_text'
+       WHERE has_column_privilege('content_reporter', 'public.question_bank', 'answer_text', 'SELECT')
+    ) t;
+
+  IF v_leak IS NOT NULL THEN
+    RAISE EXCEPTION
+      'content_reporter can read columns it must never read: %. Either a broader '
+      'GRANT was applied out of band or this migration was edited incorrectly - '
+      'either way the licensed-corpus / answer-key containment described in '
+      'section 1 is broken and this must not ship.', v_leak;
+  END IF;
+
   -- Non-fatal on a non-Supabase Postgres, fatal-looking otherwise.
+  -- 'MEMBER' not 'USAGE' is deliberate: NOINHERIT means authenticator holds the
+  -- membership without inheriting it, which is exactly what SET ROLE needs.
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticator') THEN
     SELECT pg_has_role('authenticator', 'content_reporter', 'MEMBER')
       INTO v_is_member;
@@ -435,8 +744,10 @@ BEGIN
   END IF;
 
   RAISE NOTICE
-    'verified: content_reporter NOLOGIN/NOBYPASSRLS, 2 scoped SELECT policies, '
-    '% rag columns, % question_bank columns, authenticator membership OK. '
+    'verified: content_reporter NOSUPERUSER/NOBYPASSRLS/NOREPLICATION/NOLOGIN/'
+    'NOCREATEDB/NOCREATEROLE, schema USAGE present, 2 scoped SELECT policies, '
+    '% rag columns, % question_bank columns, no answer-key or corpus-body column '
+    'readable, authenticator membership OK. '
     'Next step is OUT OF BAND: mint the role=content_reporter JWT and store it '
     'as SUPABASE_CONTENT_REPORT_KEY on the production-ops GitHub environment.',
     v_rag_cols, v_qb_cols;
