@@ -238,12 +238,15 @@ export async function getDashboardData(studentId: string) {
  * disproved question must never reach a student — there is no fallback rung
  * that relaxes this (migration 20260802100000, spec §3.4).
  *
- * NOTE (assessment, 2026-08-11): the Tier-0 predicate inside
- * `select_quiz_questions_rag` excludes only the literal `'failed'`. The
- * constraint was widened to six states by migration 20260510064952
- * (`failed_fix_in_flight`, `failed_unfixable`), so those two disproved states
- * still pass that RPC's gate. This list is the complete one; the RPC-side gap
- * is reported separately and is an architect/DB fix.
+ * This list is the complete set of disproved states. It used to be wider than
+ * the database's own gates: the CHECK was widened to six states by migration
+ * 20260510064952 (`failed_fix_in_flight`, `failed_unfixable`) while every
+ * serving RPC kept testing only the literal `'failed'`. Migration
+ * 20260814000014 closed that on `select_quiz_questions_rag`,
+ * `select_quiz_questions_v2` and both `get_quiz_questions` overloads, so all
+ * four SQL rungs and this TS rung now exclude the same three states. If a
+ * seventh state is ever added to the CHECK, it must be added here AND to those
+ * four RPCs in the same change.
  */
 const DISPROVED_VERIFICATION_STATES = [
   'failed',
@@ -259,13 +262,19 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
   try {
     const { data, error } = await supabase.rpc('get_quiz_questions', params);
     // An EMPTY ARRAY IS TRUTHY in JavaScript. `get_quiz_questions` returns
-    // `COALESCE(jsonb_agg(q), '[]'::JSONB)` and filters `is_verified = true`
-    // (migration 20260505155525), so a chapter whose questions are all
-    // unverified came back as `[]` — which satisfied the old `data` guard and
-    // RETURNED ZERO QUESTIONS to the student, never reaching the
-    // direct-`question_bank` fallback below. The RPC applies a strictly
-    // NARROWER filter than the fallback, so "RPC found none" does not imply
-    // "the bank has none": only a NON-EMPTY result may short-circuit the
+    // `COALESCE(jsonb_agg(q), '[]'::JSONB)`, and it used to also filter
+    // `is_verified = true` (migration 20260505155525), so a chapter whose
+    // questions carried no human SME sign-off came back as `[]` — which
+    // satisfied the old `data` guard and RETURNED ZERO QUESTIONS to the
+    // student, never reaching the direct-`question_bank` fallback below.
+    //
+    // Migration 20260814000014 (Decision A option 3, tiered verification)
+    // removed that `is_verified` filter and gave the RPC the same Tier-0 floor
+    // the fallback below applies, so the two rungs now query the same
+    // population. The non-empty guard is KEPT anyway: it is what makes this
+    // ladder robust to the RPC ever being narrowed again (and to the 4-arg /
+    // 5-arg overload resolution), and it costs one extra query only in the
+    // genuinely-empty case. Only a NON-EMPTY result may short-circuit the
     // ladder. (Contrast getLeaderboard/getReviewCards below, where the RPC and
     // its fallback query the same population and empty IS the final answer.)
     if (!error && Array.isArray(data) && data.length > 0) {
@@ -278,7 +287,7 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
         `get_quiz_questions returned ${data.length} row(s), all rejected by the P6 gate — falling through to question_bank`,
       );
     } else if (!error) {
-      console.warn('get_quiz_questions returned no verified rows — falling through to question_bank');
+      console.warn('get_quiz_questions returned no servable rows — falling through to question_bank');
     }
   } catch { /* RPC may not exist — fall back */ }
 
@@ -1286,7 +1295,17 @@ export interface AllowedChapterOption {
   chapter_number: number;
   title: string;
   title_hi?: string | null;
+  // BADGE GUIDANCE — mirrors useAllowedChapters.AllowedChapter. Readiness
+  // signal only ("an agent proved this against NCERT"); it is NOT a count of
+  // what the quiz can serve, and badging with it is what made the chapter
+  // picker advertise questions the platform could not deliver. Kept for
+  // back-compat; no surface renders it.
   verified_question_count?: number;
+  // What the practice / daily-quiz path can actually serve today. THIS is the
+  // student-facing chapter badge number.
+  practice_ready_count?: number;
+  // practice floor AND the human SME gate. Exam / mock surfaces only.
+  exam_ready_count?: number;
 }
 export async function getChaptersForSubject(subject: string, _grade: string): Promise<ServiceResult<AllowedChapterOption[]>> {
   void _grade;
@@ -1326,13 +1345,26 @@ export async function getChaptersForSubject(subject: string, _grade: string): Pr
         // Legacy shape kept for back-compat with older server revisions.
         title?: string;
         verified_question_count?: number;
+        practice_ready_count?: number;
+        exam_ready_count?: number;
       }>;
     };
     return ok((body.chapters ?? []).map((c) => ({
       chapter_number: c.chapter_number,
       title: c.chapter_title ?? c.title ?? `Chapter ${c.chapter_number}`,
       title_hi: c.chapter_title_hi ?? null,
+      // `?? 0` retained ONLY because this field is now back-compat surface
+      // area that nothing renders. Do not copy this coercion to the two
+      // fields below.
       verified_question_count: c.verified_question_count ?? 0,
+      // Passed through verbatim, deliberately WITHOUT `?? 0`. Against a
+      // database predating migration 20260814000014 the RPC omits these and
+      // they arrive `undefined`, which means "unknown" — not "zero". Coercing
+      // here would make the chapter picker render "0 questions" on chapters
+      // that are full of them, which is the same class of defect (a failure
+      // dressed up as a reassuring empty state) this split exists to fix.
+      practice_ready_count: c.practice_ready_count,
+      exam_ready_count: c.exam_ready_count,
     })));
   } catch (e) {
     return fail(

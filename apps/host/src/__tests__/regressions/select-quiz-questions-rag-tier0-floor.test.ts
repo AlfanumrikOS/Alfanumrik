@@ -48,11 +48,37 @@
  * SOURCE OF TRUTH THIS MIRRORS (read directly from the migration, verbatim):
  *   AND qb.deleted_at IS NULL
  *   AND qb.content_status = 'published'
- *   AND qb.verification_state != 'failed'
+ *   AND qb.verification_state NOT IN ('failed', 'failed_fix_in_flight', 'failed_unfixable')
  *   AND (NOT v_use_strict OR (qb.verified_against_ncert = true AND qb.verification_state = 'verified'))
  * (qb.is_active = true is also Tier-0 but pre-existing/unchanged by this
  * migration; included here anyway since it is part of the same real WHERE
  * clause and costs nothing to mirror.)
+ *
+ * ── MIRROR REPAIR, 2026-08-11 (testing) ────────────────────────────────────
+ * This file had gone STALE while still passing — the most dangerous state a
+ * mirror can be in, because a green suite reads as coverage.
+ *
+ * `question_bank.verification_state`'s CHECK was widened from four states to
+ * SIX by migration `20260510064952_qb_fixer.sql` (adding `failed_fix_in_flight`
+ * and `failed_unfixable`), but this mirror's `VerificationState` union still
+ * listed only four and `isRowServable` tested only `=== 'failed'`. The two new
+ * states are not "in progress" states — both are VERIFIER-DISPROVED:
+ *   * `failed_fix_in_flight` — proven wrong, currently claimed by the repair agent
+ *   * `failed_unfixable`     — proven wrong AND proven unrepairable
+ * Under the old mirror a row in either state was modelled as SERVABLE, which
+ * is the exact opposite of spec §3.4's never-serve floor. The mirror agreed
+ * with a predicate the SQL no longer had, so it could not have caught the very
+ * regression it exists to catch.
+ *
+ * Migration `20260814000014_tiered_verification_serving_and_truthful_picker.sql`
+ * §3 widened the SQL predicate from `!= 'failed'` to the three-state
+ * `NOT IN (...)` above. This mirror now matches it, and the floor is expressed
+ * as a SET (`DISPROVED_VERIFICATION_STATES`) rather than an equality so that
+ * adding a seventh state to the CHECK forces a visible edit here rather than
+ * silently defaulting it to servable. Cross-rung totality — that the SAME
+ * three states are excluded on every serving rung, not just this one — is
+ * pinned separately by REG-388
+ * (`reg-388-tier0-floor-serving-rung-totality.test.ts`).
  *
  * Subject/grade/chapter/question-type/difficulty matching is DELIBERATELY
  * NOT mirrored — this migration does not touch those predicates, and
@@ -72,7 +98,43 @@
 import { describe, it, expect } from 'vitest';
 
 type ContentStatus = 'draft' | 'review' | 'published' | 'archived';
-type VerificationState = 'legacy_unverified' | 'pending' | 'verified' | 'failed';
+
+/**
+ * The COMPLETE state set, mirroring the CHECK constraint in
+ * `20260510064952_qb_fixer.sql`:
+ *   check (verification_state in (
+ *     'legacy_unverified', 'pending', 'verified', 'failed',
+ *     'failed_fix_in_flight', 'failed_unfixable'
+ *   ));
+ */
+type VerificationState =
+  | 'legacy_unverified'
+  | 'pending'
+  | 'verified'
+  | 'failed'
+  | 'failed_fix_in_flight'
+  | 'failed_unfixable';
+
+/**
+ * The never-serve floor, as a SET. Mirrors migration 20260814000014 §3:
+ *   AND qb.verification_state NOT IN ('failed', 'failed_fix_in_flight', 'failed_unfixable')
+ *
+ * All three mean the verifier DISPROVED the question. None of them is a
+ * "pending"/"in progress" state, and none has a fallback rung that re-admits
+ * it — see spec §3.4.
+ */
+const DISPROVED_VERIFICATION_STATES = [
+  'failed',
+  'failed_fix_in_flight',
+  'failed_unfixable',
+] as const satisfies readonly VerificationState[];
+
+/** The complement: everything the CHECK allows that is NOT disproved. */
+const NON_DISPROVED_VERIFICATION_STATES = [
+  'legacy_unverified',
+  'pending',
+  'verified',
+] as const satisfies readonly VerificationState[];
 
 interface MirrorRow {
   label: string;
@@ -93,7 +155,11 @@ function isRowServable(row: MirrorRow, useStrict: boolean): boolean {
   if (!row.isActive) return false; // qb.is_active = true
   if (row.deletedAt !== null) return false; // qb.deleted_at IS NULL
   if (row.contentStatus !== 'published') return false; // qb.content_status = 'published'
-  if (row.verificationState === 'failed') return false; // Tier-0 floor — UNCONDITIONAL, spec §3.4
+  // Tier-0 floor — UNCONDITIONAL, spec §3.4. All THREE disproved states, not
+  // just the literal 'failed' (see the MIRROR REPAIR note in the file header).
+  if ((DISPROVED_VERIFICATION_STATES as readonly string[]).includes(row.verificationState)) {
+    return false;
+  }
   // AND (NOT v_use_strict OR (verified_against_ncert = true AND verification_state = 'verified'))
   if (useStrict) {
     return row.verifiedAgainstNcert === true && row.verificationState === 'verified';
@@ -149,6 +215,53 @@ describe('select_quiz_questions_rag verification gate: Tier-0 floor (spec §3.4 
     expect(servableRows(allFailed, false, 0, 5)).toHaveLength(0);
   });
 
+  // ── The two states this mirror used to model as SERVABLE (repair, 2026-08-11) ──
+  it.each(DISPROVED_VERIFICATION_STATES)(
+    'a %s row is never servable under EITHER rung (all three disproved states, not just `failed`)',
+    (state) => {
+      const disproved = row({ label: state, verificationState: state });
+      expect(isRowServable(disproved, false)).toBe(false);
+      expect(isRowServable(disproved, true)).toBe(false);
+    },
+  );
+
+  it('the disproved set and its complement TOTALLY partition the CHECK constraint (no state is unmodelled)', () => {
+    // Totality is the property that actually protects this mirror from going
+    // stale again: if a 7th state is added to the CHECK in
+    // 20260510064952_qb_fixer.sql and someone adds it to `VerificationState`
+    // here without deciding which side of the floor it falls on, this fails.
+    const all: VerificationState[] = [
+      ...DISPROVED_VERIFICATION_STATES,
+      ...NON_DISPROVED_VERIFICATION_STATES,
+    ];
+    expect(new Set(all).size).toBe(all.length); // disjoint
+    expect(all).toHaveLength(6); // exhaustive vs the 6-state CHECK
+
+    // And the partition is behaviourally real, not just a naming convention:
+    // every non-disproved state clears the floor on the relaxed rung, every
+    // disproved one does not.
+    for (const s of NON_DISPROVED_VERIFICATION_STATES) {
+      expect(isRowServable(row({ label: s, verificationState: s }), false)).toBe(true);
+    }
+    for (const s of DISPROVED_VERIFICATION_STATES) {
+      expect(isRowServable(row({ label: s, verificationState: s }), false)).toBe(false);
+    }
+  });
+
+  it('REGRESSION WITNESS: the pre-repair mirror (`=== \'failed\'` only) would have served two disproved states', () => {
+    // Pins WHY the repair mattered. The old predicate is reconstructed here
+    // verbatim; if someone "simplifies" the set back to an equality check,
+    // this documents exactly what that costs.
+    const staleFloor = (s: VerificationState) => s === 'failed';
+    const leaked = DISPROVED_VERIFICATION_STATES.filter((s) => !staleFloor(s));
+    expect(leaked).toEqual(['failed_fix_in_flight', 'failed_unfixable']);
+    // ...and the repaired floor leaks nothing.
+    const repairedLeaks = DISPROVED_VERIFICATION_STATES.filter((s) =>
+      isRowServable(row({ label: s, verificationState: s }), false),
+    );
+    expect(repairedLeaks).toEqual([]);
+  });
+
   it('a failed row is excluded even when it sits alongside plenty of verified rows (strict rung, mixed pool)', () => {
     const pool: MirrorRow[] = [
       row({ label: 'failed-0', verificationState: 'failed' }),
@@ -202,6 +315,8 @@ describe('select_quiz_questions_rag verification gate: legacy backlog stays serv
   it('end-to-end: a realistic mixed pool resolves to the exact expected subset under each rung', () => {
     const pool: MirrorRow[] = [
       row({ label: 'failed-0', verificationState: 'failed' }),
+      row({ label: 'fix-in-flight-0', verificationState: 'failed_fix_in_flight' }),
+      row({ label: 'unfixable-0', verificationState: 'failed_unfixable' }),
       row({ label: 'legacy-0', verificationState: 'legacy_unverified' }),
       row({ label: 'pending-0', verificationState: 'pending' }),
       row({ label: 'verified-0', verificationState: 'verified', verifiedAgainstNcert: true }),
@@ -211,8 +326,9 @@ describe('select_quiz_questions_rag verification gate: legacy backlog stays serv
     ];
 
     // RELAXED (e.g. pair not enforced): Tier-0 only. Survives: legacy, pending,
-    // verified-0. Excluded: failed (floor), deleted (soft-delete), draft
-    // (content_status), inactive (is_active) — none of these three Tier-0
+    // verified-0. Excluded: all THREE disproved states (floor), deleted
+    // (soft-delete), draft (content_status), inactive (is_active) — none of
+    // these three Tier-0
     // closures are new to THIS pool composition test, but seeing them survive
     // together in one relaxed-rung pass is the "does the whole predicate
     // compose correctly" check no other executable test currently makes.

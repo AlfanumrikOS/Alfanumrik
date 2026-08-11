@@ -6,7 +6,7 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 386 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 389 entries (target: 35 — TARGET EXCEEDED).**
 
 > Counting note (testing, 2026-08-11): this header declared **372** immediately
 > before this batch while the shard-chain running counters had reached **379** —
@@ -16,8 +16,65 @@ Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 > and the three shard totals now agree on. If a later reconciliation finds the
 > shard chain was the wrong side of the discrepancy, every total shifts down by
 > 7 in lock-step and the ids assigned below do not move.
+>
+> Addendum (testing, same day, tiered-verification batch): 386 + 3 filed,
+> body-backed entries (REG-387..REG-389, all with a `| REG-N |` table row in
+> `03-quiz-integrity.md`) = **389**. The carried-forward 7-entry discrepancy
+> above is untouched and still open; so is the separately-recorded 326
+> body-derived figure. This pass adds 3 and deletes 0. One test file was
+> REPAIRED rather than added (`select-quiz-questions-rag-tier0-floor.test.ts`),
+> which is count-neutral by design — it was already covered under REG-386's
+> neighbourhood and takes no new id.
 
-Latest: REG-380..REG-386 (2026-08-11, the SEV1 fix batch for the platform's two
+Latest: REG-387..REG-389 (2026-08-11, the TIERED-VERIFICATION batch — quality
+finding #7, MAJOR: the content-remediation change set shipped with NO regression
+coverage while migration `20260814000014`'s own header documented a one-line path
+to undoing its central safety property. Three entries, all in
+`03-quiz-integrity.md`:
+
+- **REG-387 — the exam SME gate.** `start_mock_test_attempt` keeps
+  `is_verified = true` on ALL THREE rungs of its fallback ladder. This is the
+  human-SME gate that stops AI-verified-but-not-human-approved questions reaching
+  a mock test whose score a parent will screenshot. Decision A (CEO-approved
+  option 3) deliberately split the audiences — practice serves AI-verified
+  content, exams keep the human gate — and migration 14's `TO REVERSE THIS
+  DECISION:` block names the exact one-line edit that removes it. The pin
+  resolves the EFFECTIVE definition at test time (last CREATE-OR-REPLACE wins,
+  as Postgres applies them) so a future relaxing migration is read and FAILS
+  rather than leaving the pin green against a superseded file. Mutation-tested
+  against five corrupted copies (all three gates, each one individually, and a
+  deleted rung), and spot-checked against the real migration: removing ladder
+  step 3 turns it red 8/13.
+- **REG-388 — Tier-0 floor totality.** A verifier-disproved row is never servable
+  on ANY rewritten rung. The floor is THREE states (`failed`,
+  `failed_fix_in_flight`, `failed_unfixable`), not the literal `'failed'` every
+  gate had been testing since the CHECK was widened four→six by
+  `20260510064952`. Pins that all four rewritten functions agree LITERALLY — the
+  assertion per-rung tests structurally cannot make, and the reason the floor had
+  drifted into five different dialects. **Carries a deliberate defect witness:
+  `quiz-generator`, the PRIMARY serving path, still has no floor at all and was
+  out of scope (ai-engineer's follow-up); the witness asserts the gap STILL
+  EXISTS so a passing REG-388 can never be misread as full coverage, and FAILS
+  the moment the floor is added.**
+- **REG-389 — the truthful badge.** The `/learn` chapter badge renders
+  `practice_ready_count`, and `undefined` (pre-migration DB) renders as UNKNOWN —
+  no badge — never as "0 questions". Rendering zero on a chapter full of
+  questions is a fresh instance of the same defect class as REG-380..REG-386:
+  a failure dressed as a confident, reassuring, wrong empty state. Pinned
+  behaviourally on the real page in both languages, plus a transport-seam
+  companion pinning `undefined`→`undefined` through the real
+  `getChaptersForSubject` mapper.
+
+Also repaired in this pass, no new id: the pre-existing
+`select-quiz-questions-rag-tier0-floor.test.ts` mirror was **stale while still
+passing** — it modelled two of the three disproved states as SERVABLE, so it
+could not have caught the regression it existed to catch. 10 tests → 15.
+**REG-390 is now the next free id**; REG-371..REG-377 remain RESERVED.
+OWED: a reconciliation entry for migration `20260814000013` (cbse_syllabus corpus
+reconciliation), deliberately NOT pinned because architect was still actively
+revising it (rewritten mid-session, 61 kB → 103 kB) after a quality REJECT.
+
+Prior: REG-380..REG-386 (2026-08-11, the SEV1 fix batch for the platform's two
 dominant defect classes — **failures rendered as reassuring empty states**, and
 **structurally impossible features** (cross-student data read from the browser
 against own-row RLS, returning exactly one row and rendered as a peer board).
@@ -50,7 +107,9 @@ Seven entries across three shards:
   the fallback. REG-386 pins the Tier-0 never-serve floor that the fix made
   reachable — all THREE verifier-disproved states, not just `'failed'`.
 
-**REG-387 is now the next free id**; REG-371..REG-377 remain RESERVED.
+**REG-387 was the next free id** at that point — superseded above; the
+2026-08-11 tiered-verification batch took REG-387..REG-389, so **REG-390 is now
+the next free id**. REG-371..REG-377 remain RESERVED.
 Two defects found while writing these and reported rather than pinned as
 correct: the `normalizeTicketCategory()` prototype-inheritance hole
 (`10-rbac-rls.md`) and the `select_quiz_questions_rag` RPC's single-state
