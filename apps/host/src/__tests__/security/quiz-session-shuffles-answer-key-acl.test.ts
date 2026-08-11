@@ -56,6 +56,15 @@ import {
  * either key column back to a client role. This is the durable half: it fails in
  * plain `npm test` the moment someone reopens the hole in SQL.
  *
+ * The set of columns `authenticated` may read is DERIVED by replaying the whole
+ * migration chain (`deriveChainAcl`), not frozen as a literal. 0014's design is
+ * that later migrations ADD columns via additive column-level grants — freezing
+ * its 10 columns made every such legitimate grant a red test (it did exactly
+ * that when 20260814000015 granted `session_mode`). The teeth are unchanged and
+ * are proven by the MUTATION PROOFS block: a table-level grant, a grant of
+ * either key column, any grant to anon, and a resume column that no migration
+ * grants each still fail.
+ *
  * Lane B (live DB, self-skips without real Supabase creds): a genuine PostgREST
  * round-trip proving the `authenticated` role is refused (42501) on the key
  * columns while the service-role read that scoring depends on still succeeds.
@@ -75,8 +84,20 @@ const MIGRATION_FILE = '20260814000014_quiz_session_shuffles_answer_key_column_a
 /** The two columns no client role may ever read. */
 const ANSWER_KEY_COLUMNS = ['correct_answer_index_snapshot', 'integrity_hash'] as const;
 
-/** Exactly the columns `authenticated` may read after the fix. */
-const EXPECTED_GRANTED_COLUMNS = [
+/**
+ * The allowlist LITERAL spelled out by 20260814000014 itself — the BASE of the
+ * chain, NOT the whole of it.
+ *
+ * Do NOT use this constant to answer "what may `authenticated` read today". The
+ * entire design of 20260814000014 is that a column added LATER is not granted
+ * by default (it fails CLOSED) and a later migration must grant it explicitly
+ * and additively — which is exactly what 20260814000015:121 does for
+ * `session_mode`. Freezing this literal as if it were the complete set turned
+ * every legitimate additive grant into a red test; the parity assertion below
+ * therefore derives the live set from the whole migration CHAIN via
+ * `deriveChainAcl()`. This constant survives only to pin 0014's own text.
+ */
+const ACL_BASE_ALLOWLIST = [
   'session_id',
   'question_id',
   'student_id',
@@ -105,6 +126,200 @@ function rootMigrationFiles(): string[] {
   return readdirSync(MIGRATIONS_ABS)
     .filter(f => f.endsWith('.sql'))
     .sort();
+}
+
+// ── chain ACL derivation ─────────────────────────────────────────────────────
+//
+// WHY A SIMULATOR AND NOT A FROZEN LITERAL
+// ========================================
+// 20260814000014 revoked the table-level grant and re-granted from a literal
+// 10-column allowlist. Its stated design (that file:130-148) is that a column
+// added by a LATER migration is NOT granted by default — it fails CLOSED — and
+// must be granted deliberately, additively, column-wise. That is the mechanism
+// working, not drifting.
+//
+// A test that freezes 0014's 10 columns as "the set `authenticated` may ever
+// read" therefore goes red on every correct, security-reviewed additive grant.
+// It did: 20260814000015:121 grants `session_mode` (and asserts it in its own
+// in-transaction post-condition 4b, with 4d re-asserting the answer key is
+// still denied), the resume route legitimately selects it, and the parity check
+// failed on a codebase that was right.
+//
+// So the granted set is DERIVED by replaying the chain: 0014's allowlist ∪
+// every later additive column grant, minus every later column revoke, using the
+// same statement-parsing approach as the DRIFT GUARD below. The assertion keeps
+// its teeth — a table-level grant, a grant of either key column, a grant to
+// anon, or a resume column that NO migration grants all still fail — but a
+// legitimate additive column no longer breaks it.
+
+type ClientRole = 'authenticated' | 'anon';
+const CLIENT_ROLES: readonly ClientRole[] = ['authenticated', 'anon'];
+
+interface AclState {
+  /** Columns each client role may SELECT, after replaying the chain in order. */
+  columns: Record<ClientRole, Set<string>>;
+  /** `role:column` → the migration file that last granted it (for failure messages). */
+  grantedBy: Map<string, string>;
+  /** Every COLUMN-LESS grant to a client role. Each one reopens the whole row. */
+  tableLevelGrants: string[];
+}
+
+function newAclState(): AclState {
+  return {
+    columns: { authenticated: new Set<string>(), anon: new Set<string>() },
+    grantedBy: new Map<string, string>(),
+    tableLevelGrants: [],
+  };
+}
+
+/**
+ * GRANT/REVOKE statements naming this table. `[^;]` bounds each match to a
+ * single statement so a `GRANT EXECUTE ON FUNCTION …;` cannot swallow its way
+ * across a semicolon into a later mention of the table name.
+ */
+const ACL_STATEMENT_RE =
+  /\b(GRANT|REVOKE)\s+([^;]{0,300}?)\s+ON\s+(?:TABLE\s+)?(?:public\.)?"?quiz_session_shuffles"?\s+(TO|FROM)\s+([^;]{0,200});/gi;
+
+/** `SELECT (a, b)` → ['a','b']; `ALL` / bare `SELECT` → null (= table-level). */
+function parseColumnList(privileges: string): string[] | null {
+  const m = privileges.match(/\(([^)]*)\)/);
+  if (!m) return null;
+  return m[1]
+    .split(',')
+    .map(s => s.trim().replace(/"/g, ''))
+    .filter(Boolean);
+}
+
+/**
+ * `PUBLIC` is expanded to both client roles on GRANT (granting to PUBLIC really
+ * does hand it to every role) but NOT on REVOKE — `REVOKE … FROM PUBLIC` does
+ * not remove a role-specific grant in PostgreSQL, so pretending it does would
+ * make the model claim a column is denied when it is not.
+ */
+function parseRoles(raw: string, verb: 'GRANT' | 'REVOKE'): ClientRole[] {
+  const out = new Set<ClientRole>();
+  for (const token of raw.split(',').map(s => s.trim().replace(/"/g, '').toLowerCase())) {
+    if (!token) continue;
+    if (token === 'public') {
+      if (verb === 'GRANT') for (const r of CLIENT_ROLES) out.add(r);
+      continue;
+    }
+    if ((CLIENT_ROLES as readonly string[]).includes(token)) out.add(token as ClientRole);
+  }
+  return [...out];
+}
+
+/** Replay one SQL body against the state. `label` is used in failure messages. */
+function applyAclSql(state: AclState, rawSql: string, label: string): AclState {
+  const body = stripComments(rawSql);
+  ACL_STATEMENT_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+
+  while ((m = ACL_STATEMENT_RE.exec(body)) !== null) {
+    const verb = m[1].toUpperCase() as 'GRANT' | 'REVOKE';
+    const privileges = m[2];
+    const direction = m[3].toUpperCase();
+    const columns = parseColumnList(privileges);
+    // Only ALL / SELECT move the READ set. A write-only verb is still drift,
+    // but it is the DRIFT GUARD's job, not this model's.
+    const touchesRead = /\b(ALL|SELECT)\b/i.test(privileges);
+
+    for (const role of parseRoles(m[4], verb)) {
+      if (verb === 'GRANT' && direction === 'TO') {
+        if (columns === null) {
+          state.tableLevelGrants.push(
+            `${label}: table-level GRANT ${privileges.trim().replace(/\s+/g, ' ')} TO ${role}`,
+          );
+          continue;
+        }
+        if (!touchesRead) continue;
+        for (const c of columns) {
+          state.columns[role].add(c);
+          state.grantedBy.set(`${role}:${c}`, label);
+        }
+      } else if (verb === 'REVOKE' && direction === 'FROM') {
+        if (!touchesRead) continue;
+        if (columns === null) {
+          state.columns[role].clear();
+          continue;
+        }
+        for (const c of columns) {
+          state.columns[role].delete(c);
+          state.grantedBy.delete(`${role}:${c}`);
+        }
+      }
+    }
+  }
+  return state;
+}
+
+/**
+ * Replay every root migration from `startFile` (inclusive) to `endFile`
+ * (inclusive, defaults to the end of the chain). Starting AT 0014 is what makes
+ * an empty initial state correct: 0014's own `REVOKE ALL` is the statement that
+ * discards the baseline default-privileges table grant.
+ */
+function deriveChainAcl(files: string[], startFile: string, endFile?: string): AclState {
+  const from = files.indexOf(startFile);
+  if (from < 0) throw new Error(`deriveChainAcl: ${startFile} not found in the migration chain`);
+  const to = endFile ? files.indexOf(endFile) : files.length - 1;
+  const state = newAclState();
+  for (const f of files.slice(from, to + 1)) {
+    applyAclSql(state, readFileSync(resolve(MIGRATIONS_ABS, f), 'utf8'), f);
+  }
+  return state;
+}
+
+/**
+ * The security verdict on a derived state. Empty = the boundary holds.
+ * Non-empty = the answer key is reachable, or anon got a read, or something
+ * re-granted the whole table.
+ */
+function aclOffenders(state: AclState): string[] {
+  const offenders = [...state.tableLevelGrants];
+  for (const role of CLIENT_ROLES) {
+    for (const key of ANSWER_KEY_COLUMNS) {
+      if (state.columns[role].has(key)) {
+        offenders.push(
+          `${state.grantedBy.get(`${role}:${key}`) ?? 'unknown'}: ANSWER KEY column ` +
+            `${key} is granted to ${role}`,
+        );
+      }
+    }
+  }
+  for (const c of [...state.columns.anon].sort()) {
+    offenders.push(`${state.grantedBy.get(`anon:${c}`) ?? 'unknown'}: anon may SELECT ${c}`);
+  }
+  return offenders;
+}
+
+/** Parse `SHUFFLE_RESUME_COLUMNS` out of the resume module's source text. */
+function parseResumeColumns(src: string): string[] {
+  const m = src.match(/export const SHUFFLE_RESUME_COLUMNS\s*=\s*([\s\S]*?);/);
+  if (!m) throw new Error('SHUFFLE_RESUME_COLUMNS not found in packages/lib/src/quiz/resume.ts');
+  return m[1]
+    .replace(/['"+\n]/g, ' ')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+/** Resume columns that no migration in the chain grants, or that are key columns. */
+function parityOffenders(resumeColumns: string[], state: AclState): string[] {
+  const offenders: string[] = [];
+  for (const c of resumeColumns) {
+    if ((ANSWER_KEY_COLUMNS as readonly string[]).includes(c)) {
+      offenders.push(`resume route selects the ANSWER KEY column "${c}"`);
+      continue;
+    }
+    if (!state.columns.authenticated.has(c)) {
+      offenders.push(
+        `resume route selects "${c}", which NO migration in the chain grants to ` +
+          'authenticated — the resume read will fail 42501 at runtime',
+      );
+    }
+  }
+  return offenders;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,7 +380,7 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
       .filter(Boolean)
       .sort();
 
-    expect(granted).toEqual([...EXPECTED_GRANTED_COLUMNS].sort());
+    expect(granted).toEqual([...ACL_BASE_ALLOWLIST].sort());
     for (const key of ANSWER_KEY_COLUMNS) {
       expect(granted, `${key} must never appear in the authenticated allowlist`).not.toContain(key);
     }
@@ -196,6 +411,53 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
     expect(sql).toMatch(/has_table_privilege\(\s*'authenticated'[^)]*'INSERT'\s*\)/);
     // Post-conditions must ABORT, not warn.
     expect(sql).toMatch(/RAISE\s+EXCEPTION[\s\S]*POST-CONDITION FAILED/);
+  });
+
+  it('KNOWN GAP (architect-owned): 20260814000014 post-condition 4c asserts only 9 of the 10 columns it grants', () => {
+    // Found by architect, 2026-08-11. Migration 20260814000014 GRANTs 10
+    // columns (:149-160) but its own in-transaction post-condition `v_open_cols`
+    // (:180-184) enumerates only 9 — `options_version_at_serve` is granted and
+    // never asserted. So if that ONE grant were dropped or misspelled, the
+    // migration would still COMMIT green and the resume path would break at
+    // runtime instead of at migration time.
+    //
+    // Testing does not own migrations, so this is NOT fixed here. It is pinned
+    // in its CURRENT state so the gap cannot rot silently: the moment architect
+    // adds the missing column to v_open_cols, THIS TEST FAILS and forces the
+    // pin (and REG-380's known-gap note) to be updated rather than quietly
+    // outliving the defect. Same technique as REG-369's dead-link allowlist.
+    const grantMatch = sql.match(
+      /GRANT\s+SELECT\s*\(([^)]*)\)\s*ON\s+TABLE\s+public\.quiz_session_shuffles\s+TO\s+authenticated\s*;/i,
+    );
+    const granted = grantMatch![1]
+      .split(',')
+      .map(s => s.trim().replace(/"/g, ''))
+      .filter(Boolean);
+
+    const openColsMatch = sql.match(/v_open_cols\s+TEXT\[\]\s*:=\s*ARRAY\[([^\]]*)\]/i);
+    expect(openColsMatch, 'v_open_cols post-condition array not found in 20260814000014').toBeTruthy();
+    const asserted = openColsMatch![1]
+      .split(',')
+      .map(s => s.trim().replace(/'/g, ''))
+      .filter(Boolean);
+
+    const unasserted = granted.filter(c => !asserted.includes(c));
+
+    expect(
+      unasserted,
+      'The set of GRANTed-but-unasserted columns in 20260814000014 changed. If it ' +
+        'is now empty, architect has fixed the gap — DELETE this test and update ' +
+        "REG-380's known-gap note. If it grew, a new grant lost its post-condition.",
+    ).toEqual(['options_version_at_serve']);
+
+    // The asserted set must never claim a column that is NOT granted, and must
+    // never name a key column. Those would be defects of a different, worse kind.
+    for (const c of asserted) {
+      expect(granted, `v_open_cols asserts "${c}", which the migration never grants`).toContain(c);
+    }
+    for (const key of ANSWER_KEY_COLUMNS) {
+      expect(asserted).not.toContain(key);
+    }
   });
 
   it('DRIFT GUARD: no later root migration re-opens the table to a client role', () => {
@@ -244,28 +506,165 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
     ).toEqual([]);
   });
 
-  it('CROSS-MODULE PARITY: the resume-route column whitelist is a subset of what is still granted', () => {
+  it('CHAIN DERIVATION self-check: replaying ONLY 20260814000014 reproduces its literal allowlist', () => {
+    // Pins the simulator against the hand-written literal it is replacing. If
+    // the parser ever stops understanding a GRANT/REVOKE form, this fails
+    // BEFORE the derived set is trusted by anything else in this file.
+    const base = deriveChainAcl(files, MIGRATION_FILE, MIGRATION_FILE);
+    expect([...base.columns.authenticated].sort()).toEqual([...ACL_BASE_ALLOWLIST].sort());
+    expect([...base.columns.anon]).toEqual([]);
+    expect(base.tableLevelGrants).toEqual([]);
+  });
+
+  it('CHAIN ACL: the union of every column grant since 20260814000014 still denies the answer key and gives anon nothing', () => {
+    const chain = deriveChainAcl(files, MIGRATION_FILE);
+
+    expect(
+      aclOffenders(chain),
+      'the derived ACL over the whole migration chain exposes something it must not',
+    ).toEqual([]);
+
+    // The derived set must be a SUPERSET of 0014's base — a later migration may
+    // add columns, but silently dropping one would break the resume read.
+    for (const c of ACL_BASE_ALLOWLIST) {
+      expect(chain.columns.authenticated, `${c} was granted by 0014 and later lost`).toContain(c);
+    }
+
+    // And every additive grant is real, not inferred: session_mode is granted by
+    // 20260814000015, which is precisely the case the frozen literal got wrong.
+    expect(chain.columns.authenticated.has('session_mode')).toBe(true);
+    expect(chain.grantedBy.get('authenticated:session_mode')).toMatch(/^20260814000015_/);
+  });
+
+  it('CROSS-MODULE PARITY: every resume-route column is granted somewhere in the migration chain', () => {
     const resumeSrc = readFileSync(
       resolve(__dirname, '../../../../../packages/lib/src/quiz/resume.ts'),
       'utf8',
     );
-    const m = resumeSrc.match(/export const SHUFFLE_RESUME_COLUMNS\s*=\s*([\s\S]*?);/);
-    expect(m, 'SHUFFLE_RESUME_COLUMNS not found in packages/lib/src/quiz/resume.ts').toBeTruthy();
-
-    const cols = m![1]
-      .replace(/['"+\n]/g, ' ')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
-
+    const cols = parseResumeColumns(resumeSrc);
     expect(cols.length).toBeGreaterThan(0);
-    for (const c of cols) {
-      expect(
-        EXPECTED_GRANTED_COLUMNS as readonly string[],
-        `resume route selects "${c}" which the ACL no longer grants to authenticated`,
-      ).toContain(c);
-      expect(ANSWER_KEY_COLUMNS as readonly string[]).not.toContain(c);
+
+    const chain = deriveChainAcl(files, MIGRATION_FILE);
+    const offenders = parityOffenders(cols, chain);
+
+    expect(
+      offenders,
+      'the resume route selects a column the migration chain does not grant to ' +
+        'authenticated. Granted set:\n  ' +
+        [...chain.columns.authenticated].sort().join(', ') +
+        '\nOffenders:\n  ' +
+        offenders.join('\n  '),
+    ).toEqual([]);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // MUTATION PROOFS. The derivation above is only worth having if it still
+  // FAILS on the things it is supposed to catch. Each of these feeds synthetic
+  // SQL through the SAME parser the real chain goes through and asserts the
+  // verdict flips. A green suite where these could not go red would prove
+  // nothing.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  describe('MUTATION PROOFS — the derived assertion must still be able to fail', () => {
+    const chain = () => deriveChainAcl(files, MIGRATION_FILE);
+
+    it('MUTATION: a later table-level GRANT to authenticated is caught', () => {
+      const state = applyAclSql(
+        chain(),
+        'GRANT SELECT ON TABLE public.quiz_session_shuffles TO authenticated;',
+        '29999999999999_mutation.sql',
+      );
+      const offenders = aclOffenders(state);
+      expect(offenders.some(o => /table-level GRANT/i.test(o))).toBe(true);
+      expect(offenders).not.toEqual([]);
+    });
+
+    it('MUTATION: a later table-level GRANT ALL to anon is caught', () => {
+      const state = applyAclSql(
+        chain(),
+        'GRANT ALL ON TABLE public.quiz_session_shuffles TO anon;',
+        '29999999999999_mutation.sql',
+      );
+      expect(aclOffenders(state).some(o => /table-level GRANT ALL TO anon/i.test(o))).toBe(true);
+    });
+
+    it('MUTATION: a column-less GRANT TO PUBLIC is caught for both client roles', () => {
+      const state = applyAclSql(
+        chain(),
+        'GRANT SELECT ON TABLE public.quiz_session_shuffles TO PUBLIC;',
+        '29999999999999_mutation.sql',
+      );
+      const offenders = aclOffenders(state);
+      expect(offenders.some(o => /TO authenticated$/.test(o))).toBe(true);
+      expect(offenders.some(o => /TO anon$/.test(o))).toBe(true);
+    });
+
+    for (const key of ANSWER_KEY_COLUMNS) {
+      it(`MUTATION: a later column GRANT of ${key} to authenticated is caught`, () => {
+        const state = applyAclSql(
+          chain(),
+          `GRANT SELECT (question_id, ${key}) ON TABLE public.quiz_session_shuffles TO authenticated;`,
+          '29999999999999_mutation.sql',
+        );
+        const offenders = aclOffenders(state);
+        expect(offenders).toContainEqual(
+          `29999999999999_mutation.sql: ANSWER KEY column ${key} is granted to authenticated`,
+        );
+      });
     }
+
+    it('MUTATION: a later column GRANT to anon is caught even for a non-key column', () => {
+      const state = applyAclSql(
+        chain(),
+        'GRANT SELECT (question_id) ON TABLE public.quiz_session_shuffles TO anon;',
+        '29999999999999_mutation.sql',
+      );
+      expect(aclOffenders(state)).toContainEqual(
+        '29999999999999_mutation.sql: anon may SELECT question_id',
+      );
+    });
+
+    it('MUTATION: SHUFFLE_RESUME_COLUMNS naming a column no migration grants is caught', () => {
+      const offenders = parityOffenders(
+        ['question_id', 'session_mode', 'never_granted_column'],
+        chain(),
+      );
+      expect(offenders).toHaveLength(1);
+      expect(offenders[0]).toMatch(/never_granted_column.*NO migration in the chain grants/s);
+    });
+
+    it('MUTATION: SHUFFLE_RESUME_COLUMNS naming an answer-key column is caught', () => {
+      const offenders = parityOffenders(
+        ['question_id', 'correct_answer_index_snapshot'],
+        chain(),
+      );
+      expect(offenders).toEqual([
+        'resume route selects the ANSWER KEY column "correct_answer_index_snapshot"',
+      ]);
+    });
+
+    it('CONTROL: a legitimate additive column grant does NOT trip anything', () => {
+      // The whole point of the rewrite. This is 20260814000015's shape.
+      const state = applyAclSql(
+        chain(),
+        'GRANT SELECT (some_future_metadata_column) ON TABLE public.quiz_session_shuffles TO authenticated;',
+        '29999999999999_additive.sql',
+      );
+      expect(aclOffenders(state)).toEqual([]);
+      expect(parityOffenders(['question_id', 'some_future_metadata_column'], state)).toEqual([]);
+    });
+
+    it('CONTROL: a later column REVOKE removes the column from the derived set', () => {
+      // Proves the model is a real replay, not an accumulate-only union — a
+      // revoked column must stop satisfying the parity check.
+      const state = applyAclSql(
+        chain(),
+        'REVOKE SELECT (session_mode) ON TABLE public.quiz_session_shuffles FROM authenticated;',
+        '29999999999999_revoke.sql',
+      );
+      expect(state.columns.authenticated.has('session_mode')).toBe(false);
+      expect(parityOffenders(['session_mode'], state)).toHaveLength(1);
+    });
   });
 
   it('CALLER PARITY: the only app-code read of the answer key is service-role', () => {

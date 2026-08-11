@@ -595,3 +595,27 @@ all three.**
 above are historical and are deliberately not re-derived here.**
 
 ---
+
+## `/today` reason honesty — the deliberately-silent set (2026-08-11)
+
+The third of the four Phase 4 blocker fixes in commit `6a67ca8ed`. Its three
+siblings are in `03-quiz-integrity.md` (REG-393, REG-394, REG-396) together
+with the two P0 submission defects (REG-397, REG-398).
+
+**Verification (2026-08-11), real output:** re-run from `apps/host` in the same
+pass as the whole security + quiz + today sweep —
+`Test Files 36 passed (36) | Tests 815 passed | 6 skipped (821)`; the 6 skips
+are REG-380's live-DB probes, none of them in this entry's file.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-395 | `today_enumerated_silent_reason_set_both_directions` | Three reason→copy mappings ASSERTED THINGS THE SYSTEM NEVER DETERMINED, and are now deliberately silent (`null` → the renderer omits the chip; it already handled a falsy reason). (a) `sunday_default` → *"Ready for the next concept"* was decided by `isSundayIst()` **and nothing else**, on a Curiosity Dive that sits OUTSIDE the concept sequence — telling a child we assessed them as ready when we looked at a calendar. (b) `month_end_default` → *"Review due"* was decided by `isMonthEndDayIst()`, on a monthly Synthesis where nothing is due and nothing is reviewed; it also COLLIDED with `today.item.srs_due.label` ("Reviews due"), actively misleading a student who had learned that phrase means flashcards. (c) `no_signals_yet` → silent because it fires precisely BECAUSE we know nothing about the learner, so any readiness claim from zero evidence contradicts its own card ("Find your starting point / a quick diagnostic"). All three cards are self-explanatory without a chip. **The test is NOT weakened — this is the load-bearing part.** REG-389's contract was "every resolver reason maps to an approved phrase"; a silent mapping would have satisfied a naive relaxation to "phrase OR null", which would have let ANY future reason go silent unnoticed. It instead asserts **"approved phrase OR a member of an ENUMERATED silent set"**, pinned in BOTH directions against an independent literal list held in the test: every enumerated reason MUST be silent in production, AND every non-enumerated resolver reason MUST NOT be silent, AND every enumerated reason must be a REAL resolver reason (not a stale literal). So a 13th resolver branch satisfies neither arm and FAILS, and silencing a fourth reason in production without a deliberate edit here also FAILS. Silence is symmetric across languages (`a silent reason renders nothing in BOTH languages` — no half-suppressed chip, P7), the two dishonest phrases are pinned ABSENT from the copy table, and REG-389's self-extending source-extraction of the reason set is preserved underneath. | `apps/host/src/__tests__/lib/today/reason-copy.test.ts` (`the deliberate no-chip set is exactly the three calendar-driven reasons`, the two `it.each` completeness sweeps EN + HI, `a silent reason renders nothing in BOTH languages`, `the two dishonest mappings are gone: no reason claims readiness or a due review from a DATE`); `packages/lib/src/today/copy.ts` (`isSilentTodayReason`) | E | **P7**, honesty contract |
+
+**Relationship to REG-389:** REG-389 remains valid and is NOT superseded — its
+completeness property (the reason list is extracted from source at test time,
+so a new resolver branch with no phrase fails the suite) is what makes REG-395
+meaningful. REG-395 narrows the ACCEPTED outcome of that sweep from "a phrase"
+to "a phrase, or one of exactly three enumerated silences". Do not merge the two
+entries: deleting REG-395's enumeration would silently re-widen REG-389.
+
+---

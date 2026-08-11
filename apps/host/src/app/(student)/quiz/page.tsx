@@ -22,6 +22,13 @@ import {
   readResumeBreadcrumb,
   clearResumeBreadcrumb,
 } from '@alfanumrik/lib/quiz/resume';
+// P0 fix cluster (2026-08-11) — the two client→server submit-contract values
+// that were each re-derived inline at more than one call site, and wrong at
+// one of them. `collectSessionQuestionIds` guarantees EVERY served question
+// (MCQ or written) is snapshotted by start_quiz_session; `computeElapsedSeconds`
+// guarantees p_time is elapsed — not remaining — in exam mode. See
+// packages/lib/src/quiz/session-contract.ts for the full defect writeup.
+import { collectSessionQuestionIds, computeElapsedSeconds } from '@alfanumrik/lib/quiz/session-contract';
 import { assembleQuiz } from '@alfanumrik/lib/quiz-assembler';
 import { XP_RULES } from '@alfanumrik/lib/xp-config';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
@@ -383,6 +390,27 @@ export default function QuizPage() {
   const [noQuestionsMessage, setNoQuestionsMessage] = useState('');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── TRUE ELAPSED TIME — THE SINGLE DERIVATION (P0 fix, 2026-08-11) ───────
+  // `timer` counts UP in practice/cognitive but DOWN in exam mode, so it is
+  // the time REMAINING there, not elapsed. It was being passed raw as the
+  // RPC's `p_time`, which inverted P3 Check 1 (`p_time / questions < 3s` →
+  // flag → XP 0): a student who used almost the whole exam window submitted
+  // p_time ≈ 0 and was flagged, every exam that auto-submitted at `timer === 0`
+  // was flagged by construction, and a rusher who left 25 minutes on the clock
+  // sailed through. The correct conversion already existed a hundred lines
+  // below (the exam_simulations write) but the submit call never used it.
+  //
+  // Derive it ONCE, here. Every consumer — the submit RPC (both the happy path
+  // and the retry path), the client-side advisory anti-cheat check, the
+  // exam_simulations row and the quiz_completed analytics event — reads THIS
+  // value. There is deliberately no second site left that could forget the
+  // count-down conversion. P3's 3s/question threshold is unchanged.
+  const elapsedSeconds = computeElapsedSeconds({
+    quizMode,
+    timer,
+    examTimeLimitMinutes: examTimeLimit,
+  });
 
   // Results state.
   // Marking-Authenticity Wave 2: extended with optional xp_capped / xp_uncapped /
@@ -845,12 +873,22 @@ export default function QuizPage() {
       // For MCQ questions, ask the server to generate the shuffle and snapshot
       // options + correct_answer_index. The server returns options already in
       // display order; selected_option is just the displayed index.
-      const mcqIds = qs
-        .filter((q: Question) => isQuestionMCQ(q) && typeof q.id === 'string')
-        .map((q: Question) => q.id);
+      //
+      // P0 fix (2026-08-11): the id list is EVERY served question, not just the
+      // MCQ ones. start_quiz_session writes one quiz_session_shuffles row per
+      // id it is handed, and that table is BOTH the per-response snapshot
+      // submit_quiz_results_v2 looks up AND the "how many questions were
+      // served" source for P3 anti-cheat Check 3. Passing only MCQ ids left
+      // written (SA/MA/LA/NCERT) questions with no row at all, so the RPC
+      // raised session_not_started and destroyed the whole submission — and a
+      // PURE written quiz produced an empty list, skipped the RPC entirely and
+      // submitted with p_session_id = NULL, which missed for every response.
+      // start_quiz_session already stores a non-MCQ row correctly (identity
+      // shuffle + empty options snapshot, migration 20260801100800).
+      const sessionQuestionIds = collectSessionQuestionIds(qs);
       let session: Awaited<ReturnType<typeof startQuizSession>> = null;
-      if (mcqIds.length > 0 && student) {
-        session = await startQuizSession(student.id, mcqIds);
+      if (sessionQuestionIds.length > 0 && student) {
+        session = await startQuizSession(student.id, sessionQuestionIds);
       }
 
       let displayQuestions = qs;
@@ -864,6 +902,15 @@ export default function QuizPage() {
         displayQuestions = qs.map((q: Question) => {
           const s = byId.get(q.id);
           if (!s) return q;
+          // Non-MCQ questions are now snapshotted too (see sessionQuestionIds
+          // above), and the server returns an EMPTY options_displayed for them.
+          // Only a real 4-option MCQ snapshot may rewrite the question object —
+          // otherwise a written question would have its options blanked and its
+          // correct_answer_index stamped, for no benefit. Leaving it untouched
+          // keeps the written-answer renderer byte-identical to before.
+          if (!Array.isArray(s.options_displayed) || s.options_displayed.length !== 4) {
+            return q;
+          }
           return {
             ...q,
             options: s.options_displayed,
@@ -1629,9 +1676,18 @@ export default function QuizPage() {
 
         // ── ANTI-CHEAT: Client-side validation before submission (P3) ──
         // SLC-5 convergence: the client is NOT a security boundary (P3/P9). The
-        // server RPC (submit_quiz_results / _v2) is the single authority — it
+        // server RPC (submit_quiz_results_v2) is the single authority — it
         // applies the SAME 3 P3 checks, sets `flagged=true`, zeros XP, but still
-        // RECORDS the session with the REAL score_percent. The client therefore
+        // RECORDS the session with the REAL score_percent.
+        //
+        // CORRECTION (2026-08-11): that last clause used to be false for one
+        // whole class of quiz. When a response had no quiz_session_shuffles
+        // row, the RPC RAISEd `session_not_started` BEFORE reaching any of the
+        // three checks — so nothing was recorded, no score, no session row. It
+        // hit every quiz containing at least one written question, because the
+        // client only ever snapshotted MCQ ids. Both halves are fixed (see
+        // `sessionQuestionIds` above and migration 20260814000016); the
+        // "still RECORDS the session" claim is true again. The client therefore
         // performs these checks ADVISORY-ONLY (warn + telemetry) and ALWAYS
         // proceeds to submitQuizResults. It must NEVER discard the attempt or
         // override the score to 0 — doing so silently destroyed a legitimately
@@ -1645,13 +1701,18 @@ export default function QuizPage() {
         // guard (mcqResponses.length > 0) silently bypassed the check on
         // those quizzes. P3 invariant requires the check whenever any
         // response exists, regardless of question type.
+        //
+        // `elapsedSeconds`, not `timer`: in exam mode the timer counts DOWN,
+        // so the raw value is the time REMAINING and this advisory check would
+        // disagree with the server's (see the single derivation at the top of
+        // the component).
         const mcqResponses = allResponses.filter(r => r.selected_option >= 0);
         const totalResponses = allResponses.length;
-        const avgTimePerQ = totalResponses > 0 ? timer / totalResponses : 0;
+        const avgTimePerQ = totalResponses > 0 ? elapsedSeconds / totalResponses : 0;
         if (totalResponses > 0 && avgTimePerQ < 3) {
           // ADVISORY ONLY — do NOT discard the attempt. The server re-checks
           // this same condition and is the authority on flag + zero-XP.
-          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${totalResponses} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s) — submitting; server is authoritative`);
+          console.warn(`[AntiCheat] Quiz completed too fast: ${elapsedSeconds}s for ${totalResponses} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s) — submitting; server is authoritative`);
         }
 
         // 2. Detect impossible response patterns — FLAG (warn but still submit)
@@ -1666,8 +1727,16 @@ export default function QuizPage() {
 
         // 3. Verify response count matches question count.
         // ADVISORY ONLY — do NOT discard the attempt. The server re-checks
-        // jsonb_array_length(p_responses) <> v_total and is the authority on
-        // flag + zero-XP; it still records the session with the real score.
+        // jsonb_array_length(p_responses) against the number of questions it
+        // actually SERVED (COUNT(*) over quiz_session_shuffles for this
+        // session — NOT v_total, which is derived from the payload itself and
+        // would be a tautology) and is the authority on flag + zero-XP; it
+        // still records the session with the real score.
+        //
+        // That served count is only correct because `sessionQuestionIds`
+        // above snapshots EVERY served question. When it snapshotted MCQs
+        // only, a mixed quiz had more responses than served rows and would
+        // have been flagged here even if it had survived submission at all.
         if (allResponses.length !== questions.length) {
           console.warn(`[AntiCheat] Response count (${allResponses.length}) != question count (${questions.length}) — submitting; server is authoritative`);
         }
@@ -1680,7 +1749,7 @@ export default function QuizPage() {
           subMeta?.name || selectedSubject!,
           questions[0]?.chapter_number || 1,
           allResponses,
-          timer,
+          elapsedSeconds,  // P0 fix: p_time is ELAPSED, never the exam-mode remainder
           serverSessionId,  // P0 fix: route to v2 RPC when present
         );
         setResults(res);
@@ -1804,7 +1873,10 @@ export default function QuizPage() {
             total_marks: totalMarks,
             obtained_marks: obtainedMarks,
             percentage: totalMarks > 0 ? Math.round((obtainedMarks / totalMarks) * 100 * 100) / 100 : 0,
-            time_taken_seconds: examTimeLimit * 60 - timer,
+            // Was `examTimeLimit * 60 - timer` — the CORRECT conversion, but a
+            // second, independent copy of it. It is now the shared derivation
+            // so the submit RPC and this row can never disagree again.
+            time_taken_seconds: elapsedSeconds,
             time_limit_seconds: examTimeLimit * 60,
             is_completed: true,
             completed_at: new Date().toISOString(),
@@ -1816,7 +1888,7 @@ export default function QuizPage() {
           score: res?.score_percent ?? 0,
           questions: allResponses.length,
           grade: student!.grade,
-          time_seconds: timer,
+          time_seconds: elapsedSeconds,
         });
       } catch (e) {
         console.error('Submit error:', e);
@@ -1841,9 +1913,17 @@ export default function QuizPage() {
             });
           }
         }
+        // COPY CORRECTION (2026-08-11): this used to reassure the student
+        // that their answers had been stored. That was a false statement on
+        // every branch that reaches here — a failed submit writes NO
+        // quiz_sessions row and NO quiz_responses rows, so nothing durable
+        // exists anywhere. The
+        // answers are held in `pendingSubmissionRef` in this tab only, and
+        // they are lost on refresh. Say what is actually true: the submission
+        // failed, and retry is the way to save it. (P7: bilingual.)
         setNetworkError(isHi
-          ? 'कनेक्शन टूट गया — आपके उत्तर सुरक्षित हैं। पुनः प्रयास करें।'
-          : 'Connection lost — your answers are saved. Please retry.');
+          ? 'कनेक्शन की समस्या — तुम्हारे उत्तर अभी सहेजे नहीं जा सके। पुनः प्रयास करें।'
+          : "Connection problem — your answers couldn't be saved yet. Please retry.");
         const total = responses.length;
         const correct = responses.filter(r => r.is_correct).length;
         // SECURITY: When API fails, show score for display only but DO NOT award XP.
@@ -1881,7 +1961,7 @@ export default function QuizPage() {
         subMeta?.name || selectedSubject,
         questions[0]?.chapter_number || 1,
         allResponses,
-        timer,
+        elapsedSeconds,  // P0 fix: same single elapsed derivation as the happy path
         serverSessionId,  // P0 fix: v2 path on retry too
       );
       setResults(res);
@@ -1930,16 +2010,16 @@ export default function QuizPage() {
         score: res?.score_percent ?? 0,
         questions: allResponses.length,
         grade: student.grade,
-        time_seconds: timer,
+        time_seconds: elapsedSeconds,
       });
     } catch (e) {
       console.error('Retry submit error:', e);
       setNetworkError(isHi
-        ? 'कनेक्शन टूट गया — आपके उत्तर सुरक्षित हैं। पुनः प्रयास करें।'
-        : 'Connection lost — your answers are saved. Please retry.');
+        ? 'कनेक्शन की समस्या — तुम्हारे उत्तर अभी सहेजे नहीं जा सके। पुनः प्रयास करें।'
+        : "Connection problem — your answers couldn't be saved yet. Please retry.");
     }
     setLoading(false);
-  }, [student, selectedSubject, questions, timer, selectedChapter, isHi, refreshSnapshot, serverSessionId, allowedSubjects]);
+  }, [student, selectedSubject, questions, elapsedSeconds, selectedChapter, isHi, refreshSnapshot, serverSessionId, allowedSubjects]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 

@@ -1990,3 +1990,101 @@ stale for many passes and is NOT updated here rather than have it drift
 further.**
 
 ---
+
+## Phase 4 blocker fixes + two P0 submission defects (2026-08-11)
+
+Commit `6a67ca8ed` ("fix(student): close 4 blocking defects in Phase 4 resume +
+Today") closed four blockers raised by the assessment review of `b008c20c7`.
+Two further P0 defects were found in the same review and fixed in the tree
+(migration `20260814000016`, `packages/lib/src/quiz/session-contract.ts`, and
+two new test files). Neither batch was catalogued by the REG-380..REG-392 pass,
+which predates both.
+
+**Read the status column literally.** `E` is used ONLY where a test that
+actually executes under `npm test` asserts the clause. Every clause whose truth
+depends on a migration is `P`, because **none of `20260814000014`,
+`20260814000015` or `20260814000016` has ever been executed against any
+database** — there is no Postgres in this environment. For those, what is green
+is SQL TEXT, and the discharge condition is stated per entry.
+
+**Verification (2026-08-11), real output:** the security + quiz + today suites
+re-run in ONE vitest pass from `apps/host` —
+`Test Files 36 passed (36) | Tests 815 passed | 6 skipped (821)`. The 6 skips
+are REG-380's Lane B live-DB probes and nothing else.
+
+### Entries
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-393 | `ff_quiz_v2_interlock_at_producer_and_fail_closed` | REG-384 put the `ff_quiz_v2` interlock on the resume GET only — i.e. on the CONSUMER. `resolveResumableQuiz` (which decides whether `/today` offers "Continue where you stopped") did not consult it, so for a student on the flag ramp the card RENDERED, the tap was refused by the route, and the consumer failed soft with no message onto the setup screen — exactly the dead-end Phase 4 existed to kill, reintroduced for the flagged cohort. The gate now runs where the card is **PRODUCED**; the route keeps its check as defence in depth (both are pinned, so removing either is a failure). Second half: the flag read used to fail **OPEN** — `isFeatureEnabled` collapses "off", "row missing", "malformed" and "fetch failed" to the same `false`, so a flag-read failure ALLOWED resume. `readFeatureFlagStrict` returns `{determined:true, enabled}` vs `{determined:false, reason}`, and BOTH undetermined shapes (`flags_unavailable`, `flag_not_found`) refuse. `isFeatureEnabled` is behaviour-identical and both readers now share one `evaluateFlagRow`, so the two cannot drift. The route also passes the caller's REAL roles instead of a hardcoded `'student'`. | `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`INTERLOCK: refuses to resume while ff_quiz_v2 … is ON`, `INTERLOCK: scopes the flag read to the caller's REAL roles…`, + the FLAG_UNAVAILABLE / FLAG_MISSING_ROW fail-closed cases); `apps/host/src/__tests__/state/resume-live-state.test.ts` (`suppresses the card when the ff_quiz_v2 interlock blocks resume`, `offers the card when the interlock does NOT block…`) | E | P1, P2, P9 |
+| REG-394 | `session_mode_persisted_exam_and_unknown_refuse_resume` | The exam safeguard in `quiz/page.tsx` was DEAD CODE: `if (quizMode === 'exam') setQuizMode('cognitive')` could never fire, because on a fresh `/quiz?session=<uuid>` load the URL carries no `?mode` and `quizMode` is already the default. The instrument was persisted nowhere, so a TIMED exam resumed UNTIMED and was written to `quiz_sessions` as though it were the same instrument — and the system could not even detect the swap afterwards. Migration `20260814000015` adds `session_mode TEXT` with a closed-vocabulary CHECK (`practice`\|`cognitive`\|`exam`\|NULL), stamped **first-write-wins in the SAME `UPDATE` that persists the first confirmed answer** — a session is only resumable once it has ≥1 persisted answer, so there is no window in which a session is resumable with an unknown instrument (a separate writer would have created exactly that window). Behaviour: an `exam` session refuses outright (`exam_not_resumable`); a NULL mode refuses (`mode_unknown`) rather than assuming `cognitive` — a value we cannot map is not evidence of safety; an unrecognised string refuses too; the gate runs BEFORE any per-question work; a resumable payload carries the real instrument so the runtime restores it; `/today` suppresses the card for all three refusal cases. Dead line deleted. | `apps/host/src/__tests__/quiz/resume-payload.test.ts` (§ `a resumed session runs the instrument it was started as`, 5 tests + `resolveSessionMode`); `apps/host/src/__tests__/state/resume-live-state.test.ts` (exam / never-recorded / unrecognised suppression + practice still offered); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`refuses an EXAM session…`, `refuses a session whose instrument was never recorded…`, `stamps the session instrument in the SAME first-write-wins UPDATE as the answer`, `400 on an unrecognised mode rather than silently coercing it`); migration `supabase/migrations/20260814000015_quiz_session_shuffles_session_mode.sql` | **P** | P1, P4 |
+| REG-396 | `resume_never_fabricates_bloom_or_difficulty` | The resume builder stamped `bloom_level ?? 'remember'` (and a difficulty default). `classifyQuizError` branches on `bloom_level` — `'remember'` → `knowledge_gap`, `apply\|analyze\|evaluate\|create` → `conceptual`, otherwise `procedural` — and `question_bank.bloom_level` is NULLABLE. So **the same question, answered wrong the same way, produced a DIFFERENT `error_type` depending on whether the session had been interrupted** (`knowledge_gap` on resume vs `procedural` fresh). That value is persisted to `quiz_responses.error_type` and feeds `update_learner_state_post_quiz` and misconception analysis: silent learner-state corruption as a function of an interruption. Both fields now pass through VERBATIM including `null`; the types were widened honestly through `QuizResumeQuestion`, the orchestrator's `Question`, and three UI declarations that already coped with `null` at runtime. The ONE site that needs a concrete number takes the fallback AT the shared consumption point, so fresh and resumed flow through the same call — which is what actually kills the divergence rather than moving it. | `apps/host/src/__tests__/quiz/resume-payload.test.ts` (§6 `nullable question metadata passes through VERBATIM`: `a NULL bloom_level stays NULL instead of becoming "remember"`, `a real bloom_level / difficulty is preserved exactly`) | E | P1 (learner-state integrity), P6 |
+| REG-397 | `written_answer_quiz_is_submittable_at_all` | **P0.** Any quiz containing a non-MCQ question COULD NOT BE SUBMITTED AT ALL, and a pure written quiz was worse. Four-part defect: (1) `quiz/page.tsx` handed `start_quiz_session` only `qs.filter(isQuestionMCQ)`, so `quiz_session_shuffles` had NO row for any SA/MA/LA/NCERT-exercise question; (2) `submit_quiz_results_v2`'s per-response loop RAISEd `session_not_started` (P0001) the moment a response had no snapshot row — **before any anti-cheat check could run**; (3) the v1 fallback and client-side scoring were removed in the 2026-08-06 audit, so the exception reached the student as *"Connection lost — your answers are saved. Please retry."*, which was FALSE — nothing was saved, no `quiz_sessions` row was written, XP was 0, and every retry re-raised; (4) with `mcqIds.length === 0` a pure written quiz never called `startQuizSession` at all, so `p_session_id` was NULL and the lookup missed for every response. Reachable from the live product: `quiz-assembler.ts` validates with `allowNonMcq: true` and QuizSetup exposes Mixed / Short Answer / Long Answer / NCERT Exercise pickers. **Fix, both halves pinned:** CLIENT — `collectSessionQuestionIds` snapshots EVERY served question (`start_quiz_session` already handles non-MCQ rows via identity shuffle + empty options snapshot, `20260801100800`), the MCQ-only filter is proven GONE from executable code, and the false "your answers are saved" copy is gone in EN + HI; RPC — the written lane is chosen from the SERVER snapshot + `question_bank` type, **never from a client flag**, written correctness comes from the AI-evaluated marks using the same ≥50% rule the student was shown, marks arrive through a regex guard so a malformed payload cannot abort the transaction (P4) and are clamped into `[0, marks_possible]`, and **the `session_not_started` RAISE is PRESERVED for MCQ** (an MCQ with no snapshot row still raises P0001 — the tamper guard is intact). P1 score formula, P2 XP literals, P3's 3.0s threshold and Check 3's served-row comparison, and the P4 idempotency short-circuit are each asserted BYTE-IDENTICAL. | `apps/host/src/__tests__/quiz/written-answer-submission-p0.test.ts` (26 tests); `packages/lib/src/quiz/session-contract.ts`; migration `supabase/migrations/20260814000016_submit_quiz_v2_written_answer_scoring.sql` | **P** | P1, P2, P3, P4, P6 |
+| REG-398 | `exam_anticheat_not_inverted_elapsed_vs_remaining` | **P0.** `quiz/page.tsx` passed the raw `timer` state as `p_time` to `submit_quiz_results_v2`. In exam mode that timer counts **DOWN**, so `p_time` was the time REMAINING, not elapsed — and P3 Check 1 (`p_time / v_total < 3` → flag → XP 0) therefore ran BACKWARDS in exam mode: a student who used nearly the whole window submitted `p_time ≈ 0` and was FLAGGED; **every exam that auto-submitted at `timer === 0` was flagged BY CONSTRUCTION, i.e. guaranteed 0 XP**; a rusher who left 25 minutes on the clock submitted `p_time = 1500` and passed comfortably. The check punished thoroughness and rewarded rushing. The same file already knew the correction (`exam_simulations` wrote `examTimeLimit * 60 - timer`) — two call sites, one of them wrong. Fix: `computeElapsedSeconds` derives elapsed ONCE and every consumer (submit RPC, client-side advisory anti-cheat, `exam_simulations`, `quiz_completed` analytics) reads that one value; the duplicate inline conversion is DELETED so there is no second site left to forget. Pinned in both directions: the thorough student and the auto-submit-at-0 case are no longer flagged (with the counterfactual that they WERE), a genuine rusher IS still caught, exactly 3s/question is still the unflagged boundary in exam mode, practice mode is unaffected, and the value is clamped to `[0, limit]` so a clock glitch cannot mint a negative or oversized `p_time`. **The 3s/question threshold is NOT changed** — only the value fed into it is corrected to the elapsed time it was always documented to be. | `apps/host/src/__tests__/quiz/exam-elapsed-time-p0.test.ts` (21 tests); `packages/lib/src/quiz/session-contract.ts` (`computeElapsedSeconds`) | E | **P3**, P1, P2 |
+
+REG-395 (the three deliberately-silent `/today` reasons) is the fourth Phase 4
+blocker fix and is filed in `15-cross-cutting.md` alongside its siblings
+REG-388..REG-392.
+
+### Why REG-394 and REG-397 are `P` — and what discharges them
+
+Both entries' SERVER halves are pins on SQL TEXT. Neither
+`20260814000015` nor `20260814000016` has been executed against a database,
+here or anywhere. Specifically **unverified at runtime**:
+
+* REG-394: that `session_mode` actually exists, that its CHECK actually
+  rejects a fourth token, that the column-level `GRANT` in step 3 actually
+  makes `authenticated` able to read it (without which the `/today` exam
+  suppression **fails silently open**, because `student-state-builder` reads
+  that table under the CALLER's role), and that post-conditions 4a-4e actually
+  roll a bad apply back.
+* REG-397: that the written lane actually scores, that the preserved
+  `session_not_started` RAISE actually still fires for a snapshot-less MCQ,
+  and that the regex guard actually prevents a transaction abort.
+
+**Discharge condition (identical for both):** apply the migration on staging,
+then submit (a) a mixed MCQ+written quiz and (b) a pure written quiz end to
+end, and record a real `score_percent` / `xp_earned` plus a `quiz_responses`
+row carrying the written answer and its marks. For REG-394, additionally
+resume an `exam` session as a real `authenticated` caller and observe
+`exam_not_resumable` rather than a silently-untimed resume.
+
+### REG-380 — parity mechanism REPAIRED (2026-08-11), and a new architect-owned gap
+
+**The `CROSS-MODULE PARITY` clause of REG-380 was wrong by construction and has
+been rewritten.** It froze `20260814000014`'s 10-column literal as if that were
+the complete set `authenticated` may ever read. But the entire design of that
+migration is that later migrations ADD columns via additive column-level grants
+— that is the fail-closed mechanism working as intended, and `20260814000015`
+uses it correctly (it grants `session_mode` at `:121` and asserts the grant in
+its own in-transaction post-condition 4b, with 4d re-asserting the answer key is
+still denied). `SHUFFLE_RESUME_COLUMNS` legitimately gained `session_mode`, so
+the parity assertion failed on a codebase that was RIGHT — and would have
+failed again on **every** future additive grant.
+
+The granted set is now DERIVED by replaying the migration chain
+(`deriveChainAcl`): 0014's allowlist ∪ every later column grant, minus every
+later column revoke, using the same statement-parsing approach as the DRIFT
+GUARD. **The assertion was not weakened.** All of these still fail, and each has
+a committed mutation proof in the same file plus a recorded live-file
+tamper/restore run: a column-less (table-level) grant to `authenticated`, to
+`anon`, or to `PUBLIC`; a grant naming `correct_answer_index_snapshot` or
+`integrity_hash`; any grant to `anon`; and `SHUFFLE_RESUME_COLUMNS` naming a
+column no migration in the chain grants. A `CHAIN DERIVATION self-check` pins
+the simulator against 0014's hand-written literal so a parser that stopped
+understanding a GRANT form fails BEFORE the derived set is trusted.
+
+**New known gap, architect-owned, NOT fixed here.** Migration `20260814000014`
+GRANTs 10 columns (`:149-160`) but its own post-condition `v_open_cols`
+(`:180-184`) enumerates only **9** — `options_version_at_serve` is granted and
+never asserted. If that one grant were dropped or misspelled the migration would
+still COMMIT green and the resume path would break at RUNTIME instead of at
+migration time. Testing does not own migrations, so this is pinned in its
+CURRENT state (`KNOWN GAP (architect-owned): 20260814000014 post-condition 4c
+asserts only 9 of the 10 columns it grants`) using the same technique as
+REG-369's dead-link allowlist: **the moment architect adds the missing column,
+that test FAILS and forces this note to be updated** rather than quietly
+outliving the defect. REG-380's status is unchanged at `P` — for the reasons
+already recorded above, not for this one.
+
+---

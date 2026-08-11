@@ -6,16 +6,48 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 397 entries upper bound / 392 honest (target: 35 — TARGET
-EXCEEDED). Independently measured body-backed `REG-N` ids: 339 (max 392).**
-See the 2026-08-11 addendum below — that three-way divergence is PRE-EXISTING
+**Total catalog: 403 entries upper bound / 398 honest (target: 35 — TARGET
+EXCEEDED). Independently measured body-backed `REG-N` ids: 345 (max 398).**
+See the 2026-08-11 addenda below — that three-way divergence is PRE-EXISTING
 and still unresolved; do not quote any one of the three numbers as "the" total
-without saying which definition you used. The 339 figure was RE-MEASURED on
-2026-08-11 after the Phase 4 cataloguing pass, using the same stated
-definition as the 326 measurement it supersedes (326 + 13 new = 339 — the
-divergence against the declared totals is carried forward UNCHANGED at 58
+without saying which definition you used. The 345 figure was RE-MEASURED on
+2026-08-11 after the Phase 4 blocker-fix + P0 cataloguing pass, using the same
+stated definition as the 339 measurement it supersedes (339 + 6 new = 345 —
+the divergence against the declared totals is carried forward UNCHANGED at 58
 entries, not papered over).
-Latest REG id: **REG-392**. **REG-393 is the next free REG id.**
+Latest REG id: **REG-398**. **REG-399 is the next free REG id.**
+Prior: REG-393..REG-398 (2026-08-11, the four Phase 4 blocker fixes from
+commit `6a67ca8ed` plus two P0 submission defects found in the same
+assessment review and fixed in-tree. **Five in `03-quiz-integrity.md`
+(REG-393, 394, 396, 397, 398), one in `15-cross-cutting.md` (REG-395).**
+REG-393 the `ff_quiz_v2` interlock moved to the PRODUCER (`resolveResumableQuiz`
+— the consumer-only check meant `/today` rendered a resume card the route then
+refused, failing soft with no message onto the setup screen) with the flag read
+made FAIL-CLOSED via `readFeatureFlagStrict` (`isFeatureEnabled` collapses
+"off"/"missing"/"malformed"/"fetch failed" to one `false`, so a read failure
+used to ALLOW resume) [E]. REG-394 `session_mode` persisted in the same
+first-write-wins UPDATE as the first answer; `exam` refuses outright
+(`exam_not_resumable`) and NULL/unrecognised refuse (`mode_unknown`) rather
+than assuming untimed — the old safeguard was DEAD CODE that could never fire
+[**P** — migration `20260814000015` has never been applied]. REG-395 three
+`/today` reasons deliberately silent (`sunday_default`, `month_end_default`,
+`no_signals_yet`) with the enumerated-silent-set asserted in BOTH directions,
+so a 13th resolver branch and a fourth undeclared silence both FAIL [E].
+REG-396 no fabricated Bloom/difficulty on the resume path — `bloom_level ??
+'remember'` made the SAME question answered wrong the SAME way produce a
+different persisted `error_type` depending on whether the session was resumed
+[E]. **REG-397 (P0):** any quiz with a non-MCQ question could not be submitted
+AT ALL — the RPC RAISEd `session_not_started` before Check 3, and the student
+saw a false "your answers are saved"; now every served question is snapshotted
+and written answers are scored [**P** — migration `20260814000016` never
+applied]. **REG-398 (P0):** exam-mode anti-cheat was INVERTED — `p_time` was
+the time REMAINING, so thoroughness was punished, every auto-submit at timer 0
+was flagged by construction (guaranteed 0 XP), and rushing was rewarded [E].
+Three of the six are `E` on tests that genuinely run under `npm test`; the
+`P`s are `P` solely because no migration in this chain has ever executed
+against a database, with the discharge condition stated per entry. Same pass
+REPAIRED REG-380's `CROSS-MODULE PARITY` clause, which was wrong by
+construction — see the note below.)
 Prior: REG-380..REG-392 (2026-08-11, Phase 4 — working session resume,
 the `quiz_session_shuffles` answer-key ACL, and `/today` as a prioritized
 action queue; commits `b008c20c7` + `86b033a41`. Eight quiz entries in
@@ -187,6 +219,45 @@ the two definitions is therefore UNCHANGED** — 397 upper-bound − 339 measure
 still NOT resolved. Do not read "339" as a correction of "392" or vice versa —
 they count different things, and which one is right is exactly what the
 outstanding shard-by-shard audit would settle.
+
+**2026-08-11 re-measurement, SECOND PASS (Phase 4 blocker-fix + P0 pass).**
+Same command, same definition, re-run against the 15 non-header shards after
+filing REG-393..REG-398:
+
+```
+before: 339 body-backed ids   # max id 392  (reproduced the figure above exactly)
+after:  345 body-backed ids   # max id 398
+new:    393 394 395 396 397 398
+```
+
+Measured count moved 339 → **345** (+6, exactly the entries filed); declared
+totals moved 397/392 → **403/398**. **The divergence is again UNCHANGED** —
+403 − 345 = 58 (was 397 − 339 = 58), and 398 − 345 = 53 (was 392 − 339 = 53).
+Neither widened nor narrowed, and still NOT resolved. It needs the outstanding
+shard-by-shard audit, not another drive-by edit.
+
+**2026-08-11 — REG-380's parity assertion was WRONG BY CONSTRUCTION and has
+been repaired (mechanism change, no id consumed).** Its `CROSS-MODULE PARITY`
+clause froze migration `20260814000014`'s 10-column literal as if that were the
+complete set `authenticated` may ever read. But 0014's entire design is that
+later migrations ADD columns via additive column-level grants — the fail-closed
+mechanism working as intended — and `20260814000015` uses it correctly (grants
+`session_mode` at `:121`, asserts it in its own post-condition 4b, and 4d
+re-asserts the answer key is still denied). `SHUFFLE_RESUME_COLUMNS`
+legitimately gained `session_mode`, so the assertion failed on a codebase that
+was RIGHT, and would have failed again on **every** future additive grant. The
+granted set is now DERIVED by replaying the chain (`deriveChainAcl` in
+`apps/host/src/__tests__/security/quiz-session-shuffles-answer-key-acl.test.ts`).
+**Not weakened:** a table-level grant to `authenticated`/`anon`/`PUBLIC`, a
+grant naming either answer-key column, any grant to `anon`, and a resume column
+no migration grants each still fail — every one carries a committed mutation
+proof in the same file plus a recorded live-file tamper/restore run. Separately,
+architect found that 0014's own post-condition `v_open_cols` asserts only 9 of
+the 10 columns it grants (`options_version_at_serve` is granted, never
+asserted); testing does not own migrations, so it is pinned in its CURRENT
+broken state so that FIXING it fails the test and forces this note to be
+updated. REG-380's status is unchanged at `P`. Full detail in
+`03-quiz-integrity.md`.
 
 **2026-08-11 — STILL-OPEN PRODUCTION RISK filed with REG-380, read this
 before quoting the entry.** REG-380 catalogues the fix for a live leak: a
@@ -567,8 +638,10 @@ point. That is superseded below — the 2026-08-09 Node.js version-pin batch too
 RESERVED (see the ID-collision note immediately below). That is in turn
 superseded above — the 2026-08-10 canonical-`parseOptions` consolidation took
 **REG-379**, so REG-380 was the next free id. That is in turn superseded by
-the 2026-08-11 Phase 4 pass, which took **REG-380..REG-392**, so **REG-393 is
-now the next free id.**
+the 2026-08-11 Phase 4 pass, which took **REG-380..REG-392**, so REG-393 was
+the next free id. That is in turn superseded by the same-day Phase 4
+blocker-fix + P0 pass, which took **REG-393..REG-398**, so **REG-399 is now
+the next free id.**
 
 2026-08-09: **REG-378 — Node.js toolchain version pin** (deployment-config
 change; architect made it, P14 chain architect → ops, testing). Every surface
