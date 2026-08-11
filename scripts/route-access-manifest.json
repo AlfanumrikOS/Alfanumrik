@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 398,
+  "routeCount": 401,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -1031,6 +1031,14 @@
       "owner": "assessment-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/quiz/session/[sessionId]/progress",
+      "file": "apps/host/src/app/api/quiz/session/[sessionId]/progress/route.ts",
+      "access": "auth",
+      "owner": "assessment-backend",
+      "rationale": "Phase 4 quiz-resume substrate for the authenticated student. POST persists ONE confirmed answer (first-write-wins); GET returns the payload needed to rebuild an interrupted session and NOTHING that reveals the answer key. Both verbs run authorizeRequest('quiz.attempt') and then an explicit owner check of quiz_session_shuffles.student_id against the SESSION-derived studentId (404 unknown session, 403 mismatch). No student id is ever accepted from the request.",
+      "serviceRoleUse": "Required, not convenience: quiz_session_shuffles has RLS enabled with three policies that are ALL 'FOR SELECT' (student/parent/teacher) and NO INSERT/UPDATE/DELETE policy, and migration 20260814000014 revoked the table-level grant from authenticated (post-condition 4d asserts it retains no write verb). An RLS-scoped client would be silently zero-rowed on the POST's UPDATE. Bounded to one UPDATE of four durability columns (student_selected_displayed_index, student_time_spent_seconds, student_answered_at, session_mode) plus column-whitelisted reads that exclude correct_answer_index_snapshot and integrity_hash. Ratchet-down path: an auth.uid()-anchored SECURITY DEFINER persist_quiz_answer_progress RPC granted to authenticated, after which both verbs move to the RLS-scoped client. Full record in scripts/admin-client-allowlist.json."
     },
     {
       "path": "/api/quiz/submit",

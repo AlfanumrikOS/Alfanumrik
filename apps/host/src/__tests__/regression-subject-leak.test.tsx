@@ -483,9 +483,14 @@ describe('Regression #7: legacy pages do not bypass the subjects RPC', () => {
   const fs = require('fs');
   const path = require('path');
 
+  // NOTE (2026-08-11, Phase 5 track A): the two `mock-exam` cases were removed
+  // because the pages they guarded no longer exist. The legacy /mock-exam
+  // runtime (page + results) was DELETED — it persisted nothing — and /mock-exam
+  // now 308s to /exams/mock. That successor reads its subject vocabulary from
+  // GET /api/exams/papers server-side, so there is no client-side catalogue for
+  // this regression to leak from. The `pyq` case stays and is now stronger: /pyq
+  // is a launcher whose only data source is `useAllowedSubjects`.
   const cases: Array<{ label: string; file: string }> = [
-    { label: 'mock-exam page', file: 'src/app/mock-exam/page.tsx' },
-    { label: 'mock-exam results page', file: 'src/app/mock-exam/results/page.tsx' },
     { label: 'pyq page', file: 'src/app/pyq/page.tsx' },
     { label: 'stem-centre page', file: 'src/app/stem-centre/page.tsx' },
   ];
@@ -512,10 +517,8 @@ describe('Regression #7: legacy pages do not bypass the subjects RPC', () => {
   });
 
   it.each([
-    { label: 'mock-exam page',  file: 'src/app/mock-exam/page.tsx',         expects: 'useAllowedSubjects' },
     { label: 'pyq page',        file: 'src/app/pyq/page.tsx',               expects: 'useAllowedSubjects' },
     { label: 'stem-centre page', file: 'src/app/stem-centre/page.tsx',      expects: 'useAllowedSubjects' },
-    { label: 'mock-exam results', file: 'src/app/mock-exam/results/page.tsx', expects: 'useSubjectLookup' },
   ])('$label imports the canonical subjects hook ($expects)', ({ file, expects }) => {
     const full = path.resolve(process.cwd(), file);
     const src: string = fs.readFileSync(full, 'utf8');

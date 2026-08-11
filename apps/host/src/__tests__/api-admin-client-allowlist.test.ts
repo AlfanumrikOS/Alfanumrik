@@ -270,7 +270,27 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // src/app/api/health/route.ts is now a PURE liveness endpoint (no downstream
 // probes, no service-role reads); its ledger entry is pruned in the same change
 // so the guard ratchets DOWN, not drifts.
-const EXPECTED_COUNT = 268;
+// Phase 4 quiz session resume (2026-08-11, architect-reviewed): 268 -> 269 for
+// src/app/api/quiz/session/[sessionId]/progress/route.ts. RECORDED LATE — the
+// route landed in commit 6a67ca8ed WITHOUT its ledger entry, so this guard
+// failed 269-detected vs 268-pinned exactly as designed. The omission was the
+// author's, not the test's; the fix is the ledger entry, never a relaxed pin.
+// Service-role is REQUIRED, not convenience: quiz_session_shuffles carries
+// three RLS policies and ALL THREE are FOR SELECT (student/parent/teacher) —
+// there is no INSERT/UPDATE/DELETE policy at all, and migration 20260814000014
+// made that denial explicit at the privilege layer (post-condition 4d asserts
+// `authenticated` holds no write verb). The POST's first-write-wins UPDATE
+// would be SILENTLY zero-rowed on an RLS-scoped client, indistinguishable from
+// the route's legitimate `saved:false` no-op. Bounded to one UPDATE of four
+// durability columns (student_selected_displayed_index / _time_spent_seconds /
+// _answered_at / session_mode) behind authorizeRequest('quiz.attempt') plus an
+// explicit owner-vs-session studentId check (404 unknown, 403 mismatch); both
+// read whitelists exclude correct_answer_index_snapshot and integrity_hash.
+// Full justification + RATCHET-DOWN PATH (an auth.uid()-anchored SECURITY
+// DEFINER persist_quiz_answer_progress RPC, after which BOTH verbs move to the
+// RLS-scoped client and this entry is pruned) in
+// scripts/admin-client-allowlist.json.
+const EXPECTED_COUNT = 269;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

@@ -153,6 +153,33 @@ const nextConfig = {
       { source: '/review',     destination: '/refresh?tab=flashcards', permanent: true },
       { source: '/revise',     destination: '/refresh?tab=chapters',   permanent: true },
       { source: '/study-plan', destination: '/exam-prep',              permanent: true },
+
+      // Legacy /mock-exam runtime — DELETED 2026-08-11 (Phase 5 track A).
+      //
+      // It ran a 3-hour / 39-question / 80-mark CBSE paper entirely in React
+      // state and then handed the result to /mock-exam/results AS A URL QUERY
+      // STRING. Zero database writes: no quiz_session, no responses, no XP, no
+      // mastery. A student could sit a full board-pattern paper and the product
+      // would retain nothing — and the score was derived in the browser from
+      // `correct_answer_index` values the browser had been handed.
+      //
+      // Superseded by /exams/mock (catalogue) + /exams/mock/[paperId] (runner),
+      // which start a server-side attempt via POST /api/exams/papers/[id]/start
+      // and persist through submit_mock_test_attempt. The runner's
+      // ExamStructureCard reproduces the old "Exam Structure" info card, so the
+      // section/marks briefing survives the deletion.
+      //
+      // Deep links must keep resolving: /mock-exam was removed from nav in
+      // Phase 3 but bookmarks, the /practice/exam/mock alias and any pasted
+      // link still point here. Both a bare /mock-exam and the old
+      // /mock-exam/results?data=… land on the catalogue; the query string is
+      // dropped because that payload described a result that was never stored.
+      { source: '/mock-exam',         destination: '/exams/mock', permanent: true },
+      { source: '/mock-exam/:path*',  destination: '/exams/mock', permanent: true },
+      // The /practice/exam/mock client shell existed only to bounce to
+      // /mock-exam. Collapsed into a config redirect so there is no JS round
+      // trip and no intermediate flash.
+      { source: '/practice/exam/mock', destination: '/exams/mock', permanent: true },
     ];
   },
   // PostHog reverse-proxy → EU project 159341 (eu.i.posthog.com). /ingest/static/*

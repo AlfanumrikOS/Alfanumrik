@@ -60,7 +60,7 @@ const ChapterReadinessCard = dynamic(
 // CTA button on first paint; FoxyPanel is dynamic-imported (ssr:false)
 // only when the student taps. First-load JS delta ≈ 0.
 import FoxyPanelLauncher from '@alfanumrik/ui/foxy-launcher/FoxyPanelLauncher';
-import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
+import { OPTION_LETTERS, parseOptions, isMcqQuestion } from '@alfanumrik/lib/quiz/options';
 
 // Screen 06 "Topic" (Wave B, ff_learn_topic_v2). Additive presentation layer
 // — code-split so its bundle cost is zero for the (today: 100%) flag-off
@@ -85,21 +85,13 @@ interface Question {
   chapter_number: number;
 }
 
-/** Detect whether a question is MCQ — filters out short_answer / long_answer / intext
- * types that have empty options arrays and no selectable choices. Mirrors the check
- * in src/app/quiz/page.tsx isQuestionMCQ(). */
-function isLearnPageMCQ(q: Question): boolean {
-  if (q.question_type === 'mcq') return true;
-  const opts = Array.isArray(q.options)
-    ? q.options
-    : (() => { try { return JSON.parse(q.options as string); } catch { return []; } })();
-  return (
-    opts.length === 4 &&
-    typeof q.correct_answer_index === 'number' &&
-    q.correct_answer_index >= 0 &&
-    q.correct_answer_index <= 3
-  );
-}
+/* The local `isLearnPageMCQ` that used to live here is GONE (Phase 5 track B).
+ * Its own doc comment admitted it was a copy of `isQuestionMCQ` in the quiz
+ * page, and it had already drifted from it (no `cbse_type` branch). The one
+ * predicate now lives beside `parseOptions` in
+ * `packages/lib/src/quiz/options.ts` as `isMcqQuestion` — imported above and
+ * used by BOTH surfaces. See that module's header for why the superset is the
+ * safe unification here. */
 
 interface Diagram {
   id: string;
@@ -159,18 +151,62 @@ function ChapterConceptPageContent() {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<'core' | 'example' | 'cheat'>('core');
   const [visibleSteps, setVisibleSteps] = useState<Record<number, number>>({});
-  // Per-concept quick-check state, keyed by topic index
+  // Per-concept quick-check state, keyed by topic index. FORMATIVE ONLY — see
+  // the "one assessment engine" note below.
   const [conceptStates, setConceptStates] = useState<Record<number, ConceptState>>({});
-  const [completedCount, setCompletedCount] = useState(0);
   const [showCompletion, setShowCompletion] = useState(false);
   const [revealedCorePoints, setRevealedCorePoints] = useState<Record<number, number>>({});
   const [showAllCore, setShowAllCore] = useState<Record<number, boolean>>({});
-  const [phase, setPhase] = useState<'explaining' | 'quiz' | 'report'>('explaining');
   const [completedTopics, setCompletedTopics] = useState<Set<string>>(new Set());
-  const [quizCurrentIdx, setQuizCurrentIdx] = useState(0);
-  const [quizAnswers, setQuizAnswers] = useState<Record<string, { selectedOption: number; isCorrect: boolean }>>({});
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [quizSelectedOption, setQuizSelectedOption] = useState<number | null>(null);
+
+  /* ═══ ONE ASSESSMENT ENGINE PER CHAPTER (Phase 5 track B, 2026-08-11) ═══
+   *
+   * This page used to run TWO independent assessment loops over the SAME
+   * `questions` array:
+   *
+   *   1. the per-concept Quick Check  — `conceptStates` / `submitAnswer()`
+   *   2. an end-of-chapter quiz       — a `phase: 'quiz' | 'report'` state
+   *      machine with its own option grid, its own client-side scoring
+   *      (`quizAnswers`), its own confetti and its own performance report
+   *
+   * Loop 2 was a scored-LOOKING surface that scored nothing surviving the tab:
+   * no session row, no per-response rows, no server-owned shuffle snapshot, no
+   * P3 anti-cheat, no P2 XP. It wrote one telemetry event and a chapter-
+   * progress flag. A student could "complete the chapter quiz", see a
+   * percentage and a strengths/gaps report, and have none of it exist.
+   *
+   * It is now DELETED rather than wired to the scored submit helper, for a
+   * reason that is load-bearing and not a matter of taste:
+   *
+   *   Loop 2 re-served the EXACT questions loop 1 had just walked the student
+   *   through, explanation revealed. `questions[currentIdx]` is the Quick
+   *   Check; `questions[0..n-1]` was the chapter quiz. Promoting that second
+   *   pass to the scored path would have awarded P2 XP for questions whose
+   *   answers the page had already shown, and fed the post-quiz learner-state
+   *   update a ~100%-by-construction signal. That is exactly the breach
+   *   `src/__tests__/learn/chapter-formative-boundary.test.ts` was written by
+   *   assessment to prevent ("double-award / P2 economy breach"), and that lock
+   *   still holds after this change — that test asserts, by name, that none of
+   *   the scored-path identifiers appear anywhere in this file, comments
+   *   included, which is why this note spells them out in prose instead.
+   *
+   * So the split is now explicit and one-way:
+   *
+   *   FORMATIVE (here)  Quick Check. Un-scored, no XP, feeds mastery through
+   *                     the UNCHANGED `recordLearningEvent` sink.
+   *   SUMMATIVE (/quiz) The canonical engine: it mints a server-side session
+   *                     (shuffle + answer-key snapshot the client never sees),
+   *                     runs P3 anti-cheat, and submits through the single
+   *                     atomic scoring RPC that owns P1 score and P2 XP. It
+   *                     selects its own questions server-side, so the summative
+   *                     attempt is not a replay of the Quick Check, and it
+   *                     writes chapter progress itself
+   *                     (`(student)/quiz/page.tsx`, chapterForProgress).
+   *
+   * The completion screen below is the single hand-off point. Do not add a
+   * second in-page scoring surface here.
+   */
 
   // ── Phase 2-B: Read mode (gated by ff_learn_read_mode_v1) ──
   // The flag controls visibility of the Practice/Read toggle. When the page
@@ -404,7 +440,7 @@ function ChapterConceptPageContent() {
     mergedTopics.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
 
     const sortedQuestions = [...(questionsData as Question[])]
-      .filter(isLearnPageMCQ)
+      .filter(isMcqQuestion)
       .sort((a, b) => {
       const bloomOrder: Record<string, number> = {
         remember: 1,
@@ -424,10 +460,8 @@ function ChapterConceptPageContent() {
     setQuestions(sortedQuestions);
     // setDiagrams is now handled in the deferred Phase 2 block (diagrams not needed to start the lesson)
     setV2SourceUsed(curatedConcepts.length > 0 ? 'curated' : 'rag_fallback');
-    setPhase('explaining');
     setCompletedTopics(new Set());
-    setQuizCurrentIdx(0);
-    setQuizAnswers({});
+    setShowCompletion(false);
     } catch (err: unknown) {
       // Transient fetch failure — surface a retryable error card. Distinct from
       // "loaded OK but empty". getChapterTopics/getChapterQuestions used to
@@ -672,14 +706,27 @@ function ChapterConceptPageContent() {
     }
   }, [subject, chapterNum, currentIdx, subMeta?.name, chapterMeta, isHi, loading]);
 
-  // Save chapter completion to database when student achieves >= 60%
+  // Save chapter completion to database when student achieves >= 60%.
+  //
+  // This is now the SINGLE producer of `learn_chapter_completed` and the only
+  // chapter-progress write on this page — the deleted `handleFinishQuiz` used
+  // to be a second one of each. The event's property shape is
+  // byte-identical to what both producers emitted (telemetryBase + score_pct /
+  // total_answered / correct_count / passed_threshold), so every downstream
+  // consumer is unaffected; only the duplicate producer is gone.
+  //
+  // `|| questions.length === 0` preserves a behaviour the deleted quiz phase
+  // owned: a chapter whose deck filters down to zero MCQs used to route to
+  // `phase: 'report'`, which wrote chapter progress unconditionally. There is
+  // no Quick Check to score in that case, so gating that chapter behind a 60%
+  // it can never earn would have silently stopped marking it complete.
   useEffect(() => {
     if (!showCompletion || !student) return;
     const correctCount = Object.values(conceptStates).filter(s => s.submitted && s.isCorrect).length;
     const totalAnswered = Object.values(conceptStates).filter(s => s.submitted).length;
     const pct = calculateScorePercent(correctCount, totalAnswered);
     const scoreGood = totalAnswered > 0 && pct >= 60;
-    if (scoreGood) {
+    if (scoreGood || questions.length === 0) {
       updateChapterProgress(subject, student.grade, chapterNum).catch((err: unknown) => {
         console.warn('[chapter-progress] update failed:', err instanceof Error ? err.message : String(err));
       });
@@ -691,7 +738,23 @@ function ChapterConceptPageContent() {
       correct_count: correctCount,
       passed_threshold: scoreGood,
     });
-  }, [showCompletion, student, conceptStates, subject, chapterNum, telemetryBase]);
+    // Celebration inherited from the deleted `handleFinishQuiz` (same particle
+    // config, same 300ms delay). Gated on `scoreGood` rather than that copy's
+    // bare `pct >= 60` so a chapter with zero answered questions — where
+    // `calculateScorePercent(0, 0)` is 0 — cannot celebrate doing nothing.
+    // Fires strictly AFTER the telemetry above; the cleanup cancels a pending
+    // burst if the effect re-runs before the timer lands.
+    if (!scoreGood) return;
+    const celebrate = setTimeout(() => {
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#16A34A', '#FDE047', '#3B82F6'],
+      });
+    }, 300);
+    return () => clearTimeout(celebrate);
+  }, [showCompletion, student, conceptStates, questions.length, subject, chapterNum, telemetryBase]);
 
   const selectOption = (optIdx: number) => {
     if (conceptStates[currentIdx]?.submitted) return;
@@ -733,9 +796,6 @@ function ChapterConceptPageContent() {
         console.warn('[learn] recordLearningEvent failed:', err instanceof Error ? err.message : String(err));
       });
     }
-    if (!conceptStates[currentIdx]?.submitted) {
-      setCompletedCount(prev => prev + 1);
-    }
     track('learn_quick_check_submitted', {
       ...telemetryBase,
       concept_idx: currentIdx,
@@ -743,20 +803,14 @@ function ChapterConceptPageContent() {
     });
   };
 
-  const goNext = () => {
-    if (currentIdx < topics.length - 1) {
-      const nextIdx = currentIdx + 1;
-      setCurrentIdx(nextIdx);
-      setActiveTab('core');
-      track('learn_concept_advanced', {
-        ...telemetryBase,
-        concept_idx: nextIdx,
-        direction: 'next',
-      });
-    } else {
-      setShowCompletion(true);
-    }
-  };
+  /* `goNext` was deleted here (Phase 5 track B). It was dead: nothing in the
+   * JSX referenced it — the walkthrough's forward CTA is `handleMarkUnderstood`
+   * and TopicPageV2 gets its own inline `onNextTopic` — so its
+   * `setShowCompletion(true)` tail was the ONLY writer of `showCompletion` and
+   * could never fire. That made the whole completion screen (and the
+   * `learn_chapter_completed` effect above it) unreachable, which is why the
+   * deleted quiz phase had to carry a second copy of that event. The
+   * completion screen is now reached from `handleMarkUnderstood` below. */
 
   const handleMarkUnderstood = () => {
     const topic = topics[currentIdx];
@@ -784,18 +838,12 @@ function ChapterConceptPageContent() {
     }
 
     if (nextCompleted.size >= topics.length || nextUncompletedIdx === -1) {
-      // Transition to Quiz Phase!
-      if (questions.length === 0) {
-        setPhase('report');
-        if (student) {
-          updateChapterProgress(subject, student.grade, chapterNum).catch(console.warn);
-        }
-      } else {
-        setPhase('quiz');
-        setQuizCurrentIdx(0);
-        setQuizAnswers({});
-        setQuizSelectedOption(null);
-      }
+      // Every concept walked. This used to fork into the in-page quiz phase
+      // (or straight to its report when the deck filtered to zero MCQs); both
+      // branches now land on the one completion screen, whose effect fires
+      // `learn_chapter_completed` and writes chapter progress — including the
+      // empty-deck case — and which hands the SCORED attempt to /quiz.
+      setShowCompletion(true);
     } else {
       // Navigate to next uncompleted topic
       setCurrentIdx(nextUncompletedIdx);
@@ -835,7 +883,7 @@ function ChapterConceptPageContent() {
 
     if (firstWeakIdx !== -1) {
       setMode('practice');
-      setPhase('explaining');
+      setShowCompletion(false);
       setCurrentIdx(firstWeakIdx);
       setActiveTab('core');
       track('learn_review_weak_concept_clicked', {
@@ -844,7 +892,7 @@ function ChapterConceptPageContent() {
       });
     } else if (topics.length > 0) {
       setMode('practice');
-      setPhase('explaining');
+      setShowCompletion(false);
       setCurrentIdx(0);
       setActiveTab('core');
     }
@@ -863,61 +911,19 @@ function ChapterConceptPageContent() {
     setMode('practice');
   };
 
-  const getTopicIdForQuestion = useCallback((q: Question) => {
-    if (!q) return null;
-    if ((q as any).topic_id) {
-      const exactMatch = topics.find(t => t.id === (q as any).topic_id);
-      if (exactMatch) return exactMatch.id;
-    }
-    const cleanQText = q.question_text.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (const t of topics) {
-      const cleanTitle = t.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (cleanTitle.length > 3 && (cleanQText.includes(cleanTitle) || cleanTitle.includes(cleanQText))) {
-        return t.id;
-      }
-    }
-    if (q.explanation) {
-      const cleanExplanation = q.explanation.toLowerCase().replace(/[^a-z0-9]/g, '');
-      for (const t of topics) {
-        const cleanTitle = t.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (cleanTitle.length > 3 && cleanExplanation.includes(cleanTitle)) {
-          return t.id;
-        }
-      }
-    }
-    return topics.length > 0 ? topics[0].id : null;
-  }, [topics]);
-
-  const handleFinishQuiz = useCallback(() => {
-    setPhase('report');
-    if (student) {
-      updateChapterProgress(subject, student.grade, chapterNum).catch((err: unknown) => {
-        console.warn('[chapter-progress] update failed:', err instanceof Error ? err.message : String(err));
-      });
-    }
-    const totalQ = questions.length;
-    const correctQ = Object.values(quizAnswers).filter(a => a.isCorrect).length;
-    const pct = calculateScorePercent(correctQ, totalQ);
-
-    if (pct >= 60) {
-      setTimeout(() => {
-        confetti({
-          particleCount: 150,
-          spread: 80,
-          origin: { y: 0.6 },
-          colors: ['#16A34A', '#FDE047', '#3B82F6']
-        });
-      }, 300);
-    }
-
-    track('learn_chapter_completed', {
-      ...telemetryBase,
-      score_pct: pct,
-      total_answered: totalQ,
-      correct_count: correctQ,
-      passed_threshold: pct >= 60,
-    });
-  }, [student, subject, chapterNum, questions, quizAnswers, telemetryBase]);
+  /* `getTopicIdForQuestion` and `handleFinishQuiz` were deleted here (Phase 5
+   * track B) with the in-page quiz phase they existed to serve.
+   *
+   *   - `getTopicIdForQuestion` fuzzy-matched a question to a concept by
+   *     normalised-substring comparison of title vs question text, falling back
+   *     to `topics[0]`. It only ever fed the deleted report's strengths/gaps
+   *     grouping and the chapter-quiz `recordLearningEvent` call. Nothing else
+   *     read it. Note it was never a trustworthy mastery key: the
+   *     `topics[0]` tail attributed any unmatched question to the FIRST concept
+   *     of the chapter.
+   *   - `handleFinishQuiz` was the second `learn_chapter_completed` producer
+   *     and the second chapter-progress writer. Both now live once, in the
+   *     completion effect above; its >= 60% confetti moved there too. */
 
   if (isLoading || loading) return <LoadingFoxy />;
 
@@ -1097,8 +1103,18 @@ function ChapterConceptPageContent() {
             </div>
           )}
 
+          {/* ── The one hand-off to the scored engine ──────────────────────
+              This is where the chapter's GRADED attempt happens. The Quick
+              Check above it is formative and awards nothing; /quiz is the
+              canonical engine (server-shuffled snapshot → anti-cheat → XP →
+              persisted session). `mode=practice` is what the quiz page's own
+              deep-link handler documents this surface as emitting — see the
+              `?mode=practice` branch in (student)/quiz/page.tsx.
+              Gated on `questions.length > 0`: an all-non-MCQ chapter has no
+              deck to be quizzed on, so we send the student to Foxy rather
+              than into an empty-quiz dead end. */}
           <div className="space-y-3">
-            {scoreGood ? (
+            {scoreGood && questions.length > 0 ? (
               <Button
                 fullWidth
                 color={subMeta?.color}
@@ -1107,7 +1123,7 @@ function ChapterConceptPageContent() {
                     ...telemetryBase,
                     score_pct: pct,
                   });
-                  router.push(`/quiz?subject=${subject}&chapter=${chapterNum}`);
+                  router.push(`/quiz?subject=${subject}&chapter=${chapterNum}&mode=practice`);
                 }}
               >
                 ⚡ {isHi ? `अध्याय ${chapterNum} का क्विज़ दो` : `Take Chapter ${chapterNum} Quiz`}
@@ -1121,6 +1137,13 @@ function ChapterConceptPageContent() {
                 🦊 {isHi ? 'Foxy के साथ कमज़ोर हिस्से सुधारो' : 'Fix weak spots with Foxy'}
               </Button>
             )}
+            {questions.length > 0 && (
+              <p className="text-[11px] leading-relaxed text-center text-[var(--text-3)] px-2">
+                {isHi
+                  ? 'ऊपर की त्वरित जाँच सिर्फ़ अभ्यास है। XP और तुम्हारी प्रगति अध्याय क्विज़ से दर्ज होती है।'
+                  : 'The Quick Check above is practice only. XP and your saved progress come from the Chapter Quiz.'}
+              </p>
+            )}
             <Button
               fullWidth
               variant="ghost"
@@ -1128,11 +1151,17 @@ function ChapterConceptPageContent() {
             >
               📖 {isHi ? `अगला अध्याय ${chapterNum + 1} →` : `Next Chapter ${chapterNum + 1} →`}
             </Button>
-            {!scoreGood && (
+            {!scoreGood && questions.length > 0 && (
               <Button
                 fullWidth
                 variant="ghost"
-                onClick={() => router.push(`/quiz?subject=${subject}&chapter=${chapterNum}`)}
+                onClick={() => {
+                  track('learn_take_quiz_clicked', {
+                    ...telemetryBase,
+                    score_pct: pct,
+                  });
+                  router.push(`/quiz?subject=${subject}&chapter=${chapterNum}&mode=practice`);
+                }}
               >
                 ⚡ {isHi ? 'फिर भी क्विज़ दो' : 'Take Quiz anyway'}
               </Button>
@@ -1242,12 +1271,9 @@ function ChapterConceptPageContent() {
   const diagram = diagrams.length > 0 ? diagrams[currentIdx % diagrams.length] : null;
   const conceptState = conceptStates[currentIdx];
 
-  let progressPct = topics.length > 0 ? ((currentIdx + 1) / topics.length) * 100 : 0;
-  if (phase === 'quiz') {
-    progressPct = questions.length > 0 ? ((quizCurrentIdx + 1) / questions.length) * 100 : 100;
-  } else if (phase === 'report') {
-    progressPct = 100;
-  }
+  // Concept progress is the only progress this page tracks now — the quiz and
+  // report branches that used to override it went with the in-page quiz.
+  const progressPct = topics.length > 0 ? ((currentIdx + 1) / topics.length) * 100 : 0;
 
   const bloomLevel = (topic?.bloom_focus || 'remember') as BloomLevel;
   const bloomCfg = BLOOM_CONFIG[bloomLevel] || BLOOM_CONFIG.remember;
@@ -1277,14 +1303,17 @@ function ChapterConceptPageContent() {
   }
 
   // ── Screen 06 "Topic" (ff_learn_topic_v2) ───────────────────────────
-  // Additive presentation layer. Only replaces the "explaining" phase's
-  // topic view — quiz/report phases (and Read mode, handled above) fall
-  // straight through to the completely untouched legacy render below.
+  // Additive presentation layer over the concept walkthrough. It used to be
+  // gated on `phase === 'explaining'` so the in-page quiz/report phases fell
+  // through to the legacy render; those phases are gone (see the "ONE
+  // ASSESSMENT ENGINE PER CHAPTER" note), and Read mode + the completion
+  // screen both return above this, so the walkthrough is all that is left to
+  // gate on. Flag-off behaviour is unchanged.
   // TopicPage is presentational only (fetches nothing); every value here is
   // data this component already loaded above, and every citation is sourced
   // from real fields (topic.ncert_page_range, chapterMeta.title) — never
   // fabricated when absent (see that component's file header).
-  if (phase === 'explaining' && topicV2FlagOn && topic) {
+  if (topicV2FlagOn && topic) {
     const topicTitleV2 = isHi && topic.title_hi ? topic.title_hi : topic.title;
     const explanationV2 = isHi && (topic as any).explanation_hi
       ? (topic as any).explanation_hi
@@ -1395,22 +1424,20 @@ function ChapterConceptPageContent() {
           </span>
         </div>
         <div className="learn-header-actions flex items-center gap-2 shrink-0">
-          {phase === 'explaining' && (
-            <button
-              type="button"
-              onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden text-[10px] font-bold px-3 py-1 rounded-full transition-all active:scale-95 flex items-center justify-center gap-1"
-              /* minHeight is inline because globals.css's coarse-pointer block
-                 exempts `.text-[10px]` from the 48px button floor and pins it to
-                 32px — measured 32px here, under the 44px minimum this surface
-                 must hold. Index is the ONLY concept-to-concept navigation a
-                 phone has, so it does not get to be a "tiny inline pill". */
-              style={{ background: 'rgba(232,88,28,0.10)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.2)', minHeight: 'var(--tap-min)' }}
-              aria-label={isHi ? 'अध्याय की अवधारणाओं की सूची खोलें' : 'Open chapter concept index'}
-            >
-              📋 {isHi ? 'सूची' : 'Index'}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            className="md:hidden text-[10px] font-bold px-3 py-1 rounded-full transition-all active:scale-95 flex items-center justify-center gap-1"
+            /* minHeight is inline because globals.css's coarse-pointer block
+               exempts `.text-[10px]` from the 48px button floor and pins it to
+               32px — measured 32px here, under the 44px minimum this surface
+               must hold. Index is the ONLY concept-to-concept navigation a
+               phone has, so it does not get to be a "tiny inline pill". */
+            style={{ background: 'rgba(232,88,28,0.10)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.2)', minHeight: 'var(--tap-min)' }}
+            aria-label={isHi ? 'अध्याय की अवधारणाओं की सूची खोलें' : 'Open chapter concept index'}
+          >
+            📋 {isHi ? 'सूची' : 'Index'}
+          </button>
           {readModeFlagOn && (
             <button
               type="button"
@@ -1424,16 +1451,9 @@ function ChapterConceptPageContent() {
               📖 {isHi ? 'पढ़ें' : 'Read'}
             </button>
           )}
-          {phase === 'explaining' && (
-            <span className="text-xs font-medium text-[var(--text-3)] shrink-0 tabular-nums">
-              {currentIdx + 1}/{topics.length}
-            </span>
-          )}
-          {phase === 'quiz' && (
-            <span className="text-xs font-medium text-[var(--text-3)] shrink-0 tabular-nums">
-              {quizCurrentIdx + 1}/{questions.length}
-            </span>
-          )}
+          <span className="text-xs font-medium text-[var(--text-3)] shrink-0 tabular-nums">
+            {currentIdx + 1}/{topics.length}
+          </span>
         </div>
       </div>
       <ProgressBar value={progressPct} color={subMeta?.color} height={5} />
@@ -1461,51 +1481,51 @@ function ChapterConceptPageContent() {
           "primary action stays in thumb reach" behavior. */}
       <main className="h-full w-full px-4 md:px-8 py-4 flex flex-col md:flex-row gap-6">
 
-        {/* Sidebar Index (hidden on mobile, permanent on desktop md:flex) */}
-        {phase === 'explaining' && (
-          <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white/70 backdrop-blur-md border border-gray-100 rounded-2xl p-4 self-start sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? 'अध्याय की अवधारणाएँ' : 'Chapter Concepts'}
-            </h3>
-            <div className="space-y-1.5">
-              {topics.map((t, idx) => {
-                const isSelected = idx === currentIdx;
-                const isCompleted = completedTopics.has(t.id);
+        {/* Sidebar Index (hidden on mobile, permanent on desktop md:flex).
+            The `phase === 'explaining'` wrapper is gone — the walkthrough is
+            the only phase this render path has. */}
+        <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white/70 backdrop-blur-md border border-gray-100 rounded-2xl p-4 self-start sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3" style={{ fontFamily: 'var(--font-display)' }}>
+            {isHi ? 'अध्याय की अवधारणाएँ' : 'Chapter Concepts'}
+          </h3>
+          <div className="space-y-1.5">
+            {topics.map((t, idx) => {
+              const isSelected = idx === currentIdx;
+              const isCompleted = completedTopics.has(t.id);
 
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      setCurrentIdx(idx);
-                      setActiveTab('core');
-                    }}
-                    className={`w-full text-left p-3 rounded-xl transition-all duration-200 flex items-center gap-3 text-xs border ${
-                      isSelected
-                        ? 'bg-orange-50/50 border-orange-200 shadow-sm font-semibold text-orange-950'
-                        : 'border-transparent hover:bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
-                      isCompleted
-                        ? 'bg-green-100 text-green-700 font-bold'
-                        : isSelected
-                          ? 'bg-orange-500 text-white shadow-sm'
-                          : 'bg-gray-100 text-gray-400'
-                    }`}>
-                      {isCompleted ? '✓' : isSelected ? '▶' : idx + 1}
-                    </span>
-                    <span className="leading-snug font-medium line-clamp-2">
-                      {isHi && t.title_hi ? t.title_hi : t.title}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
-        )}
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    setCurrentIdx(idx);
+                    setActiveTab('core');
+                  }}
+                  className={`w-full text-left p-3 rounded-xl transition-all duration-200 flex items-center gap-3 text-xs border ${
+                    isSelected
+                      ? 'bg-orange-50/50 border-orange-200 shadow-sm font-semibold text-orange-950'
+                      : 'border-transparent hover:bg-gray-50 text-gray-700'
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
+                    isCompleted
+                      ? 'bg-green-100 text-green-700 font-bold'
+                      : isSelected
+                        ? 'bg-orange-500 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-400'
+                  }`}>
+                    {isCompleted ? '✓' : isSelected ? '▶' : idx + 1}
+                  </span>
+                  <span className="leading-snug font-medium line-clamp-2">
+                    {isHi && t.title_hi ? t.title_hi : t.title}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
 
         {/* Slide-out Mobile Drawer */}
-        {phase === 'explaining' && isSidebarOpen && (
+        {isSidebarOpen && (
           <div className="fixed inset-0 z-50 flex md:hidden animate-fadeIn">
             {/* Backdrop */}
             <div
@@ -1562,8 +1582,13 @@ function ChapterConceptPageContent() {
         {/* Main Card Panel Column */}
         <div className="flex-1 max-w-2xl w-full flex flex-col gap-4">
 
-          {phase === 'explaining' && (
-            <>
+          {/* The concept walkthrough + Quick Check. This used to be one of
+              THREE sibling `phase === …` branches here; the other two (the
+              in-page chapter quiz and its performance report) are deleted —
+              see the "ONE ASSESSMENT ENGINE PER CHAPTER" note above. The
+              fragment is kept so the children below keep their indentation
+              and this stays a readable diff. */}
+          <>
               {/* ── Exam-Ready 360° Phase 2: per-chapter readiness card ── */}
               {(currentIdx > 0 ||
                 Object.values(conceptStates).some(s => s.submitted) ||
@@ -2205,374 +2230,18 @@ function ChapterConceptPageContent() {
                   </Button>
                 </div>
               </div>
-            </>
-          )}
+          </>
 
-          {phase === 'quiz' && (
-            <div className="space-y-4 animate-fadeIn">
-              {/* Quiz status / progress */}
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
-                  {isHi ? `प्रश्न ${quizCurrentIdx + 1}/${questions.length}` : `Question ${quizCurrentIdx + 1} of ${questions.length}`}
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-100">
-                  📝 {isHi ? 'NCERT आधारित मूल्यांकन' : 'NCERT Aligned Quiz'}
-                </span>
-              </div>
+          {/* ═══ DELETED (Phase 5 track B) — the in-page chapter quiz ═══
+              A second option grid over the SAME `questions` array the Quick
+              Check above walks through, with its own browser-side correctness
+              comparison, its own confetti, and a performance report — none of
+              which reached the database. Its only sinks were one telemetry
+              event and a chapter-progress flag, both of which now fire from
+              the completion screen. The scored attempt is /quiz. Do not re-add
+              a scoring surface here; see the "ONE ASSESSMENT ENGINE PER
+              CHAPTER" note at the top of this component. */}
 
-              {questions.length === 0 ? (
-                <Card className="p-6 text-center">
-                  <p className="text-sm font-semibold text-gray-600 mb-4">
-                    {isHi ? 'इस अध्याय के लिए कोई अभ्यास प्रश्न नहीं मिले।' : 'No quiz questions found for this chapter.'}
-                  </p>
-                  <Button onClick={() => setPhase('report')} color={subMeta?.color}>
-                    {isHi ? 'परिणाम रिपोर्ट देखें' : 'View Performance Report'}
-                  </Button>
-                </Card>
-              ) : (() => {
-                const q = questions[quizCurrentIdx];
-                const qOpts = parseOptions(q.options);
-                const isAns = quizAnswers[q.id] !== undefined;
-                const selectAns = quizAnswers[q.id];
-                const isCorr = selectAns?.isCorrect ?? false;
-
-                return (
-                  <Card className="!p-5 flex flex-col gap-4">
-                    <p className="text-sm font-semibold leading-relaxed mb-2" style={{ whiteSpace: 'pre-wrap' }}>
-                      {isHi && q.question_hi ? q.question_hi : q.question_text}
-                    </p>
-
-                    <div className="space-y-2">
-                      {qOpts.map((opt, idx) => {
-                        const letter = OPTION_LETTERS[idx] || String(idx + 1);
-                        const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
-                        const isSel = quizSelectedOption === idx;
-                        const isCorrOpt = idx === q.correct_answer_index;
-
-                        let bg = 'white';
-                        let border = 'rgba(26, 18, 7, 0.08)';
-                        let textColor = 'var(--text-2)';
-                        let letterBg = 'var(--surface-2)';
-                        let letterColor = 'var(--text-3)';
-
-                        if (isAns) {
-                          if (isCorrOpt) {
-                            bg = 'rgba(22, 163, 74, 0.08)';
-                            border = 'rgba(22, 163, 74, 0.4)';
-                            textColor = '#16A34A';
-                            letterBg = '#16A34A';
-                            letterColor = '#fff';
-                          } else if (selectAns?.selectedOption === idx) {
-                            bg = 'rgba(220, 38, 38, 0.06)';
-                            border = 'rgba(220, 38, 38, 0.3)';
-                            textColor = '#DC2626';
-                            letterBg = '#DC2626';
-                            letterColor = '#fff';
-                          }
-                        } else if (isSel) {
-                          const activeColor = subMeta?.color || 'var(--orange)';
-                          bg = `${activeColor}08`;
-                          border = activeColor;
-                          letterBg = activeColor;
-                          letterColor = '#fff';
-                        }
-
-                        return (
-                          <button
-                            key={idx}
-                            onClick={() => {
-                              if (!isAns) setQuizSelectedOption(idx);
-                            }}
-                            disabled={isAns}
-                            className={`w-full rounded-xl py-3.5 px-4 flex items-center gap-3 transition-all duration-200 text-left active:scale-[0.98] ${
-                              !isAns && !isSel ? 'hover:border-gray-300 hover:bg-gray-50/50' : ''
-                            }`}
-                            style={{
-                              backgroundColor: bg,
-                              border: `1.5px solid ${border}`,
-                              minHeight: 52
-                            }}
-                          >
-                            <span
-                              className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
-                              style={{ backgroundColor: letterBg, color: letterColor }}
-                            >
-                              {letter}
-                            </span>
-                            <span className="text-sm font-semibold leading-snug flex-1" style={{ color: textColor }}>
-                              {optText}
-                            </span>
-                            {isAns && isCorrOpt && <span className="ml-auto text-base text-green-600 font-bold flex-shrink-0">✓</span>}
-                            {isAns && selectAns?.selectedOption === idx && !isCorrOpt && <span className="ml-auto text-base text-red-600 font-bold flex-shrink-0">✗</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {!isAns && (
-                      <Button
-                        fullWidth
-                        className="mt-3"
-                        color={subMeta?.color}
-                        onClick={() => {
-                          if (quizSelectedOption === null) return;
-                          const isCorrect = quizSelectedOption === q.correct_answer_index;
-
-                          if (isCorrect) {
-                            confetti({
-                              particleCount: 50,
-                              spread: 60,
-                              origin: { y: 0.8 },
-                              colors: ['#16A34A', '#22C55E', '#86EFAC']
-                            });
-                          }
-
-                          setQuizAnswers(prev => ({
-                            ...prev,
-                            [q.id]: { selectedOption: quizSelectedOption, isCorrect }
-                          }));
-
-                          const matchedTopicId = getTopicIdForQuestion(q);
-                          if (student && matchedTopicId) {
-                            recordLearningEvent(
-                              student.id,
-                              matchedTopicId,
-                              isCorrect,
-                              'practice',
-                              q.bloom_level
-                            ).catch((err: unknown) => {
-                              console.warn('[quiz] recordLearningEvent failed:', err instanceof Error ? err.message : String(err));
-                            });
-                          }
-
-                          track('learn_quick_check_submitted', {
-                            ...telemetryBase,
-                            concept_idx: quizCurrentIdx,
-                            is_correct: isCorrect,
-                            source: 'chapter_quiz',
-                          });
-                        }}
-                        disabled={quizSelectedOption === null}
-                      >
-                        {isHi ? 'जवाब जाँचो' : 'Check Answer'}
-                      </Button>
-                    )}
-
-                    {isAns && (
-                      <div className="space-y-4 mt-2">
-                        <div
-                          className="rounded-xl p-3"
-                          style={{
-                            background: isCorr ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)',
-                            border: `1px solid ${isCorr ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
-                          }}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <span>{isCorr ? '🎉' : '💡'}</span>
-                            <span className="text-xs font-bold" style={{ color: isCorr ? '#16A34A' : '#DC2626' }}>
-                              {isCorr
-                                ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct!')
-                                : (isHi ? 'गलत — पर सीखो!' : 'Incorrect. Let\'s understand:')}
-                            </span>
-                          </div>
-                          <p className="text-xs leading-relaxed text-[var(--text-2)] whitespace-pre-wrap">
-                            {isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'अवधारणा की व्याख्या उपलब्ध नहीं है।' : 'No explanation available.')}
-                          </p>
-                        </div>
-
-                        {quizCurrentIdx < questions.length - 1 ? (
-                          <Button
-                            fullWidth
-                            color={subMeta?.color}
-                            onClick={() => {
-                              setQuizSelectedOption(null);
-                              setQuizCurrentIdx(prev => prev + 1);
-                            }}
-                          >
-                            {isHi ? 'अगला प्रश्न →' : 'Next Question →'}
-                          </Button>
-                        ) : (
-                          <Button
-                            fullWidth
-                            color={subMeta?.color}
-                            onClick={handleFinishQuiz}
-                          >
-                            {isHi ? 'परिणाम रिपोर्ट देखें →' : 'View Performance Report →'}
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </Card>
-                );
-              })()}
-            </div>
-          )}
-
-          {phase === 'report' && (() => {
-            const totalQ = questions.length;
-            const correctQ = Object.values(quizAnswers).filter(a => a.isCorrect).length;
-            const pct = calculateScorePercent(correctQ, totalQ);
-            const scoreGood = pct >= 60;
-
-            const topicStats: Record<string, { total: number; correct: number; title: string; title_hi?: string | null; id: string }> = {};
-            questions.forEach((q) => {
-              const topicId = getTopicIdForQuestion(q) || 'unknown';
-              const topic = topics.find(t => t.id === topicId);
-              const ans = quizAnswers[q.id];
-              if (!ans) return;
-
-              if (!topicStats[topicId]) {
-                topicStats[topicId] = {
-                  id: topicId,
-                  total: 0,
-                  correct: 0,
-                  title: topic ? topic.title : (isHi ? 'अतिरिक्त अभ्यास' : 'Additional Concepts'),
-                  title_hi: topic ? topic.title_hi : null,
-                };
-              }
-              topicStats[topicId].total += 1;
-              if (ans.isCorrect) {
-                topicStats[topicId].correct += 1;
-              }
-            });
-
-            const strengths = Object.values(topicStats).filter(s => s.correct === s.total);
-            const gaps = Object.values(topicStats).filter(s => s.correct < s.total);
-
-            return (
-              <div className="space-y-5 animate-fadeIn">
-                <Card className="text-center py-6 flex flex-col items-center gap-2">
-                  <div className="text-5xl mb-1">{scoreGood ? '🏆' : '📈'}</div>
-                  <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                    {isHi ? 'क्विज़ पूरा हुआ!' : 'Quiz Completed!'}
-                  </h2>
-                  <p className="text-xs text-[var(--text-3)] mb-2">
-                    {isHi ? `अध्याय ${chapterNum} के प्रश्नों का मूल्यांकन` : `Performance evaluation for Chapter ${chapterNum}`}
-                  </p>
-
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-3xl font-extrabold" style={{ color: scoreGood ? '#16A34A' : '#D97706' }}>
-                      {correctQ}/{totalQ}
-                    </span>
-                    <span className="text-sm font-bold text-gray-500">
-                      ({pct}%)
-                    </span>
-                  </div>
-
-                  <ProgressBar value={pct} color={scoreGood ? '#16A34A' : '#D97706'} showPercent />
-
-                  <p className="text-xs font-semibold px-4 mt-2" style={{ color: scoreGood ? '#16A34A' : '#D97706' }}>
-                    {scoreGood
-                      ? (isHi ? 'शानदार! तुमने इस अध्याय की अधिकांश अवधारणाओं को समझ लिया है।' : 'Great job! You have understood most of the concepts in this chapter.')
-                      : (isHi ? 'अच्छा प्रयास! कुछ अवधारणाओं को दोबारा पढ़ने की आवश्यकता है।' : 'Nice try! Some concepts need to be reviewed to complete the syllabus.')}
-                  </p>
-                </Card>
-
-                <div className="space-y-4">
-                  {strengths.length > 0 && (
-                    <div className="space-y-2">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-green-700 flex items-center gap-1.5" style={{ fontFamily: 'var(--font-display)' }}>
-                        <span>✓</span>
-                        <span>{isHi ? 'तुम्हारी ताकत (महारत हासिल अवधारणाएं)' : 'Your Strengths (Mastered Concepts)'}</span>
-                      </h3>
-                      <div className="grid gap-2">
-                        {strengths.map((s, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-green-50/40 border border-green-100 text-xs">
-                            <span className="font-semibold text-gray-800">
-                              {isHi && s.title_hi ? s.title_hi : s.title}
-                            </span>
-                            <span className="font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full text-[10px]">
-                              {s.correct}/{s.total} {isHi ? 'सही' : 'Correct'}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {gaps.length > 0 && (
-                    <div className="space-y-2">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-red-600 flex items-center gap-1.5" style={{ fontFamily: 'var(--font-display)' }}>
-                        <span>⚠️</span>
-                        <span>{isHi ? 'सुधार की जरूरत (अवधारणा अंतराल)' : 'Gaps in Understanding'}</span>
-                      </h3>
-                      <div className="grid gap-3">
-                        {gaps.map((s, idx) => {
-                          const topicIndex = topics.findIndex(t => t.id === s.id);
-                          return (
-                            <div key={idx} className="p-3.5 rounded-xl bg-red-50/20 border border-red-100/50 flex flex-col gap-2.5">
-                              <div className="flex items-start justify-between gap-3 text-xs">
-                                <span className="font-semibold text-gray-800 leading-snug">
-                                  {isHi && s.title_hi ? s.title_hi : s.title}
-                                </span>
-                                <span className="font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap">
-                                  {s.correct}/{s.total} {isHi ? 'सही' : 'Correct'}
-                                </span>
-                              </div>
-
-                              <div className="flex gap-2">
-                                {topicIndex !== -1 && (
-                                  <button
-                                    onClick={() => {
-                                      setPhase('explaining');
-                                      setCurrentIdx(topicIndex);
-                                      setActiveTab('core');
-                                    }}
-                                    className="flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold bg-white border border-red-200 text-red-700 hover:bg-red-50 active:scale-[0.98] transition-all flex items-center justify-center gap-1"
-                                  >
-                                    📖 {isHi ? 'अवधारणा दोबारा पढ़ें' : 'Re-explain Concept'}
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => {
-                                    const topicParam = encodeURIComponent(s.title);
-                                    track('learn_foxy_doubt_clicked', {
-                                      ...telemetryBase,
-                                      source: 'gaps_report',
-                                      topic_title: s.title,
-                                    });
-                                    router.push(`/foxy?subject=${subject}&mode=doubt&topic=${topicParam}`);
-                                  }}
-                                  className="flex-1 py-1.5 px-3 rounded-lg text-[10px] font-bold bg-red-600 text-white hover:bg-red-700 active:scale-[0.98] transition-all flex items-center justify-center gap-1"
-                                >
-                                  🦊 {isHi ? 'Foxy से डाउट पूछें' : 'Ask Foxy'}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3 pt-3 border-t border-gray-100">
-                  <Button
-                    fullWidth
-                    color={subMeta?.color}
-                    onClick={() => {
-                      setPhase('explaining');
-                      setCurrentIdx(0);
-                      setActiveTab('core');
-                      setCompletedTopics(new Set());
-                      setQuizAnswers({});
-                      setQuizCurrentIdx(0);
-                      setQuizSelectedOption(null);
-                    }}
-                  >
-                    🔄 {isHi ? 'अध्याय को दोबारा पढ़ें' : 'Restart Chapter'}
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant="ghost"
-                    onClick={() => router.push(studentHome)}
-                  >
-                    🏠 {isHi ? 'डैशबोर्ड पर वापस जाएं' : 'Return to Dashboard'}
-                  </Button>
-                </div>
-              </div>
-            );
-          })()}
         </div>
       </main>
       </AppShell>

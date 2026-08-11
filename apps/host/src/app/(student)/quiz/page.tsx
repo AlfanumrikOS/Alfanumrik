@@ -9,7 +9,8 @@ import { track } from '@alfanumrik/lib/analytics';
 import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession, checkQuizAnswer, type QuizAnswerCheck } from '@alfanumrik/lib/supabase';
 import { invalidateDashboard, useFeatureFlags } from '@alfanumrik/lib/swr';
 import { useNextTask } from '@alfanumrik/lib/quiz/v2/use-next-task';
-import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
+import { OPTION_LETTERS, parseOptions, isMcqQuestion } from '@alfanumrik/lib/quiz/options';
+import { isPyqYear } from '@alfanumrik/lib/quiz/pyq-years';
 // Phase 4 — session resume. `saveQuizAnswerProgress` makes every confirmed
 // answer durable server-side the instant it is confirmed (on EVERY mode, no
 // flag); `fetchQuizResume` rebuilds an interrupted session from that record.
@@ -227,14 +228,17 @@ function getTimeEstimate(qt: string): number {
   return times[qt] ?? 180;
 }
 
-/** Detect whether a question is MCQ based on its type and available options */
-function isQuestionMCQ(q: Question): boolean {
-  if (q.question_type === 'mcq' || q.cbse_type === 'mcq') return true;
-  // Has valid MCQ options: array with 4 items
-  const opts = Array.isArray(q.options) ? q.options : (() => { try { return JSON.parse(q.options as string); } catch { return []; } })();
-  if (opts.length === 4 && typeof q.correct_answer_index === 'number' && q.correct_answer_index >= 0 && q.correct_answer_index <= 3) return true;
-  return false;
-}
+/**
+ * Detect whether a question is MCQ based on its type and available options.
+ *
+ * The body moved to `packages/lib/src/quiz/options.ts` as `isMcqQuestion`
+ * (Phase 5 track B) — this file's copy and the learn chapter page's
+ * `isLearnPageMCQ` were the same predicate, and the learn one had already
+ * drifted (it was missing the `cbse_type` branch below). THIS copy was the
+ * superset, so it is the one the shared module adopted: behaviour here is
+ * unchanged, and the alias keeps all 7 call sites in this file untouched.
+ */
+const isQuestionMCQ = isMcqQuestion;
 
 /** Classify error type for wrong answers — used by adaptive processing */
 function classifyQuizError(question: Question, response: Response): string {
@@ -320,6 +324,17 @@ export default function QuizPage() {
   const [examTimerActive, setExamTimerActive] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const [selectedQuestionTypes, setSelectedQuestionTypes] = useState<string[]>(['mcq']);
+  /**
+   * PYQ board-paper year from `?year=` (e.g. /quiz?subject=math&year=2019).
+   *
+   * `/pyq` used to be a SECOND quiz runtime: it fetched year-tagged rows, read
+   * `correct_answer_index` in the browser, graded there, and persisted nothing.
+   * It is now a launcher into THIS page, and the year is the one thing it still
+   * carries — a question-SELECTION hint handed to assembleQuiz. It changes
+   * WHICH questions are served and nothing else: shuffle snapshot, anti-cheat,
+   * scoring and the atomic submit are the standard path (P1/P2/P3/P4 untouched).
+   */
+  const [pyqYear, setPyqYear] = useState<number | null>(null);
 
   // Written answer evaluation state
   const [isEvaluating, setIsEvaluating] = useState(false);
@@ -569,6 +584,15 @@ export default function QuizPage() {
         setInitialChapter(ch);
       }
     }
+    // PYQ launcher deep link: /quiz?subject=<code>&year=<board paper year>.
+    // Bounded to the range CBSE board papers plausibly exist in, so a junk or
+    // hostile `?year=` can never reach the assembler's tag filter. Out-of-range
+    // simply leaves pyqYear null and the quiz assembles normally.
+    const yearParam = params.get('year');
+    if (yearParam) {
+      const yr = parseInt(yearParam, 10);
+      if (isPyqYear(yr)) setPyqYear(yr);
+    }
   }, []);
 
   // Track whether exam auto-submit has fired (prevents double-submit)
@@ -767,6 +791,9 @@ export default function QuizPage() {
             chapter: chapter ?? null,
             questionTypes: qTypes && qTypes.length > 0 ? qTypes : ['mcq'],
             mode: opts?.quizMode ?? quizMode,
+            // PYQ launcher (`/pyq` → `/quiz?...&year=`). Null for every other
+            // entry point, in which case the assembler behaves exactly as before.
+            pyqYear,
           });
 
       // Deep-link fail-soft: when a pinned question exists, tolerate a
@@ -987,7 +1014,10 @@ export default function QuizPage() {
     }
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, selectedQuestionTypes, isHi, router]);
+  // `pyqYear` is in the deps deliberately: it is set by an effect that reads
+  // the URL AFTER first render, so a callback closed over the initial `null`
+  // would drop the board year on the very launch that asked for it.
+  }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, selectedQuestionTypes, pyqYear, isHi, router]);
 
   // ── Adaptive deep-link consumer (?qid= / ?mode=srs) ────────────────────────
   // Fires ONCE (deepLinkFiredRef) when the student profile is loaded and we
