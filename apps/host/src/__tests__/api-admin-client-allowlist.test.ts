@@ -290,7 +290,32 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // change is deliberately NOT ledgered: it uses the RLS-scoped
 // createSupabaseRouteClient (class_students own-enrollment policy + the
 // already-SECURITY-DEFINER get_class_leaderboard RPC granted to authenticated).
-const EXPECTED_COUNT = 269;
+// support first-response SLA (2026-08-11): 269 -> 270.
+// ONE new route legitimately requires service-role:
+//   src/app/api/internal/admin/support/metrics/route.ts — the FRT metric behind
+//     the newly-published 2-business-day support SLA. NEITHER table it reads has
+//     an operator SELECT policy: support_tickets' only two SELECT policies are
+//     requester-anchored ('Users can read own tickets' :20262,
+//     support_tickets_self_select :22378) and support_ticket_replies
+//     (20260814000012) has only _owner_select/_owner_insert/_service_role_all —
+//     that migration states outright that the operator surface is service-role
+//     with authorization enforced in the route. Under an RLS-scoped client an
+//     operator would see only tickets they personally filed, so the metric would
+//     report breach_count 0 / meeting_promise true over a near-empty set — it
+//     would certify the SLA is met BECAUSE it cannot see the breaches. Failing
+//     toward "all clear" is the one failure mode this route exists to prevent,
+//     so RLS here is a silent-zero, not defense-in-depth. The sibling operator
+//     console src/app/api/internal/admin/support/route.ts is already ledgered,
+//     reads the same two tables and carries the same
+//     authorizeRequest('support.view_tickets') gate.
+//     Read-only and PII-free by construction: the ticket projection is pinned to
+//     'id, category, status, created_at, resolved_at' and the reply projection to
+//     'ticket_id, created_at, author_role' — email, user_name, subject, message,
+//     device_info and admin_notes are never selected. Ratchet-down path: a
+//     SECURITY DEFINER get_support_first_response_metrics() gated on the existing
+//     baseline helper check_permission(auth.uid(), 'support.view_tickets')
+//     (:1973), granted to authenticated; then move to the RLS-scoped client.
+const EXPECTED_COUNT = 270;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

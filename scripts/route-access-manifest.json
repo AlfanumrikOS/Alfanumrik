@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 403,
+  "routeCount": 404,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -560,6 +560,14 @@
       "owner": "admin-platform",
       "rationale": "Internal platform-admin endpoint; access must derive from internal admin secret/session controls.",
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/internal/admin/support/metrics",
+      "file": "apps/host/src/app/api/internal/admin/support/metrics/route.ts",
+      "access": "internal_admin",
+      "owner": "admin-platform",
+      "rationale": "Read-only first-response-time (FRT) metric for the published 2-business-day support SLA - the route that makes that public promise falsifiable. Lives under /api/internal/admin/support/ because that IS the support operator console (ticket list, thread view, status PATCH and operator reply POST are all in the sibling route.ts), so it follows this directory's convention: authorizeRequest(request, 'support.view_tickets'), the READ code already granted to the support role by 20260612123200 - not support.manage_tickets, and no new permission code was invented (P9). Both query params are clamped server-side (days 1..365 default 30, queue_limit 1..500 default 100); there is no id or tenant parameter, so nothing caller-supplied steers a row filter. The summary is windowed by ticket created_at, but the work queue is deliberately NOT windowed - a six-month-old ignored ticket is the single most important row an operator can see.",
+      "serviceRoleUse": "Service-role is required, not convenience: NEITHER table read here has any operator/admin/support-role SELECT policy. support_tickets has exactly two SELECT policies, both requester-anchored ('Users can read own tickets' on own auth email or own student_id; support_tickets_self_select on own student_id). support_ticket_replies (20260814000012) has exactly three (_owner_select, _owner_insert, _service_role_all), and that migration states the design outright: the operator surface goes through the service-role client, with authorization enforced in the route by authorizeRequest(), not by RLS. An RLS-scoped client would therefore show an operator only the tickets that operator personally filed, and this metric would report breach_count 0 / meeting_promise true over a near-empty set - silently certifying that we meet the SLA precisely because it cannot see the breaches. A metric that fails toward 'all clear' is worse than no metric, so RLS here is a silent-zero rather than a second line of defense. The sibling /api/internal/admin/support is already ledgered, reads the same two tables and carries the same permission gate. Bounded surface: read-only, no writes or RPCs; three capped SELECTs (tickets in window LIMIT 5000; still-open tickets LIMIT 2000; replies chunked by ticket_id IN <=200, filtered is_internal=false AND author_role IN operator/admin/system). P13 field whitelist: support_tickets carries email, user_name, subject, message, device_info and admin_notes and NONE is selected - the ticket projection is pinned to the single TICKET_COLUMNS constant 'id, category, status, created_at, resolved_at' and the reply projection to 'ticket_id, created_at, author_role', so no message body and no author identity can reach the response. Output is aggregates plus a (ticket_id, category, status, created_at, age) queue: UUIDs only. DB errors return a generic body so the PostgREST string cannot echo the ticket-id list back; nothing is logged or audited (read-only aggregate). Ledgered in scripts/admin-client-allowlist.json. Ratchet-down path: add a SECURITY DEFINER RPC get_support_first_response_metrics(p_days, p_queue_limit) that gates on the existing baseline helper check_permission(auth.uid(), 'support.view_tickets') and projects the same eight columns, GRANT EXECUTE to authenticated, then move this route to the RLS-scoped client and prune both justifications. Note the support_ticket_first_response view proposed in this route's header comment is NOT that path - it is security_invoker and granted to service_role only, so it still needs this client. Do not instead add an operator SELECT policy on support_tickets: that widens RLS over the full PII row and trades a narrow column whitelist for table-level exposure."
     },
     {
       "path": "/api/internal/admin/users",
