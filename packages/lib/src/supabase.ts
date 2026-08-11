@@ -232,6 +232,25 @@ export async function getDashboardData(studentId: string) {
   return data;
 }
 
+/**
+ * States of `question_bank.verification_state` that mean the automated NCERT
+ * verifier DISPROVED the row (or is mid-repair on a disproved row). A
+ * disproved question must never reach a student — there is no fallback rung
+ * that relaxes this (migration 20260802100000, spec §3.4).
+ *
+ * NOTE (assessment, 2026-08-11): the Tier-0 predicate inside
+ * `select_quiz_questions_rag` excludes only the literal `'failed'`. The
+ * constraint was widened to six states by migration 20260510064952
+ * (`failed_fix_in_flight`, `failed_unfixable`), so those two disproved states
+ * still pass that RPC's gate. This list is the complete one; the RPC-side gap
+ * is reported separately and is an architect/DB fix.
+ */
+const DISPROVED_VERIFICATION_STATES = [
+  'failed',
+  'failed_fix_in_flight',
+  'failed_unfixable',
+] as const;
+
 export async function getQuizQuestions(subject: string, grade: string, count = 10, difficulty?: number | null, chapterNumber?: number | null) {
   // Try RPC first, fall back to direct query
   const params: Record<string, unknown> = { p_subject: subject, p_grade: grade, p_count: count };
@@ -239,7 +258,28 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
   if (chapterNumber != null) params.p_chapter_number = chapterNumber;
   try {
     const { data, error } = await supabase.rpc('get_quiz_questions', params);
-    if (!error && data) return validateQuestions(data);
+    // An EMPTY ARRAY IS TRUTHY in JavaScript. `get_quiz_questions` returns
+    // `COALESCE(jsonb_agg(q), '[]'::JSONB)` and filters `is_verified = true`
+    // (migration 20260505155525), so a chapter whose questions are all
+    // unverified came back as `[]` — which satisfied the old `data` guard and
+    // RETURNED ZERO QUESTIONS to the student, never reaching the
+    // direct-`question_bank` fallback below. The RPC applies a strictly
+    // NARROWER filter than the fallback, so "RPC found none" does not imply
+    // "the bank has none": only a NON-EMPTY result may short-circuit the
+    // ladder. (Contrast getLeaderboard/getReviewCards below, where the RPC and
+    // its fallback query the same population and empty IS the final answer.)
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const validated = await validateQuestions(data);
+      if (validated.length > 0) return validated;
+      // Every row the RPC returned failed the P6 gate. Serving `[]` here would
+      // be the same silent-zero. Fall through and re-run the SAME gate over the
+      // wider pool — the gate is not relaxed anywhere on this path.
+      console.warn(
+        `get_quiz_questions returned ${data.length} row(s), all rejected by the P6 gate — falling through to question_bank`,
+      );
+    } else if (!error) {
+      console.warn('get_quiz_questions returned no verified rows — falling through to question_bank');
+    }
   } catch { /* RPC may not exist — fall back */ }
 
   // Fetch seen question IDs for dedup (best-effort, ignore errors)
@@ -266,14 +306,42 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
     }
   } catch { /* History fetch failed — proceed without dedup */ }
 
-  // Direct table query fallback — fetch more to ensure enough unseen questions
+  // Direct table query fallback — fetch more to ensure enough unseen questions.
+  //
+  // TIER-0 FLOOR (added 2026-08-11 with the truthy-`[]` fix above): this rung
+  // is now genuinely reachable, so it must enforce the same never-serve floor
+  // the rung above it enforces (`select_quiz_questions_rag`, migration
+  // 20260802100000 §2.1): not soft-deleted, not draft/review/archived, not
+  // verifier-disproved. Previously this query filtered `is_active` only, so a
+  // soft-deleted or verifier-DISPROVED row was servable here.
+  //
+  // These predicates only ever REMOVE rows — this is a narrowing, not a
+  // relaxation. `is_verified` (the human SME flag) is deliberately NOT filtered
+  // here: neither this rung nor either RPC rung above it has ever gated serving
+  // on it (20260802100000 records it as "ranking/administrative metadata only"),
+  // and adding it would simply re-create the empty quiz this fix removes.
+  // Whether SME sign-off should gate serving at all is a CEO decision
+  // (Decision A, 2026-08-11 content brief), not something to settle here.
+  //
+  // `content_status` is nullable with DEFAULT 'published', so it is matched by
+  // "NULL or published" rather than strict equality: a strict `eq` would drop
+  // every legacy row that carries an explicit NULL and could silently re-empty
+  // the very quizzes this fix restores. Census before tightening:
+  //   SELECT content_status, count(*) FROM question_bank
+  //    WHERE is_active AND deleted_at IS NULL GROUP BY 1;
+  // `verification_state` is NOT NULL, so plain `neq` is safe there.
   const fetchLimit = Math.min(count * 4, 120);
   let query = supabase.from('question_bank')
     .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
     .eq('subject', subject)
     .eq('grade', grade)
     .eq('is_active', true)
+    .is('deleted_at', null)
+    .or('content_status.is.null,content_status.eq.published')
     .limit(fetchLimit);
+  for (const state of DISPROVED_VERIFICATION_STATES) {
+    query = query.neq('verification_state', state);
+  }
   if (difficulty != null) query = query.eq('difficulty', difficulty);
   if (chapterNumber != null) query = query.eq('chapter_number', chapterNumber);
   const { data, error } = await query;

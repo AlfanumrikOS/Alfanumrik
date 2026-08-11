@@ -130,8 +130,31 @@ export function useReviewCards(studentId: string | undefined, limit = 20) {
 }
 
 /* ── Leaderboard (via CDN-cached API route, not direct Supabase) ── */
+
+/** Peer-visible row from GET /api/v1/leaderboard. This IS the whole contract —
+ *  no school/city/board/accuracy/top_title (see the P13 whitelist note in
+ *  apps/host/src/app/api/v1/leaderboard/route.ts). P5: `grade` is a STRING. */
+export interface LeaderboardApiEntry {
+  rank: number;
+  student_id: string;
+  name: string | null;
+  grade: string | null;
+  total_xp: number;
+  sessions: number;
+  streak: number;
+}
+
+/** What the hook resolves to. `rankedBy` carries the server's declared ranking
+ *  basis so the UI can label the board honestly and can never claim a basis the
+ *  server did not produce. */
+export interface LeaderboardBoard {
+  entries: LeaderboardApiEntry[];
+  rankedBy: string;
+  period: string;
+}
+
 export function useLeaderboard(period = 'weekly', limit = 50) {
-  return useSWR(
+  return useSWR<LeaderboardBoard>(
     `leaderboard/${period}/${limit}`,
     async () => {
       // Use server API route with CDN caching (s-maxage=60) instead of direct
@@ -143,7 +166,11 @@ export function useLeaderboard(period = 'weekly', limit = 50) {
         throw error;
       }
       const json = await res.json();
-      return json.data ?? [];
+      return {
+        entries: Array.isArray(json?.data) ? (json.data as LeaderboardApiEntry[]) : [],
+        rankedBy: typeof json?.ranked_by === 'string' ? json.ranked_by : 'xp',
+        period: typeof json?.period === 'string' ? json.period : period,
+      };
     },
     { ...DEFAULT_CONFIG, refreshInterval: 300000 } // 5 min client polling + 60s CDN cache
   );

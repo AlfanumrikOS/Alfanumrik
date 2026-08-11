@@ -6,8 +6,57 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 372 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
+**Total catalog: 386 entries (target: 35 — TARGET EXCEEDED).**
+
+> Counting note (testing, 2026-08-11): this header declared **372** immediately
+> before this batch while the shard-chain running counters had reached **379** —
+> a pre-existing 7-entry discrepancy of exactly the kind the header itself warns
+> about, and NOT introduced here. It is carried forward, not silently
+> reconciled: 379 (shard chain) + 7 (this batch) = **386**, which both this line
+> and the three shard totals now agree on. If a later reconciliation finds the
+> shard chain was the wrong side of the discrepancy, every total shifts down by
+> 7 in lock-step and the ids assigned below do not move.
+
+Latest: REG-380..REG-386 (2026-08-11, the SEV1 fix batch for the platform's two
+dominant defect classes — **failures rendered as reassuring empty states**, and
+**structurally impossible features** (cross-student data read from the browser
+against own-row RLS, returning exactly one row and rendered as a peer board).
+Seven entries across three shards:
+
+- **REG-380..REG-382** (`15-cross-cutting.md`) — the leaderboard batch.
+  REG-380 pins the `/leaderboard` ↔ `/api/v1/leaderboard/me` ENVELOPE SEAM by
+  driving the REAL route handler and the REAL `PercentileBandCard` in one test,
+  with no fixture between them: the page read `.band` off the `{success, data}`
+  envelope instead of off `data`, got `undefined`, and the resulting TypeError
+  tripped the `SectionErrorBoundary` wrapping all seven tabs. Both sides had
+  green tests; nothing tested the pair. REG-381 pins band-union TOTALITY plus a
+  drift guard asserting the card's union is a superset of BOTH producers (the TS
+  `bandFromPercentile()` swept 0..100, and the SQL `CASE` in migration
+  `20260813000006`, which is the sole emitter of `top_50`). REG-382 pins that
+  the page never reads `performance_scores` / `score_history` /
+  `challenge_streaks` / `student_titles` from the browser, and pins the three
+  own-scoped replacement routes incl. the `/streaks` P13 peer-field whitelist.
+- **REG-383..REG-384** (`10-rbac-rls.md`) — the support batch. REG-383 pins the
+  P13 leak the lane existed to close: a student must 404 on a PARENT-authored
+  thread (parent tickets anchor to the child's `student_id` with
+  `user_role='parent'`; the detail route filtered on `student_id` alone), with a
+  FILTER-AWARE double so the assertion is behavioural rather than "an `.eq()`
+  was called". REG-384 pins `replies_unavailable` as a distinct retry state, the
+  operator composer's fail-safe internal default + post-send reset, the reply
+  rate limiter's machine-readable 429, and category-alias normalisation.
+- **REG-385..REG-386** (`03-quiz-integrity.md`) — the truthy-`[]` serving bug:
+  `if (!error && data)` accepted the RPC's `COALESCE(jsonb_agg(q),'[]')`, so a
+  chapter with 40 valid-but-unverified questions served ZERO and never reached
+  the fallback. REG-386 pins the Tier-0 never-serve floor that the fix made
+  reachable — all THREE verifier-disproved states, not just `'failed'`.
+
+**REG-387 is now the next free id**; REG-371..REG-377 remain RESERVED.
+Two defects found while writing these and reported rather than pinned as
+correct: the `normalizeTicketCategory()` prototype-inheritance hole
+(`10-rbac-rls.md`) and the `select_quiz_questions_rag` RPC's single-state
+`verification_state` exclusion (`03-quiz-integrity.md`).
+
+Prior: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
 `JSON.parse(null)` returns `null` rather than throwing, so six of the seven
 duplicate `parseOptions` copies could return `null` from a function annotated
 `: string[]`, crashing the caller's `.map()` at render on the quiz, learn,
@@ -20,8 +69,7 @@ exactly-four) and option ORDER (bound to the server shuffle snapshot and
 all E. Documented known gap: the literal STRING `'null'` still parses to `null`
 verbatim, preserved-not-introduced from all seven originals and pinned
 deliberately; tightening it is a P6 behaviour change needing assessment
-sign-off. Full entry in `03-quiz-integrity.md`. **REG-380 is now the next free
-id**; REG-371..REG-377 remain RESERVED.)
+sign-off. Full entry in `03-quiz-integrity.md`.)
 
 2026-08-10 reconciliation — 4 test files deleted in the orphan-consolidation
 pass, 3 catalog entries repaired, **0 entries deleted**. The deleted files were

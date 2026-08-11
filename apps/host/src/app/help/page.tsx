@@ -423,7 +423,10 @@ export default function HelpPage() {
             <span className="text-xl">📝</span>
             <div className="text-left flex-1">
               <div className="text-sm font-bold">{isHi ? 'सपोर्ट टिकट भेजें' : 'Submit a Support Ticket'}</div>
-              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण दें, हम 24 घंटे में जवाब देंगे' : 'Describe your issue, we\'ll respond within 24 hours'}</div>
+              {/* No SLA number here on purpose: response time depends on operator
+                  staffing, which is an ops decision, not a code constant. Do not
+                  reintroduce "within 24 hours" until ops publishes a real SLA. */}
+              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण दें, हम जल्द से जल्द जवाब देंगे' : 'Describe your issue and we\'ll get back to you as soon as we can'}</div>
             </div>
           </button>
 
@@ -589,7 +592,8 @@ export default function HelpPage() {
               <div className="text-center mb-4">
                 <span className="text-3xl">📝</span>
                 <h3 className="text-base font-bold mt-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'सपोर्ट टिकट' : 'Support Ticket'}</h3>
-                <p className="text-xs" style={{ color: 'var(--text-3)' }}>{isHi ? 'हम 24 घंटे में जवाब देंगे' : 'We\'ll respond within 24 hours'}</p>
+                {/* Truthful, no SLA commitment — see the note on the home-card copy. */}
+                <p className="text-xs" style={{ color: 'var(--text-3)' }}>{isHi ? 'हम जल्द से जल्द जवाब देंगे' : 'We\'ll get back to you as soon as we can'}</p>
               </div>
 
               <div className="space-y-3">
@@ -711,7 +715,9 @@ export default function HelpPage() {
             <div className="text-5xl mb-4">✅</div>
             <h3 className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'टिकट भेज दिया गया!' : 'Ticket Submitted!'}</h3>
             <p className="text-sm mb-6" style={{ color: 'var(--text-3)', maxWidth: 320, margin: '0 auto' }}>
-              {isHi ? 'हमने आपकी समस्या दर्ज कर ली है। हम 24 घंटे में ईमेल द्वारा जवाब देंगे।' : 'We\'ve received your issue. Our team will respond to your email within 24 hours.'}
+              {/* No SLA number (ops owns the real one). Points at the in-product
+                  thread, which is where replies now actually land. */}
+              {isHi ? 'हमने आपकी समस्या दर्ज कर ली है। हमारी टीम जल्द से जल्द जवाब देगी — जवाब आपको "मेरे टिकट" में दिखेगा।' : 'We\'ve received your issue. Our team will reply as soon as we can — you\'ll see the response under "My Tickets".'}
             </p>
             <div className="flex flex-col gap-2 items-center">
               <Button onClick={() => { setView('home'); setTicketCategory(''); setTicketSubject(''); setTicketMessage(''); }}>

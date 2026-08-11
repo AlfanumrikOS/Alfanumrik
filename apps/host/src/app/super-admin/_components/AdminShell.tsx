@@ -121,7 +121,24 @@ const NAV_ITEMS: SidebarItem[] = [
   // ── 2. People & Support ─────────────────────────────────────────────────
   { type: 'section', label: 'People & Support', labelHi: 'लोग और सहायता' },
   { href: '/super-admin/users', label: 'Users & Roles', labelHi: 'उपयोगकर्ता और भूमिकाएँ', icon: '⊕' },
-  { href: '/super-admin/support', label: 'Support Center', labelHi: 'सहायता केंद्र', icon: '⊛' },
+  // ── Nav-truth fix (2026-08-11) ───────────────────────────────────────────
+  // /super-admin/support was labelled "Support Center" but never queries
+  // support_tickets — its four calls are failed_jobs / user_activity /
+  // parent_links / class_mappings (super-admin/support/page.tsx:102,125,146,166;
+  // the API enumerates no ticket action, api/super-admin/support/route.ts:129-131).
+  // An operator following the obvious nav path never saw a single ticket.
+  // Relabelled to what it actually is; the real queue gets its own entry below.
+  { href: '/super-admin/support', label: 'Ops Diagnostics', labelHi: 'ऑप्स डायग्नोस्टिक्स', icon: '⊛' },
+  // The REAL support-ticket queue: internal/admin/_components/SupportTab.tsx,
+  // mounted at internal/admin/page.tsx:164 under tab key 'support'. It was
+  // linked from nowhere in this panel.
+  // Deep-linking is NOT supported — internal/admin/page.tsx:75 holds the tab in
+  // `useState<Tab>('command')` and never reads a search param, so `?tab=support`
+  // would be silently ignored. Linking to the page itself rather than inventing
+  // a param; the operator picks the 🎫 Support tab there.
+  // Same session boundary: proxy.ts:1260 gates /internal/admin on the same
+  // super_admin session as /super-admin.
+  { href: '/internal/admin', label: 'Support Tickets', labelHi: 'सहायता टिकट', icon: '🎫' },
   // Foxy North-Star Phase 1 — safeguarding disclosure review queue.
   // P10 fold-in (2026-08-05): the queue lives as the Safeguarding tab of the
   // grandfathered /super-admin/foxy-quality page (the standalone route

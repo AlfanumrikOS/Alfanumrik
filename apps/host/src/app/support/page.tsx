@@ -31,7 +31,14 @@ type TicketPriority = 'low' | 'normal' | 'high';
 type TicketStatus = 'open' | 'pending' | 'in_progress' | 'resolved' | 'closed';
 
 interface Ticket {
-  ticket_id: string;
+  /**
+   * CANONICAL id. GET /api/support/tickets selects `id` (route.ts:260) — it has
+   * never returned `ticket_id`. This interface previously declared `ticket_id`,
+   * so every row rendered `key={undefined}` and every tap navigated to
+   * `/support/undefined`, i.e. the detail page was unreachable from here.
+   * Keep this aligned with /support/[ticket_id], which also reads `id`.
+   */
+  id: string;
   subject: string;
   category: TicketCategory | string;
   priority: TicketPriority | string;
@@ -264,9 +271,9 @@ export default function SupportListPage() {
         {!swrLoading && !error && tickets.length > 0 && (
           <ul className="space-y-2" aria-label={isHi ? 'टिकट सूची' : 'Ticket list'}>
             {tickets.map((t) => (
-              <li key={t.ticket_id}>
+              <li key={t.id}>
                 <button
-                  onClick={() => router.push(`/support/${t.ticket_id}`)}
+                  onClick={() => router.push(`/support/${t.id}`)}
                   className="w-full rounded-2xl p-4 text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
                   style={{
                     background: 'var(--surface-1)',

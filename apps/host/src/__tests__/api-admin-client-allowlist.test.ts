@@ -277,7 +277,20 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // students_select_merged policy (auth_user_id = auth.uid()), so service-role is
 // no longer required. Ledger entry pruned in the same change so the guard
 // ratchets DOWN, not drifts.
-const EXPECTED_COUNT = 267;
+// leaderboard SEV1 Pattern-B repair (2026-08-11): 267 -> 269.
+// Two NEW routes legitimately require service-role:
+//   src/app/api/v1/leaderboard/titles/route.ts — student_titles has RLS enabled
+//     with exactly ONE policy (service_role only, baseline :20003) and no
+//     student SELECT policy, so an RLS-scoped read returns 0 rows for everyone;
+//     the route scopes the SELECT to the SESSION-derived auth.studentId.
+//   src/app/api/v1/leaderboard/streaks/route.ts — a peer streak board is
+//     structurally impossible under own-row-only RLS on challenge_streaks; the
+//     route reads via service-role and projects an explicit P13 whitelist.
+// The sibling src/app/api/v1/leaderboard/my-class/route.ts added in the same
+// change is deliberately NOT ledgered: it uses the RLS-scoped
+// createSupabaseRouteClient (class_students own-enrollment policy + the
+// already-SECURITY-DEFINER get_class_leaderboard RPC granted to authenticated).
+const EXPECTED_COUNT = 269;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

@@ -224,6 +224,21 @@ interface BackendConfig {
   subjects?: Behaviour;
   /** GET /api/student/chapters (getChaptersForSubject). */
   chapters?: Behaviour;
+  /**
+   * GET /api/v1/leaderboard (the CDN-cached rankings route behind
+   * `useLeaderboard`).
+   *
+   * Added 2026-08-11 with the leaderboard SEV1 repair. The /leaderboard
+   * rankings tab NO LONGER talks to Supabase: it used to read
+   * `performance_scores` / `score_history` / `challenge_streaks` /
+   * `student_titles` cross-student from the browser against own-row-only RLS,
+   * which is why it rendered a board of one. Faking `get_leaderboard` at the
+   * PostgREST layer therefore no longer influences this surface at all — the
+   * catch-all `**\/api\/**` answered `{}`, the hook mapped that to
+   * `entries: []`, and the tests passed or failed for reasons unrelated to
+   * their names. Drive the ROUTE instead.
+   */
+  leaderboard?: Behaviour;
 }
 
 /**
@@ -305,6 +320,66 @@ async function installStudentBackend(page: Page, cfg: BackendConfig = {}): Promi
   await page.route('**/api/student/chapters**', (route) =>
     serve(route, cfg.chapters ?? { kind: 'ok', body: { chapters: [] } }),
   );
+
+  // Registered LAST so it wins over the `**/api/**` catch-all. The default is a
+  // healthy EMPTY board in the route's real envelope shape (`{ data, period,
+  // ranked_by }`) — not `{}`, which is a body the route cannot produce and which
+  // would test the hook's tolerance for an impossible response rather than the
+  // page.
+  await page.route('**/api/v1/leaderboard**', (route) => {
+    const { pathname } = new URL(route.request().url());
+    // Sub-routes (/me, /titles, /streaks, /my-class, /mastery) keep their own
+    // healthy no-op shapes so a tab the test is not exercising cannot raise its
+    // own error card and pollute the assertion.
+    if (pathname.endsWith('/leaderboard/me')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            period: 'weekly', rank: null, percentile: null, xp: 0, band: null,
+            neighbours: [], performance_score: null, level_name: null,
+          },
+        }),
+      });
+    }
+    if (pathname.endsWith('/leaderboard/titles')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { schemaVersion: 1, resolvedAt: new Date().toISOString(), titles: [] },
+        }),
+      });
+    }
+    if (pathname.endsWith('/leaderboard/streaks')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            schemaVersion: 1, resolvedAt: new Date().toISOString(),
+            threshold: 3, items: [], me: null,
+          },
+        }),
+      });
+    }
+    // my-class / mastery are flag-gated; 404 is their real OFF state.
+    if (pathname.endsWith('/leaderboard/my-class') || pathname.endsWith('/leaderboard/mastery')) {
+      return route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, error: 'not_found' }),
+      });
+    }
+    return serve(
+      route,
+      cfg.leaderboard ?? { kind: 'ok', body: { data: [], period: 'weekly', ranked_by: 'xp' } },
+    );
+  });
 }
 
 /**
@@ -770,14 +845,24 @@ test.describe('/notifications — inbox load', () => {
   });
 });
 
+/*
+ * Re-pointed 2026-08-11 (leaderboard SEV1 repair).
+ *
+ * These three tests used to configure `rpcs: { get_leaderboard: … }` and
+ * `tables: { students: … }`. That was the right harness for the OLD page, which
+ * read Supabase directly from the browser. The rankings tab now goes through
+ * `useLeaderboard()` → GET /api/v1/leaderboard, so those PostgREST fakes had
+ * become inert: the failure case was answered by the catch-all with a 200 `{}`,
+ * the hook mapped it to `entries: []`, and "a failed read never claims there are
+ * no rankings" would have gone GREEN on a page that renders exactly that claim.
+ * The empty-board case still passed, but for the wrong reason.
+ *
+ * Nothing here is weakened — the SAME two directions are asserted, against the
+ * transport the page actually uses.
+ */
 test.describe('/leaderboard — rankings load', () => {
   test('a failed read never claims there are no rankings', async ({ page }) => {
-    // getLeaderboard degrades RPC → students table, so BOTH must fail for the
-    // read to be a failure rather than a fallback.
-    await installStudentBackend(page, {
-      rpcs: { get_leaderboard: { kind: 'fail' } },
-      tables: { students: { kind: 'fail' } },
-    });
+    await installStudentBackend(page, { leaderboard: { kind: 'fail' } });
     await gotoAuthed(page, '/leaderboard');
 
     await expect(
@@ -787,10 +872,7 @@ test.describe('/leaderboard — rankings load', () => {
   });
 
   test('the rankings-failure retry control is a real 44px target', async ({ page }) => {
-    await installStudentBackend(page, {
-      rpcs: { get_leaderboard: { kind: 'fail' } },
-      tables: { students: { kind: 'fail' } },
-    });
+    await installStudentBackend(page, { leaderboard: { kind: 'fail' } });
     await gotoAuthed(page, '/leaderboard');
     await expect(page.getByText(COPY.leaderboard.error)).toBeVisible({ timeout: 20_000 });
 
@@ -803,12 +885,38 @@ test.describe('/leaderboard — rankings load', () => {
     page,
   }) => {
     await installStudentBackend(page, {
-      rpcs: { get_leaderboard: { kind: 'ok', body: [] } },
+      // The route's REAL empty-board shape, not `{}`.
+      leaderboard: { kind: 'ok', body: { data: [], period: 'weekly', ranked_by: 'xp' } },
     });
     await gotoAuthed(page, '/leaderboard');
 
     await expect(page.getByText(COPY.leaderboard.empty)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(COPY.leaderboard.error)).toHaveCount(0);
+  });
+
+  /* SEV1 pin at the E2E layer: the caller must not be promoted to rank #1.
+     The old page re-sorted the server board by a client-read Performance Score
+     that RLS reduced to the caller's own row, so every peer sorted to -1. */
+  test('renders the SERVER rank and labels the board by the server ranked_by', async ({
+    page,
+  }) => {
+    await installStudentBackend(page, {
+      leaderboard: {
+        kind: 'ok',
+        body: {
+          data: [
+            { rank: 1, student_id: 's1', name: 'Aarav', grade: '8', total_xp: 900, sessions: 9, streak: 5 },
+            { rank: 2, student_id: 's2', name: 'Bhavya', grade: '8', total_xp: 800, sessions: 8, streak: 4 },
+          ],
+          period: 'weekly',
+          ranked_by: 'xp',
+        },
+      },
+    });
+    await gotoAuthed(page, '/leaderboard');
+
+    await expect(page.getByText('Top 10 by XP')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/Performance Score/)).toHaveCount(0);
   });
 });
 

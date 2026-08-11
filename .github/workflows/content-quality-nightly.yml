@@ -1,28 +1,96 @@
 name: Content Quality — Nightly
 
-# HARD-SUSPENDED IN PHASE 0. The previous manual path could execute scripts
-# from an arbitrary dispatch ref while holding the production Supabase
-# service-role secret. Restore only behind a protected, main-only ops
-# environment with a read-only reporting credential.
+# ─────────────────────────────────────────────────────────────────────────────
+# RESTORED 2026-08-11 (ops, SEV1). READ THIS BEFORE TOUCHING THE TRIGGERS.
 #
-# Phase 3.3: Truthful content-readiness measurement.
-# Runs the two ops scripts (check-content-gaps + audit-question-quality)
-# against the live database every night and uploads the results as build
-# artifacts. Slack/email wiring lands in Phase 5; for now ops reads the
-# artifact from the run page.
+# ORIGINAL SUSPENSION — commit b66c25c3b "ci: contain production delivery
+# paths" (2026-07-11). The removed comment read, verbatim:
 #
-# Failure semantics:
-#   * exit 1 from check-content-gaps  = catastrophic gap (chapter has 0
-#     chunks AND 0 questions). Fails the workflow (red gate).
-#   * exit 2 from check-content-gaps  = below P3 floor (warn, advisory
-#     `continue-on-error: true`).
-#   * audit-question-quality is advisory (non-blocking) — quality is
-#     monitored but not gated until pass rate is stable.
+#   "HARD-SUSPENDED IN PHASE 0. The previous manual path could execute scripts
+#    from an arbitrary dispatch ref while holding the production Supabase
+#    service-role secret. Restore only behind a protected, main-only ops
+#    environment with a read-only reporting credential."
+#
+# That reason was REAL and is not to be waved away: `workflow_dispatch` can be
+# fired against ANY ref, the credentialed job had no ref guard, so anyone who
+# could dispatch this workflow could execute arbitrary branch-controlled script
+# content while holding the production service-role key. Suspending it was
+# correct.
+#
+# It was NOT suspended for being noisy, and NOT for cost: both scripts are
+# read-only (two SELECTs each, no INSERT/UPDATE/DELETE/RPC) and make ZERO paid
+# API calls. Verified 2026-08-11.
+#
+# RESTORE CONDITIONS — 2 of 3 met:
+#   [x] main-only. The credentialed job is guarded by
+#       `github.ref == 'refs/heads/main'`. `schedule` only ever fires on the
+#       default branch; a `workflow_dispatch` from any other ref now SKIPS the
+#       job rather than running it with the secret. That is the arbitrary-ref
+#       hole, closed.
+#   [x] protected ops environment. `environment: production-ops` retained.
+#       (The actual protection rules live in GitHub repo settings, not here —
+#       confirm required reviewers are configured on that environment.)
+#   [ ] read-only reporting credential. NOT MET. No read-only Supabase secret
+#       exists in this repo today (every workflow uses
+#       SUPABASE_SERVICE_ROLE_KEY). This job PREFERS
+#       `secrets.SUPABASE_CONTENT_REPORT_KEY` and falls back to the service
+#       role key so detection works now. Provisioning the read-only key and
+#       deleting the fallback is tracked in
+#       docs/runbooks/content-gap-detection.md.
+#
+# ── WHY THIS IS REPORT-ONLY BY DEFAULT ──────────────────────────────────────
+# A nightly that is red every night gets muted within a fortnight — that is
+# how this one ended up suspended in the first place. Escalation is therefore
+# behind the repo VARIABLE `CONTENT_GAP_MODE`:
+#
+#   report   (default) — always concludes success. Renders a job summary and
+#                        uploads artifacts. Nothing goes red for a data
+#                        condition. Infra faults still fail (see below).
+#   escalate           — additionally FAILS the workflow on a catastrophic
+#                        gap (a (subject, grade) pair at 0 chunks AND 0
+#                        questions), which routes into pipeline-alert.yml and
+#                        opens a deduped `pipeline-failure` GitHub issue.
+#
+# Flip to `escalate` only after the detector has produced one TRUSTWORTHY run
+# (see the DETECTOR FAULT guard below). Set it in
+# Settings → Secrets and variables → Actions → Variables.
+#
+# ── INFRA FAULTS ALWAYS FAIL, EVEN IN REPORT MODE ───────────────────────────
+# A detector that cannot see the data is worse than no detector, because it
+# looks green. Missing credentials fail the job in BOTH modes. Provisioning a
+# secret is a two-minute ops task, not an unbudgeted data-repair project, so
+# this will not become chronic noise.
+#
+# ── DETECTOR FAULT GUARD (do not remove) ────────────────────────────────────
+# `scripts/check-content-gaps.ts` buckets rag_content_chunks by the literal key
+# `"<subject>|Grade <n>"` using SNAKE-CASE subject codes ('math', 'science',
+# 'social_studies'). Production `rag_content_chunks.subject` stores DISPLAY
+# names ('Mathematics', 'Science', 'Social Studies') — the SQL RPCs in
+# supabase/migrations/00000000000000_baseline_from_prod.sql map
+# 'math' -> 'Mathematics' before comparing. If that mismatch is live, EVERY
+# pair reads 0 chunks and the report declares a platform-wide catastrophe that
+# is really a key-mapping bug. There are ~16,006 chunks in the corpus, so a
+# report of "0 chunks everywhere" is a detector fault, not a data fact.
+#
+# The verdict step below detects exactly that shape (rows fetched > 0 but every
+# per-pair chunk count == 0) and downgrades it from CATASTROPHIC to
+# DETECTOR_FAULT so it can never trigger a false red. The fix belongs in the
+# script (a subject-code normaliser) and is assessment/ops-reviewable — the
+# THRESHOLDS in that script are content policy and were deliberately not
+# touched here.
+#
+# Phase 3.3 origin: truthful content-readiness measurement. Runs
+# check-content-gaps + audit-question-quality against the live database nightly
+# and uploads the results as build artifacts.
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  # Phase 0: recurring execution is suspended while the failing production
-  # credential/runtime path is repaired. Manual dispatch is retained only to
-  # report the explicit suspension; it cannot reach a secret-bearing job.
+  schedule:
+    # 04:00 UTC = 09:30 IST, just after the 03:30 UTC pg_cron readiness
+    # recompute, so the script reads fresh values.
+    - cron: '0 4 * * *'
+  # Retained for on-demand ops runs. Dispatching from a non-main ref is safe:
+  # the credentialed job's `github.ref` guard skips it.
   workflow_dispatch:
 
 permissions:
@@ -33,26 +101,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  gate:
-    name: Phase 0 Content Quality Suspension Gate
-    runs-on: ubuntu-latest
-    permissions: {}
-    outputs:
-      enabled: ${{ steps.suspend.outputs.enabled }}
-    steps:
-      - name: Refuse credentialed content scan
-        id: suspend
-        run: |
-          echo "enabled=false" >> "$GITHUB_OUTPUT"
-          echo "::error::Credentialed content-quality execution is suspended in Phase 0; a reviewed workflow change is required to restore it."
-          exit 1
-
   content-quality:
     name: Content quality scan
     runs-on: ubuntu-latest
-    needs: gate
-    if: needs.gate.outputs.enabled == 'true'
+    # MAIN-ONLY CONTAINMENT. This single line is what replaced the Phase 0
+    # hard-suspension gate. Do not remove it — without it, `workflow_dispatch`
+    # from an arbitrary ref regains access to the production credential, which
+    # is the exact hole b66c25c3b closed.
+    if: github.ref == 'refs/heads/main'
     environment: production-ops
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
@@ -71,85 +129,85 @@ jobs:
       - name: Prepare report directory
         run: mkdir -p reports/content-quality
 
-      # ── Gap check (BLOCKING on catastrophic gap, exit 1) ──
+      # ── Credential preflight — an unseeing detector must not look green ──
+      - name: Resolve reporting credential
+        id: cred
+        env:
+          # Prefer a dedicated read-only reporting key once it is provisioned;
+          # fall back to the service role key so detection works today.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          READONLY_KEY: ${{ secrets.SUPABASE_CONTENT_REPORT_KEY }}
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_URL is not available to this workflow. The content-gap detector cannot run and is therefore BLIND. Provision the secret on the production-ops environment."
+            exit 1
+          fi
+          if [ -n "$READONLY_KEY" ]; then
+            echo "Using SUPABASE_CONTENT_REPORT_KEY (read-only reporting credential)."
+            echo "kind=readonly" >> "$GITHUB_OUTPUT"
+          elif [ -n "$SERVICE_KEY" ]; then
+            echo "::warning::Falling back to SUPABASE_SERVICE_ROLE_KEY — the read-only reporting credential (SUPABASE_CONTENT_REPORT_KEY) is still not provisioned. See docs/runbooks/content-gap-detection.md."
+            echo "kind=fallback-elevated" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Neither SUPABASE_CONTENT_REPORT_KEY nor SUPABASE_SERVICE_ROLE_KEY is available. The content-gap detector cannot run and is therefore BLIND."
+            exit 1
+          fi
+
+      # ── Gap check (read-only, no paid API) ──
       - name: Check content gaps
         id: gaps
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_CONTENT_REPORT_KEY || secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set +e
           npx tsx scripts/check-content-gaps.ts --json > reports/content-quality/gaps.json
-          EXIT=$?
-          echo "gaps_exit_code=$EXIT" >> $GITHUB_OUTPUT
-          # Render a markdown summary from the JSON.
-          node -e "
-            const r = require('./reports/content-quality/gaps.json');
-            const lines = [];
-            lines.push('# Content gap nightly report');
-            lines.push('');
-            lines.push('Generated: ' + new Date().toISOString());
-            lines.push('');
-            lines.push('| Metric | Value |');
-            lines.push('|---|---|');
-            lines.push('| Total RAG chunks | ' + r.totalRagChunks + ' |');
-            lines.push('| Total questions | ' + r.totalQuestions + ' |');
-            lines.push('| Pairs below P3 floor | ' + r.totalGaps + ' / ' + r.rows.length + ' |');
-            lines.push('| **Catastrophic gaps** (0 chunks AND 0 questions) | **' + r.catastrophicGaps + '** |');
-            lines.push('');
-            if (r.catastrophicGaps > 0) {
-              lines.push('## Catastrophic pairs');
-              lines.push('');
-              lines.push('| Subject | Grade | Chunks | Questions |');
-              lines.push('|---|---|---|---|');
-              for (const row of r.rows.filter(x => x.catastrophic)) {
-                lines.push(['', row.subject, row.grade, row.ragCount, row.questionCount, ''].join('|'));
-              }
-              lines.push('');
-            }
-            require('fs').writeFileSync('reports/content-quality/gaps.md', lines.join('\n'));
-            require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
-          "
-          # Pass exit 1 (catastrophic) up. Exit 2 (P3 floor breach) becomes
-          # exit 0 here so the workflow does not fail on advisory issues.
-          if [ "$EXIT" = "1" ]; then exit 1; fi
+          echo "script_exit=$?" >> "$GITHUB_OUTPUT"
           exit 0
 
-      # ── Question-bank quality audit (advisory) ──
+      # ── Verdict: classify, render, and decide whether to escalate ──
+      - name: Classify and render gap verdict
+        id: verdict
+        env:
+          SCRIPT_EXIT: ${{ steps.gaps.outputs.script_exit }}
+          CONTENT_GAP_MODE: ${{ vars.CONTENT_GAP_MODE || 'report' }}
+          CRED_KIND: ${{ steps.cred.outputs.kind }}
+        run: |
+          node scripts/content-gap-verdict.mjs \
+            reports/content-quality/gaps.json \
+            reports/content-quality/gaps.md
+
+      # ── Question-bank quality audit (always advisory) ──
       - name: Audit question quality
         if: always()
         continue-on-error: true
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_CONTENT_REPORT_KEY || secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           npx tsx scripts/audit-question-quality.ts --json > reports/content-quality/quality.json || true
-          # Render a one-page summary.
           node -e "
-            const r = require('./reports/content-quality/quality.json');
-            const lines = [];
-            lines.push('# Question-bank quality nightly report');
-            lines.push('');
-            lines.push('Generated: ' + new Date().toISOString());
-            lines.push('');
-            lines.push('| Metric | Value |');
-            lines.push('|---|---|');
-            lines.push('| Total questions | ' + r.summary.total + ' |');
-            lines.push('| Pass all checks | ' + r.summary.passAll + ' (' + r.summary.passRate + '%) |');
-            lines.push('| Critical defects | ' + r.summary.criticalDefects + ' |');
-            lines.push('| Duplicate texts | ' + r.duplicateTexts + ' (~' + r.duplicateQuestions + ' extras) |');
-            lines.push('');
-            lines.push('## Top failure reasons');
-            lines.push('');
-            lines.push('| Reason | Count |');
-            lines.push('|---|---|');
-            const top = Object.entries(r.failureBreakdown).sort((a,b) => b[1]-a[1]).slice(0, 10);
-            for (const [k, v] of top) {
-              lines.push(['', k, v, ''].join('|'));
+            const fs = require('fs');
+            let r;
+            try { r = JSON.parse(fs.readFileSync('reports/content-quality/quality.json', 'utf8')); }
+            catch (e) { console.log('Quality report unreadable — skipping summary.'); process.exit(0); }
+            if (!r || !r.summary) { console.log('Quality report has no summary — skipping.'); process.exit(0); }
+            const lines = [
+              '', '## Question-bank quality (advisory)', '',
+              '| Metric | Value |', '|---|---|',
+              '| Total questions | ' + r.summary.total + ' |',
+              '| Pass all checks | ' + r.summary.passAll + ' (' + r.summary.passRate + '%) |',
+              '| Critical defects | ' + r.summary.criticalDefects + ' |',
+              '| Duplicate texts | ' + r.duplicateTexts + ' (~' + r.duplicateQuestions + ' extras) |',
+              '', '### Top failure reasons', '', '| Reason | Count |', '|---|---|',
+            ];
+            for (const [k, v] of Object.entries(r.failureBreakdown || {}).sort((a, b) => b[1] - a[1]).slice(0, 10)) {
+              lines.push('| ' + k + ' | ' + v + ' |');
             }
-            require('fs').writeFileSync('reports/content-quality/quality.md', lines.join('\n'));
-            require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n\n' + lines.join('\n') + '\n');
-          " || echo "Quality summary rendering failed — see reports/content-quality/quality.json"
+            fs.writeFileSync('reports/content-quality/quality.md', lines.join('\n'));
+            if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          " || echo 'Quality summary rendering failed — see reports/content-quality/quality.json'
 
       - name: Upload reports
         if: always()
@@ -159,3 +217,17 @@ jobs:
           path: reports/content-quality/
           if-no-files-found: warn
           retention-days: 30
+
+      # Last step on purpose: the artifact upload above must happen even when
+      # we are about to go red, so the operator who gets the pipeline-failure
+      # issue has the evidence attached to the run.
+      - name: Escalate catastrophic gap
+        if: steps.verdict.outputs.escalate == 'true'
+        # Step outputs are passed through `env:` rather than interpolated into
+        # the shell body — `${{ }}` inside `run:` is a script-injection shape and
+        # this job holds a production credential.
+        env:
+          COUNT: ${{ steps.verdict.outputs.catastrophic_count }}
+        run: |
+          echo "::error::CATASTROPHIC CONTENT GAP — ${COUNT} (subject, grade) pair(s) have 0 RAG chunks AND 0 questions. The question bank is going empty and every question generator on this platform is manual-only, so this cannot self-heal. See the run artifact and docs/runbooks/content-gap-detection.md."
+          exit 1

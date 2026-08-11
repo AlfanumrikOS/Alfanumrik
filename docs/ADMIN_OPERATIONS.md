@@ -220,6 +220,17 @@ vercel firewall rules add "api-json-no-challenge" \
 - **Risk note:** the bypass skips only the checkpoint challenge, not authentication or authorization — every `/api/*` route keeps its own auth (`authorizeAdmin` / `authorizeRequest` / webhook signatures), and app-level rate limiting in `apps/host/src/proxy.ts` (Upstash) remains fully active. Residual exposure is volumetric abuse of `/api/*` beyond what proxy rate limits absorb; if that materializes, replace the bypass with a rate-limit firewall action rather than re-enabling the challenge.
 - After running, verify: admin console loads without the checkpoint banner, and `curl -s -o /dev/null -w "%{content_type}" https://alfanumrik.com/api/v1/health` returns a JSON content type.
 
+## Open Operator Decisions (2026-08-11)
+
+Three decisions are parked and need a human. They are recorded in full in the
+runbooks linked below; this is the index so an operator finds them.
+
+| # | Decision | Blocks | Owner | Detail |
+|---|---|---|---|---|
+| OD-A | **Support SLA — what response time can we actually deliver?** `/help` copy is currently SLA-free (the old "within 24 hours" promise was removed because there was no reply channel in the schema at all until 2026-08-11). A reply channel now exists — table + student/operator APIs + UI. The real SLA is a **staffing** question. Do not invent a number; do not reintroduce one into student-facing copy until this is answered. | Any response-time number in product copy | **user (CEO)** | `docs/runbooks/support-reply-channel-and-sla.md` |
+| OD-B | **P13 — operator note text lands in `admin_audit_log`.** `PATCH /api/internal/admin/support` audits `details: { status, admin_note }`, i.e. free-text operator prose about a specific student's case into a wider-read store. Pre-existing; not a regression from this session. Contradicts that route file's own P13 header comment. | P13 posture on support tooling | ops + **architect** | `docs/runbooks/support-reply-channel-and-sla.md` |
+| OD-C | **Content-gap detector is restored but report-only.** The nightly that warns the question bank is going empty was hard-suspended 2026-07-11 and is live again as of 2026-08-11 — but in report mode, and still using the service-role key because no read-only reporting credential exists. Escalation must not be enabled until a subject-code mapping defect is fixed. | Automated SEV1 warning on content decay | ops + architect + assessment | `docs/runbooks/content-gap-detection.md` |
+
 ## Environment Variables Required
 
 | Variable | Purpose | Where Set |

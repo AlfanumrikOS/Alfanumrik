@@ -1871,3 +1871,59 @@ the one that actually occurs, from nullable columns such as
 **Total catalog: 359 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Quiz serving — the truthy-`[]` silent zero, and the Tier-0 floor it exposed — 2026-08-11
+
+`getQuizQuestions()` short-circuits an RPC ladder. Its top rung read:
+
+```ts
+const { data, error } = await supabase.rpc('get_quiz_questions', params);
+if (!error && data) return validateQuestions(data);   // ← the defect
+```
+
+`get_quiz_questions` returns `COALESCE(jsonb_agg(q), '[]'::JSONB)` and filters
+`is_verified = true` (migration `20260505155525`). **An empty array is truthy in
+JavaScript.** So a chapter whose forty questions were structurally valid but merely
+UNVERIFIED came back as `[]`, satisfied the `data` guard, and the student was served a
+quiz containing ZERO questions. The direct `question_bank` fallback below — which does
+NOT filter on `is_verified` and would have served them — never ran.
+
+The RPC applies a strictly NARROWER filter than the fallback, so "the RPC found none"
+does not imply "the bank has none". Only a NON-EMPTY result may short-circuit the ladder.
+(Contrast `getLeaderboard` / `getReviewCards`, where the RPC and its fallback query the
+same population and empty IS the final answer — which is why this is a per-call-site
+judgement and not a blanket rule.)
+
+Fixing it made the fallback rung genuinely reachable for the first time, which made its
+weaker filter a live risk: it filtered `is_active` only, so a soft-deleted, draft, or
+**verifier-DISPROVED** row was servable there. The fix added the same never-serve floor
+the RPC rung above it enforces.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-385 | `quiz_serving_truthy_empty_rpc_falls_through` | Ladder semantics, against the REAL `getQuizQuestions` with a recording query-builder double: an RPC result of `[]` runs the `question_bank` fallback and serves questions (the silent zero); a NON-empty RPC result short-circuits and issues NO second read; RPC rows that ALL fail the P6 gate also fall through rather than serving zero; a MISSING RPC (older env) and an RPC ERROR both reach the fallback; a genuinely empty bank still returns `[]` (emptiness stays representable); a FAILED fallback read THROWS rather than degrading to an empty quiz. The fallback re-runs the SAME P6 gate and is not a relaxation — a six-row pool containing a `[BLANK]` marker, duplicate options, an empty explanation, an out-of-range `correct_answer_index` and a 3-option row yields exactly the one valid question. Verified to FAIL against the pre-fix `if (!error && data) return validateQuestions(data)`. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P6 |
+| REG-386 | `quiz_fallback_tier0_never_serve_floor` | The now-reachable fallback query enforces the floor, asserted on the predicates the function actually issues (a double that honoured nothing would let the floor be deleted silently): EVERY verifier-disproved state is excluded — `failed`, `failed_fix_in_flight` AND `failed_unfixable`, not just the literal `failed` (the CHECK was widened to six states by migration `20260510064952`, and a row mid-repair on a disproved question is still disproved); `deleted_at IS NULL`; `content_status` matched as "NULL or published" rather than by strict equality, because the column is nullable with `DEFAULT 'published'` and a strict `eq` would drop every legacy row carrying an explicit NULL and re-empty the very quizzes this fix restores; subject/grade/`is_active` scoping retained with grade asserted as a STRING (P5); the optional chapter filter forwarded; and the serving projection asserted free of `student_id`, `created_by`, `verification_state`, `deleted_at`. DELIBERATE NON-ASSERTION, recorded so it is not "fixed" by accident: `is_verified` is NOT filtered on this rung. Neither this rung nor either RPC rung above it has ever gated serving on the human SME flag (migration `20260802100000` records it as ranking/administrative metadata only), and adding it would recreate the empty quiz REG-385 removes. Whether SME sign-off should gate serving at all is a CEO decision, not a test's. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P5, P6 |
+
+### Invariants covered by this section
+
+- **P6 (question quality)** — REG-385 pins that the quality gate is applied identically on
+  BOTH rungs. The fix widened which rows are REACHED, never which rows are ACCEPTABLE.
+- **P5 (grade format)** — the fallback is asserted to scope on the STRING `'8'`.
+
+### Known defect reported upstream, NOT pinned here
+
+`packages/lib/src/supabase.ts` documents that the Tier-0 predicate inside the
+`select_quiz_questions_rag` RPC excludes only the literal `'failed'`, so the two other
+disproved states (`failed_fix_in_flight`, `failed_unfixable`) still pass THAT rung's gate.
+REG-386 covers the TypeScript fallback rung only. Closing the RPC-side gap is a migration
+and is architect/DB-owned; it is deliberately not asserted here, because a test that
+claimed to cover it would be claiming coverage the fix does not have.
+
+### Catalog total
+
+Pre-REG-385: 384 entries (through REG-384, the support thread P13 batch — see
+`10-rbac-rls.md`). This section adds REG-385 and REG-386.
+**Total catalog: 386 entries (target: 35 — TARGET EXCEEDED). REG-387 is the next free id**
+(REG-371..REG-377 remain RESERVED).
+
+---

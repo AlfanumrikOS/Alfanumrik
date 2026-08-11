@@ -270,17 +270,28 @@ describe('/v2 contract conformance — success envelopes parse against contract 
       name: 'Asha',
       total_xp: 1450,
       streak: 7,
+      // P13: always null on the wire — get_leaderboard emits none of these and
+      // a peer's institution/city is not exposed on a leaderboard.
       avatar_url: null,
       grade: '9',
-      school: 'DPS',
-      city: 'Delhi',
+      school: null,
+      city: null,
     };
     // P13 guard — the leaderboard entry must not carry PII beyond the existing surface.
     expect(Object.keys(entry)).not.toContain('email');
     expect(Object.keys(entry)).not.toContain('phone');
     expectParses(
       successEnvelope(LeaderboardResponse),
-      { success: true, data: { schemaVersion: 1, period: 'weekly', scope: 'global', entries: [entry] } },
+      {
+        success: true,
+        data: {
+          schemaVersion: 1,
+          period: 'weekly',
+          scope: 'global',
+          entries: [entry],
+          me: { student_id: UUID_A, on_board: true, rank: 1, total_xp: 1450 },
+        },
+      },
     );
   });
 
