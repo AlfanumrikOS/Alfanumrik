@@ -109,7 +109,14 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
       id: 'runbook-current-date',
       label: 'deployment runbook is current',
       file: 'DEPLOYMENT_RUNBOOK.md',
-      pass: includesAll('**Last updated:** 2026-07-11'),
+      // Bumped in lockstep with a real runbook revision — this literal is the
+      // mechanism that forces the header date forward when deployment policy
+      // changes, so it MUST be updated together with the doc, never to make a
+      // red check green. 2026-07-11 -> 2026-08-11: documented the two bounded
+      // exceptions to the exact-SHA release assertion (identical-tree no-op
+      // and Vercel intentionally-skipped build) and corrected the false claim
+      // that `CI Gate` is a required status check.
+      pass: includesAll('**Last updated:** 2026-08-11'),
       failure: 'DEPLOYMENT_RUNBOOK.md must carry the current DevOps update date.',
     },
     {
@@ -363,17 +370,55 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
         return /permissions:\r?\n  contents: read/.test(text)
           && includesAll(
             'name: CI Gate',
-            // P2-16 (409123b5, 2026-08-07): ci-gate now skips PR events — the
-            // repository ruleset enforces the 7 required checks directly, so
-            // freeing the gate (and the 4 non-PR jobs it consumed) on PRs is a
-            // deliberate runner-pressure cut. It still runs on `always()`
-            // semantics for pushes, so the aggregate/terminal gate posture is
-            // unchanged on main.
-            "if: ${{ always() && github.event_name != 'pull_request' }}",
+            // ─────────────────────────────────────────────────────────────
+            // SUPERSEDES P2-16 (409123b5, 2026-08-07), reverted 2026-08-11.
+            //
+            // P2-16 pinned `if: ${{ always() && github.event_name !=
+            // 'pull_request' }}` here, justified as: "the repository ruleset
+            // enforces the 7 required checks directly, so freeing the gate
+            // (and the 4 non-PR jobs it consumed) on PRs is a deliberate
+            // runner-pressure cut."
+            //
+            // The premise is false. Verified live 2026-08-11 via
+            // `gh api repos/AlfanumrikOS/Alfanumrik/rulesets/20528052`: the
+            // required contexts are exactly "Secret Scanning",
+            // "Lint, Type-check & Test", "Production Build" and
+            // "CodeQL Analysis" — four, not seven, and NOT the aggregate
+            // gate. So on a pull request the gate did not run and nothing
+            // stood in for it; selected-school-rpc-integration,
+            // protected-flag-migration-guard, foxy-alignment and
+            // gen-mol-matrix were unenforced pre-merge. PR #1514 merged
+            // green and turned main red on the next push (repair: #1517).
+            //
+            // The pin was also self-contradictory: the two literals directly
+            // below (`SAME_REPOSITORY_PR`, the fork-skip accounting) exist
+            // ONLY to handle pull_request events, and were unreachable for
+            // the whole time the gate was push-only.
+            //
+            // This check's own label — "CI exposes aggregate gate" — is
+            // better served by a gate that runs on every event. Pinning
+            // `always()` on its own is strictly stronger than the old
+            // conjunction: it keeps the terminal/aggregate posture on main
+            // AND restores it on PRs.
+            'if: ${{ always() }}',
             'SAME_REPOSITORY_PR',
             "forkSkips.push('integration-tests', 'e2e-critical-paths')",
             'process.exit(1)',
           )(gate)
+          // The event skip must not come back by any spelling. `always()`
+          // above is a substring of the old conjunction, so without this the
+          // check would pass on a reintroduced PR skip.
+          && !/^ {4}if:.*github\.event_name != 'pull_request'/m.test(gate)
+          // Restored 2026-08-11: the four governance jobs 409123b5 dropped
+          // must be BOTH declared dependencies and members of the gate
+          // script's `required` array. A `needs` entry missing from
+          // `required` is unenforced; a `required` entry missing from `needs`
+          // resolves to undefined and fails on lookup. Requiring both means
+          // the gate aggregates the identical job set on a PR and on the push
+          // that merges it — the only condition under which a green PR is
+          // evidence that main will stay green.
+          && ['selected-school-rpc-integration', 'protected-flag-migration-guard', 'foxy-alignment', 'gen-mol-matrix']
+            .every((job) => gate.includes(`      - ${job}`) && gate.includes(`'${job}'`))
           && includesAll('Trusted integration job requires', 'exit 1')(mappingEntryBlock(text, 'integration-tests', 2))
           && mappingEntryBlock(text, 'health-check', 2) === ''
           && includesAll('POLL_WINDOW_SECONDS=600', 'while [ "$SECONDS" -lt "$DEADLINE" ]; do', 'EXPECTED_SHA=', "b.ok===true&&b.status==='healthy'", "b.version?.git_sha||''")(deployHealth)
