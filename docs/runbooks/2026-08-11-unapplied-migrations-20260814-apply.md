@@ -14,29 +14,37 @@
 >
 > ## STATUS OF EVERY MIGRATION IN THIS RUNBOOK: **UNEXECUTED**
 >
-> Nothing below has been applied, run, or verified against any database.
-> The environment this runbook was authored in has **no database, no Docker and
-> no linked Supabase project**. Every migration here is **syntax-validated only**
-> — meaning it has been read end to end and its stated post-conditions derived
-> from its own source. No `supabase db push`, no `psql`, no `db query` has been
-> executed. Every "expected result" below is *derived from the migration source*,
-> never observed. Treat the first real run as the first run.
+> Nothing below has been applied or run against any database. The environment
+> this runbook was authored in has **no database, no Docker and no linked
+> Supabase project**. Every migration here is **syntax-validated only** — meaning
+> it has been read end to end and its stated post-conditions derived from its own
+> source. No `supabase db push`, no `psql`, no `db query` has been executed.
+> Every "expected result" below is *derived from the migration source*, never
+> observed — **except** where the *Verified production state (2026-08-11)*
+> section immediately below records an actual measurement. Treat the first real
+> run as the first run.
 >
 > The companion gate script `scripts/verify-20260814-migrations.mjs` has likewise
 > only been executed in its no-database degradation path.
 >
-> **Amended 2026-08-11** — three read-only measurements have since been taken
-> against production and are recorded in *Verified production state (2026-08-11)*
-> immediately below. They **do not** change this status: nothing has been applied
-> **by this runbook**, and the applied-migration list could not be read.
+> **Amended 2026-08-11** — read-only measurements have since been taken against
+> production and are recorded in *Verified production state (2026-08-11)*
+> immediately below. They **do not** change this status — nothing has been
+> applied **by this runbook** — but they do settle the applied/unapplied question
+> for the migrations that matter, which this section previously could not:
+> `…0014` and `…0015` are **MEASURED not applied** on production; `…0016` and
+> `…0017` are **INFERRED not applied**; and the session-scoped answer-key leak
+> `…0014` exists to close is therefore **confirmed live in production** — measured
+> behaviour, no longer an inference from migration source.
 
 ---
 
 ## Verified production state (2026-08-11)
 
-Three facts were measured **read-only** against the production project on
-2026-08-11. Nothing was written and no migration was applied. Two of them change
-what you should expect at apply time; the third is what you must **not** conclude.
+Measured **read-only** against the production project `shktyoxqhundlvkiwguu` on
+2026-08-11. Nothing was written and no migration was applied. Facts 1 and 2
+change what you should expect at apply time; fact 3 closes off a dead end; fact 4
+**resolves PF-1** and confirms a live security vulnerability.
 
 **1. The catalogue restriction is already the live state.**
 `GET /rest/v1/subjects?select=code,is_active,is_content_ready` returns
@@ -60,19 +68,106 @@ anyway** — it is now your only rollback source for the catalogue.
 PF-2's blocking risk; the measured values and what still has to be re-checked are
 in PF-2 below.
 
-**3. 🔴 The applied-migration list could NOT be read — the query was blocked.**
-`supabase_migrations.schema_migrations` was not readable, so **PF-1 is still
-unanswered** and the applied/unapplied status of `…0014` (the answer-key ACL),
-`…0015`, `…0016` and `…0017` **remains unknown**.
+**3. The migration ledger is UNREADABLE over PostgREST. Do not retry this route.**
+`GET /rest/v1/schema_migrations` with `Accept-Profile: supabase_migrations`
+returns:
 
-> **Do not infer from fact 1 that the security migrations are applied.** Fact 1 is
-> evidence about the `subjects` table and nothing else. It says nothing about the
-> `quiz_session_shuffles` column ACL, `session_mode`, the written-answer scoring
-> P0, or keyless serving. Every pre-flight and post-apply check in this runbook
-> still has to be run, and REG-380 stays `P` (§6).
+```
+PGRST106 — Invalid schema: supabase_migrations.
+Only the following schemas are exposed: public, graphql_public
+```
 
-Production can drift between this measurement and your apply. Re-measure all
-three at apply time; treat the above as dated evidence, not as current state.
+The `supabase_migrations` schema is not in PostgREST's exposed-schema list, so
+`schema_migrations` cannot be read with an API key of any role, and
+`supabase migration list` is unavailable without a direct DB connection string.
+**PF-1 as literally written — "query `supabase_migrations.schema_migrations`" —
+cannot be satisfied through PostgREST.** Nobody should burn time rediscovering
+this; get a connection string, or use the behavioural probe in fact 4.
+
+**4. ✅ PF-1 is RESOLVED for the migrations that matter — behaviourally, and the
+answer is: the security slice is NOT applied.** A behavioural probe replaced the
+ledger read, and it is *stronger* evidence than a ledger row: a `schema_migrations`
+row records that an apply was attempted, whereas this tests the actual privilege
+in the live database.
+
+The probe exploits the fact that `…0014` runs
+`REVOKE ALL ON TABLE public.quiz_session_shuffles FROM anon` (`…0014:127`) and
+then re-grants **nothing** to `anon` — the column-level `GRANT SELECT (…)` at
+`…0014:149-160` goes to `authenticated` only, deliberately (`…0014:145-147`).
+Postgres raises privilege errors (`42501`) **before** RLS row-filtering, so an
+anon request distinguishes the two states unambiguously: no privilege ⇒ `42501`;
+privilege but no visible rows ⇒ `200 []`.
+
+Run with the **anon** key (not service-role), against
+`/rest/v1/quiz_session_shuffles`:
+
+| Probe | Request | Result | Meaning |
+|---|---|---|---|
+| T1 | `select=correct_answer_index_snapshot&limit=1` | `[]` | column resolved; **no** privilege error |
+| T2 (**decisive control**) | `select=question_id&limit=1` | `[]` | `anon` still holds table-level SELECT |
+| T3 | `select=session_mode&limit=1` | `42703 column … does not exist` | the column is absent |
+
+**Read the conclusions with the probe that proves each one — they are not
+interchangeable:**
+
+- **`20260814000014` is NOT APPLIED — MEASURED.** **T2 is the decisive probe.**
+  Had `…0014` run, the table-level `REVOKE ALL … FROM anon` would make **every**
+  column return `42501` for anon, `question_id` included. It returned `[]`, so
+  the table-level grant to `anon` is intact and the migration has not run. T1
+  alone would have been weaker evidence — an empty array there is also what a
+  row-filtered read looks like.
+- **🔴 R1 — the session-scoped answer-key read — is CONFIRMED LIVE IN
+  PRODUCTION.** This is the defect `…0014` exists to close and which its own
+  header describes at `…0014:33-41`: an authenticated student can read
+  `correct_answer_index_snapshot` (and brute-force `integrity_hash`) for every
+  question of their own **in-flight, not-yet-submitted** quiz, defeating P3
+  anti-cheat and making the P1 score meaningless. **This is no longer inferred
+  from migration source — it is measured.** Treat it as a live vulnerability with
+  a written, ready-to-apply fix sitting unapplied.
+- **`20260814000015` is NOT APPLIED — MEASURED.** T3: `session_mode` does not
+  exist on the production table.
+- **`20260814000016` and `20260814000017` are almost certainly NOT APPLIED —
+  INFERRED, not measured.** `supabase db push` applies at the immediate
+  `supabase/migrations/` root in ascending version order, and `…0015` has not
+  run, so the two later versions cannot have been applied by that path. **Neither
+  was probed directly.** Do not report them with the same confidence as `…0014`
+  and `…0015`; probe them at apply time (PF-7's `submit_quiz_results_v2`
+  signature query and PF-9's five-signature query both distinguish the states).
+
+**What "`…0016` not applied" means for production today** — stated plainly,
+because it is a second live P0 and it is easy to read past:
+
+- **Any quiz containing at least one non-MCQ question still cannot be submitted
+  at all.** The RPC raises `session_not_started` before any anti-cheat check, no
+  `quiz_sessions` row is written, the student sees a network-error toast and
+  loses the whole attempt, and retrying re-raises forever (`…0016:5-19`). A pure
+  written quiz is worse still (§1). *Confidence: INFERRED, on the version-order
+  argument above.*
+- **Exam-mode P3 anti-cheat is still inverted.** The fix for it is *client-side*
+  — `computeElapsedSeconds` in `packages/lib/src/quiz/session-contract.ts`, which
+  makes the web client pass ELAPSED seconds instead of the exam-mode COUNTDOWN
+  remainder to the RPC's `p_time` (`…0016:391-395`). Until it deploys, Check 1
+  compares the wrong quantity to the 3s threshold. This one is **doubly
+  inferred**: it rides the same undeployed release slice as `…0016`, whose two
+  halves PF-9 records as present-but-uncommitted on disk at authoring time. It is
+  a *deploy-composition* claim, not a database measurement — confirm it against
+  the release branch, not against the DB.
+
+> This does **not** contradict fact 1, and neither fact says anything about
+> whether `…0007`'s *file* ran. `db push` applies in ascending version order, so
+> an earlier version being applied while a later one is not is the normal shape.
+> Fact 1 records only that **production state matches M1's keep-set**; fact 4
+> records that the four later security/P0 migrations have not landed — two of
+> them measured, two of them inferred.
+
+> **Still do not infer applied-ness in the other direction either.** Fact 1 is
+> evidence about the `subjects` table and nothing else. Every pre-flight and
+> post-apply check in this runbook still has to be run, and **REG-380 stays `P`**
+> (§6) — Lane B cannot pass against a database where `…0014` is not applied;
+> tests 1-3 will correctly fail, because the leak is open.
+
+Production can drift between this measurement and your apply. Re-measure all four
+at apply time; treat the above as dated evidence, not as current state.
 
 ---
 
@@ -150,6 +245,11 @@ non-MCQ question **cannot be submitted at all** — the RPC raises
 written, the student sees a network-error toast and loses the whole attempt, and
 retrying re-raises forever (`…0016:5-19`). A pure written quiz is worse: zero MCQ
 ids means `start_quiz_session` was never called and `p_session_id` arrives NULL.
+"Today" is not hypothetical: as of 2026-08-11 `…0016` is **inferred not applied**
+on production (fact 4 — the inference is the version-order argument, not a direct
+probe), so this P0 is live for real students right now. The same undeployed slice
+carries the client-side fix for the inverted exam-mode anti-cheat timing
+(`…0016:391-395`).
 `…0016` touches **nothing** that `…0007`-`…0013` touch. If the pricing decision
 (M3) or the teacher-impact number (M8) needs another day, **ship `…0014`,
 `…0015` and `…0016` on their own first** — they are a disjoint, independently
@@ -198,7 +298,7 @@ node scripts/verify-20260814-migrations.mjs --preflight      # runs PF-1..PF-8 b
 
 Or by hand:
 
-### PF-1 — are any of these already recorded applied?
+### PF-1 — ✅ are any of these already recorded applied? — resolved 2026-08-11 for the security slice
 
 ```sql
 SELECT version
@@ -213,11 +313,32 @@ in the **repair-skip** case and must stream the body via STDIN (§3.2). This
 failure mode has happened on this prod before; see
 `docs/runbooks/school-admin-portal-db-apply.md` §A.2.
 
-> **PF-1 is UNANSWERED as of 2026-08-11.** The 2026-08-11 read-only measurement
-> could not read `supabase_migrations.schema_migrations` — the query was blocked.
-> Nothing is known about which versions in this range are recorded applied. This
-> check is mandatory and unskipped. (See *Verified production state (2026-08-11)*,
-> fact 3.)
+> **⚠️ This query needs a DB connection string — it cannot be run over
+> PostgREST.** `GET /rest/v1/schema_migrations` with
+> `Accept-Profile: supabase_migrations` returns `PGRST106 — Invalid schema:
+> supabase_migrations. Only the following schemas are exposed: public,
+> graphql_public`, for an API key of any role. `supabase migration list` is
+> likewise unavailable without the connection string. Measured 2026-08-11; see
+> *Verified production state*, fact 3. **Do not spend time re-attempting the
+> ledger over the REST API.**
+
+> **PF-1 was RESOLVED behaviourally on 2026-08-11** (fact 4), which is stronger
+> evidence than a ledger row — it tests the live privilege, not the record of an
+> apply. Result on production `shktyoxqhundlvkiwguu`:
+>
+> | Version | Status | Basis |
+> |---|---|---|
+> | `…0014` answer-key ACL | **NOT APPLIED** | **MEASURED** — anon `select=question_id` returned `[]`, so the table-level grant `…0014` revokes is intact |
+> | `…0015` `session_mode` | **NOT APPLIED** | **MEASURED** — anon `select=session_mode` returned `42703 column … does not exist` |
+> | `…0016` written scoring | not applied | **INFERRED** — `db push` applies in version order and `…0015` has not run; **not probed directly** |
+> | `…0017` keyless serving | not applied | **INFERRED** — same argument; **not probed directly** |
+> | `…0007`-`…0013` | **not determined** | the ledger was never read; fact 1 shows only that production *state* matches M1's keep-set |
+>
+> Consequence: there is **no repair-skip case** for `…0014`/`…0015` — their
+> objects are absent and no ledger row can be suppressing them via the normal
+> path, so `db push` will apply them. **This check stays mandatory and unskipped
+> at apply time** for `…0007`-`…0013`, and the two INFERRED rows must be
+> confirmed (PF-7 and PF-9 both distinguish the states from `pg_proc` alone).
 
 ### PF-2 — ✅ the `is_content_ready` question (M3's real dependency) — measured green 2026-08-11
 
@@ -966,6 +1087,14 @@ student with devtools reads the correct answer for every question of a quiz they
 have not yet submitted, defeating P3 and making the P1 score meaningless
 (`…0014:33-41`).
 
+> **That defect — R1 — is CONFIRMED LIVE on production as of 2026-08-11**, so
+> ACL-5 is a *post-apply* check whose pre-apply answer is already known to be the
+> bad one. The confirmation came from the anon-key control probe in fact 4
+> (`select=question_id` returning `[]` proves the table-level grant `…0014`
+> revokes is still in place), not from ACL-5 itself — running ACL-5 with a real
+> student JWT before applying will simply reproduce the leak. Run it **after**
+> the apply, as written.
+
 > **RESIDUAL — do not report "the answer key is closed".** `…0014` closes the
 > session-scoped vector only. `question_bank.correct_answer_index` remains
 > readable by any authenticated user via policy
@@ -1441,6 +1570,11 @@ silently. **Target a database that has `20260814000014` applied** — that is th
 whole point; against an unmigrated DB tests 1-3 fail (correctly: the leak is
 open).
 
+> **Production is confirmed to be that unmigrated DB as of 2026-08-11** — `…0014`
+> is measured not applied (fact 4). Pointing Lane B at prod today reproduces the
+> leak and fails tests 1-3 by design; it is not a discharge run. Point it at a
+> staging or throwaway project **after** `…0014` has been applied there.
+
 **These six passing IS the discharge condition for REG-380's `P` (partial)
 status.** Lane A proves the ACL in SQL; only Lane B proves it on the wire through
 PostgREST with a real `authenticated` JWT. Until they have run green against a
@@ -1484,8 +1618,10 @@ npx vitest run apps/host/src/__tests__/security/quiz-session-shuffles-answer-key
 
 **Sign-off checklist**
 
-- [ ] PF-1 clean, or repair-skip path chosen — **still unanswered**; the
-      2026-08-11 read of `schema_migrations` was blocked
+- [ ] PF-1 clean, or repair-skip path chosen — **resolved 2026-08-11 for the
+      security slice**: `…0014` + `…0015` MEASURED not applied, `…0016` + `…0017`
+      INFERRED not applied, `…0007`-`…0013` not determined. The ledger itself is
+      unreadable over PostgREST (`PGRST106`) — needs a DB connection string
 - [ ] PF-2 resolved — `is_content_ready` measured, not assumed (green on prod
       2026-08-11; **re-measure at apply time**)
 - [ ] PF-3 zero stranded `(grade, board)` pairs, or seeded and re-checked
