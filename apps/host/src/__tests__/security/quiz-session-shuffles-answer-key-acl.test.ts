@@ -40,7 +40,7 @@ import {
  *
  * and read the key for every question of a quiz they had not yet submitted.
  *
- * THE FIX (migration 20260814000014)
+ * THE FIX (migration 20260814000020)
  * ==================================
  * Table-level REVOKE from anon + authenticated, then a column-level
  * `GRANT SELECT (…10 non-key columns…) TO authenticated`. Nothing else changes:
@@ -60,7 +60,7 @@ import {
  * migration chain (`deriveChainAcl`), not frozen as a literal. 0014's design is
  * that later migrations ADD columns via additive column-level grants — freezing
  * its 10 columns made every such legitimate grant a red test (it did exactly
- * that when 20260814000015 granted `session_mode`). The teeth are unchanged and
+ * that when 20260814000021 granted `session_mode`). The teeth are unchanged and
  * are proven by the MUTATION PROOFS block: a table-level grant, a grant of
  * either key column, any grant to anon, and a resume column that no migration
  * grants each still fail.
@@ -79,19 +79,19 @@ import {
 
 // ── shared constants ─────────────────────────────────────────────────────────
 
-const MIGRATION_FILE = '20260814000014_quiz_session_shuffles_answer_key_column_acl.sql';
+const MIGRATION_FILE = '20260814000020_quiz_session_shuffles_answer_key_column_acl.sql';
 
 /** The two columns no client role may ever read. */
 const ANSWER_KEY_COLUMNS = ['correct_answer_index_snapshot', 'integrity_hash'] as const;
 
 /**
- * The allowlist LITERAL spelled out by 20260814000014 itself — the BASE of the
+ * The allowlist LITERAL spelled out by 20260814000020 itself — the BASE of the
  * chain, NOT the whole of it.
  *
  * Do NOT use this constant to answer "what may `authenticated` read today". The
- * entire design of 20260814000014 is that a column added LATER is not granted
+ * entire design of 20260814000020 is that a column added LATER is not granted
  * by default (it fails CLOSED) and a later migration must grant it explicitly
- * and additively — which is exactly what 20260814000015:121 does for
+ * and additively — which is exactly what 20260814000021:121 does for
  * `session_mode`. Freezing this literal as if it were the complete set turned
  * every legitimate additive grant into a red test; the parity assertion below
  * therefore derives the live set from the whole migration CHAIN via
@@ -132,7 +132,7 @@ function rootMigrationFiles(): string[] {
 //
 // WHY A SIMULATOR AND NOT A FROZEN LITERAL
 // ========================================
-// 20260814000014 revoked the table-level grant and re-granted from a literal
+// 20260814000020 revoked the table-level grant and re-granted from a literal
 // 10-column allowlist. Its stated design (that file:130-148) is that a column
 // added by a LATER migration is NOT granted by default — it fails CLOSED — and
 // must be granted deliberately, additively, column-wise. That is the mechanism
@@ -140,7 +140,7 @@ function rootMigrationFiles(): string[] {
 //
 // A test that freezes 0014's 10 columns as "the set `authenticated` may ever
 // read" therefore goes red on every correct, security-reviewed additive grant.
-// It did: 20260814000015:121 grants `session_mode` (and asserts it in its own
+// It did: 20260814000021:121 grants `session_mode` (and asserts it in its own
 // in-transaction post-condition 4b, with 4d re-asserting the answer key is
 // still denied), the resume route legitimately selects it, and the parity check
 // failed on a codebase that was right.
@@ -332,10 +332,10 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
   const raw = readFileSync(migrationPath, 'utf8');
   const sql = stripComments(raw);
 
-  it('the ACL migration exists and sorts AFTER 20260814000013', () => {
+  it('the ACL migration exists and sorts AFTER 20260814000019', () => {
     expect(files).toContain(MIGRATION_FILE);
     const idx = files.indexOf(MIGRATION_FILE);
-    const prior = files.filter(f => f.startsWith('20260814000013'));
+    const prior = files.filter(f => f.startsWith('20260814000019'));
     expect(prior.length).toBeGreaterThan(0);
     expect(idx).toBeGreaterThan(files.indexOf(prior[0]));
   });
@@ -413,8 +413,8 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
     expect(sql).toMatch(/RAISE\s+EXCEPTION[\s\S]*POST-CONDITION FAILED/);
   });
 
-  it('KNOWN GAP (architect-owned): 20260814000014 post-condition 4c asserts only 9 of the 10 columns it grants', () => {
-    // Found by architect, 2026-08-11. Migration 20260814000014 GRANTs 10
+  it('KNOWN GAP (architect-owned): 20260814000020 post-condition 4c asserts only 9 of the 10 columns it grants', () => {
+    // Found by architect, 2026-08-11. Migration 20260814000020 GRANTs 10
     // columns (:149-160) but its own in-transaction post-condition `v_open_cols`
     // (:180-184) enumerates only 9 — `options_version_at_serve` is granted and
     // never asserted. So if that ONE grant were dropped or misspelled, the
@@ -435,7 +435,7 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
       .filter(Boolean);
 
     const openColsMatch = sql.match(/v_open_cols\s+TEXT\[\]\s*:=\s*ARRAY\[([^\]]*)\]/i);
-    expect(openColsMatch, 'v_open_cols post-condition array not found in 20260814000014').toBeTruthy();
+    expect(openColsMatch, 'v_open_cols post-condition array not found in 20260814000020').toBeTruthy();
     const asserted = openColsMatch![1]
       .split(',')
       .map(s => s.trim().replace(/'/g, ''))
@@ -445,7 +445,7 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
 
     expect(
       unasserted,
-      'The set of GRANTed-but-unasserted columns in 20260814000014 changed. If it ' +
+      'The set of GRANTed-but-unasserted columns in 20260814000020 changed. If it ' +
         'is now empty, architect has fixed the gap — DELETE this test and update ' +
         "REG-380's known-gap note. If it grew, a new grant lost its post-condition.",
     ).toEqual(['options_version_at_serve']);
@@ -506,7 +506,7 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
     ).toEqual([]);
   });
 
-  it('CHAIN DERIVATION self-check: replaying ONLY 20260814000014 reproduces its literal allowlist', () => {
+  it('CHAIN DERIVATION self-check: replaying ONLY 20260814000020 reproduces its literal allowlist', () => {
     // Pins the simulator against the hand-written literal it is replacing. If
     // the parser ever stops understanding a GRANT/REVOKE form, this fails
     // BEFORE the derived set is trusted by anything else in this file.
@@ -516,7 +516,7 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
     expect(base.tableLevelGrants).toEqual([]);
   });
 
-  it('CHAIN ACL: the union of every column grant since 20260814000014 still denies the answer key and gives anon nothing', () => {
+  it('CHAIN ACL: the union of every column grant since 20260814000020 still denies the answer key and gives anon nothing', () => {
     const chain = deriveChainAcl(files, MIGRATION_FILE);
 
     expect(
@@ -531,9 +531,9 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
     }
 
     // And every additive grant is real, not inferred: session_mode is granted by
-    // 20260814000015, which is precisely the case the frozen literal got wrong.
+    // 20260814000021, which is precisely the case the frozen literal got wrong.
     expect(chain.columns.authenticated.has('session_mode')).toBe(true);
-    expect(chain.grantedBy.get('authenticated:session_mode')).toMatch(/^20260814000015_/);
+    expect(chain.grantedBy.get('authenticated:session_mode')).toMatch(/^20260814000021_/);
   });
 
   it('CROSS-MODULE PARITY: every resume-route column is granted somewhere in the migration chain', () => {
@@ -644,7 +644,7 @@ describe('REG-380 (static) — quiz_session_shuffles answer-key column ACL', () 
     });
 
     it('CONTROL: a legitimate additive column grant does NOT trip anything', () => {
-      // The whole point of the rewrite. This is 20260814000015's shape.
+      // The whole point of the rewrite. This is 20260814000021's shape.
       const state = applyAclSql(
         chain(),
         'GRANT SELECT (some_future_metadata_column) ON TABLE public.quiz_session_shuffles TO authenticated;',

@@ -2,7 +2,8 @@
 // scripts/verify-20260814-migrations.mjs
 //
 // Deploy gate for the unapplied `20260814*` migrations
-// (20260814000007 … 20260814000017).
+// (20260814000007-11 and 20260814000018-23 — NON-CONTIGUOUS; see the
+// MIGRATION_VERSIONS comment for why 0012-0017 are deliberately absent).
 //
 // Companion to docs/runbooks/2026-08-11-unapplied-migrations-20260814-apply.md.
 // That runbook carries the reasoning; this file carries the assertions, so the
@@ -66,20 +67,40 @@ const MIGRATION_SET = [
   '20260814000009_repair_student_subjects_after_restriction.sql',
   '20260814000010_enforce_subject_enrollment_active_check.sql',
   '20260814000011_get_subject_violations_active_aware.sql',
-  '20260814000012_plan_subject_access_restrict.sql',
-  '20260814000013_trim_teacher_subjects_taught.sql',
-  '20260814000014_quiz_session_shuffles_answer_key_column_acl.sql',
-  '20260814000015_quiz_session_shuffles_session_mode.sql',
-  '20260814000016_submit_quiz_v2_written_answer_scoring.sql',
+  '20260814000018_plan_subject_access_restrict.sql',
+  '20260814000019_trim_teacher_subjects_taught.sql',
+  '20260814000020_quiz_session_shuffles_answer_key_column_acl.sql',
+  '20260814000021_quiz_session_shuffles_session_mode.sql',
+  '20260814000022_submit_quiz_v2_written_answer_scoring.sql',
   // Added by a concurrent agent DURING authoring; caught by ST-4 below, read in
   // full, and folded in. If ST-4 warns again, do the same for the new file —
   // this array is the gate's coverage boundary and a file outside it is
   // unverified, not verified-clean.
-  '20260814000017_keyless_question_serving_and_server_side_p6.sql',
+  '20260814000023_keyless_question_serving_and_server_side_p6.sql',
 ];
 
 /**
- * The question-serving surface 20260814000017 rebuilds: FOUR distinct names but
+ * The 14-digit version prefixes, DERIVED from MIGRATION_SET so the two cannot
+ * drift apart. Used by PF-1.
+ *
+ * NOTE THE GAP — it is deliberate. This set is 0007-0011 then 0018-0023, with
+ * NOTHING at 0012-0017. Those six versions were ours until 2026-08-11, when the
+ * block was renumbered: `main` and `fix/ci-structural-defects` had landed
+ * DIFFERENT files at the same four versions (0012-0015), and since
+ * `supabase db push` keys `supabase_migrations.schema_migrations` on the numeric
+ * version alone, whichever branch applied first would have marked those versions
+ * applied and the other's files would have been skipped forever — silently, with
+ * no error. The block moved contiguously (12->18 … 17->23) to preserve relative
+ * order: 0021 extends the column allowlist 0020 establishes, and 0023 replaces
+ * start_quiz_session, which 0021 and 0022 both depend on. Versions 0012-0017 now
+ * belong to the OTHER branch; do not reclaim them and do not "tidy" this into a
+ * contiguous range.
+ */
+const MIGRATION_VERSIONS = MIGRATION_SET.map((f) => f.slice(0, 14));
+const MIGRATION_VERSIONS_SQL = MIGRATION_VERSIONS.map((v) => `'${v}'`).join(',');
+
+/**
+ * The question-serving surface 20260814000023 rebuilds: FOUR distinct names but
  * FIVE overloads, because get_quiz_questions has TWO live ones (4-arg from the
  * baseline, 5-arg from 20260505155525) and both are reachable by name from
  * PostgREST.
@@ -95,7 +116,7 @@ const SERVING_OVERLOAD_COUNT = 5; // rag 8 + v2 7 + gqq 4 + gqq 5 + sqs 2
 const KEEP_SET = ['math', 'science', 'physics', 'chemistry', 'biology'];
 const KEEP_SQL = KEEP_SET.map((c) => `'${c}'`).join(',');
 
-/** The 10 columns 20260814000014 grants to `authenticated`. */
+/** The 10 columns 20260814000020 grants to `authenticated`. */
 const ACL_ALLOWLIST = [
   'session_id', 'question_id', 'student_id', 'shuffle_map', 'options_snapshot',
   'options_version_at_serve', 'created_at', 'student_selected_displayed_index',
@@ -192,13 +213,18 @@ const PREFLIGHT_CHECKS = [
   {
     id: 'PF-1', migration: 'all', severity: 'blocking',
     title: 'none of the covered migrations is already recorded applied',
+    // Deliberately an EXPLICIT IN-list, not a BETWEEN range. After the 2026-08-11
+    // renumber this gate's set is NON-CONTIGUOUS (0007-0011 + 0018-0023): versions
+    // 0012-0017 now belong to a DIFFERENT branch's migrations, so a range would
+    // report those as "already applied" and abort a release for a false reason.
+    // The old range also silently ended one version short of the set's own tail.
     sql: `SELECT version FROM supabase_migrations.schema_migrations
-           WHERE version BETWEEN '20260814000007' AND '20260814000016' ORDER BY version`,
+           WHERE version IN (${MIGRATION_VERSIONS_SQL}) ORDER BY version`,
     expect: empty,
     hint: 'A recorded version makes `db push` a NO-OP for it. Confirm its objects exist (post-apply lane); if not you are in the repair-skip case — stream the body via STDIN. Runbook §3.2.',
   },
   {
-    id: 'PF-2a', migration: '20260814000012', severity: 'advisory',
+    id: 'PF-2a', migration: '20260814000018', severity: 'advisory',
     title: 'does the DEPLOYED subject picker gate on is_content_ready?',
     sql: `SELECT p.proname,
                  position('is_content_ready' IN pg_get_functiondef(p.oid)) > 0
@@ -211,12 +237,12 @@ const PREFLIGHT_CHECKS = [
       const gated = rows.filter((r) => r[1].trim() === 't').map((r) => r[0]);
       return gated.length === 0
         ? null
-        : `GATED: ${gated.join(', ')} — 20260814000012's grants will stay INVISIBLE for any keep-set subject whose is_content_ready is false. See PF-2b and the runbook decision table.`;
+        : `GATED: ${gated.join(', ')} — 20260814000018's grants will stay INVISIBLE for any keep-set subject whose is_content_ready is false. See PF-2b and the runbook decision table.`;
     },
     hint: 'On-disk newest bodies (20260621000400 / 20260605000000) gate on is_active ONLY; the prod-dump baseline gates on is_content_ready too. This measures which one is actually deployed. Runbook §2 PF-2.',
   },
   {
-    id: 'PF-2b', migration: '20260814000012', severity: 'advisory',
+    id: 'PF-2b', migration: '20260814000018', severity: 'advisory',
     title: 'keep-set content readiness (is_content_ready is COMPUTED, never seeded)',
     sql: `SELECT code, is_active, is_content_ready FROM public.subjects
            WHERE code IN (${KEEP_SQL}) ORDER BY code`,
@@ -248,7 +274,7 @@ const PREFLIGHT_CHECKS = [
     hint: 'These pairs make 20260814000008 ABORT (a deliberate abort, whole txn rolls back). Fix by SEEDING math (6-12) + science (6-10) for each listed pair, then re-run. Do NOT weaken the keep-set. Runbook §2 PF-3.',
   },
   {
-    id: 'PF-4', migration: '20260814000013', severity: 'advisory',
+    id: 'PF-4', migration: '20260814000019', severity: 'advisory',
     title: 'teacher blast radius — record would_be_left_with_zero before applying',
     sql: `WITH keep(code) AS (VALUES ${KEEP_SET.map((c) => `('${c}')`).join(',')}),
                t AS (
@@ -270,16 +296,16 @@ const PREFLIGHT_CHECKS = [
     hint: 'Mirrors Q1 of docs/subject-restriction-teacher-impact.sql. Post-apply check M8-4 must reproduce would_be_left_with_zero exactly; a disagreement means the catalogue changed between runs.',
   },
   {
-    id: 'PF-5', migration: '20260814000012/13', severity: 'blocking',
+    id: 'PF-5', migration: '20260814000018/19', severity: 'blocking',
     title: 'every keep-set code exists in public.subjects',
     sql: `SELECT k.code FROM (VALUES ${KEEP_SET.map((c) => `('${c}')`).join(',')}) AS k(code)
            WHERE NOT EXISTS (SELECT 1 FROM public.subjects s WHERE s.code = k.code)
            ORDER BY 1`,
     expect: empty,
-    hint: 'A missing code aborts 20260814000012 step 3 on plan_subject_access_subject_code_fkey AND 20260814000013 step 1. INSERT the subjects row; do not shrink the keep-set.',
+    hint: 'A missing code aborts 20260814000018 step 3 on plan_subject_access_subject_code_fkey AND 20260814000019 step 1. INSERT the subjects row; do not shrink the keep-set.',
   },
   {
-    id: 'PF-6', migration: '20260814000014', severity: 'blocking',
+    id: 'PF-6', migration: '20260814000020', severity: 'blocking',
     title: 'every column the ACL grants already exists',
     sql: `SELECT c FROM UNNEST(ARRAY[${ACL_ALLOWLIST.map((c) => `'${c}'`).join(',')}]) AS c
            WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns
@@ -289,7 +315,7 @@ const PREFLIGHT_CHECKS = [
     hint: 'The GRANT is a LITERAL allowlist; a missing column errors and rolls the whole ACL transaction back. Apply the earlier migration that adds it first (20260504100500 / 20260801100900 / 20260802130000).',
   },
   {
-    id: 'PF-7a', migration: '20260814000016', severity: 'blocking',
+    id: 'PF-7a', migration: '20260814000022', severity: 'blocking',
     title: 'exactly one submit_quiz_results_v2 overload, with the 11-arg signature',
     sql: `SELECT p.oid::regprocedure::text FROM pg_proc p
            WHERE p.pronamespace='public'::regnamespace AND p.proname='submit_quiz_results_v2'
@@ -305,17 +331,17 @@ const PREFLIGHT_CHECKS = [
     hint: 'Runbook §2 PF-7.',
   },
   {
-    id: 'PF-7b', migration: '20260814000016', severity: 'blocking',
+    id: 'PF-7b', migration: '20260814000022', severity: 'blocking',
     title: 'chain dependencies of the P0 fix are recorded applied',
     sql: `SELECT v FROM UNNEST(ARRAY['20260801100800','20260801100900','20260809000500']) AS v
            WHERE NOT EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations m
                               WHERE m.version = v)`,
     expect: empty,
-    hint: '20260801100800 is what makes start_quiz_session write an identity-shuffle/empty-snapshot row for a non-MCQ — the exact server-side marker 20260814000016 keys the written lane off.',
+    hint: '20260801100800 is what makes start_quiz_session write an identity-shuffle/empty-snapshot row for a non-MCQ — the exact server-side marker 20260814000022 keys the written lane off.',
   },
   {
-    id: 'PF-9', migration: '20260814000017', severity: 'blocking',
-    title: 'the five serving-function signatures 20260814000017 rebuilds all match',
+    id: 'PF-9', migration: '20260814000023', severity: 'blocking',
+    title: 'the five serving-function signatures 20260814000023 rebuilds all match',
     sql: `SELECT p.oid::regprocedure::text FROM pg_proc p
            WHERE p.pronamespace='public'::regnamespace
              AND p.proname IN (${SERVING_FUNCTIONS_SQL}) ORDER BY 1`,
@@ -323,7 +349,7 @@ const PREFLIGHT_CHECKS = [
       rows.length === SERVING_OVERLOAD_COUNT
         ? null
         : `expected ${SERVING_OVERLOAD_COUNT} overloads (rag 8-arg, v2 7-arg, get_quiz_questions 4-arg AND 5-arg, start_quiz_session 2-arg), got ${rows.length}: ${preview(rows, 8)}`,
-    hint: '20260814000017 is a full-body CREATE OR REPLACE of each. A signature that does not match means the deployed body is not the one it was written against, and CREATE OR REPLACE would ADD an overload instead of replacing. This repo has been burned by exactly that twice (20260702170000, 20260729130000).',
+    hint: '20260814000023 is a full-body CREATE OR REPLACE of each. A signature that does not match means the deployed body is not the one it was written against, and CREATE OR REPLACE would ADD an overload instead of replacing. This repo has been burned by exactly that twice (20260702170000, 20260729130000).',
   },
 ];
 
@@ -556,9 +582,9 @@ const VERIFY_CHECKS = [
     hint: '"0" is NOT a derivable post-state — the RPC also flags active-but-unmapped and active-but-ungranted subjects.',
   },
 
-  // ── M3 20260814000012 (PRICING) ────────────────────────────────────────────
+  // ── M3 20260814000018 (PRICING) ────────────────────────────────────────────
   {
-    id: 'M3-0', migration: '20260814000012', severity: 'blocking',
+    id: 'M3-0', migration: '20260814000018', severity: 'blocking',
     title: 'anti-vacuous guard: at least one plan_code exists',
     sql: `SELECT count(*) FROM (
             SELECT plan_code FROM public.subscription_plans
@@ -568,12 +594,12 @@ const VERIFY_CHECKS = [
       if (Number.isNaN(n)) return 'could not read the count';
       return n > 0
         ? null
-        : 'ZERO plan codes — M3-1 would pass vacuously (the migration documents this at …0012:237-240). On a seeded DB expect free/starter/pro/unlimited.';
+        : 'ZERO plan codes — M3-1 would pass vacuously (the migration documents this at …0018:237-240). On a seeded DB expect free/starter/pro/unlimited.';
     },
     hint: 'A "no plans to strand" pass is not a pass on a production database.',
   },
   {
-    id: 'M3-1', migration: '20260814000012', severity: 'blocking',
+    id: 'M3-1', migration: '20260814000018', severity: 'blocking',
     title: 'every plan holds exactly 5 grant rows',
     sql: `WITH plan_codes AS (
             SELECT plan_code FROM public.subscription_plans
@@ -589,7 +615,7 @@ const VERIFY_CHECKS = [
     hint: 'With M3-2 green, "exactly 5" is equivalent to "exactly the keep-set" (the PK makes (plan_code, subject_code) unique).',
   },
   {
-    id: 'M3-2', migration: '20260814000012', severity: 'blocking',
+    id: 'M3-2', migration: '20260814000018', severity: 'blocking',
     title: 'and those grants ARE the keep-set',
     sql: `SELECT plan_code, subject_code FROM public.plan_subject_access
            WHERE subject_code NOT IN (${KEEP_SQL}) ORDER BY 1,2`,
@@ -597,14 +623,14 @@ const VERIFY_CHECKS = [
     hint: 'Step 2 drops every out-of-keep-set grant. A hit means step 2 did not run.',
   },
   {
-    id: 'M3-3', migration: '20260814000012', severity: 'blocking',
+    id: 'M3-3', migration: '20260814000018', severity: 'blocking',
     title: 'the subject-count cap is removed on every plan',
     sql: 'SELECT plan_code, max_subjects FROM public.subscription_plans WHERE max_subjects IS NOT NULL ORDER BY 1',
     expect: empty,
     hint: 'NULL is the "unlimited" sentinel set_student_subjects already understands (IF v_max IS NOT NULL AND v_count > v_max).',
   },
   {
-    id: 'M3-4', migration: '20260814000012', severity: 'blocking',
+    id: 'M3-4', migration: '20260814000018', severity: 'blocking',
     title: 'exactly one pricing audit row, carrying BOTH rollback payloads',
     sql: `SELECT count(*) FROM public.admin_audit_log
            WHERE action = 'subject.plan_access.restricted_to_math_science'
@@ -614,9 +640,9 @@ const VERIFY_CHECKS = [
     hint: 'Written BEFORE any mutation and NOT EXISTS-guarded, so it is the only record of the pre-change pricing state. Without it M3 cannot be rolled back.',
   },
 
-  // ── M8 20260814000013 ──────────────────────────────────────────────────────
+  // ── M8 20260814000019 ──────────────────────────────────────────────────────
   {
-    id: 'M8-1', migration: '20260814000013', severity: 'blocking',
+    id: 'M8-1', migration: '20260814000019', severity: 'blocking',
     title: 'no teacher differs from their active-subject intersection',
     sql: `SELECT t.id FROM public.teachers t
             LEFT JOIN LATERAL (
@@ -632,7 +658,7 @@ const VERIFY_CHECKS = [
     hint: 'Exactly the migration step-2 predicate, which is self-extinguishing — non-empty means the trim did not run.',
   },
   {
-    id: 'M8-2', migration: '20260814000013', severity: 'blocking',
+    id: 'M8-2', migration: '20260814000019', severity: 'blocking',
     title: 'teacher archive table: RLS on, service-role-only reach',
     sql: `SELECT c.relrowsecurity,
                  has_table_privilege('authenticated','public.teacher_subjects_taught_archive_20260814','SELECT'),
@@ -644,7 +670,7 @@ const VERIFY_CHECKS = [
     hint: 'legacy_subjects_archive was deliberately NOT reused (it is student-keyed with an FK to students(id)).',
   },
   {
-    id: 'M8-3', migration: '20260814000013', severity: 'blocking',
+    id: 'M8-3', migration: '20260814000019', severity: 'blocking',
     title: 'exactly one teacher-trim audit row',
     sql: `SELECT count(*) FROM public.admin_audit_log
            WHERE action = 'subject.teacher_subjects.trimmed'`,
@@ -652,7 +678,7 @@ const VERIFY_CHECKS = [
     hint: 'On a re-run the temp table is empty; an unguarded INSERT would append a 0/0 row and destroy the support hand-off signal. The guard prevents that.',
   },
   {
-    id: 'M8-4', migration: '20260814000013', severity: 'advisory',
+    id: 'M8-4', migration: '20260814000019', severity: 'advisory',
     title: 'THE RECONCILIATION — must equal PF-4 would_be_left_with_zero',
     sql: `SELECT details->>'teachers_trimmed', details->>'teachers_left_with_zero',
                  details->>'teachers_left_with_zero_live', details->>'teachers_partially_trimmed'
@@ -666,9 +692,9 @@ const VERIFY_CHECKS = [
     hint: 'This script cannot compare across two runs; the operator must. Runbook §4 M8-4.',
   },
 
-  // ── 20260814000014 — answer-key ACL ────────────────────────────────────────
+  // ── 20260814000020 — answer-key ACL ────────────────────────────────────────
   {
-    id: 'ACL-1', migration: '20260814000014', severity: 'blocking',
+    id: 'ACL-1', migration: '20260814000020', severity: 'blocking',
     title: 'THE DENY: no client role can SELECT either answer-key column',
     sql: `SELECT ${['authenticated', 'anon']
       .flatMap((role) => ANSWER_KEY_COLUMNS
@@ -678,7 +704,7 @@ const VERIFY_CHECKS = [
     hint: 'A TRUE here is the live production leak: any signed-in student can read the correct answer for every question of a quiz they have not yet submitted (defeats P3, makes the P1 score meaningless). Columns, in order: authenticated/idx, authenticated/hash, anon/idx, anon/hash.',
   },
   {
-    id: 'ACL-2', migration: '20260814000014', severity: 'blocking',
+    id: 'ACL-2', migration: '20260814000020', severity: 'blocking',
     title: 'server-side scoring and forensics KEEP the key',
     sql: `SELECT ${ANSWER_KEY_COLUMNS
       .map((col) => `has_column_privilege('service_role','${SHUFFLES}','${col}','SELECT')`)
@@ -687,7 +713,7 @@ const VERIFY_CHECKS = [
     hint: 'The WhatsApp daily6 grader and public.marking_audit_last_30d read the key as service_role. Losing it breaks both.',
   },
   {
-    id: 'ACL-3', migration: '20260814000014', severity: 'blocking',
+    id: 'ACL-3', migration: '20260814000020', severity: 'blocking',
     title: 'the resume path survives: all TEN granted columns readable',
     sql: `SELECT c FROM UNNEST(ARRAY[${ACL_ALLOWLIST.map((c) => `'${c}'`).join(',')}]) AS c
            WHERE NOT has_column_privilege('authenticated','${SHUFFLES}',c,'SELECT')`,
@@ -695,7 +721,7 @@ const VERIFY_CHECKS = [
     hint: "Includes options_version_at_serve, which the migration's OWN post-condition omits (it asserts 9 of the 10 it grants). That gap is architect-owned and pinned by the REG-380 static lane; this check closes it operationally.",
   },
   {
-    id: 'ACL-4', migration: '20260814000014', severity: 'blocking',
+    id: 'ACL-4', migration: '20260814000020', severity: 'blocking',
     title: 'no client-role writes; anon holds nothing at all',
     sql: `SELECT has_table_privilege('authenticated','${SHUFFLES}','INSERT'),
                  has_table_privilege('authenticated','${SHUFFLES}','UPDATE'),
@@ -705,9 +731,9 @@ const VERIFY_CHECKS = [
     hint: 'RLS already denied these (the table has no INSERT/UPDATE/DELETE policy); the privilege layer now agrees. A future student write policy MUST re-GRANT the verb explicitly.',
   },
 
-  // ── 20260814000015 — session_mode ──────────────────────────────────────────
+  // ── 20260814000021 — session_mode ──────────────────────────────────────────
   {
-    id: 'SM-1', migration: '20260814000015', severity: 'blocking',
+    id: 'SM-1', migration: '20260814000021', severity: 'blocking',
     title: 'session_mode column exists, nullable, with its CHECK',
     sql: `SELECT (SELECT count(*) FROM information_schema.columns
                    WHERE table_schema='public' AND table_name='quiz_session_shuffles'
@@ -725,19 +751,19 @@ const VERIFY_CHECKS = [
     hint: "Closed vocabulary: practice | cognitive | exam, or NULL. NULL means 'not recorded' and the resume path treats it as NOT resumable (fail-closed). Do not backfill.",
   },
   {
-    id: 'SM-2', migration: '20260814000015', severity: 'blocking',
+    id: 'SM-2', migration: '20260814000021', severity: 'blocking',
     title: 'session_mode readable by the caller-role resume path; key still denied',
     sql: `SELECT has_column_privilege('authenticated','${SHUFFLES}','session_mode','SELECT'),
                  has_column_privilege('service_role','${SHUFFLES}','session_mode','SELECT'),
                  has_column_privilege('anon','${SHUFFLES}','session_mode','SELECT'),
                  has_column_privilege('authenticated','${SHUFFLES}','correct_answer_index_snapshot','SELECT')`,
     expect: boolsAre(['t', 't', 'f', 'f']),
-    hint: 'If authenticated cannot read session_mode, the /today exam-resume suppression fails OPEN and a timed exam resumes as an untimed one. Column 4 is the regression guard for 20260814000014.',
+    hint: 'If authenticated cannot read session_mode, the /today exam-resume suppression fails OPEN and a timed exam resumes as an untimed one. Column 4 is the regression guard for 20260814000020.',
   },
 
-  // ── 20260814000016 — written-answer scoring (P0) ───────────────────────────
+  // ── 20260814000022 — written-answer scoring (P0) ───────────────────────────
   {
-    id: 'WA-1', migration: '20260814000016', severity: 'blocking',
+    id: 'WA-1', migration: '20260814000022', severity: 'blocking',
     title: 'P0: submit_quiz_results_v2 carries the written lane, one overload, anon denied',
     sql: `SELECT p.oid::regprocedure::text,
                  position('v_is_written' IN pg_get_functiondef(p.oid)) > 0,
@@ -764,9 +790,9 @@ const VERIFY_CHECKS = [
     hint: 'Static proof only. The real acceptance is WA-2 in the runbook: submit a real MIXED quiz and a real PURE-WRITTEN quiz end to end in the browser. The pure-written case additionally needs the client half (collectSessionQuestionIds) shipped in the same release.',
   },
 
-  // ── 20260814000017 — keyless serving + server-side P6 ──────────────────────
+  // ── 20260814000023 — keyless serving + server-side P6 ──────────────────────
   {
-    id: 'K-1', migration: '20260814000017', severity: 'blocking',
+    id: 'K-1', migration: '20260814000023', severity: 'blocking',
     title: 'question_bank_p6_valid exists: IMMUTABLE, SECURITY INVOKER, both roles',
     sql: `SELECT (p.provolatile = 'i'), p.prosecdef,
                  has_function_privilege('authenticated', p.oid, 'EXECUTE'),
@@ -778,7 +804,7 @@ const VERIFY_CHECKS = [
     hint: 'It is a pure predicate over VALUES it is HANDED — it reads no table, so it must NOT be SECURITY DEFINER (that would make it a potential back-door read) and IMMUTABLE is what lets it sit in a WHERE clause on the hot serve path.',
   },
   {
-    id: 'K-2', migration: '20260814000017', severity: 'blocking',
+    id: 'K-2', migration: '20260814000023', severity: 'blocking',
     title: "THE DENY: no serving RPC emits a 'correct_answer_index' JSON member",
     sql: `SELECT p.oid::regprocedure::text FROM pg_proc p
            WHERE p.pronamespace='public'::regnamespace
@@ -789,7 +815,7 @@ const VERIFY_CHECKS = [
     hint: "Probes the QUOTED literal (a jsonb_build_object key in prosrc), not the bare identifier — the bare word legitimately survives as an ARGUMENT to question_bank_p6_valid. A hit means a student calling that RPC for their own grade+subject still harvests answer keys.",
   },
   {
-    id: 'K-3', migration: '20260814000017', severity: 'blocking',
+    id: 'K-3', migration: '20260814000023', severity: 'blocking',
     title: 'every serving overload survived AND calls the P6 predicate',
     sql: `SELECT p.oid::regprocedure::text,
                  position('question_bank_p6_valid' IN p.prosrc) > 0
@@ -810,7 +836,7 @@ const VERIFY_CHECKS = [
     hint: 'start_quiz_session is the single checkpoint every direct-question_bank student path funnels through (deep link ?qid=, SRS review, PYQ preferred fetch, adaptive candidate provider, v1 fallback). Losing its gate un-gates all of them at once.',
   },
   {
-    id: 'K-4', migration: '20260814000017', severity: 'blocking',
+    id: 'K-4', migration: '20260814000023', severity: 'blocking',
     title: 'P1 substrate intact: start_quiz_session still SNAPSHOTS the key; anon denied on check_formative_answer',
     sql: `SELECT (SELECT position('correct_answer_index_snapshot' IN p.prosrc) > 0
                     FROM pg_proc p
@@ -872,6 +898,10 @@ function staticChecks() {
     detail: notTransactional.length === 0 ? `all ${MIGRATION_SET.length}` : notTransactional.join('; '),
   });
 
+  // ST-4 detects a migration appended AFTER this gate's tail. Since 2026-08-11
+  // that is no longer sufficient on its own: the renumber left a HOLE at
+  // 0012-0017, and anything landing IN the hole sorts BELOW the tail, so ST-4
+  // cannot see it. ST-5 below covers the hole. Keep both.
   const newer = present
     .filter((f) => f > MIGRATION_SET[MIGRATION_SET.length - 1] && /^2026081400\d{4}_/.test(f));
   results.push({
@@ -881,6 +911,38 @@ function staticChecks() {
     detail: newer.length === 0
       ? 'none'
       : `NOT covered by this gate — read them and extend MIGRATION_SET + the runbook: ${newer.join(', ')}`,
+  });
+
+  // ST-5 — THE COLLISION TRIPWIRE. Any 20260814* file on disk that this gate does
+  // not name, at ANY position, including the 0012-0017 hole the 2026-08-11
+  // renumber deliberately left empty.
+  //
+  // Why this is blocking and ST-4 is advisory: a file appearing in the hole is
+  // the exact failure mode the renumber existed to prevent. `supabase db push`
+  // records applied migrations by numeric version prefix ALONE, so two different
+  // files at one version means the second is skipped with NO ERROR — the failure
+  // is invisible at apply time, which is precisely why it has to be caught here.
+  // If this fires, do NOT renumber to make it green without first checking every
+  // branch (`git ls-tree` across `git branch --list`) for what else claims that
+  // version.
+  // Scoped to this gate's own version WINDOW — from its lowest version upward.
+  // 20260814000000-06 are a separate, pre-existing set this runbook never
+  // covered; flagging them would be noise that trains operators to ignore ST-5.
+  const windowStart = MIGRATION_SET[0].slice(0, 14);
+  const unknown = present.filter(
+    (f) => /^2026081400\d{4}_/.test(f)
+      && f.slice(0, 14) >= windowStart
+      && !MIGRATION_SET.includes(f),
+  );
+  results.push({
+    id: 'ST-5', severity: 'blocking',
+    title: `no unaccounted-for 20260814* migration at or above ${windowStart} (incl. the 0012-0017 hole)`,
+    status: unknown.length === 0 ? 'PASS' : 'FAIL',
+    detail: unknown.length === 0
+      ? `${MIGRATION_SET.length} covered, none unaccounted for`
+      : `UNACCOUNTED FOR: ${unknown.join(', ')} — these are NOT verified by this gate. `
+        + 'If any sits at 0012-0017 it is another branch\'s file that has been merged in; '
+        + 'confirm it does not collide with a version this gate already claims.',
   });
 
   return results;
@@ -904,7 +966,7 @@ function parseArgs() {
 
 function usage() {
   console.log(`
-verify-20260814-migrations — deploy gate for migrations 20260814000007..17
+verify-20260814-migrations — deploy gate for migrations 20260814000007..11 + ..18..23
 Runbook: ${RUNBOOK}
 
   node scripts/verify-20260814-migrations.mjs              post-apply verification

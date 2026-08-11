@@ -246,7 +246,7 @@ function toIrtItemParams(q: any): IrtItemParams {
  * unusable rows as "weak-topic candidates". The authoritative P6 gate remains
  * validateQuestion in quiz-assembler.ts.
  *
- * KEYLESS (migration 20260814000017): the `correct_answer_index` 0-3 check that
+ * KEYLESS (migration 20260814000023): the `correct_answer_index` 0-3 check that
  * used to be the last clause below is GONE FROM HERE and now lives in
  * `public.question_bank_p6_valid`, enforced inside `start_quiz_session` — the
  * server checkpoint every candidate this provider emits must pass through
@@ -395,7 +395,7 @@ export async function selectAdaptiveQuestions(
     let qb = client
       .from('question_bank')
       .select(
-        // KEYLESS (migration 20260814000017) — no `correct_answer_index`. This
+        // KEYLESS (migration 20260814000023) — no `correct_answer_index`. This
         // provider runs IN THE BROWSER (invoked from supabase.ts's
         // getQuizQuestionsV2), so selecting it here was a direct client read of
         // the answer key. See isUsableCandidate below for where the shape guard
@@ -433,7 +433,7 @@ export async function selectAdaptiveQuestions(
         const { data, error } = await client
           .from('question_bank')
           .select(
-            // KEYLESS (migration 20260814000017) — no `correct_answer_index`. This
+            // KEYLESS (migration 20260814000023) — no `correct_answer_index`. This
         // provider runs IN THE BROWSER (invoked from supabase.ts's
         // getQuizQuestionsV2), so selecting it here was a direct client read of
         // the answer key. See isUsableCandidate below for where the shape guard

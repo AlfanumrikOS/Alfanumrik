@@ -79,7 +79,7 @@ interface Question {
   question_type?: string | null;
   options: string | string[];
   /**
-   * KEYLESS (migration 20260814000017). `getChapterQuestions` no longer selects
+   * KEYLESS (migration 20260814000023). `getChapterQuestions` no longer selects
    * `question_bank.correct_answer_index` — it was pulling the answer key for up
    * to 50 questions on every chapter open, purely so the Quick Check could
    * grade in the browser. Grading now goes through `check_formative_answer`
@@ -115,7 +115,7 @@ interface ConceptState {
   submitted: boolean;
   isCorrect: boolean;
   /**
-   * KEYLESS QUICK CHECK (migration 20260814000017). The correct option index,
+   * KEYLESS QUICK CHECK (migration 20260814000023). The correct option index,
    * revealed by the server AFTER the student answers, via
    * `check_formative_answer`. Absent until then (and permanently if the RPC
    * failed) — the option grid highlights nothing in that case rather than
@@ -784,7 +784,7 @@ function ChapterConceptPageContent() {
   };
 
   /**
-   * KEYLESS QUICK CHECK (migration 20260814000017).
+   * KEYLESS QUICK CHECK (migration 20260814000023).
    *
    * This used to be one synchronous line that compared the student's selected
    * option against the row's answer-key column IN THE BROWSER — the entire
@@ -2198,7 +2198,7 @@ function ChapterConceptPageContent() {
                           const letter = OPTION_LETTERS[idx] || String(idx + 1);
                           const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
                           const isSelected = conceptState?.selectedOption === idx;
-                          // KEYLESS (migration 20260814000017): the correct
+                          // KEYLESS (migration 20260814000023): the correct
                           // option comes from the SERVER's post-answer verdict
                           // (`check_formative_answer` → ConceptState.correctIndex),
                           // not from a `question_bank.correct_answer_index` the

@@ -92,7 +92,7 @@ describe('the second in-page assessment loop is gone and stays gone (Phase 5 tra
   });
 
   it('performs NO browser-side answer-key comparison at all', () => {
-    // ── UPDATED 2026-08-14 (R2 steps A+B, migration 20260814000017) ──────────
+    // ── UPDATED 2026-08-14 (R2 steps A+B, migration 20260814000023) ──────────
     // This assertion used to read "mentions correct_answer_index in exactly 3
     // places — the type, and the 2 formative Quick Check reads", and pinned:
     //     state.selectedOption === q.correct_answer_index   (the grader)

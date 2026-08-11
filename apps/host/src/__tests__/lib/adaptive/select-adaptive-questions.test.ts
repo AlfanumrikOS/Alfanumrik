@@ -661,7 +661,7 @@ describe('selectAdaptiveQuestions — assertion 7 (P6/P5/subject integrity)', ()
   });
 
   it('rejects rows with the wrong option count (the shape check it can still make)', async () => {
-    // ── UPDATED 2026-08-14 (R2 steps A+B, migration 20260814000017) ──────────
+    // ── UPDATED 2026-08-14 (R2 steps A+B, migration 20260814000023) ──────────
     // This used to be "rejects rows with wrong option count OR out-of-range
     // correct index". The index half is GONE from this module, deliberately:
     // selectAdaptiveQuestions runs IN THE BROWSER (it is invoked from

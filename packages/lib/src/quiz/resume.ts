@@ -128,7 +128,7 @@ export interface ShuffleResumeRow {
   student_answered_at: string | null;
   created_at: string | null;
   /**
-   * Which INSTRUMENT this session is (migration 20260814000015). `null` on any
+   * Which INSTRUMENT this session is (migration 20260814000021). `null` on any
    * row written before that column existed, or by a writer that did not stamp
    * it — treated as NOT resumable, never as a default. See `resolveSessionMode`.
    */
@@ -154,7 +154,7 @@ export interface QuestionBankResumeRow {
 /**
  * The three instruments `/quiz` can run. `exam` is TIMED with an auto-submit;
  * the other two are untimed. Mirrors the `QuizMode` union in the quiz
- * orchestrator and the CHECK constraint in migration 20260814000015 — all three
+ * orchestrator and the CHECK constraint in migration 20260814000021 — all three
  * must agree.
  */
 export type QuizSessionMode = 'practice' | 'cognitive' | 'exam';
@@ -275,7 +275,7 @@ export type QuizResumeBlockedReason =
    * The session was started in `exam` mode. A timed test is taken in ONE
    * SITTING — it is not resumable, by assessment's ruling.
    *
-   * Before migration 20260814000015 the mode was persisted nowhere, so a
+   * Before migration 20260814000021 the mode was persisted nowhere, so a
    * resumed exam attempt silently ran untimed and was recorded in
    * `quiz_sessions` as though it were the same instrument. The page carried an
    * `if (quizMode === 'exam') setQuizMode('cognitive')` line meant as the

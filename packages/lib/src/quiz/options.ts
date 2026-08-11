@@ -135,7 +135,7 @@ export interface McqCandidate {
  * an option grid. The P6 contract (four DISTINCT non-empty options, non-empty
  * text, non-empty explanation) is enforced by `./question-validation`.
  *
- * ── KEYLESS SERVING (migration 20260814000017) ───────────────────────────────
+ * ── KEYLESS SERVING (migration 20260814000023) ───────────────────────────────
  * The shape branch used to ALSO require `correct_answer_index` to be a number in
  * 0..3. That clause is removed, and its removal is a BUG FIX rather than a
  * loosening, for two independent reasons:

@@ -268,7 +268,7 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
 
   // Direct table query fallback — fetch more to ensure enough unseen questions
   const fetchLimit = Math.min(count * 4, 120);
-  // KEYLESS (migration 20260814000017): `correct_answer_index` is deliberately
+  // KEYLESS (migration 20260814000023): `correct_answer_index` is deliberately
   // absent from this projection. It used to be here so the client-side P6 gate
   // could check "index 0-3"; that check now runs SERVER-side —
   // `public.question_bank_p6_valid` filters the serving RPCs, and
@@ -326,7 +326,7 @@ interface QuestionRecord {
   question_type: string;
   options: string | string[];
   /**
-   * KEYLESS SERVING (migration 20260814000017). Neither the RPC payloads nor the
+   * KEYLESS SERVING (migration 20260814000023). Neither the RPC payloads nor the
    * direct-query fallback return the answer key any more, so this is optional
    * and is `undefined` on every live serving path. It survives in the type only
    * because super-admin/CMS callers reuse this shape with the real row.
@@ -346,7 +346,7 @@ async function validateQuestions(questions: QuestionRecord[]): Promise<QuestionR
   // bundle; only the question-fetch path loads it, at call time. Same canonical
   // module, same defaults (allowNonMcq: false, enforceBloomLevel: false).
   //
-  // `keylessServing: true` (migration 20260814000017): every row reaching here
+  // `keylessServing: true` (migration 20260814000023): every row reaching here
   // came from `get_quiz_questions` or from the direct-query fallback above,
   // both of which now filter on `public.question_bank_p6_valid` server-side and
   // return NO `correct_answer_index`. Without this flag the gate would reject
@@ -503,7 +503,7 @@ export async function checkQuizAnswer(
  * Server-side verdict for ONE formative (un-scored) question — the /learn
  * chapter "Quick Check".
  *
- * WHY THIS EXISTS (migration 20260814000017): the Quick Check used to grade in
+ * WHY THIS EXISTS (migration 20260814000023): the Quick Check used to grade in
  * the browser (`state.selectedOption === q.correct_answer_index`), which is the
  * only reason `getChapterQuestions` had to select the answer key for up to 50
  * questions on every chapter open. The comparison now happens in
@@ -1271,7 +1271,7 @@ export async function getChapterTopics(
  * /learn/[subject]/[chapter] — an assertion about the question bank, false when
  * the read failed. P1/P6: the select list, filters and shuffle are unchanged. */
 export async function getChapterQuestions(subject: string, grade: string, chapterNumber: number, count = 20, difficulty?: number | null): Promise<ServiceResult<any[]>> {
-  // KEYLESS (migration 20260814000017): `correct_answer_index` removed. This
+  // KEYLESS (migration 20260814000023): `correct_answer_index` removed. This
   // query fed the /learn chapter "Quick Check", which compared the student's tap
   // against the key IN THE BROWSER — so it was pulling the answer key for up to
   // 50 questions on every chapter open. Grading now goes through the
@@ -1780,7 +1780,7 @@ export async function getQuestionHistoryStats(
     // projection is never materialised — but `*` names every column, including
     // `correct_answer_index`, and PostgreSQL requires SELECT privilege on every
     // column a query names. Under the question_bank answer-key column ACL a
-    // `*` count would 403 outright (migration 20260814000017 companion).
+    // `*` count would 403 outright (migration 20260814000023 companion).
     let totalQuery = supabase.from('question_bank')
       .select('id', { count: 'exact', head: true })
       .eq('subject', subject)

@@ -236,7 +236,7 @@ export interface ValidateQuestionOptions {
    * *bad* index through.
    *
    * WHY IT IS NOT A WEAKENING OF P6 (read this before setting it):
-   * Before migration 20260814000017, `question_bank.correct_answer_index` was
+   * Before migration 20260814000023, `question_bank.correct_answer_index` was
    * shipped to the browser on every serving path — the whole ~12.8k-row answer
    * key was one `select=` away for any signed-in student. The ONLY reason it was
    * shipped is the check on lines below: the browser needed the key to prove the
@@ -329,7 +329,7 @@ export function validateQuestion(
     // P6 / forensic-audit fix: `null < 0` and `null > 3` are BOTH false in JS,
     // so the null guard must come first or a keyless question passes the gate.
     //
-    // `keylessServing` (migration 20260814000017) is the ONE case where an
+    // `keylessServing` (migration 20260814000023) is the ONE case where an
     // ABSENT index is legitimate: the server ran `question_bank_p6_valid` and
     // then withheld the column so the browser can no longer harvest the answer
     // key. See the option's doc comment for why that is stronger, not weaker.

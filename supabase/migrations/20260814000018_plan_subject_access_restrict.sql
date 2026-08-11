@@ -1,4 +1,4 @@
--- Migration: 20260814000012_plan_subject_access_restrict.sql
+-- Migration: 20260814000018_plan_subject_access_restrict.sql
 -- Phase 3 / M3 — Server-authoritative allowed-subject policy: plan layer.
 --
 -- ============================================================================
@@ -171,7 +171,7 @@ SELECT
     'plan_codes',   COALESCE((SELECT array_agg(p.plan_code ORDER BY p.plan_code) FROM _plan_codes p), ARRAY[]::TEXT[]),
     'kept',         (SELECT array_agg(k.code ORDER BY k.code) FROM _keep_subject_codes k),
     'pricing_change', TRUE,
-    'migration',    '20260814000012_plan_subject_access_restrict',
+    'migration',    '20260814000018_plan_subject_access_restrict',
     'applied_at',   now()
   ),
   now()

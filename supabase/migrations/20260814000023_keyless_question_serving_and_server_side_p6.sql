@@ -1,4 +1,4 @@
--- Migration: 20260814000017_keyless_question_serving_and_server_side_p6.sql
+-- Migration: 20260814000023_keyless_question_serving_and_server_side_p6.sql
 -- Purpose: Stop shipping question_bank.correct_answer_index to the client on any
 --          student serving path, and move the ONE P6 check that needs the answer
 --          key out of the browser and into the server.
@@ -6,7 +6,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- WHY THIS EXISTS (the ACL alone does not close the leak)
 -- ─────────────────────────────────────────────────────────────────────────────
--- 20260814000014 closed the SESSION-scoped answer-key read
+-- 20260814000020 closed the SESSION-scoped answer-key read
 -- (quiz_session_shuffles.correct_answer_index_snapshot / integrity_hash) with a
 -- column-level ACL, and its own RESIDUAL section says the wider vector is still
 -- open: policy `question_bank_authenticated_read` (20260728090000:311-312) is
@@ -242,7 +242,7 @@ AS $function$
 $function$;
 
 COMMENT ON FUNCTION public.question_bank_p6_valid(text, jsonb, integer, text, text) IS
-  'Server-side P6 question-quality predicate (migration 20260814000017). SQL '
+  'Server-side P6 question-quality predicate (migration 20260814000023). SQL '
   'twin of the ANSWERABILITY/GRADEABILITY half of the canonical TS gate '
   'packages/lib/src/quiz/question-validation.ts, at its `allowNonMcq: true` '
   'posture. Pure/IMMUTABLE over the five values it is handed — reads no table, '
@@ -459,7 +459,7 @@ BEGIN
       AND qb.deleted_at IS NULL
       AND qb.content_status = 'published'
       AND qb.verification_state != 'failed'
-      -- Server-side P6 (migration 20260814000017). A row that cannot be graded
+      -- Server-side P6 (migration 20260814000023). A row that cannot be graded
       -- must never be selected — this is the check that used to run in the
       -- browser against the answer key this function no longer returns.
       AND public.question_bank_p6_valid(
@@ -492,7 +492,7 @@ BEGIN
            ELSE ABS(difficulty-3) END
     ELSE rn END, rn
   )
-  -- KEYLESS PAYLOAD (20260814000017): the correct_answer_index member that used
+  -- KEYLESS PAYLOAD (20260814000023): the correct_answer_index member that used
   -- to sit between the options and explanation members is GONE. Every other
   -- member keeps its name, order and COALESCE default.
   -- (Written without quoting the member name on purpose: section 7a asserts on
@@ -523,7 +523,7 @@ END;
 $function$;
 
 COMMENT ON FUNCTION public.select_quiz_questions_rag IS
-  '2026-08-14 (20260814000017): KEYLESS PAYLOAD — correct_answer_index is no '
+  '2026-08-14 (20260814000023): KEYLESS PAYLOAD — correct_answer_index is no '
   'longer returned to the caller, closing the bulk answer-key harvest that a '
   'question_bank column ACL alone could not close (this RPC is SECURITY '
   'DEFINER, so a caller-role ACL is invisible to it). Server-side P6 '
@@ -639,7 +639,7 @@ BEGIN
     LEFT JOIN user_question_history h ON h.student_id = p_student_id AND h.question_id = qb.id
     LEFT JOIN chapters ch ON ch.id = qb.chapter_id
     WHERE qb.subject = p_subject AND qb.grade = p_grade AND qb.is_active = true
-      -- Server-side P6 (migration 20260814000017) — see the rag RPC above.
+      -- Server-side P6 (migration 20260814000023) — see the rag RPC above.
       AND public.question_bank_p6_valid(
             qb.question_text, qb.options, qb.correct_answer_index,
             qb.explanation, COALESCE(qb.question_type_v2, qb.question_type, 'mcq'))
@@ -670,7 +670,7 @@ BEGIN
                   ELSE n.rn
              END, n.rn
   )
-  -- KEYLESS PAYLOAD (20260814000017) — see the rag RPC above.
+  -- KEYLESS PAYLOAD (20260814000023) — see the rag RPC above.
   SELECT jsonb_agg(jsonb_build_object(
     'id', sel.id, 'question_text', sel.question_text, 'question_hi', sel.question_hi,
     'question_type', COALESCE(sel.question_type, 'mcq'),
@@ -698,7 +698,7 @@ END;
 $function$;
 
 COMMENT ON FUNCTION public.select_quiz_questions_v2 IS
-  '2026-08-14 (20260814000017): KEYLESS PAYLOAD — correct_answer_index removed '
+  '2026-08-14 (20260814000023): KEYLESS PAYLOAD — correct_answer_index removed '
   'from the returned objects; server-side P6 (question_bank_p6_valid) added as '
   'a filter to all four predicate blocks. Same rationale as '
   'select_quiz_questions_rag. '
@@ -732,7 +732,7 @@ DECLARE
   v_questions JSONB;
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'question_bank') THEN
-    -- KEYLESS PAYLOAD (20260814000017): correct_answer_index dropped from the
+    -- KEYLESS PAYLOAD (20260814000023): correct_answer_index dropped from the
     -- projection. Server-side P6 added as a filter.
     SELECT COALESCE(jsonb_agg(q), '[]'::JSONB) INTO v_questions
     FROM (
@@ -760,7 +760,7 @@ END;
 $function$;
 
 COMMENT ON FUNCTION public.get_quiz_questions(text, text, integer, integer, integer) IS
-  '2026-08-14 (20260814000017): KEYLESS PAYLOAD — correct_answer_index removed '
+  '2026-08-14 (20260814000023): KEYLESS PAYLOAD — correct_answer_index removed '
   'from the projection; server-side P6 (question_bank_p6_valid) added as a '
   'filter. A-03 (20260505155525): is_verified = true filter + p_chapter_number '
   'support. Only SME-verified, P6-valid questions reach students.';
@@ -787,7 +787,7 @@ BEGIN
   END IF;
 
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'question_bank') THEN
-    -- KEYLESS PAYLOAD (20260814000017): correct_answer_index dropped; P6 filter
+    -- KEYLESS PAYLOAD (20260814000023): correct_answer_index dropped; P6 filter
     -- added. topic_id / the column order of everything else are preserved.
     SELECT COALESCE(jsonb_agg(q), '[]'::JSONB) INTO v_questions
     FROM (
@@ -833,7 +833,7 @@ END;
 $function$;
 
 COMMENT ON FUNCTION public.get_quiz_questions(text, text, integer, integer) IS
-  '2026-08-14 (20260814000017): KEYLESS PAYLOAD — correct_answer_index removed '
+  '2026-08-14 (20260814000023): KEYLESS PAYLOAD — correct_answer_index removed '
   'from BOTH branches (including the curriculum_topics shim''s synthetic '
   '0-valued key); server-side P6 (question_bank_p6_valid) added as a filter on '
   'the question_bank branch. This is the ORIGINAL 4-arg overload from the '
@@ -908,7 +908,7 @@ BEGIN
       CONTINUE;
     END IF;
 
-    -- ★ SERVER-SIDE P6 GATE (migration 20260814000017) ★
+    -- ★ SERVER-SIDE P6 GATE (migration 20260814000023) ★
     -- The single checkpoint every direct-question_bank student path funnels
     -- through. A row that cannot be graded is skipped: no snapshot row, and it
     -- is absent from the returned `questions` array, which is the client's
@@ -1006,7 +1006,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION "public"."start_quiz_session"("uuid", "uuid"[]) IS
-  '2026-08-14 (20260814000017): now also the SERVER-SIDE P6 CHECKPOINT. A '
+  '2026-08-14 (20260814000023): now also the SERVER-SIDE P6 CHECKPOINT. A '
   'question failing question_bank_p6_valid is skipped — no quiz_session_shuffles '
   'row is written and it is absent from the returned array, which is the '
   'client''s signal to drop it. This is what lets every direct-question_bank '
@@ -1119,7 +1119,7 @@ $function$;
 
 COMMENT ON FUNCTION public.check_formative_answer(uuid, integer) IS
   'Keyless grading for the /learn chapter Quick Check (migration '
-  '20260814000017). The Quick Check used to compare the student''s tap against '
+  '20260814000023). The Quick Check used to compare the student''s tap against '
   'question_bank.correct_answer_index IN THE BROWSER, which is why '
   'getChapterQuestions had to select the answer key for up to 50 questions at '
   'once. This RPC moves that comparison server-side so the page can stop '

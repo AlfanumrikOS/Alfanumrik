@@ -2323,3 +2323,152 @@ two passes cannot collide. **REG-379 is the next free id after this entry.**
 
 ---
 
+## Migration version collision — two files at one version, one silently skipped (2026-08-11)
+
+**This failure class had NO catalog entry before this one.** It is filed now
+because it very nearly swallowed a security fix while appearing to succeed.
+
+### The failure class
+
+`supabase db push` records applied migrations in
+`supabase_migrations.schema_migrations` keyed on the **numeric version prefix
+alone** — not the filename, not a content hash. So if two branches each land a
+DIFFERENT file at the same version, whichever applies first marks that version
+applied and **the other branch's file is skipped forever, with no error, no
+warning, and no non-zero exit.** The push reports success. The migration simply
+never runs.
+
+That is what made this specific instance dangerous rather than merely untidy:
+`main` and `fix/ci-structural-defects` carried different files at the same
+versions (`…0012`-`…0015`), and ours at `…0014` was the `quiz_session_shuffles`
+answer-key column ACL — the fix for R1, the live production answer-key leak
+catalogued by REG-380. The collision would have left that leak open while every
+deploy signal said the migration had been applied. **A silent skip on a security
+migration is strictly worse than a failed one.**
+
+Resolution: our block was renumbered contiguously (`…0012`-`…0017` →
+`…0018`-`…0023`, +6) to preserve relative order — `…0021` extends the column
+allowlist `…0020` establishes, and `…0023` replaces `start_quiz_session`, which
+`…0021` and `…0022` both depend on. `…0007`-`…0011` did not move. **No SQL logic
+changed; this was a rename plus reference updates.** Versions `…0012`-`…0017`
+now belong to the other branch and must not be reclaimed.
+
+### Entry
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-399 | `migration_version_collision_tripwire` | **ST-5, the collision tripwire.** The `20260814*` deploy gate enumerates every `.sql` file on disk and FAILS (`severity: 'blocking'` → process exit **1**) on any file matching `/^2026081400\d{4}_/` whose 14-digit version is **at or above the gate's own lowest covered version** (`20260814000007`, DERIVED as `MIGRATION_SET[0].slice(0,14)`, not hardcoded) and which is **not named in `MIGRATION_SET`**. Because the predicate is "at or above the window start" rather than "above the tail", it covers the **`0012`-`0017` hole the renumber deliberately left empty** — precisely where a colliding file from the other branch would land. **Why ST-4 could not catch this, and why both are kept:** ST-4's predicate is `f > MIGRATION_SET[MIGRATION_SET.length - 1]`, i.e. strictly ABOVE the tail (`…0023`), and it is `advisory` (WARN, never fails the run). A file in the hole sorts *below* the tail, so ST-4 is structurally blind to it — confirmed empirically below, where ST-4 still reported **PASS** on the collided tree. The window is deliberately floored at `…0007` rather than `…0000` so the pre-existing, never-covered `…0000`-`…0006` set is not flagged as noise that would train operators to ignore ST-5. The failure message names the offending files and instructs the operator NOT to renumber to green without first checking every branch for what else claims that version. Companion static checks in the same offline lane: ST-1 (all 11 covered files present), ST-2 (documented apply order **is** the version-sort order `db push` actually uses), ST-3 (each migration is a single `BEGIN;…COMMIT;` so an assertion aborts cleanly). `MIGRATION_VERSIONS` is DERIVED from `MIGRATION_SET` so the two cannot drift, and PF-1 checks the applied-versions table with an explicit non-contiguous `IN`-list rather than a `BETWEEN` range — a range would report the other branch's `0012`-`0017` as "already applied" and abort a release for a false reason. | `scripts/verify-20260814-migrations.mjs` (`staticChecks()`; ST-5 at `:916-946`, ST-4 at `:901-914`, window derivation at `:931`, renumber rationale at `:82-98`); runbook `docs/runbooks/2026-08-11-unapplied-migrations-20260814-apply.md` | **P** | P8, P4 |
+
+### Why `P` and not `E` — read this before quoting the entry
+
+The status is `P`, and it is `P` for a **stated, discharge-able reason** in each
+of two independent halves.
+
+**1. The DETECTION half is empirically proven to work, but runs in NO automated
+lane.** The mechanism was verified by running the REAL script (not a
+re-implementation) against an isolated mirror of `scripts/` +
+`supabase/migrations/`, with the other branch's `…0014` injected into the hole:
+clean tree exited **0**, collided tree exited **1** with ST-5 `FAIL`. That is
+real evidence and it reproduced independently. But `E` in this catalog means "a
+test that actually executes under `npm test`", and this gate does **not**:
+
+```
+$ grep -rn "verify-20260814" .github/ package.json apps/host/package.json
+(no matches — not wired into CI)
+
+$ grep -rln "verify-20260814" apps/host/src/__tests__/ packages/
+(no matches — no test file invokes it)
+```
+
+It is invoked **only by hand**, from the runbook
+(`docs/runbooks/2026-08-11-unapplied-migrations-20260814-apply.md` — `§3.2`,
+and the `§7` sign-off checklist line `verify-20260814-migrations.mjs exit 0 on
+prod`). A guard that depends on an operator remembering to run it is not the
+same guarantee as one CI runs on every push, and this entry must not be
+reported as if it were. **Discharge condition for this half:** wire the
+`--offline` lane into `.github/workflows/ci.yml` — it needs no database, no
+network and no secrets (pure `readdirSync` + string compare), so it is cheap to
+add — OR add a Vitest test that shells out to it and asserts exit 0. Either
+turns this half `E`.
+
+**2. NOTHING about the migrations' RUNTIME behaviour is verified, and that half
+cannot be discharged from this repo at all.** ST-5 is a static file-set check
+over filenames. It proves the *file set* is accounted for. It proves nothing
+about what those files do when executed, because **none of the 11 covered
+migrations has been applied to any database** — the script says so in its own
+header ("UNEXECUTED… Every expectation below was DERIVED from the migration
+source, not observed"), and the 38 database-lane checks report `UNVERIFIED`,
+not `PASS`, on every run available here. The script's exit-code design is built
+around exactly this honesty (exit **3** = "no SQL channel reachable — NOTHING
+was verified", so a degraded run can never masquerade as green; `--offline`
+exit 0 is explicitly documented as "a developer convenience, NOT a deploy
+gate"). **Discharge condition for this half:** apply the block on staging, then
+run the gate with a real `DB_URL` and record `0 failed` with the 38 checks
+reporting `PASS` rather than `UNVERIFIED`.
+
+Critically, ST-5 passing does **not** mean the collision risk is retired — it
+means no colliding file is *currently on disk in this worktree*. The other
+branch's `…0012`-`…0017` still exist on that branch. The tripwire is what turns
+their arrival into a loud failure instead of a silent skip; it does not prevent
+the merge.
+
+### Verification (2026-08-11) — real output
+
+Gate on the renumbered tree, in this worktree:
+
+```
+$ node scripts/verify-20260814-migrations.mjs --offline
+  PASS  ST-1    every covered migration file is present on disk
+  PASS  ST-2    the documented apply order is the version-sort order (what db push uses)
+  PASS  ST-3    each migration is a single BEGIN; … COMMIT; transaction (so an assertion aborts cleanly)
+  PASS  ST-4    no newer 20260814* migration has appeared outside this gate
+  PASS  ST-5    no unaccounted-for 20260814* migration at or above 20260814000007 (incl. the 0012-0017 hole)
+  5 passed · 0 failed · 0 errored · 0 advisory · 0 warn · 38 UNVERIFIED
+EXIT CODE: 0
+```
+
+Teeth check — the REAL script against an isolated scratchpad mirror with the
+other branch's `…0014` injected INTO the hole (the repo itself was never
+modified; the mirror was deleted afterwards):
+
+```
+########## CONTROL: clean mirror ##########
+  PASS  ST-5 …
+CONTROL EXIT CODE: 0
+
+########## COLLIDED MIRROR: other branch's ...0014 sitting in the hole ##########
+  PASS  ST-4    no newer 20260814* migration has appeared outside this gate
+  FAIL  ST-5    no unaccounted-for 20260814* migration at or above 20260814000007 (incl. the 0012-0017 hole)
+         → UNACCOUNTED FOR: 20260814000014_ci_structural_defects_other_branch.sql — these are NOT
+           verified by this gate. If any sits at 0012-0017 it is another branch's file that has been
+           merged in; confirm it does not collide with a version this gate already claims.
+  4 passed · 1 failed · 0 errored · 0 advisory · 0 warn · 38 UNVERIFIED
+COLLIDED EXIT CODE: 1
+```
+
+**Note the ST-4 line in the collided run: it still reads `PASS`.** That is the
+whole justification for ST-5 existing as a separate, blocking check, captured
+here as evidence rather than asserted.
+
+### Known gaps (recorded honestly, not claimed as covered)
+
+- **The tripwire is scoped to the `20260814*` prefix only.** Its regex is
+  `/^2026081400\d{4}_/`. A collision at any OTHER timestamp prefix — which is
+  the general form of this failure class — is completely uncovered. There is no
+  repo-wide "no two migrations share a version" guard, and building one is the
+  real durable fix. This entry pins the specific instance, not the class.
+- **Not wired into CI** (see half 1 above). Manual invocation only.
+- **`…0012`-`…0017` are not reserved by any mechanism.** Nothing stops a future
+  agent from "tidying" the gap back into a contiguous range; only the comment at
+  `MIGRATION_VERSIONS` (`:82-98`) and this entry say not to. If that happens,
+  the collision returns.
+- **Zero runtime verification** of all 11 migrations (see half 2 above).
+
+### Note on the id
+
+`00-header.md` declared **REG-399 the next free id** before this pass; this
+entry takes it. **REG-400 is the next free id.** No existing entry was
+renumbered, reworded or deleted by this pass.
+
+---
+

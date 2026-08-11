@@ -487,7 +487,7 @@ function rollupMastery(rows: MasteryRow[]): SubjectMastery[] {
  *        (b) the INSTRUMENT. An `exam` session is not resumable at all (a
  *            timed test is taken in one sitting), and a session whose
  *            `session_mode` is unrecorded cannot be proven not to have been
- *            one, so both suppress the card. Migration 20260814000015 added
+ *            one, so both suppress the card. Migration 20260814000021 added
  *            the column; the resume route returns `exam_not_resumable` /
  *            `mode_unknown` for the same two cases.
  *      RULE: never promise what you will refuse.

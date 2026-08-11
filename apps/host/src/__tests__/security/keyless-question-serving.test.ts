@@ -9,7 +9,7 @@ import { validateQuestion } from '@alfanumrik/lib/quiz/question-validation';
  *
  * WHAT THIS PINS, AND WHY EACH HALF IS USELESS WITHOUT THE OTHER
  * =============================================================
- * Migration 20260814000017 does two things that only make sense together:
+ * Migration 20260814000023 does two things that only make sense together:
  *
  *   B. `correct_answer_index` is removed from the OUTBOUND payload of every
  *      question-serving RPC, and from every direct `question_bank` projection
@@ -32,7 +32,7 @@ import { validateQuestion } from '@alfanumrik/lib/quiz/question-validation';
 
 const REPO_ROOT = resolve(__dirname, '../../../../..');
 const MIGRATIONS = resolve(REPO_ROOT, 'supabase/migrations');
-const MIGRATION = '20260814000017_keyless_question_serving_and_server_side_p6.sql';
+const MIGRATION = '20260814000023_keyless_question_serving_and_server_side_p6.sql';
 
 /** The seven caller-role consumers step B had to repoint. */
 const CONSUMERS = [
@@ -146,7 +146,7 @@ describe('R2 A+B — keyless question serving + server-side P6', () => {
         offenders,
         'A student-path query is projecting the answer key (or a bare `*`, which ' +
           'NAMES every column and so needs SELECT on all of them). Migration ' +
-          '20260814000017 moved the only check that needed it server-side — ' +
+          '20260814000023 moved the only check that needed it server-side — ' +
           'nothing in the browser should ask for this column again.',
       ).toEqual([]);
     });

@@ -45,7 +45,7 @@ interface Question {
   question_type: string;
   options: string | string[];
   /**
-   * KEYLESS SERVING (migration 20260814000017). No serving path returns
+   * KEYLESS SERVING (migration 20260814000023). No serving path returns
    * `question_bank.correct_answer_index` any more, and the server-shuffle path
    * stamps `-1`. Optional because "absent" is now the normal case. Every read
    * below goes through `localCorrectIndex()`, which collapses absent and the
@@ -72,7 +72,7 @@ interface Question {
  * The client's local answer index for a question, or -1 when it does not have
  * one.
  *
- * KEYLESS SERVING (migration 20260814000017) made "absent" the normal case, and
+ * KEYLESS SERVING (migration 20260814000023) made "absent" the normal case, and
  * the server-shuffle path has stamped the `-1` sentinel since 20260428160000.
  * Both mean the same thing — the client must not claim to know the answer — so
  * they collapse here into a single value that every downstream `>= 0` /

@@ -26,7 +26,7 @@
  * `SELECT (correct_answer_index)` from `authenticated` without breaking the
  * teacher. It mirrors the precedent already set for the same column family on
  * `quiz_session_shuffles` by migration
- * `20260814000014_quiz_session_shuffles_answer_key_column_acl.sql`.
+ * `20260814000020_quiz_session_shuffles_answer_key_column_acl.sql`.
  *
  * AUTH (P9)
  * =========

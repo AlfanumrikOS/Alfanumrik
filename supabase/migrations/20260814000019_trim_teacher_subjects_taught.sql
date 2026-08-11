@@ -1,4 +1,4 @@
--- Migration: 20260814000013_trim_teacher_subjects_taught.sql
+-- Migration: 20260814000019_trim_teacher_subjects_taught.sql
 -- Phase 3 / M8 — Server-authoritative allowed-subject policy: teacher repair.
 --
 -- CEO-APPROVED. This is the teacher-side counterpart to M4 (20260814000009),
@@ -219,7 +219,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS teacher_subj_archive_20260814_teacher_uniq
 
 COMMENT ON TABLE public.teacher_subjects_taught_archive_20260814 IS
   'Phase 3 M8 rollback source: pre-change teachers.subjects_taught for every '
-  'teacher trimmed by migration 20260814000013, alongside the trimmed result. '
+  'teacher trimmed by migration 20260814000019, alongside the trimmed result. '
   'Service-role read only. Teacher UUIDs and subject codes only, no PII. '
   'Roll back with: UPDATE teachers t SET subjects_taught = a.subjects_taught_before '
   'FROM teacher_subjects_taught_archive_20260814 a WHERE a.teacher_id = t.id.';
@@ -318,7 +318,7 @@ SELECT
         WHERE array_length(x.after_codes, 1) IS NOT NULL),
     'kept',        (SELECT array_agg(k.code ORDER BY k.code) FROM _keep_subject_codes k),
     'diagnostic',  'docs/subject-restriction-teacher-impact.sql',
-    'migration',   '20260814000013_trim_teacher_subjects_taught',
+    'migration',   '20260814000019_trim_teacher_subjects_taught',
     'applied_at',  now()
   ),
   now()

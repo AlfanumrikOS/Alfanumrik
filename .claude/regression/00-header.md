@@ -6,16 +6,38 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 403 entries upper bound / 398 honest (target: 35 — TARGET
-EXCEEDED). Independently measured body-backed `REG-N` ids: 345 (max 398).**
+**Total catalog: 404 entries upper bound / 399 honest (target: 35 — TARGET
+EXCEEDED). Independently measured body-backed `REG-N` ids: 346 (max 399).**
 See the 2026-08-11 addenda below — that three-way divergence is PRE-EXISTING
 and still unresolved; do not quote any one of the three numbers as "the" total
-without saying which definition you used. The 345 figure was RE-MEASURED on
-2026-08-11 after the Phase 4 blocker-fix + P0 cataloguing pass, using the same
-stated definition as the 339 measurement it supersedes (339 + 6 new = 345 —
-the divergence against the declared totals is carried forward UNCHANGED at 58
+without saying which definition you used. The 346 figure was RE-MEASURED on
+2026-08-11 after the migration-renumber + collision-cataloguing pass, using the
+same stated definition as the 345 measurement it supersedes (345 + 1 new = 346
+— the divergence against the declared totals is carried forward UNCHANGED at 58
 entries, not papered over).
-Latest REG id: **REG-398**. **REG-399 is the next free REG id.**
+Latest REG id: **REG-399**. **REG-400 is the next free REG id.**
+Prior: REG-399 (2026-08-11, migration version-collision tripwire — filed in
+`11-infrastructure.md`. `main` and `fix/ci-structural-defects` carried DIFFERENT
+files at the SAME versions `…0012`-`…0015`; `supabase db push` keys
+`schema_migrations` on the numeric prefix ALONE, so once either branch's file
+applied the other would be **silently skipped forever, with no error** — and
+ours at `…0014` was the answer-key ACL for R1, which is CONFIRMED LIVE in
+production. Our block was renumbered `…0012`-`…0017` → `…0018`-`…0023` (+6,
+contiguous, relative order preserved); **no SQL logic changed.** The enforcing
+guard is the new blocking **ST-5** check in
+`scripts/verify-20260814-migrations.mjs`, which fails on ANY unaccounted-for
+`20260814*` migration at or above `…0007` — *including one landing in the
+`0012`-`0017` hole*, which **ST-4 structurally cannot see** because it only
+looks ABOVE the tail and is advisory besides. Proven to have teeth by running
+the REAL script against an isolated mirror with the other branch's `…0014`
+injected: clean exit 0, collided exit 1, **with ST-4 still reporting PASS on the
+collided tree**. Status **P**, deliberately, on two independent grounds: the
+detection half is empirically proven but is wired into NO automated lane
+(`grep` for `verify-20260814` across `.github/`, the package.json scripts and
+every test dir returns nothing — it is runbook-invoked by hand), and NOTHING
+about the migrations' runtime behaviour is verified because none of the 11 has
+been applied to any database. Both discharge conditions are stated in the
+shard.)
 Prior: REG-393..REG-398 (2026-08-11, the four Phase 4 blocker fixes from
 commit `6a67ca8ed` plus two P0 submission defects found in the same
 assessment review and fixed in-tree. **Five in `03-quiz-integrity.md`
@@ -29,7 +51,7 @@ used to ALLOW resume) [E]. REG-394 `session_mode` persisted in the same
 first-write-wins UPDATE as the first answer; `exam` refuses outright
 (`exam_not_resumable`) and NULL/unrecognised refuse (`mode_unknown`) rather
 than assuming untimed — the old safeguard was DEAD CODE that could never fire
-[**P** — migration `20260814000015` has never been applied]. REG-395 three
+[**P** — migration `20260814000021` has never been applied]. REG-395 three
 `/today` reasons deliberately silent (`sunday_default`, `month_end_default`,
 `no_signals_yet`) with the enumerated-silent-set asserted in BOTH directions,
 so a 13th resolver branch and a fourth undeclared silence both FAIL [E].
@@ -39,7 +61,7 @@ different persisted `error_type` depending on whether the session was resumed
 [E]. **REG-397 (P0):** any quiz with a non-MCQ question could not be submitted
 AT ALL — the RPC RAISEd `session_not_started` before Check 3, and the student
 saw a false "your answers are saved"; now every served question is snapshotted
-and written answers are scored [**P** — migration `20260814000016` never
+and written answers are scored [**P** — migration `20260814000022` never
 applied]. **REG-398 (P0):** exam-mode anti-cheat was INVERTED — `p_time` was
 the time REMAINING, so thoroughness was punished, every auto-submit at timer 0
 was flagged by construction (guaranteed 0 XP), and rushing was rewarded [E].
@@ -55,9 +77,10 @@ action queue; commits `b008c20c7` + `86b033a41`. Eight quiz entries in
 **Three of the thirteen are `P`, deliberately:** REG-380 because its 6
 live-DB probes have NEVER executed (no creds in this environment — the
 verification run reads `11 passed | 6 skipped`) and because migration
-`20260814000014` has never been applied to any database, so every claim
-about its RUNTIME effect is unverified and the production leak it closes is
-still open; REG-390 because its page-layer unread-count clause asserts its
+`20260814000020` (renumbered from `…0014` on 2026-08-11) has never been
+applied to any database — CONFIRMED against production by an anon-key probe
+on 2026-08-11, not merely assumed — so every claim about its RUNTIME effect
+is unverified and the production leak it closes is still open; REG-390 because its page-layer unread-count clause asserts its
 own fixture rather than the page; REG-392 because `today_reminder_clicked`
 is 1 of the 7 new analytics events and has no asserting test. The other ten
 are `E`, backed by 206 passing tests across 8 files re-run in one vitest
@@ -236,12 +259,33 @@ totals moved 397/392 → **403/398**. **The divergence is again UNCHANGED** —
 Neither widened nor narrowed, and still NOT resolved. It needs the outstanding
 shard-by-shard audit, not another drive-by edit.
 
+**2026-08-11 re-measurement, THIRD PASS (migration-renumber + collision
+cataloguing).** Same command, same definition, re-run against the 15
+non-header shards after filing REG-399:
+
+```
+$ SHARDS=$(ls *.md | grep -v '^00-header.md$')      # 15 shards
+$ { grep -rhoE '^#{2,4} +REG-[0-9]+' $SHARDS; grep -rhoE '^\|[[:space:]]*\*{0,2}REG-[0-9]+' $SHARDS; } \
+    | grep -oE '[0-9]+' | sort -n -u | wc -l
+346          # max id: 399   (399 confirmed present: grep -cx 399 → 1)
+```
+
+Measured count moved 345 → **346** (+1, exactly the entry filed); declared
+totals moved 403/398 → **404/399**. **The divergence is AGAIN UNCHANGED** —
+404 − 346 = 58 (was 403 − 345 = 58), and 399 − 346 = 53 (was 398 − 345 = 53).
+Carried forward at exactly the same 58/53, neither widened nor narrowed nor
+papered over, and still NOT resolved — it needs the outstanding shard-by-shard
+audit. This pass also performed a pure-rename reference sweep (17 stale
+`20260814*` version strings across `00-header.md` and `03-quiz-integrity.md`
+repointed +6); that sweep changed NO entry's id, status or scope and is
+count-neutral.
+
 **2026-08-11 — REG-380's parity assertion was WRONG BY CONSTRUCTION and has
 been repaired (mechanism change, no id consumed).** Its `CROSS-MODULE PARITY`
-clause froze migration `20260814000014`'s 10-column literal as if that were the
-complete set `authenticated` may ever read. But 0014's entire design is that
+clause froze migration `20260814000020`'s 10-column literal as if that were the
+complete set `authenticated` may ever read. But 0020's entire design is that
 later migrations ADD columns via additive column-level grants — the fail-closed
-mechanism working as intended — and `20260814000015` uses it correctly (grants
+mechanism working as intended — and `20260814000021` uses it correctly (grants
 `session_mode` at `:121`, asserts it in its own post-condition 4b, and 4d
 re-asserts the answer key is still denied). `SHUFFLE_RESUME_COLUMNS`
 legitimately gained `session_mode`, so the assertion failed on a codebase that
@@ -252,7 +296,7 @@ granted set is now DERIVED by replaying the chain (`deriveChainAcl` in
 grant naming either answer-key column, any grant to `anon`, and a resume column
 no migration grants each still fail — every one carries a committed mutation
 proof in the same file plus a recorded live-file tamper/restore run. Separately,
-architect found that 0014's own post-condition `v_open_cols` asserts only 9 of
+architect found that 0020's own post-condition `v_open_cols` asserts only 9 of
 the 10 columns it grants (`options_version_at_serve` is granted, never
 asserted); testing does not own migrations, so it is pinned in its CURRENT
 broken state so that FIXING it fails the test and forces this note to be
@@ -268,9 +312,14 @@ column; the baseline ships no per-table GRANT, so the schema-wide
 `ALTER DEFAULT PRIVILEGES … GRANT ALL … TO anon, authenticated` applied).
 `integrity_hash` is a second, equivalent leak — a 4-candidate brute-force
 oracle for the same secret, since `options_snapshot` is client-readable. **The
-migration that closes both (`20260814000014`) has NEVER been applied to any
-database, and REG-380's 6 live-DB probes have NEVER executed.** What is green
-today is 11 STATIC assertions about SQL text. The entry is `P` for exactly
+migration that closes both (`20260814000020`, renumbered from `…0014`) has
+NEVER been applied to any database, and REG-380's 6 live-DB probes have NEVER
+executed.** What is green today is 11 STATIC assertions about SQL text.
+**Re-confirmed BEHAVIOURALLY against production on 2026-08-11:** the migration
+begins by REVOKing the table-level grant from `anon`, which would make every
+column 42501 for that role; a control anon-key select of `question_id` instead
+returned `[]`, proving the table-level grant is intact and the REVOKE has not
+run. **R1 is LIVE in production.** The entry is `P` for exactly
 that reason and must not be reported as passing without naming the 6 skips.
 Separately and WIDER: `question_bank_authenticated_read` still exposes
 `question_bank.correct_answer_index` for all ~12.8k questions to any

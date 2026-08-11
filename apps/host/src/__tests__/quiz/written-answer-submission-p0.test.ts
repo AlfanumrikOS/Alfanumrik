@@ -43,7 +43,7 @@ import { collectSessionQuestionIds } from '@alfanumrik/lib/quiz/session-contract
  */
 
 const PAGE = 'apps/host/src/app/(student)/quiz/page.tsx';
-const RPC_FIX = 'supabase/migrations/20260814000016_submit_quiz_v2_written_answer_scoring.sql';
+const RPC_FIX = 'supabase/migrations/20260814000022_submit_quiz_v2_written_answer_scoring.sql';
 
 function resolveRepo(rel: string): string | null {
   for (const c of [
@@ -156,7 +156,7 @@ describe('P0-1 client: the quiz page feeds start_quiz_session the FULL served se
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('P0-1 RPC: the written-answer scoring migration exists', () => {
-  it('20260814000016_submit_quiz_v2_written_answer_scoring.sql is present', () => {
+  it('20260814000022_submit_quiz_v2_written_answer_scoring.sql is present', () => {
     expect(resolveRepo(RPC_FIX)).not.toBeNull();
   });
 

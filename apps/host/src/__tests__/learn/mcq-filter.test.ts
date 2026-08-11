@@ -112,7 +112,7 @@ describe('isMcqQuestion (the shared predicate the learn deck filter uses)', () =
     expect(isMcqQuestion(q)).toBe(true);
   });
 
-  it('detects a keyless 4-option row by shape alone (R2 step B, 20260814000017)', () => {
+  it('detects a keyless 4-option row by shape alone (R2 step B, 20260814000023)', () => {
     // REPLACES "rejects correct_answer_index outside 0..3 even with 4 options
     // (P6 range)". That assertion pinned a clause that has been removed —
     // renderability is about HAVING four options, not about which one is right,

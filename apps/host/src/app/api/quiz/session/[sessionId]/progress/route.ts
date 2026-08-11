@@ -91,7 +91,7 @@ const isUuid = (s: unknown): s is string => typeof s === 'string' && UUID_RE.tes
 
 const ROUTE = '/api/quiz/session/[sessionId]/progress';
 
-/** The closed set of instruments `/quiz` runs; mirrors the DB CHECK (20260814000015). */
+/** The closed set of instruments `/quiz` runs; mirrors the DB CHECK (20260814000021). */
 const VALID_MODES: readonly QuizSessionMode[] = ['practice', 'cognitive', 'exam'];
 
 interface OwnershipProbe {
@@ -265,7 +265,7 @@ export async function POST(
     // writers are mutually safe in any interleaving: whichever lands first
     // wins and the other is a no-op.
     //
-    // `session_mode` (migration 20260814000015) rides this SAME statement, so
+    // `session_mode` (migration 20260814000021) rides this SAME statement, so
     // the instrument is recorded ATOMICALLY WITH THE FIRST PERSISTED ANSWER.
     // Because a session only becomes resumable once it has ≥ 1 persisted
     // answer, there is no interleaving in which a session is resumable but its

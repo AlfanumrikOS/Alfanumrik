@@ -128,7 +128,7 @@ interface Question {
   question_type: string;
   options: string | string[];
   /**
-   * KEYLESS SERVING (migration 20260814000017). NOT populated on any live path
+   * KEYLESS SERVING (migration 20260814000023). NOT populated on any live path
    * any more — every serving RPC and every direct `question_bank` query on this
    * page stopped returning `question_bank.correct_answer_index`, and the
    * server-shuffle / resume paths stamp the fail-loud `-1` sentinel. Optional
@@ -304,7 +304,7 @@ function originalToShuffled(origIdx: number, _shuffleMap: number[]|null) {
 /**
  * Does the CLIENT hold a usable answer key for this question?
  *
- * KEYLESS SERVING (migration 20260814000017). After that migration NO student
+ * KEYLESS SERVING (migration 20260814000023). After that migration NO student
  * serving path returns `question_bank.correct_answer_index`:
  *   - `select_quiz_questions_rag` / `select_quiz_questions_v2` /
  *     `get_quiz_questions` dropped it from their JSON payloads;
@@ -759,7 +759,7 @@ export default function QuizPage() {
    * P6: Runtime question quality gate — filter out malformed questions before
    * serving.
    *
-   * KEYLESS (migration 20260814000017): the `correct_answer_index` 0-3 clause
+   * KEYLESS (migration 20260814000023): the `correct_answer_index` 0-3 clause
    * that used to close the MCQ block is GONE FROM HERE. It is the single reason
    * every serving path had to ship the answer key to the browser, and it now
    * lives in `public.question_bank_p6_valid` — applied as a filter inside
@@ -986,7 +986,7 @@ export default function QuizPage() {
         // order; we replace `options` so getShuffledOptions() (now an
         // identity helper) renders them as-is.
         const byId = new Map(session.questions.map(s => [s.question_id, s]));
-        // ── SERVER-SIDE P6 REJECTION CHANNEL (migration 20260814000017) ──────
+        // ── SERVER-SIDE P6 REJECTION CHANNEL (migration 20260814000023) ──────
         // start_quiz_session now SKIPS any question that fails
         // `public.question_bank_p6_valid` — no snapshot row, and absent from
         // `session.questions`. Absence is therefore no longer just "unknown id";
@@ -1132,7 +1132,7 @@ export default function QuizPage() {
     if (resumeSessionId && !resumeSettledRef.current) return;
     deepLinkFiredRef.current = true;
 
-    // KEYLESS (migration 20260814000017): `correct_answer_index` is deliberately
+    // KEYLESS (migration 20260814000023): `correct_answer_index` is deliberately
     // absent. Both deep-link branches below feed startQuiz(), which routes
     // through start_quiz_session — and THAT is where the P6 "index 0-3" check
     // now runs (`public.question_bank_p6_valid`). A pinned question that fails
@@ -1338,7 +1338,7 @@ export default function QuizPage() {
         // P3: seed the total-time counter with real on-task time (see above).
         setTimer(result.elapsed_seconds);
         // The session's REAL instrument, read back from the server snapshot
-        // (`quiz_session_shuffles.session_mode`, migration 20260814000015).
+        // (`quiz_session_shuffles.session_mode`, migration 20260814000021).
         // `result.mode` can only ever be 'practice' or 'cognitive': the payload
         // builder refuses an `exam` session outright (`exam_not_resumable`) and
         // refuses an unrecorded one (`mode_unknown`), both of which land on the
@@ -1393,7 +1393,7 @@ export default function QuizPage() {
     // Legacy fallback path (serverSessionId === null): no shuffle was
     // applied, so selectedOption is already the original index and we can
     // compare directly to correct_answer_index for live feedback.
-    // KEYLESS (20260814000017): the legacy branch below can only run when the
+    // KEYLESS (20260814000023): the legacy branch below can only run when the
     // client actually holds a key, which no serving path supplies any more.
     // `!clientHasAnswerKey(q)` folds that case into the same neutral, honest
     // "server will tell us" behaviour instead of asserting "wrong".
@@ -1494,7 +1494,7 @@ export default function QuizPage() {
         questionTimer,
         authHeader,
         // The instrument, recorded ATOMICALLY with the first persisted answer
-        // (migration 20260814000015). Without it a resumed exam attempt ran
+        // (migration 20260814000021). Without it a resumed exam attempt ran
         // untimed and nothing on the record could even detect the swap.
         quizMode,
       );
@@ -1790,7 +1790,7 @@ export default function QuizPage() {
             // P0 fix (migration 20260428160000): in v2 mode, server re-derives
             // is_correct from the snapshot. In legacy mode, no shuffle is
             // applied so selected_option IS the original index.
-            // KEYLESS (20260814000017) — see clientHasAnswerKey.
+            // KEYLESS (20260814000023) — see clientHasAnswerKey.
             const isV2 = serverSessionId !== null || !clientHasAnswerKey(q);
             const lastIsCorrect = isV2
               ? false
@@ -1824,7 +1824,7 @@ export default function QuizPage() {
         // three checks — so nothing was recorded, no score, no session row. It
         // hit every quiz containing at least one written question, because the
         // client only ever snapshotted MCQ ids. Both halves are fixed (see
-        // `sessionQuestionIds` above and migration 20260814000016); the
+        // `sessionQuestionIds` above and migration 20260814000022); the
         // "still RECORDS the session" claim is true again. The client therefore
         // performs these checks ADVISORY-ONLY (warn + telemetry) and ALWAYS
         // proceeds to submitQuizResults. It must NEVER discard the attempt or
@@ -2036,7 +2036,7 @@ export default function QuizPage() {
           const q = questions[currentIdx];
           if (isQuestionMCQ(q) && selectedOption !== null) {
             // P0 fix: same v2/v1 dispatch as the happy path.
-            // KEYLESS (20260814000017) — see clientHasAnswerKey.
+            // KEYLESS (20260814000023) — see clientHasAnswerKey.
             const isV2 = serverSessionId !== null || !clientHasAnswerKey(q);
             const lastIsCorrect = isV2
               ? false
@@ -2272,7 +2272,7 @@ export default function QuizPage() {
     // banner shows "Submitted — check results at end" rather than
     // correct/wrong. In legacy mode (no server session), comparison still
     // works because no shuffle is applied (selected_option IS original).
-    // KEYLESS (20260814000017): `!clientHasAnswerKey(q)` folds the legacy
+    // KEYLESS (20260814000023): `!clientHasAnswerKey(q)` folds the legacy
     // no-server-session render into the same neutral treatment. Without it a
     // keyless legacy question would highlight NO option as correct and label a
     // right answer "Not quite" — see clientHasAnswerKey for the full note.
@@ -2486,7 +2486,7 @@ export default function QuizPage() {
               // appears mid-quiz). Final review screen highlights the
               // correct option using the server's correct_option_text from
               // the v2 RPC response.
-              // `?? -1`: KEYLESS (20260814000017) — the field is optional now.
+              // `?? -1`: KEYLESS (20260814000023) — the field is optional now.
               // -1 can never equal a rendered option index, and this branch is
               // already unreachable when the key is absent (`!isV2Question`
               // implies clientHasAnswerKey(q)); the fallback exists so the type

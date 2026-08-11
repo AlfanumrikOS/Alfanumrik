@@ -23,12 +23,12 @@ import { resolve, relative, sep } from 'node:path';
  *   GET /rest/v1/question_bank?select=id,correct_answer_index&id=eq.<uuid>
  *
  * returns the answer key for ANY of the ~12.8k questions to ANY signed-in user.
- * This is strictly WIDER than the per-session leak closed by 20260814000014
+ * This is strictly WIDER than the per-session leak closed by 20260814000020
  * (that one covered a single in-flight session; this one is the whole bank).
  *
  * WHY THERE IS NO ACL MIGRATION YET
  * =================================
- * The fix shape is settled and matches 20260814000014: table-level `REVOKE ALL`
+ * The fix shape is settled and matches 20260814000020: table-level `REVOKE ALL`
  * from the client roles, then a literal column-level `GRANT SELECT` on the 94
  * non-key columns, withholding the 9 in KEY_COLUMNS below. It cannot ship alone,
  * because consumers read those columns TODAY under the CALLER's role — and one
@@ -260,7 +260,7 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
     const findings = scanCallerRoleReads();
 
     it('is exactly the known blocker inventory — no more, no fewer', () => {
-      // EMPTY as of 2026-08-14 (migration 20260814000017 + its companion client
+      // EMPTY as of 2026-08-14 (migration 20260814000023 + its companion client
       // change). The inventory is now a REGRESSION GUARD rather than a backlog:
       // any file appearing here is a NEW caller-role read of a withheld column,
       // i.e. R2 re-opening.
@@ -358,15 +358,15 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
   describe('Lane C — scoring and serving RPCs are SECURITY DEFINER', () => {
     const RPCS: Record<string, string> = {
       // fn name -> migration that last (re)defines it
-      submit_quiz_results_v2: '20260814000016_submit_quiz_v2_written_answer_scoring.sql',
-      // Repointed 2026-08-14: 20260814000017 is now the LAST definition of
+      submit_quiz_results_v2: '20260814000022_submit_quiz_v2_written_answer_scoring.sql',
+      // Repointed 2026-08-14: 20260814000023 is now the LAST definition of
       // start_quiz_session and of all three serving RPCs.
-      start_quiz_session: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
+      start_quiz_session: '20260814000023_keyless_question_serving_and_server_side_p6.sql',
       check_quiz_answer: '20260802130000_check_quiz_answer_rpc.sql',
-      select_quiz_questions_rag: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
-      select_quiz_questions_v2: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
-      get_quiz_questions: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
-      check_formative_answer: '20260814000017_keyless_question_serving_and_server_side_p6.sql',
+      select_quiz_questions_rag: '20260814000023_keyless_question_serving_and_server_side_p6.sql',
+      select_quiz_questions_v2: '20260814000023_keyless_question_serving_and_server_side_p6.sql',
+      get_quiz_questions: '20260814000023_keyless_question_serving_and_server_side_p6.sql',
+      check_formative_answer: '20260814000023_keyless_question_serving_and_server_side_p6.sql',
       get_adaptive_questions: '20260702200000_fix_get_adaptive_questions_srs_due_predicate.sql',
     };
 
@@ -388,11 +388,11 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
       // STILL return the key, so the ACL alone is not full closure" — because
       // they did, and a SECURITY DEFINER function is invisible to a caller-role
       // column ACL, so shipping the ACL alone would have left the bulk harvest
-      // wide open. Migration 20260814000017 removed the member from all three
+      // wide open. Migration 20260814000023 removed the member from all three
       // payloads (both get_quiz_questions overloads included), which is what
       // makes the ACL worth shipping.
       const sql = readFileSync(
-        resolve(MIGRATIONS, '20260814000017_keyless_question_serving_and_server_side_p6.sql'),
+        resolve(MIGRATIONS, '20260814000023_keyless_question_serving_and_server_side_p6.sql'),
         'utf8',
       );
 
@@ -433,7 +433,7 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
       // browser could no longer run the "correct_answer_index 0-3" half of P6 and
       // nothing else would. The check moved, it did not disappear.
       const sql = readFileSync(
-        resolve(MIGRATIONS, '20260814000017_keyless_question_serving_and_server_side_p6.sql'),
+        resolve(MIGRATIONS, '20260814000023_keyless_question_serving_and_server_side_p6.sql'),
         'utf8',
       );
       const uncom = uncommented(sql);
@@ -444,7 +444,7 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
         'start_quiz_session',
       ]) {
         const start = uncom.indexOf(fn);
-        expect(start, `${fn} missing from 20260814000017`).toBeGreaterThan(-1);
+        expect(start, `${fn} missing from 20260814000023`).toBeGreaterThan(-1);
       }
       // Count the call sites rather than merely asserting presence: rag/v2 apply
       // it to four predicate blocks each, get_quiz_questions to one per overload,

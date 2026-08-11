@@ -1,4 +1,4 @@
--- Migration: 20260814000015_quiz_session_shuffles_session_mode.sql
+-- Migration: 20260814000021_quiz_session_shuffles_session_mode.sql
 -- Purpose: Record WHICH INSTRUMENT a quiz session is, so a resumed session can
 --          never silently change instrument mid-attempt.
 --
@@ -72,7 +72,7 @@
 -- P13: the value is one of three fixed lowercase tokens. It is not, and cannot
 --   become, student-identifying data.
 --
--- COLUMN ACL — READ THIS. Migration 20260814000014 revoked the table-level grant
+-- COLUMN ACL — READ THIS. Migration 20260814000020 revoked the table-level grant
 -- on `quiz_session_shuffles` from `authenticated` and re-granted SELECT
 -- COLUMN-WISE from a literal allowlist, deliberately so that a future column
 -- fails CLOSED. `session_mode` is therefore NOT readable by `authenticated`
@@ -115,7 +115,7 @@ $$;
 
 -- ──────────────────────────────────────────────────────────────────────────
 -- 3. Column-level SELECT for `authenticated` (see the ACL note above).
---    Additive to the allowlist established by 20260814000014 — it grants this
+--    Additive to the allowlist established by 20260814000020 — it grants this
 --    ONE new non-key column and touches no other privilege.
 -- ──────────────────────────────────────────────────────────────────────────
 GRANT SELECT (session_mode) ON TABLE public.quiz_session_shuffles TO authenticated;
@@ -155,12 +155,12 @@ BEGIN
     RAISE EXCEPTION 'POST-CONDITION FAILED: service_role cannot SELECT quiz_session_shuffles.session_mode';
   END IF;
 
-  -- 4d. REGRESSION GUARD for 20260814000014: adding a column must not have
+  -- 4d. REGRESSION GUARD for 20260814000020: adding a column must not have
   --     reopened the answer key. If a future hand re-adds a table-level GRANT
   --     while editing this file, this fires.
   IF has_column_privilege('authenticated', 'public.quiz_session_shuffles', 'correct_answer_index_snapshot', 'SELECT')
      OR has_column_privilege('authenticated', 'public.quiz_session_shuffles', 'integrity_hash', 'SELECT') THEN
-    RAISE EXCEPTION 'POST-CONDITION FAILED: authenticated regained SELECT on the answer key — migration 20260814000014 has been undone';
+    RAISE EXCEPTION 'POST-CONDITION FAILED: authenticated regained SELECT on the answer key — migration 20260814000020 has been undone';
   END IF;
 
   -- 4e. anon still holds nothing.

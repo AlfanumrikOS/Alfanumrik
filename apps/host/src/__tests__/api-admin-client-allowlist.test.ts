@@ -277,7 +277,7 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // author's, not the test's; the fix is the ledger entry, never a relaxed pin.
 // Service-role is REQUIRED, not convenience: quiz_session_shuffles carries
 // three RLS policies and ALL THREE are FOR SELECT (student/parent/teacher) —
-// there is no INSERT/UPDATE/DELETE policy at all, and migration 20260814000014
+// there is no INSERT/UPDATE/DELETE policy at all, and migration 20260814000020
 // made that denial explicit at the privilege layer (post-condition 4d asserts
 // `authenticated` holds no write verb). The POST's first-write-wins UPDATE
 // would be SILENTLY zero-rowed on an RLS-scoped client, indistinguishable from
@@ -297,7 +297,7 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // teachers all authenticate as the same `authenticated` Postgres role, that one
 // call site made the column un-ACL-able for all ~12.8k questions. Service-role
 // is structurally required, not convenient — the pending ACL revokes
-// SELECT (correct_answer_index) from `authenticated` (mirroring 20260814000014
+// SELECT (correct_answer_index) from `authenticated` (mirroring 20260814000020
 // on quiz_session_shuffles), so an RLS-scoped client is denied the column by
 // construction. Read-only: one table, SELECT only, six columns, no write verb
 // and no RPC anywhere in the route. Gated by authorizeRequest('worksheet.create')

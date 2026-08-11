@@ -1,4 +1,4 @@
--- Migration: 20260814000014_quiz_session_shuffles_answer_key_column_acl.sql
+-- Migration: 20260814000020_quiz_session_shuffles_answer_key_column_acl.sql
 -- Purpose: Stop the `authenticated` role reading the per-session ANSWER KEY out
 --          of public.quiz_session_shuffles directly over PostgREST.
 --
@@ -233,7 +233,7 @@ $$;
 COMMENT ON COLUMN public.quiz_session_shuffles.correct_answer_index_snapshot IS
   'Integer 0..3 snapshot of question_bank.correct_answer_index at quiz session '
   'start. submit_quiz_results_v2 compares against THIS, not the live '
-  'question_bank value. ACL (migration 20260814000014): service_role + owner '
+  'question_bank value. ACL (migration 20260814000020): service_role + owner '
   'ONLY. anon and authenticated hold NO SELECT on this column — RLS is '
   'row-level and cannot hide a column, so the table-level grant from the '
   'baseline default privileges was revoked and re-granted column-wise. Do NOT '
@@ -243,7 +243,7 @@ COMMENT ON COLUMN public.quiz_session_shuffles.correct_answer_index_snapshot IS
 COMMENT ON COLUMN public.quiz_session_shuffles.integrity_hash IS
   'SHA256 hex of options_snapshot::text || correct_answer_index_snapshot::text, '
   'written by start_quiz_session (20260801100900) and verified server-side. '
-  'ACL (migration 20260814000014): service_role + owner ONLY, for the same '
+  'ACL (migration 20260814000020): service_role + owner ONLY, for the same '
   'reason as correct_answer_index_snapshot — because options_snapshot IS '
   'readable by the student, this hash is a 4-candidate brute-force oracle for '
   'the answer key and must never be exposed to a client role.';
@@ -254,7 +254,7 @@ COMMENT ON TABLE public.quiz_session_shuffles IS
   'stable shuffle could mismatch a later question_bank content edit. '
   'submit_quiz_results_v2 reads from here, NEVER from the live question_bank, '
   'when re-deriving is_correct. See migration 20260428160000 for full threat '
-  'model. ACL (migration 20260814000014): the two answer-key columns '
+  'model. ACL (migration 20260814000020): the two answer-key columns '
   '(correct_answer_index_snapshot, integrity_hash) are service_role/owner only; '
   'authenticated holds column-level SELECT on the remaining columns and no '
   'write verb; anon holds nothing. RESIDUAL: question_bank.correct_answer_index '

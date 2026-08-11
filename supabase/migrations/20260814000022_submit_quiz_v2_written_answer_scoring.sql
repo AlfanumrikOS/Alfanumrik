@@ -1,4 +1,4 @@
--- Migration: 20260814000016_submit_quiz_v2_written_answer_scoring.sql
+-- Migration: 20260814000022_submit_quiz_v2_written_answer_scoring.sql
 -- Purpose: P0 — make submit_quiz_results_v2 able to accept and SCORE written
 --   (non-MCQ) responses instead of aborting the entire submission.
 --
@@ -199,7 +199,7 @@ DECLARE
   v_unhinted_cap_eff INT;          -- effective daily cap (clamped)
   v_unhinted_award JSONB;          -- award_xp_capped result
   v_unhinted_bonus INT := 0;       -- effective bonus actually credited
-  -- 20260814000016 P0: written (non-MCQ) response lane
+  -- 20260814000022 P0: written (non-MCQ) response lane
   v_is_written BOOLEAN := false;   -- this response is scored from rubric marks
   v_marks_awarded NUMERIC;         -- AI-evaluated marks for a written answer
   v_marks_possible NUMERIC;        -- marks the written question was worth
@@ -309,7 +309,7 @@ BEGIN
       FROM quiz_session_shuffles
      WHERE session_id = p_session_id AND question_id = v_q_id;
 
-    -- P0 (20260814000016): decide the scoring lane from SERVER state ONLY.
+    -- P0 (20260814000022): decide the scoring lane from SERVER state ONLY.
     -- `options_snapshot` was written by start_quiz_session at serve time and
     -- `question_type` is read live from question_bank — the client can
     -- influence neither, so it cannot elect the written lane for an MCQ.
@@ -420,7 +420,7 @@ BEGIN
   -- served question. COUNT(*) against it is therefore the correct "how many
   -- questions were served" source.
   --
-  -- 20260814000016: this only became correct for non-MCQ quizzes once the
+  -- 20260814000022: this only became correct for non-MCQ quizzes once the
   -- client started snapshotting EVERY served question, not just the MCQs (see
   -- collectSessionQuestionIds). Before that, a mixed quiz always had more
   -- responses than served rows. Unchanged here — the comparison is the same.
@@ -506,7 +506,7 @@ BEGIN
       FROM quiz_session_shuffles
      WHERE session_id = p_session_id AND question_id = v_question_id;
 
-    -- P0 (20260814000016): same server-only lane decision as the first pass.
+    -- P0 (20260814000022): same server-only lane decision as the first pass.
     v_q_type := NULL;
     SELECT question_type INTO v_q_type FROM question_bank WHERE id = v_question_id;
 
@@ -542,7 +542,7 @@ BEGIN
       LIMIT 1;
     END IF;
 
-    -- P0 (20260814000016): explicit per-iteration reset of the written-answer
+    -- P0 (20260814000022): explicit per-iteration reset of the written-answer
     -- columns so an MCQ row can never inherit the previous row's marks.
     v_marks_awarded := CASE
       WHEN (r->>'marks_awarded') ~ '^[0-9]+(\.[0-9]+)?$' THEN (r->>'marks_awarded')::NUMERIC
@@ -647,7 +647,7 @@ BEGIN
     -- F8 (2026-08-05): hint_level added.
     -- Phase 2 (2026-08-07): question_version, content_hash, answer_method,
     -- confidence, misconception_id added (columns from 20260807000200).
-    -- P0 (20260814000016): student_answer_text / marks_awarded /
+    -- P0 (20260814000022): student_answer_text / marks_awarded /
     -- rubric_feedback / marks added — the written answer is now RECORDED, not
     -- just scored. All four columns pre-exist (baseline:12207-12225) and were
     -- added for written answers; v2 had simply never populated them. MCQ rows
@@ -857,7 +857,7 @@ COMMENT ON FUNCTION public.submit_quiz_results_v2(UUID, UUID, TEXT, TEXT, TEXT, 
   'error-isolated lifecycle. '
   'ADDITIVE 2026-08-09 (Phase 3): p_unhinted_xp/p_unhinted_cap params and the '
   'capped unhinted_mastery bonus lane. '
-  'P0 FIX 2026-08-11 (20260814000016): WRITTEN (non-MCQ) responses no longer '
+  'P0 FIX 2026-08-11 (20260814000022): WRITTEN (non-MCQ) responses no longer '
   'abort the submission. Each response is classified into an MCQ lane or a '
   'written lane from SERVER state only (the serve-time options_snapshot plus '
   'question_bank.question_type — the client cannot elect its lane). The '
@@ -879,7 +879,7 @@ GRANT EXECUTE ON FUNCTION public.submit_quiz_results_v2(UUID, UUID, TEXT, TEXT, 
 
 COMMIT;
 
--- End of migration: 20260814000016_submit_quiz_v2_written_answer_scoring.sql
+-- End of migration: 20260814000022_submit_quiz_v2_written_answer_scoring.sql
 -- Tables touched:    none (quiz_responses columns all pre-exist)
 -- Functions touched: submit_quiz_results_v2 (CREATE OR REPLACE, same signature)
 -- Triggers touched:  none

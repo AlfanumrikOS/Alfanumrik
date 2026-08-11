@@ -80,7 +80,7 @@ export interface AssembleQuizResult {
 /** `question_bank` columns the PYQ preferred-fetch needs — same projection the
  *  direct-query fallback inside `getQuizQuestionsV2` uses, so rows from either
  *  path are shape-identical downstream. */
-// KEYLESS (migration 20260814000017): `correct_answer_index` is deliberately
+// KEYLESS (migration 20260814000023): `correct_answer_index` is deliberately
 // absent. It was here only so the P6 gate below could check "index 0-3"; that
 // check now runs SERVER-side (`public.question_bank_p6_valid` filters the
 // serving RPCs and `start_quiz_session` skips any row that fails it, and every
@@ -112,7 +112,7 @@ const PYQ_COLUMNS =
 // resolving; new code should import from the canonical module directly.
 
 //
-// `keylessServing: true` (migration 20260814000017): this is THE live serving
+// `keylessServing: true` (migration 20260814000023): this is THE live serving
 // path, and no source it draws from returns `correct_answer_index` any more —
 // the quiz-generator Edge Function, `select_quiz_questions_rag`,
 // `select_quiz_questions_v2`, the v1 direct-query fallback and RUNG 0P above
