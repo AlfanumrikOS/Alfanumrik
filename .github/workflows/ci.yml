@@ -182,11 +182,25 @@ jobs:
   # ── Step 0b: Exact selected-school migration integration ──
   # Apply only the V3 selected-school RPC migration to an explicit current-
   # schema fixture on local PG17. Historical migrations are out of scope.
+  #
+  # RUNS ON PRs TOO (restored 2026-08-11). 409123b5 added
+  # `if: github.event_name != 'pull_request'` "to reduce runner pressure";
+  # the cost was that a PR could be 100% green and still turn main red the
+  # moment it merged, because this job had never run against the change.
+  # Runner pressure is not a reason to make a green PR meaningless.
+  #
+  # It is also NOT expensive on PRs: the `Detect selected-school migration
+  # inputs` step below is a step-level paths filter over exactly 4 files, and
+  # every heavy step (Supabase CLI, local PG17 stack, psql assertions) is
+  # gated on `steps.selected_rpc_changes.outputs.changed == 'true'`. On the
+  # overwhelming majority of PRs this job is a checkout + one `git diff`
+  # (~30s) and reports SUCCESS. The 30-minute path only engages when the
+  # fixture / migration / config it validates actually changed — which is
+  # exactly when it must run BEFORE merge, not after.
   selected-school-rpc-integration:
     name: Selected-School RPC Migration Integration (local PG17)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: ${{ github.event_name != 'pull_request' }}
     permissions:
       contents: read
     env:
@@ -1023,11 +1037,17 @@ jobs:
   # assignment mentioning a name from packages/lib/src/flags/protected-flags.ts
   # and fails unless the same file carries a
   # `-- CEO-APPROVED-FLAG-FLIP: <flag_name>` marker comment.
+  #
+  # RUNS ON PRs TOO (restored 2026-08-11 — 409123b5 had made it main-only).
+  # A protected-flag flip must be caught BEFORE it merges; catching it on
+  # main means the flag is already flipped in a merged commit. Cheap on PRs:
+  # the `Detect changed migration files` step below is a step-level diff
+  # filter and every subsequent step is gated on
+  # `steps.changes.outputs.changed == 'true'`.
   protected-flag-migration-guard:
     name: Protected Flag Migration Guard
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: ${{ github.event_name != 'pull_request' }}
     permissions:
       contents: read
     steps:
@@ -1099,11 +1119,17 @@ jobs:
   # writerless watch, staleness (warn). Read-only; zero npm dependencies
   # (node:fs/node:path only), so no `npm ci` is needed — the job runs in
   # seconds at t=0 in parallel with the other fast jobs.
+  #
+  # RUNS ON PRs TOO (restored 2026-08-11). This is the job that proved the
+  # cost of the asymmetry: PR #1514 was 100% green, merged, and turned main
+  # red on the very next push because this analyzer had never run against
+  # it (#1517 was the repair). It costs a checkout + `node` with zero npm
+  # dependencies — single-digit seconds — so there was never a runner-cost
+  # case for skipping it on PRs.
   foxy-alignment:
     name: Foxy North-Star Alignment
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: ${{ github.event_name != 'pull_request' }}
     permissions:
       contents: read
     steps:
@@ -1124,11 +1150,15 @@ jobs:
   # scripts/gen-mol-matrix.mjs. This gate re-runs the generator with
   # --check and fails if the on-disk copy differs — same pattern as
   # foxy:analyze (zero npm deps, node-only, no `npm ci` needed).
+  #
+  # RUNS ON PRs TOO (restored 2026-08-11 — 409123b5 had made it main-only).
+  # Generated-file drift is introduced BY a PR; detecting it only after the
+  # merge means main is already carrying the drift. Zero npm deps, node-only,
+  # single-digit seconds.
   gen-mol-matrix:
     name: MOL Matrix Drift Check
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    if: ${{ github.event_name != 'pull_request' }}
     permissions:
       contents: read
     steps:
@@ -1578,8 +1608,26 @@ jobs:
       # none). cwd is apps/host, so the blob lands in apps/host/.vitest-reports/
       # (verified empirically with vitest 4.1.8). --coverage puts the raw V8
       # coverage into the blob for the merge job.
+      # `--reporter` is repeatable in vitest 4; BOTH reporters run.
+      #
+      # WHY THE SECOND REPORTER EXISTS (2026-08-11): with `--reporter=blob`
+      # ALONE, a failing shard's entire log was the single line
+      #   blob report written to .../apps/host/.vitest-reports/blob.json
+      # The blob is a binary-ish artifact for the merge job, not human output,
+      # so a red shard said WHICH shard failed and nothing else — one failing
+      # assertion cost a full local re-run of 5,465 tests to locate. Adding
+      # `--reporter=default` prints the failing file, test name, diff and
+      # stack directly in the shard log.
+      #
+      # The blob is STILL produced (verified empirically on vitest 4.1.10:
+      # with both flags, `.vitest-reports/blob.json` is written exactly as
+      # before AND the default reporter's failure output is printed), so the
+      # `unit-tests-merge` fan-in below keeps working via --merge-reports.
+      # Do not replace blob with default — remove blob and the merge job,
+      # and with it the merged-coverage threshold gate, silently loses its
+      # input.
       - name: Run test shard with blob report + coverage
-        run: npm test -w apps/host -- --config ../../vitest.ci-shard.config.mts --reporter=blob --coverage --shard=${{ matrix.shard }}/4
+        run: npm test -w apps/host -- --config ../../vitest.ci-shard.config.mts --reporter=blob --reporter=default --coverage --shard=${{ matrix.shard }}/4
 
       - name: Upload blob report
         if: ${{ !cancelled() }}
@@ -2812,12 +2860,28 @@ jobs:
   # and a skipped need would poison the gate's required/success accounting.
   # The sharded unit-test jobs (unit-tests + unit-tests-merge) are required
   # in its place.
+  #
+  # 2026-08-11 asymmetry repair: 409123b5 had made this gate main-only
+  # (`github.event_name != 'pull_request'`) AND dropped the four governance
+  # jobs from its needs/required list. Both halves are restored. The gate now
+  # aggregates the SAME job set on a PR and on the push that merges it, which
+  # is the only way a green PR is evidence that main will stay green.
+  #
+  # NOTE FOR THE REPO OWNER: running here makes the failure VISIBLE on the PR;
+  # it does not by itself make it BLOCKING. The `main-protection` ruleset
+  # currently requires only: "Secret Scanning", "Lint, Type-check & Test",
+  # "Production Build", "CodeQL Analysis". Add "CI Gate" to that list to make
+  # this aggregate gate merge-blocking (repo setting, not a workflow change).
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    if: ${{ always() && github.event_name != 'pull_request' }}
+    if: ${{ always() }}
     needs:
       - secret-scan
+      - selected-school-rpc-integration
+      - protected-flag-migration-guard
+      - foxy-alignment
+      - gen-mol-matrix
       - quality
       - unit-tests
       - unit-tests-merge
@@ -2834,7 +2898,7 @@ jobs:
         run: |
           node <<'NODE'
           const needs = JSON.parse(process.env.NEEDS_JSON || '{}');
-           const required = ['secret-scan','quality','unit-tests','unit-tests-merge','edge-function-tests','integration-tests','build'];
+          const required = ['secret-scan','selected-school-rpc-integration','protected-flag-migration-guard','foxy-alignment','gen-mol-matrix','quality','unit-tests','unit-tests-merge','edge-function-tests','integration-tests','build'];
           const forkSkips = [];
           if (process.env.EVENT_NAME === 'pull_request') {
             if (process.env.SAME_REPOSITORY_PR === 'true') {
