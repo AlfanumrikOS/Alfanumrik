@@ -110,6 +110,27 @@ export default function HPCPage() {
   const cbse = (hpc.cbse_readiness || {}) as Record<string, Record<string, Record<string, unknown>>>;
   const portfolio = (hpc.portfolio_highlights || []) as Array<{ type?: string; description?: string; date?: string }>;
 
+  /* ── Fabricated-metric guards (Phase 6 / Risk R4) ──
+   * A number is printed only when the backend actually supplied one. `0` is a
+   * REAL value here (0th percentile) and must survive, so this is a finite-
+   * number test, never a truthiness test. */
+  const toFiniteNumber = (v: unknown): number | null => {
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v);
+    return null;
+  };
+  const classPercentile = toFiniteNumber(hpc.class_percentile);
+
+  const gradeLabel = stu?.grade != null && String(stu.grade).trim() !== ''
+    ? (isHi ? `कक्षा ${String(stu.grade)}` : `Grade ${String(stu.grade)}`)
+    : null;
+  const boardLabel = stu?.board != null && String(stu.board).trim() !== '' ? String(stu.board) : null;
+  const yearTerm = [hpc.academic_year, hpc.term]
+    .filter((v) => v != null && String(v).trim() !== '')
+    .map((v) => String(v))
+    .join(' ');
+  const identitySegments = [gradeLabel, boardLabel, yearTerm || null].filter(Boolean) as string[];
+
   return (
     <div style={pageStyle}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} .hpc-card{background:#0F172A;border-radius:14px;padding:18px 20px;border:1px solid #1E293B;margin-bottom:14px} .hpc-title{font-size:15px;font-weight:600;color:#F1F5F9;margin:0 0 12px} .hpc-label{font-size:12px;color:#64748B;font-weight:500;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.5px}`}</style>
@@ -139,13 +160,42 @@ export default function HPCPage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #1E293B' }}>
         <div>
-          <p style={{ fontSize: 11, color: '#6366F1', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>NEP 2020 Holistic Progress Card</p>
+          <p style={{ fontSize: 11, color: '#818CF8', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: 1, margin: '0 0 4px' }}>NEP 2020 Holistic Progress Card</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#F8FAFC', margin: 0 }}>{String(stu?.name || 'Student')}</h1>
-          <p style={{ fontSize: 14, color: '#64748B', margin: '4px 0 0' }}>Grade {String(stu?.grade || "")} | {String(stu?.board || 'CBSE')} | {String(hpc.academic_year || "")} {String(hpc.term || "")}</p>
+          {/* Identity line — every segment is OMITTED when unknown.
+              It used to read `{stu?.board || 'CBSE'}`, asserting a board
+              affiliation for students whose board was never recorded, and
+              `Grade {stu?.grade || ""}`, printing a bare dangling "Grade". An
+              official-looking card must not state facts it doesn't hold. */}
+          <p data-testid="hpc-identity" style={{ fontSize: 14, color: '#94A3B8', margin: '4px 0 0' }}>
+            {identitySegments.join(' | ')}
+          </p>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 36, fontWeight: 700, color: '#6366F1' }}>P{String(hpc.class_percentile || 50)}</div>
-          <div style={{ fontSize: 11, color: '#64748B' }}>Class percentile</div>
+        <div style={{ textAlign: 'right', maxWidth: 160 }}>
+          {/* Class percentile.
+              This was `P{hpc.class_percentile || 50}` — so EVERY student for
+              whom the backend returned no percentile was told, in 36px type on
+              an official NEP 2020 card, that they are exactly median. The `||`
+              also swallowed a genuine 0th percentile into the 50th. Now: print
+              the real number (including 0), or state plainly that there isn't
+              one. Omit, don't invent. */}
+          {classPercentile !== null ? (
+            <>
+              <div style={{ fontSize: 36, fontWeight: 700, color: '#818CF8' }}>P{classPercentile}</div>
+              <div style={{ fontSize: 11, color: '#94A3B8' }}>{isHi ? 'कक्षा में स्थान' : 'Class percentile'}</div>
+            </>
+          ) : (
+            <div role="status" data-testid="class-percentile-unavailable">
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#CBD5E1' }}>
+                {isHi ? 'कक्षा में स्थान अभी उपलब्ध नहीं' : 'Class percentile not available yet'}
+              </div>
+              <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, lineHeight: 1.4 }}>
+                {isHi
+                  ? 'तुलना के लिए कक्षा का पर्याप्त डेटा नहीं है।'
+                  : 'Not enough class data to compare yet.'}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

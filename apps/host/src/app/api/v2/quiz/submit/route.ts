@@ -19,7 +19,12 @@
  *   responses[].selected_option        → selected_displayed_index
  *   responses[].time_taken_seconds     → time_spent
  *   totalTimeSeconds                   → p_time
- *   Idempotency-Key header             → p_idempotency_key
+ *   body.sessionId                     → p_idempotency_key   (R9 — NOT the
+ *     client's Idempotency-Key header. The header is still REQUIRED and
+ *     UUID-validated as a client retry token, but the GRADING key is bound to
+ *     the session so one session can only ever be graded once. Full rationale,
+ *     incl. why we ignore the header rather than reject a mismatch that every
+ *     live mobile client would trip, in packages/lib/src/quiz/idempotency.ts.)
  *
  * Error translation (IDENTICAL to /api/quiz/submit):
  *   P0001 session_not_started          → 409
@@ -47,6 +52,7 @@ import {
   prepareQuizTelemetry,
   type QuizTelemetryPre,
 } from '@alfanumrik/lib/quiz/post-submit-telemetry';
+import { resolveGradingIdempotencyKey } from '@alfanumrik/lib/quiz/idempotency';
 
 /**
  * Max age (hours) of an OFFLINE-captured attempt the server will still replay.
@@ -120,6 +126,21 @@ export const POST = withRoute(async (request: NextRequest) => {
   const validation = validateBody(QuizSubmitRequest, raw);
   if (!validation.success) return validation.error;
   const body = validation.data;
+
+  // 3b. R9 — bind the GRADING key to the session, not to the client header.
+  //     MOBILE IS A LIVE CALLER HERE and it cannot send the session id: it
+  //     mints its key in `startQuiz()` before `start_quiz_session` returns a
+  //     session (mobile/lib/providers/quiz_provider.dart), and every offline
+  //     drain replays that same key verbatim. So we IGNORE the header value
+  //     for grading rather than 400 on a mismatch — rejecting would fail 100%
+  //     of mobile submissions and need a forced app release. The header stays
+  //     required + UUID-validated, so the wire contract is unchanged; it is
+  //     simply no longer allowed to pick which key grades the quiz.
+  //     Without this, two different client keys on one session = two graded
+  //     rows = double XP (P2), and the resume/`/today` already-graded gates
+  //     (which look the SESSION ID up in `quiz_sessions.idempotency_key`)
+  //     stop matching so a graded session becomes resumable again.
+  const gradingKey = resolveGradingIdempotencyKey(body.sessionId, idempotencyKey);
 
   // 4. Cross-check JWT's student_id matches body.studentId (defense-in-depth).
   const admin = getSupabaseAdmin();
@@ -308,7 +329,8 @@ export const POST = withRoute(async (request: NextRequest) => {
       p_chapter: body.chapter ?? null,
       p_responses: rpcResponses,
       p_time: body.totalTimeSeconds,
-      p_idempotency_key: idempotencyKey,
+      // R9: the SESSION id, never the client header. See step 3b.
+      p_idempotency_key: gradingKey,
     });
     rpcData = (data ?? null) as QuizV2Result | null;
     rpcErr = error
@@ -338,7 +360,9 @@ export const POST = withRoute(async (request: NextRequest) => {
         .from('quiz_sessions')
         .select('id, total_questions, correct_answers, score_percent, score')
         .eq('student_id', body.studentId)
-        .eq('idempotency_key', idempotencyKey)
+        // R9: must be the SAME key the INSERT raced on, else the cached row is
+        // never found and a genuine retry 503s instead of replaying.
+        .eq('idempotency_key', gradingKey)
         .maybeSingle();
 
       if (cached.data) {

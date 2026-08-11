@@ -35,9 +35,9 @@ const FAQ_CATEGORIES = [
   {
     id: 'learning' as const, icon: '🦊', label: 'Foxy & Learning', labelHi: 'फॉक्सी और पढ़ाई', color: '#E8581C',
     items: [
-      { q: 'How does Foxy work?', qHi: 'फॉक्सी कैसे काम करता है?', a: 'Foxy is your personal tutor. Select a subject and chapter, then ask any question in Hindi or English. Foxy explains step-by-step, gives practice problems, and tracks what you know using Bayesian mastery tracking.', aHi: 'फॉक्सी आपका निजी ट्यूटर है। विषय और अध्याय चुनें, फिर हिंदी या अंग्रेज़ी में कोई भी प्रश्न पूछें।' },
+      { q: 'How does Foxy work?', qHi: 'फॉक्सी कैसे काम करता है?', a: 'Foxy is your personal tutor. Select a subject and chapter, then ask any question in Hindi or English. Foxy explains step-by-step, gives practice problems, and remembers which topics you have already got right, so it knows what to teach you next.', aHi: 'फॉक्सी आपका निजी ट्यूटर है। विषय और अध्याय चुनें, फिर हिंदी या अंग्रेज़ी में कोई भी प्रश्न पूछें। फॉक्सी कदम-दर-कदम समझाता है और याद रखता है कि आपने कौन से टॉपिक सही किए हैं, ताकि आगे क्या पढ़ाना है यह तय कर सके।' },
       { q: 'What subjects does Alfanumrik cover?', qHi: 'अल्फान्यूमरिक में कौन से विषय हैं?', a: 'We cover 16 subjects: Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, Social Studies, Computer Science, Economics, Accountancy, Business Studies, Political Science, History, Geography, and Coding — all aligned to CBSE curriculum for Grades 6-12.', aHi: '16 विषय: गणित, विज्ञान, भौतिकी, रसायन, जीवविज्ञान, अंग्रेज़ी, हिंदी, सामाजिक विज्ञान, कंप्यूटर, अर्थशास्त्र, लेखांकन, व्यापार, राजनीति, इतिहास, भूगोल, और कोडिंग।' },
-      { q: 'How does spaced repetition work?', qHi: 'स्पेस्ड रिपिटिशन कैसे काम करता है?', a: 'After you learn a topic, the system schedules reviews at scientifically optimal intervals. You\'ll see "Due Reviews" on your dashboard. Completing these strengthens long-term memory and prevents forgetting.', aHi: 'किसी टॉपिक को सीखने के बाद, सिस्टम वैज्ञानिक अंतराल पर रिव्यू शेड्यूल करता है। डैशबोर्ड पर "Due Reviews" दिखाई देंगे।' },
+      { q: 'Why do old topics come back for review?', qHi: 'पुराने टॉपिक दोबारा रिव्यू में क्यों आते हैं?', a: 'After you learn a topic, we bring it back a few days later — right around the time you would normally start forgetting it. You\'ll see "Due Reviews" on your dashboard. Finishing them is what makes a topic stay in your memory until the exam.', aHi: 'किसी टॉपिक को सीखने के बाद हम उसे कुछ दिन बाद दोबारा लाते हैं — ठीक उस समय जब आप उसे भूलना शुरू करते हैं। डैशबोर्ड पर "Due Reviews" दिखाई देंगे। उन्हें पूरा करने से टॉपिक परीक्षा तक याद रहता है।' },
       { q: 'Can Foxy help with board exam preparation?', qHi: 'क्या फॉक्सी बोर्ड परीक्षा की तैयारी में मदद कर सकता है?', a: 'Absolutely! Foxy is fully aligned with CBSE curriculum. Use "Quiz" mode for exam-style practice, "Notes" mode for revision summaries, and "Practice" mode for chapter-wise problem solving. Every question is mapped to board exam patterns.', aHi: 'बिल्कुल! फॉक्सी CBSE पाठ्यक्रम से पूरी तरह जुड़ा है। बोर्ड परीक्षा शैली के अभ्यास के लिए "Quiz" मोड का उपयोग करें।' },
       { q: 'How do I chat with Foxy?', qHi: 'फॉक्सी से कैसे बात करें?', a: 'Type your question in the chat box and press Enter. Foxy will respond with step-by-step explanations tailored to your grade and subject. You can ask follow-up questions, request examples, or ask Foxy to explain differently.', aHi: 'चैट बॉक्स में अपना प्रश्न टाइप करें और Enter दबाएं। फॉक्सी आपकी कक्षा और विषय के अनुसार जवाब देगा।' },
       { q: 'What are the learning modes?', qHi: 'लर्निंग मोड कौन-कौन से हैं?', a: 'Foxy has 6 modes: 📖 Learn (step-by-step lessons), ✏️ Practice (problem solving), ⚡ Quiz (test yourself), ❓ Doubt (clear confusion), 🔄 Revise (quick review), and 📝 Notes (summary notes). Switch between them using the pills below the subject selector.', aHi: '6 मोड हैं: 📖 सीखो, ✏️ अभ्यास, ⚡ क्विज़, ❓ डाउट, 🔄 रिवीज़, और 📝 नोट्स।' },
@@ -48,7 +48,7 @@ const FAQ_CATEGORIES = [
     items: [
       { q: 'How does the XP system work?', qHi: 'XP सिस्टम कैसे काम करता है?', a: 'You earn XP (Experience Points) for every learning activity — chatting with Foxy, completing quizzes, reviewing flashcards, and maintaining streaks. 500 XP = 1 Level up. XP is tracked per subject.', aHi: 'हर लर्निंग एक्टिविटी से XP (अनुभव अंक) मिलते हैं — फॉक्सी से चैट, क्विज़, फ्लैशकार्ड रिव्यू, और स्ट्रीक बनाए रखने से। 500 XP = 1 लेवल अप।' },
       { q: 'What are streaks?', qHi: 'स्ट्रीक क्या है?', a: 'Your streak counts consecutive days of learning. Study at least once per day to maintain it. A 7-day streak earns bonus XP. If you miss a day, the streak resets — but your XP and mastery are never lost.', aHi: 'आपकी स्ट्रीक लगातार पढ़ाई के दिन गिनती है। रोज़ कम से कम एक बार पढ़ें। 7 दिन की स्ट्रीक पर बोनस XP मिलता है।' },
-      { q: 'How is mastery calculated?', qHi: 'मास्टरी कैसे कैलकुलेट होती है?', a: 'We use Bayesian Knowledge Tracing — an AI model that estimates what you truly know based on your answers. Mastery levels: Not Started → Developing → Familiar → Proficient → Mastered. You can lose mastery if you forget (that\'s why reviews matter!).', aHi: 'हम Bayesian Knowledge Tracing का उपयोग करते हैं — एक AI मॉडल जो आपके उत्तरों के आधार पर अनुमान लगाता है कि आप क्या जानते हैं।' },
+      { q: 'How is mastery calculated?', qHi: 'मास्टरी कैसे तय होती है?', a: 'Every question you answer updates how well we think you know that topic. The five levels are: Not Started → Beginner → Developing → Proficient → Mastered. If you stop practising a topic you can slip back a level — that\'s why reviews matter!', aHi: 'आपके हर जवाब से यह अपडेट होता है कि आप उस टॉपिक को कितना जानते हैं। पाँच स्तर हैं: Not Started (शुरू नहीं) → Beginner (शुरुआती) → Developing (सीख रहे) → Proficient (अच्छी पकड़) → Mastered (महारत)। अभ्यास छोड़ने पर स्तर नीचे भी जा सकता है — इसीलिए रिव्यू ज़रूरी हैं!' },
       { q: 'Where can I see my leaderboard rank?', qHi: 'लीडरबोर्ड रैंक कहाँ देखें?', a: 'Tap the 🏆 Rankings icon from Quick Actions or the More menu. You can see weekly, monthly, and all-time rankings. Compete in olympiads and competitions for special badges!', aHi: 'Quick Actions या More मेनू से 🏆 Rankings आइकन टैप करें। साप्ताहिक, मासिक और ऑल-टाइम रैंकिंग देखें।' },
     ],
   },
@@ -82,7 +82,7 @@ const FAQ_CATEGORIES = [
     id: 'billing' as const, icon: '💳', label: 'Billing & Plans', labelHi: 'बिलिंग और योजना', color: '#D97706',
     items: [
       { q: 'How much does Alfanumrik cost?', qHi: 'अल्फान्यूमरिक की कीमत कितनी है?', a: 'Alfanumrik offers a free trial so you can experience AI-powered learning. After the trial, affordable plans are available — designed to cost less than a single tuition class. Every rupee goes into better AI, more content, and better learning outcomes for students.', aHi: 'Alfanumrik एक फ्री ट्रायल देता है ताकि आप AI-powered learning अनुभव कर सकें। ट्रायल के बाद, किफ़ायती प्लान उपलब्ध हैं — एक ट्यूशन क्लास से भी कम कीमत में।' },
-      { q: 'What plans are available?', qHi: 'कौन से प्लान उपलब्ध हैं?', a: 'We offer plans designed for Indian families. All plans include Foxy, adaptive quizzes, spaced repetition, and progress tracking. Visit the pricing section or contact us for current plan details.', aHi: 'हम भारतीय परिवारों के लिए डिज़ाइन किए गए प्लान पेश करते हैं। सभी प्लान में Foxy, एडैप्टिव क्विज़, स्पेस्ड रिपिटिशन और प्रगति ट्रैकिंग शामिल है।' },
+      { q: 'What plans are available?', qHi: 'कौन से प्लान उपलब्ध हैं?', a: 'We offer plans designed for Indian families. All plans include Foxy, adaptive quizzes, review reminders, and progress tracking. Visit the pricing section or contact us for current plan details.', aHi: 'हम भारतीय परिवारों के लिए डिज़ाइन किए गए प्लान पेश करते हैं। सभी प्लान में Foxy, एडैप्टिव क्विज़, रिव्यू रिमाइंडर और प्रगति ट्रैकिंग शामिल है।' },
     ],
   },
   {
@@ -290,7 +290,15 @@ export default function HelpPage() {
         }
         break;
       case 'reset-password':
-        router.push('/');
+        // A signed-in student changes their password from Settings (which also
+        // offers the "email me a reset link" fallback). A signed-out visitor
+        // needs the login screen's "Forgot Password?" flow. `/auth/reset` is
+        // NOT a valid target from here — it is the *set-a-new-password* screen
+        // and requires the one-time session minted by the emailed link, so a
+        // direct visit renders "this link has expired or is invalid".
+        // This control used to `router.push('/')`, dumping the student on the
+        // marketing homepage.
+        router.push(isLoggedIn ? '/settings' : '/login');
         break;
       case 'email':
         if (typeof window !== 'undefined') window.open('mailto:support@alfanumrik.com?subject=Support Request - Alfanumrik', '_blank');

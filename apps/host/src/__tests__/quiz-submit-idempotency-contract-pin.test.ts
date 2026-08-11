@@ -103,9 +103,34 @@ describe('SLC-8 pin: /api/quiz/submit enforces Idempotency-Key + passes it to th
     expect(route.replace(/\s+/g, ' ')).toMatch(/status:\s*400/);
   });
 
-  it('passes p_idempotency_key into submit_quiz_results_v2', () => {
+  // R9 (2026-08-11): this used to pin `p_idempotency_key: idempotencyKey` —
+  // the raw CLIENT header. That pinned the DEFECT. The header is unbound to
+  // `sessionId`, so two different client keys on one session were two legal
+  // rows under `quiz_sessions_idempotency_key_uniq (student_id,
+  // idempotency_key)` → two gradings → double XP (P2), and the resume /
+  // `/today` already-graded gates (which look the SESSION ID up in that same
+  // column) stopped matching. The route now derives the grading key from the
+  // session via `resolveGradingIdempotencyKey`. Behavioural proof lives in
+  // src/__tests__/api/quiz-submit-session-bound-idempotency.test.ts.
+  it('passes a SESSION-derived p_idempotency_key into submit_quiz_results_v2', () => {
     const flat = route.replace(/\s+/g, ' ');
-    expect(flat).toMatch(/rpc\(\s*['"]submit_quiz_results_v2['"][\s\S]*p_idempotency_key:\s*idempotencyKey/);
+    expect(flat).toMatch(/rpc\(\s*['"]submit_quiz_results_v2['"][\s\S]*p_idempotency_key:\s*gradingKey/);
+    // The grading key comes from the session id, not the request header.
+    expect(flat).toMatch(
+      /const gradingKey = resolveGradingIdempotencyKey\(\s*body\.sessionId\s*,\s*idempotencyKey\s*\)/,
+    );
+  });
+
+  it('never forwards the raw client header as the grading key', () => {
+    const flat = route.replace(/\s+/g, ' ');
+    expect(flat).not.toMatch(/p_idempotency_key:\s*idempotencyKey/);
+  });
+
+  it('looks the cached replay row up under the SAME session-derived key', () => {
+    // If this SELECT used the header key while the INSERT used the session id,
+    // a genuine in-flight retry would 503 instead of replaying.
+    const flat = route.replace(/\s+/g, ' ');
+    expect(flat).toMatch(/\.eq\(\s*['"]idempotency_key['"]\s*,\s*gradingKey\s*\)/);
   });
 
   it('runs as a passthrough while ff_server_only_quiz_submit is OFF (cutover not complete)', () => {

@@ -1288,80 +1288,154 @@ export function classifyImageText(ocrText: string, subject?: string): ImageAnaly
 }
 
 // ─── Monthly Report Metrics ─────────────────────────────────
+//
+// CONTRACT (Phase 6 / Risk R4 — "omit, don't invent"): every field below is
+// nullable wherever the underlying evidence can be absent, and `null` means
+// "we don't know", NOT "zero". Callers must render an explicit
+// insufficient-evidence state for a null — never a plausible-looking default.
+//
+// What changed and why:
+//   • `predictedScore` / `syllabusCompletionPct` are now null unless a REAL
+//     exam blueprint is passed in. The sole caller (/reports) used to fabricate
+//     one — one fake chapter per bloom_progression row, `marksWeightage: 10`
+//     each, `totalMarks: 80` for every subject and grade — and the resulting
+//     board-mark forecast was rendered to students as "Predicted Score / 80".
+//   • `retentionScore` is renamed `recentQuizAveragePct`, because that is
+//     literally what it computes: the mean of the last RECENT_QUIZ_WINDOW quiz
+//     `score_percent` values. It never measured retention, and it was rendered
+//     under a "7-Day Retention" dial. `recentQuizCount` ships with it so the UI
+//     can name the window truthfully ("last 2 quizzes", not "last 5").
+//   • `accuracyTrend` accepts and preserves `null` for a week with no quizzes.
+//     The caller used to zero-fill those weeks, drawing a 0% bar for a week the
+//     student simply didn't study.
+//   • `improvements` / `achievements` are machine CODES, not English prose.
+//     The engine used to assemble sentences ("Focus on: …") that were rendered
+//     under bilingual headings, so Hindi users got English — a P7 violation.
+//     Words now belong to the UI; the engine only says which insight applies.
+//
+// P1/P2 are untouched: no score or XP arithmetic lives in this function.
+
+/** Number of most-recent quiz scores averaged into `recentQuizAveragePct`. */
+export const RECENT_QUIZ_WINDOW = 5;
+
+export type ReportInsightCode =
+  // improvements
+  | 'focus_weak_areas'
+  | 'increase_consistency'
+  | 'work_on_speed'
+  // achievements
+  | 'high_overall_mastery'
+  | 'consistent_study_habit'
+  | 'multiple_areas_mastered';
+
+export interface ReportInsight {
+  code: ReportInsightCode;
+  /** Labels the insight refers to (subject codes, chapter titles…). Raw, never prose. */
+  areas?: string[];
+}
 
 export interface MonthlyReportData {
-  conceptMasteryPct: number;
-  retentionScore: number;
-  weakChapters: string[];
-  strongChapters: string[];
-  accuracyTrend: number[]; // last 4 weeks
-  timeEfficiency: number; // questions per minute
-  predictedScore: number;
-  syllabusCompletionPct: number;
+  /** Mean of the supplied mastery rows, 0-100. `null` when there are none. */
+  conceptMasteryPct: number | null;
+  /** Mean `score_percent` of the last `recentQuizCount` quizzes. `null` when none. */
+  recentQuizAveragePct: number | null;
+  /** How many quizzes `recentQuizAveragePct` actually covers (0-RECENT_QUIZ_WINDOW). */
+  recentQuizCount: number;
+  /** Labels (as supplied by the caller) below / above the mastery thresholds. */
+  weakAreas: string[];
+  strongAreas: string[];
+  /** One entry per week; `null` = the student took no quizzes that week. */
+  accuracyTrend: Array<number | null>;
+  /** Questions per minute. `null` when no study time was logged. */
+  timeEfficiency: number | null;
+  /** Only from a real blueprint. `null` when none was supplied. */
+  predictedScore: number | null;
+  /** The blueprint's total marks, echoed so the UI never hardcodes a denominator. */
+  predictedScoreMaxMarks: number | null;
+  /** Only from a real blueprint. `null` when none was supplied. */
+  syllabusCompletionPct: number | null;
   studyConsistencyPct: number;
   totalStudyMinutes: number;
   totalQuestionsAttempted: number;
-  improvementAreas: string[];
-  achievements: string[];
+  improvements: ReportInsight[];
+  achievements: ReportInsight[];
 }
 
 export function computeMonthlyReportMetrics(params: {
-  masteries: Array<{ mastery: number; topic: string }>;
+  masteries: Array<{ mastery: number; label: string }>;
   quizScores: number[];
-  weeklyAccuracies: number[];
+  weeklyAccuracies: Array<number | null>;
   totalMinutes: number;
   totalQuestions: number;
   daysActive: number;
   daysInMonth: number;
-  chapters: ExamChapter[];
-  totalMarks: number;
+  /**
+   * A REAL exam blueprint (per-chapter marks weightage from `exam_chapters`).
+   * Omit it when none exists — `predictedScore` and `syllabusCompletionPct`
+   * then come back `null` instead of being invented from placeholder marks.
+   */
+  chapters?: ExamChapter[];
+  /** Total marks of that blueprint. Required alongside `chapters`. */
+  totalMarks?: number;
 }): MonthlyReportData {
-  const { masteries, quizScores, weeklyAccuracies, totalMinutes, totalQuestions, daysActive, daysInMonth, chapters, totalMarks } = params;
+  const {
+    masteries, quizScores, weeklyAccuracies, totalMinutes, totalQuestions,
+    daysActive, daysInMonth, chapters, totalMarks,
+  } = params;
 
   const avgMastery = masteries.length > 0
     ? masteries.reduce((a, m) => a + m.mastery, 0) / masteries.length
-    : 0;
+    : null;
 
-  const weakChapters = masteries.filter(m => m.mastery < 0.5).map(m => m.topic).slice(0, 5);
-  const strongChapters = masteries.filter(m => m.mastery >= 0.8).map(m => m.topic).slice(0, 5);
+  const weakAreas = masteries.filter(m => m.mastery < 0.5).map(m => m.label).slice(0, 5);
+  const strongAreas = masteries.filter(m => m.mastery >= 0.8).map(m => m.label).slice(0, 5);
 
-  const retentionScore = quizScores.length > 0
-    ? quizScores.slice(-5).reduce((a, s) => a + s, 0) / Math.min(5, quizScores.length)
-    : 0;
+  const recentQuizzes = quizScores.slice(-RECENT_QUIZ_WINDOW);
+  const recentQuizCount = recentQuizzes.length;
+  const recentQuizAveragePct = recentQuizCount > 0
+    ? Math.round(recentQuizzes.reduce((a, s) => a + s, 0) / recentQuizCount)
+    : null;
 
-  const timeEfficiency = totalMinutes > 0 ? totalQuestions / totalMinutes : 0;
+  const timeEfficiency = totalMinutes > 0
+    ? Math.round((totalQuestions / totalMinutes) * 100) / 100
+    : null;
   const studyConsistencyPct = Math.round((daysActive / Math.max(1, daysInMonth)) * 100);
 
-  const coveredCount = chapters.filter(ch => ch.studentMastery > 0).length;
-  const syllabusCompletionPct = chapters.length > 0
-    ? Math.round((coveredCount / chapters.length) * 100)
-    : 0;
+  // A blueprint is only usable when it has chapters AND a marks total.
+  const hasBlueprint = Array.isArray(chapters) && chapters.length > 0
+    && typeof totalMarks === 'number' && totalMarks > 0;
 
-  const predicted = predictExamScore(chapters, totalMarks);
+  const predictedScore = hasBlueprint ? predictExamScore(chapters, totalMarks).predicted : null;
+  const syllabusCompletionPct = hasBlueprint
+    ? Math.round((chapters.filter(ch => ch.isCovered).length / chapters.length) * 100)
+    : null;
 
-  const improvements: string[] = [];
-  if (weakChapters.length > 0) improvements.push(`Focus on: ${weakChapters.slice(0, 2).join(', ')}`);
-  if (studyConsistencyPct < 60) improvements.push('Increase study consistency');
-  if (timeEfficiency < 0.5) improvements.push('Work on speed and accuracy');
+  const improvements: ReportInsight[] = [];
+  if (weakAreas.length > 0) improvements.push({ code: 'focus_weak_areas', areas: weakAreas.slice(0, 2) });
+  if (studyConsistencyPct < 60) improvements.push({ code: 'increase_consistency' });
+  // Only claim a speed problem when speed was actually measured.
+  if (timeEfficiency !== null && timeEfficiency < 0.5) improvements.push({ code: 'work_on_speed' });
 
-  const achievements: string[] = [];
-  if (avgMastery > 0.8) achievements.push('High overall mastery');
-  if (studyConsistencyPct > 80) achievements.push('Consistent study habit');
-  if (strongChapters.length > 3) achievements.push('Multiple chapters mastered');
+  const achievements: ReportInsight[] = [];
+  if (avgMastery !== null && avgMastery > 0.8) achievements.push({ code: 'high_overall_mastery' });
+  if (studyConsistencyPct > 80) achievements.push({ code: 'consistent_study_habit' });
+  if (strongAreas.length > 3) achievements.push({ code: 'multiple_areas_mastered', areas: strongAreas });
 
   return {
-    conceptMasteryPct: Math.round(avgMastery * 100),
-    retentionScore: Math.round(retentionScore),
-    weakChapters,
-    strongChapters,
+    conceptMasteryPct: avgMastery === null ? null : Math.round(avgMastery * 100),
+    recentQuizAveragePct,
+    recentQuizCount,
+    weakAreas,
+    strongAreas,
     accuracyTrend: weeklyAccuracies,
-    timeEfficiency: Math.round(timeEfficiency * 100) / 100,
-    predictedScore: predicted.predicted,
+    timeEfficiency,
+    predictedScore,
+    predictedScoreMaxMarks: hasBlueprint ? totalMarks : null,
     syllabusCompletionPct,
     studyConsistencyPct,
     totalStudyMinutes: totalMinutes,
     totalQuestionsAttempted: totalQuestions,
-    improvementAreas: improvements,
+    improvements,
     achievements,
   };
 }

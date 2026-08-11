@@ -9,7 +9,7 @@ import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import {
   BLOOM_CONFIG, BLOOM_LEVELS,
-  type BloomLevel, type CognitiveLoadState,
+  type BloomLevel,
 } from '@alfanumrik/lib/cognitive-engine';
 import { shareResult, quizShareMessage } from '@alfanumrik/lib/share';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
@@ -103,7 +103,9 @@ interface QuizResultsProps {
   responses: Response[];
   isHi: boolean;
   quizMode: 'practice' | 'cognitive' | 'exam';
-  cogLoad: CognitiveLoadState;
+  // `cogLoad` was dropped from this contract with the fatigue readout (R5).
+  // The scorecard renders nothing derived from cognitive load, so accepting the
+  // state here would only be an invitation to leak a raw scalar again.
   selectedSubject: string | null;
   studentName: string;
   timer: number;
@@ -157,7 +159,6 @@ export default function QuizResults({
   responses,
   isHi,
   quizMode,
-  cogLoad,
   selectedSubject,
   studentName,
   timer,
@@ -1065,14 +1066,12 @@ export default function QuizResults({
                   );
                 })}
               </div>
-              {cogLoad.fatigueScore > 0.3 && (
-                <div className="mt-3 pt-3 border-t flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
-                  <span className="text-sm">😮‍💨</span>
-                  <span className="text-[10px] text-[var(--text-3)]">
-                    {isHi ? `थकान स्कोर: ${Math.round(cogLoad.fatigueScore * 100)}%` : `Fatigue detected: ${Math.round(cogLoad.fatigueScore * 100)}%`}
-                  </span>
-                </div>
-              )}
+              {/* R5 (2026-08-11) — "Fatigue detected: 47%" / "थकान स्कोर: 47%" was
+                  REMOVED, not renamed. `fatigueScore` is an internal
+                  cognitive-load scalar with no student-actionable meaning: a
+                  child cannot do anything differently because a number said 47.
+                  The computation is untouched — this was a display-only
+                  deletion. Do not re-add a raw percentage here. */}
             </Card>
           </div>
         )}

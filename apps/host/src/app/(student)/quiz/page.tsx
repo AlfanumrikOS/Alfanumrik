@@ -2338,11 +2338,15 @@ export default function QuizPage() {
                       </span>
                     );
                   })()}
-                  {quizMode === 'cognitive' && cogLoad.fatigueScore > 0.4 && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>
-                      {isHi ? 'थकान' : 'Fatigue'} {Math.round(cogLoad.fatigueScore * 100)}%
-                    </span>
-                  )}
+                  {/* R5 (2026-08-11) — the mid-quiz "Fatigue 47%" chip was REMOVED,
+                      not renamed. `fatigueScore` is an internal cognitive-load
+                      scalar; a percentage of it is not something a Class 6-12
+                      student can act on, and showing it mid-question invites
+                      self-doubt with no remedy. The COMPUTATION is untouched
+                      (`cogLoad.fatigueScore` still drives `fatigue_detected` on
+                      the session row and the existing cognitive pause prompt
+                      further down, which offers an actual action: take a break).
+                      Display only was deleted. Do not re-add a raw percentage. */}
                   {jeeNeetMode && (student?.grade === '11' || student?.grade === '12') && (() => {
                     const tag = getExamTag(q);
                     return (
@@ -2834,7 +2838,6 @@ export default function QuizPage() {
           }
           isHi={isHi}
           quizMode={quizMode}
-          cogLoad={cogLoad}
           selectedSubject={selectedSubject}
           studentName={student!.name}
           timer={timer}

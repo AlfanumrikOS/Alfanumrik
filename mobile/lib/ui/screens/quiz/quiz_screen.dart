@@ -19,10 +19,19 @@ import '../../widgets/quiz_question_widgets.dart';
 /// [assignmentId] only decide what auto-starts on entry and are threaded
 /// through to [QuizNotifier.startQuiz] exactly like the existing manual
 /// subject-picker tap already does.
+///
+/// R8 (2026-08-11) adds [initialBoardYear] on the same terms: it is the PYQ
+/// board-paper hint from the `/pyq` launcher, already range-validated by the
+/// router. It is a question-SELECTION hint only and touches nothing in the
+/// scoring path (P1-P4 stay entirely server-side).
 class QuizScreen extends ConsumerStatefulWidget {
   final String? initialSubject;
   final String? initialChapter;
   final int? initialCount;
+
+  /// PYQ board-paper year from `/quiz?...&year=`. Null for every non-PYQ
+  /// launch. Never affects grading — see [QuizNotifier.startQuiz].
+  final int? initialBoardYear;
   final String? assignmentId;
 
   const QuizScreen({
@@ -30,6 +39,7 @@ class QuizScreen extends ConsumerStatefulWidget {
     this.initialSubject,
     this.initialChapter,
     this.initialCount,
+    this.initialBoardYear,
     this.assignmentId,
   });
 
@@ -54,6 +64,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
               subject: subject,
               chapterTitle: widget.initialChapter,
               count: widget.initialCount ?? 10,
+              boardYear: widget.initialBoardYear,
               assignmentId: widget.assignmentId,
             );
       });
