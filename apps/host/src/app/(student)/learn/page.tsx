@@ -7,13 +7,21 @@
  * This page IS the "Learn" tab destination. Students pick a subject, see all
  * chapters, and tap any chapter to go to /learn/[subject]/[chapter].
  *
- * Plan-based subject gating:
- *   free (tier 0)      → 2 subjects (first N in grade order)
- *   starter (tier 1)   → 4 subjects
- *   pro / unlimited    → all subjects
+ * Subject gating is DATA-DRIVEN, never assumed here. The grid renders whatever
+ * `useAllowedSubjects` → `/api/student/subjects` reports as unlocked/locked,
+ * which resolves from `grade_subject_map` ∩ `plan_subject_access`.
  *
- * Locked subjects are shown greyed out with an upgrade CTA — they are never
- * hidden, which helps students understand what upgrading unlocks.
+ * As of migration 20260814000018 no B2C plan gates on subject count at all:
+ * `subscription_plans.max_subjects` is NULL on all four plans and
+ * `plan_subject_access` grants every subject code to every plan, free included.
+ * In practice `lockedSubjects` is therefore empty and the locked cards plus the
+ * "Unlock N more subjects" strip below do not render. Those branches are kept
+ * because the gate is a server answer, not a constant — this header previously
+ * asserted "free → 2 subjects / starter → 4 subjects / pro → all subjects",
+ * which had become simply untrue.
+ *
+ * When a subject IS locked it is shown greyed out with an upgrade CTA rather
+ * than hidden, so a student can see what exists.
  */
 
 import { useState, useEffect, useMemo } from 'react';

@@ -14,6 +14,15 @@ import s from './welcome-v3.module.css';
  *
  * P11-adjacent copy rule: every rupee figure comes from
  * `@alfanumrik/lib/plans` PRICING — zero hardcoded price literals here.
+ *
+ * SUBJECT COUNT IS NOT A DIFFERENTIATOR (corrected 2026-08-11). These cards
+ * read "2 subjects" / "4 subjects + STEM Lab" / "All subjects + STEM Lab" down
+ * the tiers. Migration 20260814000018 made that false: `max_subjects` is NULL
+ * on all four plans and `plan_subject_access` grants all five subject codes to
+ * every plan, free included. The product is Mathematics and Science only, so
+ * the subject line is now IDENTICAL on every card and STEM Lab — which really
+ * is tier-gated — is stated on its own.
+ * Pinned by apps/host/src/__tests__/plan-subject-count-copy-guard.test.ts.
  */
 
 const CHECK = (
@@ -46,7 +55,7 @@ const TEASER_PLANS: TeaserPlan[] = [
     features: [
       { en: '5 Foxy chats / day', hi: 'प्रतिदिन 5 फ़ॉक्सी चैट' },
       { en: '5 quizzes / day', hi: 'प्रतिदिन 5 क्विज़' },
-      { en: '2 subjects', hi: '2 विषय' },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल' },
     ],
   },
   {
@@ -60,7 +69,8 @@ const TEASER_PLANS: TeaserPlan[] = [
     features: [
       { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: '20 quizzes / day', hi: 'प्रतिदिन 20 क्विज़' },
-      { en: '4 subjects + STEM Lab', hi: '4 विषय + STEM लैब' },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल' },
+      { en: 'STEM Lab', hi: 'STEM लैब' },
     ],
   },
   {
@@ -75,7 +85,8 @@ const TEASER_PLANS: TeaserPlan[] = [
     features: [
       { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: 'Unlimited quizzes', hi: 'असीमित क्विज़' },
-      { en: 'All subjects + STEM Lab', hi: 'सभी विषय + STEM लैब' },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल' },
+      { en: 'STEM Lab', hi: 'STEM लैब' },
     ],
   },
   {
@@ -89,7 +100,8 @@ const TEASER_PLANS: TeaserPlan[] = [
     features: [
       { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: 'Unlimited quizzes', hi: 'असीमित क्विज़' },
-      { en: 'All subjects + STEM Lab', hi: 'सभी विषय + STEM लैब' },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल' },
+      { en: 'STEM Lab', hi: 'STEM लैब' },
     ],
   },
 ];

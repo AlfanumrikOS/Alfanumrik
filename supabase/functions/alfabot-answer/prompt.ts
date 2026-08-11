@@ -135,33 +135,67 @@ export const ALFABOT_OPENAI_CONFIG = {
  * restate it in its own words and the post-processor flags any pricing claim
  * not present here as `pricing_unbacked`.
  *
- * Cold-start safe: const string, no I/O. Length is ~700 tokens.
+ * Cold-start safe: const string, no I/O. Length is ~800 tokens.
  *
  * Authored verbatim from `docs/alfabot/knowledge-base.md` sections:
  *   - pricing-plans (canonical, audience: parent + school)
  *   - safety-privacy-dpdpa (canonical, audience: all)
  *   - refusal-policy (canonical, audience: all)
  *   - contact (informational)
+ *
+ * ⚠️ That "authored verbatim from the KB" mirror is now MACHINE-ENFORCED.
+ * `apps/host/src/__tests__/contract/alfabot-prompt-mirror.test.ts`, describe
+ * block `ALFABOT_CORE_CONTEXT ↔ knowledge-base parity`, pins the load-bearing
+ * claims (EN + HI), the ₹-amount set, and EN/HI symmetry against the KB
+ * pricing-plans section, and forbids any subject-count claim in either
+ * language. Edit the KB and this constant in the SAME PR.
+ *
+ * Corrected 2026-08-11: this constant is injected into EVERY turn (unlike the
+ * KB, which is RAG-retrieved and audience-filtered) and prompt rule 2 orders
+ * the model to quote it verbatim — so the per-tier subject-count claims it
+ * used to carry (four in each language, attached to Pro / Starter /
+ * Unlimited / Explorer) were asserted to every visitor on every turn. The
+ * product is Mathematics and Science only, and migration 20260814000018 left
+ * `max_subjects` NULL on all four plans with 5 `plan_subject_access` rows
+ * each — every plan, free Explorer included, grants both subjects, so
+ * subject count is not a differentiator at all. The tiers differ on depth
+ * (Foxy chats, quizzes/day, STEM Lab, analytics, support) and nothing else.
+ * Prices are UNCHANGED (P11-adjacent, REG-65).
  */
 export const ALFABOT_CORE_CONTEXT = `[PRICING — pricing-plans, canonical, quote verbatim]
-EN: Three transparent tiers. Pro: ₹699 per month — our most popular family
-plan. Covers unlimited Foxy chats, unlimited quizzes, all seven subjects,
-STEM Lab, advanced analytics, the Sunday parent letter, bilingual experience.
-Starter: ₹299 per month — 4 subjects, unlimited Foxy chats, 20 quizzes/day,
-STEM Lab. Unlimited: ₹1,099 per month — unlimited Foxy chats and quizzes,
-all subjects, priority support. Every plan starts free on the Explorer tier
-(5 Foxy chats/day, 5 quizzes/day, 2 subjects) — no credit card required.
+EN: Three transparent tiers for families. Pro: ₹699 per month — our most
+popular family plan. Covers unlimited Foxy chats, unlimited quizzes, STEM Lab,
+advanced analytics, the Sunday parent letter, bilingual experience.
+Starter: ₹299 per month — unlimited Foxy chats, 20 quizzes/day, STEM Lab.
+Unlimited: ₹1,099 per month — unlimited Foxy chats and quizzes, priority
+support. Every plan starts free on the Explorer tier (5 Foxy chats/day,
+5 quizzes/day) — no credit card required.
+We teach Mathematics and Science only. Mathematics and Science are included on
+every tier, free Explorer included: no subject sits behind a paywall and
+subjects are never a paid upgrade. Grades 6 to 10 study Maths and Science;
+grades 11 and 12 study Maths plus Physics, Chemistry and Biology, presented
+together as one Science group. The tiers differ on depth — Foxy chats, quizzes
+per day, STEM Lab, analytics and support — never on which subjects your child
+can open.
 No franchise fees, no ads. Cancel anytime, one tap, no questions. Cancellation takes effect at end of current billing month,
 access until that date. School/B2B plans: 30 to 3,000 seats — contact for
 quote.
-HI: तीन पारदर्शी tiers। Pro: ₹699 per month — सबसे लोकप्रिय पारिवारिक योजना।
-इसमें असीमित Foxy चैट, असीमित quizzes, सातों विषय, STEM Lab, advanced
+HI: परिवारों के लिए तीन पारदर्शी tiers। Pro: ₹699 per month — सबसे लोकप्रिय
+पारिवारिक योजना। इसमें असीमित Foxy चैट, असीमित quizzes, STEM Lab, advanced
 analytics, रविवार का अभिभावक पत्र, द्विभाषी अनुभव शामिल हैं। Starter: ₹299
-per month — 4 विषय, असीमित Foxy चैट और रोज़ 20 quizzes, STEM Lab। Unlimited:
-₹1,099 per month — असीमित Foxy chats और quizzes, सभी विषय, priority support।
-हर योजना की शुरुआत मुफ़्त Explorer से (रोज़ 5 Foxy chats, 5 quizzes, 2 विषय) —
-no credit card required। कोई franchise fees नहीं, कोई विज्ञापन नहीं। Cancel
-anytime, one tap, no questions.
+per month — असीमित Foxy चैट, रोज़ 20 quizzes, STEM Lab। Unlimited:
+₹1,099 per month — असीमित Foxy chats और quizzes, priority support।
+हर योजना की शुरुआत मुफ़्त Explorer से (रोज़ 5 Foxy chats, 5 quizzes) —
+no credit card required।
+हम केवल गणित और विज्ञान पढ़ाते हैं। गणित और विज्ञान हर tier में शामिल हैं, मुफ़्त
+Explorer में भी — कोई विषय paywall के पीछे नहीं है और विषय कभी paid upgrade नहीं
+हैं। कक्षा 6 से 10 में गणित और विज्ञान; कक्षा 11 और 12 में गणित के साथ भौतिकी,
+रसायन और जीवविज्ञान, जो एक ही Science समूह के रूप में मिलते हैं। Tiers का फ़र्क़
+गहराई में है — Foxy चैट, रोज़ के quizzes, STEM Lab, analytics और support — इसमें
+कभी नहीं कि बच्चा कौन-से विषय खोल सकता है।
+कोई franchise fees नहीं, कोई विज्ञापन नहीं। Cancel
+anytime, one tap, no questions. Cancellation takes effect at end of current billing month —
+उस तारीख़ तक access बना रहता है।
 School/B2B plans: 30 to 3,000 seats — contact for quote.
 
 [SAFETY/DPDPA — safety-privacy-dpdpa, canonical]

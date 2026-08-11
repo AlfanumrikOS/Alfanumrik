@@ -91,7 +91,7 @@ describe('pre-rollout checklist — individual checks', () => {
     expect(r.pass, `${r.name}: ${r.detail}`).toBe(true);
   });
 
-  it('quiz page has 5 shuffle_map push sites (P1 fix)', () => {
+  it('every quiz-page response construction stamps `shuffle_map: null` (P1 fix)', () => {
     const r = checkQuizPushSites();
     expect(r.pass, `${r.name}: ${r.detail}`).toBe(true);
   });

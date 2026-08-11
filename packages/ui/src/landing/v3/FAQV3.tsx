@@ -38,8 +38,15 @@ const FAQS = [
     qHi: 'कौन-कौन सी योजनाएँ हैं? क्या कोई छुपे हुए शुल्क हैं?',
     // REG-65 pins "₹699" verbatim. Unlimited corrected ₹1,499 → ₹1,099
     // (matches PRICING.unlimited.monthly; CEO-confirmed copy fix).
-    aEn: 'Four plans. Explorer is free forever — 5 Foxy chats and 5 quizzes a day across 2 subjects, no card required. Starter is ₹299/month — unlimited Foxy chats, 20 quizzes, 4 subjects, STEM Lab. Pro is ₹699/month — unlimited Foxy chats, unlimited quizzes, all subjects, STEM Lab, parent and teacher dashboards. Unlimited is ₹1,099/month — everything in Pro with no daily caps. All paid plans come with a **7-day money-back guarantee**. No hidden fees, no franchise costs, no premium-content tier. Cancel anytime, one tap, no questions asked.',
-    aHi: 'चार योजनाएँ। Explorer हमेशा मुफ्त है — प्रतिदिन 5 Foxy चैट और 5 क्विज़ (2 विषय), कोई कार्ड नहीं चाहिए। Starter ₹299/माह — असीमित Foxy चैट, 20 क्विज़, 4 विषय, STEM लैब। Pro ₹699/माह — असीमित Foxy चैट, असीमित क्विज़, सभी विषय, STEM लैब, अभिभावक और शिक्षक डैशबोर्ड। Unlimited ₹1,099/माह — Pro की सब सुविधाएँ, कोई दैनिक सीमा नहीं। सभी सशुल्क योजनाओं पर **7-दिन की मनी-बैक गारंटी**। कोई छुपे शुल्क नहीं, कोई अतिरिक्त बिक्री नहीं।',
+    // SUBJECT-COUNT COPY FIX (2026-08-11): this answer used to gate subjects by
+    // tier — "across 2 subjects" (Explorer), "4 subjects" (Starter), "all
+    // subjects" (Pro). Migration 20260814000018 made all three false:
+    // max_subjects is NULL on every plan and plan_subject_access grants all
+    // five codes to every plan. Because this array is ALSO the source of the
+    // FAQPage JSON-LD below, the false tiering was being cached off-site in
+    // search results. Not one rupee figure changed in this edit.
+    aEn: 'Four plans, and every one of them includes both subjects we teach — Mathematics and Science. Explorer is free forever — 5 Foxy chats and 5 quizzes a day, no card required. Starter is ₹299/month — unlimited Foxy chats, 20 quizzes a day, STEM Lab. Pro is ₹699/month — unlimited Foxy chats, unlimited quizzes, STEM Lab, parent and teacher dashboards. Unlimited is ₹1,099/month — everything in Pro with no daily caps. All paid plans come with a **7-day money-back guarantee**. No hidden fees, no franchise costs, no premium-content tier. Cancel anytime, one tap, no questions asked.',
+    aHi: 'चार योजनाएँ, और हर एक में हमारे दोनों विषय शामिल हैं — गणित और विज्ञान। Explorer हमेशा मुफ्त है — प्रतिदिन 5 Foxy चैट और 5 क्विज़, कोई कार्ड नहीं चाहिए। Starter ₹299/माह — असीमित Foxy चैट, रोज़ 20 क्विज़, STEM लैब। Pro ₹699/माह — असीमित Foxy चैट, असीमित क्विज़, STEM लैब, अभिभावक और शिक्षक डैशबोर्ड। Unlimited ₹1,099/माह — Pro की सब सुविधाएँ, कोई दैनिक सीमा नहीं। सभी सशुल्क योजनाओं पर **7-दिन की मनी-बैक गारंटी**। कोई छुपे शुल्क नहीं, कोई अतिरिक्त बिक्री नहीं।',
   },
   {
     qEn: 'Does Foxy work in Hindi? My child is more comfortable in Hindi than English.',
@@ -50,8 +57,8 @@ const FAQS = [
   {
     qEn: 'Is there a free trial? Do I need a credit card to start?',
     qHi: 'क्या मुफ़्त ट्रायल है? शुरू करने के लिए क्या क्रेडिट कार्ड चाहिए?',
-    aEn: 'Yes — the Explorer plan is permanently free, no card needed. Your child gets 5 Foxy chats and 5 quizzes every day across 2 subjects. If you upgrade to a paid plan and are not satisfied within the first 7 days, we refund you in full — no questions asked. We only ask for payment when you decide the product is worth it.',
-    aHi: 'हाँ — Explorer प्लान हमेशा के लिए मुफ्त है, कार्ड नहीं चाहिए। आपके बच्चे को प्रतिदिन 2 विषयों में 5 Foxy चैट और 5 क्विज़ मिलते हैं। अगर आप सशुल्क प्लान लेने के बाद पहले 7 दिनों में संतुष्ट नहीं हैं, तो हम पूरा पैसा वापस करते हैं — बिना कोई प्रश्न पूछे।',
+    aEn: 'Yes — the Explorer plan is permanently free, no card needed. Your child gets 5 Foxy chats and 5 quizzes every day, in both Mathematics and Science. If you upgrade to a paid plan and are not satisfied within the first 7 days, we refund you in full — no questions asked. We only ask for payment when you decide the product is worth it.',
+    aHi: 'हाँ — Explorer प्लान हमेशा के लिए मुफ्त है, कार्ड नहीं चाहिए। आपके बच्चे को प्रतिदिन 5 Foxy चैट और 5 क्विज़ मिलते हैं, गणित और विज्ञान दोनों में। अगर आप सशुल्क प्लान लेने के बाद पहले 7 दिनों में संतुष्ट नहीं हैं, तो हम पूरा पैसा वापस करते हैं — बिना कोई प्रश्न पूछे।',
   },
   {
     qEn: 'My child already attends 3 tuition classes. How does Alfanumrik fit in?',
