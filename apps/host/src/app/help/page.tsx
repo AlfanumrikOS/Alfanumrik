@@ -10,6 +10,12 @@ import {
   categoryRequiresReference,
   referenceEntityTypeForCategory,
 } from '@alfanumrik/lib/support/ticket-categories';
+import {
+  supportSlaLine,
+  supportSlaFull,
+  supportFirstResponseText,
+  supportCoverageText,
+} from '@alfanumrik/lib/support/response-sla';
 
 /* ══════════════════════════════════════════════════════════════
    HELP & SUPPORT — Alfanumrik Support Center
@@ -423,10 +429,11 @@ export default function HelpPage() {
             <span className="text-xl">📝</span>
             <div className="text-left flex-1">
               <div className="text-sm font-bold">{isHi ? 'सपोर्ट टिकट भेजें' : 'Submit a Support Ticket'}</div>
-              {/* No SLA number here on purpose: response time depends on operator
-                  staffing, which is an ops decision, not a code constant. Do not
-                  reintroduce "within 24 hours" until ops publishes a real SLA. */}
-              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण दें, हम जल्द से जल्द जवाब देंगे' : 'Describe your issue and we\'ll get back to you as soon as we can'}</div>
+              {/* SLA copy comes from @alfanumrik/lib/support/response-sla — the
+                  ONLY place the numbers live (CEO-set). Never inline them here;
+                  never show the promise without the coverage window beside it. */}
+              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण दें' : 'Describe your issue'}</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{supportSlaLine(isHi)}</div>
             </div>
           </button>
 
@@ -592,8 +599,8 @@ export default function HelpPage() {
               <div className="text-center mb-4">
                 <span className="text-3xl">📝</span>
                 <h3 className="text-base font-bold mt-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'सपोर्ट टिकट' : 'Support Ticket'}</h3>
-                {/* Truthful, no SLA commitment — see the note on the home-card copy. */}
-                <p className="text-xs" style={{ color: 'var(--text-3)' }}>{isHi ? 'हम जल्द से जल्द जवाब देंगे' : 'We\'ll get back to you as soon as we can'}</p>
+                {/* Promise + coverage window, both from response-sla.ts. */}
+                <p className="text-xs" style={{ color: 'var(--text-3)' }}>{supportSlaFull(isHi)}</p>
               </div>
 
               <div className="space-y-3">
@@ -715,9 +722,11 @@ export default function HelpPage() {
             <div className="text-5xl mb-4">✅</div>
             <h3 className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'टिकट भेज दिया गया!' : 'Ticket Submitted!'}</h3>
             <p className="text-sm mb-6" style={{ color: 'var(--text-3)', maxWidth: 320, margin: '0 auto' }}>
-              {/* No SLA number (ops owns the real one). Points at the in-product
-                  thread, which is where replies now actually land. */}
-              {isHi ? 'हमने आपकी समस्या दर्ज कर ली है। हमारी टीम जल्द से जल्द जवाब देगी — जवाब आपको "मेरे टिकट" में दिखेगा।' : 'We\'ve received your issue. Our team will reply as soon as we can — you\'ll see the response under "My Tickets".'}
+              {/* Promise + window from response-sla.ts, then a pointer at the
+                  in-product thread, which is where replies actually land. */}
+              {isHi
+                ? `हमने आपकी समस्या दर्ज कर ली है। हमारी टीम पहला जवाब ${supportFirstResponseText(true)} भेजेगी (${supportCoverageText(true)}) — जवाब आपको "मेरे टिकट" में दिखेगा।`
+                : `We've received your issue. Our team will send the first reply ${supportFirstResponseText(false)} (${supportCoverageText(false)}) — you'll see it under "My Tickets".`}
             </p>
             <div className="flex flex-col gap-2 items-center">
               <Button onClick={() => { setView('home'); setTicketCategory(''); setTicketSubject(''); setTicketMessage(''); }}>

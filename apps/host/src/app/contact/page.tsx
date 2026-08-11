@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { supportSlaLine, supportSlaFull } from '@alfanumrik/lib/support/response-sla';
 
 /**
  * /contact — public contact form.
@@ -18,6 +19,21 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
  *
  * P7: fully bilingual via AuthContext.isHi (the page was English-only).
  * P13: nothing from the form is logged client-side.
+ *
+ * ── RESPONSE-TIME COPY (2026-08-11) ────────────────────────────────────────
+ * This page publishes the SAME SLA as the authenticated surfaces, sourced from
+ * @alfanumrik/lib/support/response-sla. It is a guest/marketing form, but the
+ * submission is NOT a different thing: it POSTs to /api/support/ticket, which
+ * writes a row into the same `support_tickets` table, worked by the same
+ * operator console and the same rota as a student's ticket. A guest promise
+ * that is faster than the logged-in one would be a promise the rota cannot
+ * separately honour.
+ *
+ * It previously carried THREE unmeasured, mutually inconsistent numbers
+ * ("24-48 hours" twice, plus a tiered block promising 12-24h for school
+ * partnerships and same-business-day for technical support). Tiered,
+ * per-category SLAs are explicitly out until first-response time is measured —
+ * one promise, one number. Do not reintroduce a tier here.
  */
 
 /** The drift this comment used to describe is CLOSED (same batch). The intake
@@ -155,8 +171,8 @@ function ContactForm({ isHi }: { isHi: boolean }) {
         </h3>
         <p style={{ fontSize: 14, color: 'var(--text-2, #444)', lineHeight: 1.7 }}>
           {isHi
-            ? 'संपर्क करने के लिए धन्यवाद। हम 24-48 घंटों में आपसे संपर्क करेंगे।'
-            : 'Thank you for reaching out. We’ll get back to you within 24-48 hours.'}
+            ? `संपर्क करने के लिए धन्यवाद। ${supportSlaFull(true)}`
+            : `Thank you for reaching out. ${supportSlaFull(false)}`}
         </p>
       </div>
     );
@@ -316,8 +332,8 @@ export default function ContactPage() {
                 badge={isHi ? 'संदेश भेजें' : 'SEND A MESSAGE'}
                 title={isHi ? 'हमें लिखें' : 'Write to Us'}
                 subtitle={isHi
-                  ? 'फ़ॉर्म भरें — हम 24-48 घंटों में आपसे संपर्क करेंगे।'
-                  : 'Fill out the form and we’ll get back to you within 24-48 hours.'}
+                  ? `फ़ॉर्म भरें। ${supportSlaLine(true)}`
+                  : `Fill out the form. ${supportSlaLine(false)}`}
               />
               <ContactForm isHi={isHi} />
             </div>
@@ -340,23 +356,18 @@ export default function ContactPage() {
                   <strong>Cusiosense Learning India Pvt. Ltd.</strong><br />
                   {isHi ? 'DPIIT मान्यता प्राप्त स्टार्टअप' : 'DPIIT Recognised Startup'}
                 </p>
+                {/* One published promise for every enquiry that reaches this
+                    page. The per-channel tiers that used to live here
+                    (school partnerships 12-24h, technical support same-day)
+                    were never measured and are gone: the schools@ and
+                    partnerships@ inboxes now carry NO published commitment
+                    rather than an invented one. If ops wants a separate
+                    partnership SLA it is a CEO decision, set the same way this
+                    one was, and it belongs in response-sla.ts — not inline. */}
                 <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border, #e5e0d8)' }}>
                   <p style={{ fontSize: 12, color: 'var(--text-3, #888)', lineHeight: 1.7 }}>
-                    {isHi ? (
-                      <>
-                        प्रतिक्रिया समय:<br />
-                        सामान्य प्रश्न: 24-48 घंटे<br />
-                        स्कूल साझेदारी: 12-24 घंटे<br />
-                        तकनीकी सहायता: उसी कार्यदिवस
-                      </>
-                    ) : (
-                      <>
-                        Response Times:<br />
-                        General queries: 24-48 hours<br />
-                        School partnerships: 12-24 hours<br />
-                        Technical support: Same business day
-                      </>
-                    )}
+                    <strong>{isHi ? 'प्रतिक्रिया समय' : 'Response time'}</strong><br />
+                    {supportSlaFull(isHi)}
                   </p>
                 </div>
               </div>

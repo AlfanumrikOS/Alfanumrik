@@ -7,12 +7,40 @@ must not be guessed at by any agent or contributor.
 
 ---
 
-## OD-A — There is no support SLA. Someone has to set one.
+## OD-A — Support SLA
 
-**Status: OPEN. Blocks putting any response-time number back into product copy.**
-**Decision owner: the user (CEO). This is a staffing question, not a code question.**
+**Status: DECIDED 2026-08-11 by the user (CEO). Implemented in product copy.**
 
-### What changed
+### The decision
+
+| | Value |
+|---|---|
+| Published first-response promise | **within 2 business days** |
+| Coverage window | **Monday–Saturday, 10:00–19:00 IST**, excluding Indian public holidays |
+| Internal target | 1 business day — **NOT published**, it is a goal, not a commitment |
+| Per-category / per-plan SLAs | **None.** One promise, one number, until first-response time is measured |
+
+**Single source of truth: `packages/lib/src/support/response-sla.ts`.** The
+numbers appear nowhere else — every surface composes its copy from
+`supportSlaLine()` / `supportSlaFull()` / `supportFirstResponseText()` /
+`supportCoverageText()`. Changing the promise is a one-line edit in that file.
+Do not inline a number in a page, and do not add a per-category entry.
+
+The promise is never rendered without the coverage window beside it (a student
+filing at 21:00 on a Saturday has to be able to work out when to expect a
+reply), and nothing derives a countdown or deadline timestamp from it.
+
+Surfaces carrying the promise: `/help` (ticket card, ticket-form header,
+post-submit confirmation), `/support` (list), `/support/[ticket_id]` (only on a
+genuinely-empty thread), `/support/new`, `/parent/support` (creation toast +
+"Need Help?" card), `/contact`.
+
+**Still open for ops:** items 3 and 4 below (rota, breach path) and the
+measurement gap — the promise is now published but first-response time is still
+not computed anywhere. Closing that gap is the next ops step, not a blocker on
+the copy.
+
+### Historical record — why it was blocked until now
 
 `/help` used to promise students, in three places:
 
@@ -25,16 +53,10 @@ was `support_tickets.admin_notes`, which is internal and was never shown to the
 requester. A student could file a ticket and could not, mechanically, receive a
 written answer.
 
-The frontend agent removed the "24 hours" claim from all three sites. The copy is
-now **SLA-free** and truthful:
-
-| Site (`apps/host/src/app/help/page.tsx`) | Current copy |
-|---|---|
-| Ticket card subtitle (~:426) | "Describe your issue and we'll get back to you as soon as we can" |
-| Ticket form header (~:592) | "We'll get back to you as soon as we can" |
-| Post-submit confirmation (~:715) | "We've received your issue. Our team will reply as soon as we can — you'll see the response under 'My Tickets'." |
-
-Each site carries an inline comment saying not to reintroduce a number.
+The frontend agent removed the "24 hours" claim from all three sites, leaving the
+copy SLA-free until a promise could actually be kept. Those three sites now carry
+the decided 2-business-day promise + coverage window (see the table at the top of
+this file), composed from `response-sla.ts`.
 
 ### What now exists (so an SLA is finally *possible*)
 
@@ -60,31 +82,36 @@ The reply channel landed the same day:
 - **UI** — student thread at `/support/[ticket_id]`; operator console in
   `apps/host/src/app/internal/admin/_components/SupportTab.tsx`.
 
-### The decision required
+### What the decision answered, and what it did not
 
-**A real SLA is a function of operator staffing, which only the user can answer.**
-Do not invent a number. Nothing in the codebase should be treated as implying one.
+The four questions this section originally posed:
 
-To close this, the user needs to state:
+1. **Target first-response time** — ANSWERED: 2 business days, published;
+   uniform across every ticket category and plan tier.
+2. **Coverage window** — ANSWERED: Mon–Sat, 10:00–19:00 IST, excluding Indian
+   public holidays.
+3. **Who is on rota** — STILL OPEN (ops).
+4. **What happens on breach** — STILL OPEN (ops), and currently unmeasurable.
 
-1. **Target first-response time** — and whether it differs by ticket category
-   (`packages/lib/src/support/ticket-categories.ts`) or by plan tier.
-2. **Coverage window** — business hours IST? 7 days? Which holidays?
-3. **Who is on rota** — which humans watch the operator console, and how often.
-4. **What happens on breach** — escalation path, and whether breach is even
-   measurable yet (see the instrumentation gap below).
+### Standing rules
 
-### Rules until it is decided
-
-- **Do not** reintroduce "24 hours" or any other number into student-facing copy,
-  English or Hindi.
-- Any number that goes back in must be one the rota can actually hit, and must be
-  bilingual (P7).
-- Ops must be able to *measure* it before it is promised. There is currently no
-  first-response-time metric: `support_ticket_replies` now makes it computable
+- **Never inline a response-time number in product copy**, English or Hindi.
+  The only place any of these values may exist is
+  `packages/lib/src/support/response-sla.ts`. A page that hardcodes "2 business
+  days" is a defect even while the number happens to be correct — it is how the
+  five surfaces drifted apart last time.
+- **Never publish the internal target.** It is deliberately absent from
+  `response-sla.ts`; adding it there would leak it into product copy.
+- **No per-category or per-plan SLAs** until first-response time is measured.
+- **No countdown or deadline UI.** A visible timer that runs out is worse than
+  no promise; `response-sla.ts` exposes copy only, never a target `Date`.
+- **The measurement gap is still open and is now the priority.** There is no
+  first-response-time metric: `support_ticket_replies` makes it computable
   (first `author_role IN ('operator','admin')` reply minus ticket `created_at`),
-  but nothing computes or surfaces it yet. Adding it to the super-admin support
-  metrics is an ops follow-up, and should land **before** a public SLA, not after.
+  but nothing computes or surfaces it. The promise is live without a way to tell
+  whether it is being met — surfacing this in the super-admin support metrics is
+  the next ops task, and the conservative 2-day figure was chosen precisely
+  because of this gap. Tighten it only once the data supports it.
 
 ---
 

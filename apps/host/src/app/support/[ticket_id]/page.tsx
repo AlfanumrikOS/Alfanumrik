@@ -43,6 +43,7 @@ import {
   Badge,
   Avatar,
 } from '@alfanumrik/ui/ui';
+import { supportSlaLine } from '@alfanumrik/lib/support/response-sla';
 
 /* ── Contract types (mirror /api/support/tickets/[id]) ────────── */
 const REPLY_MAX_LENGTH = 5000;
@@ -553,6 +554,19 @@ export default function SupportTicketDetailPage() {
                     {isHi
                       ? 'जब हमारी टीम जवाब देगी, वह यहीं दिखेगा। आप नीचे और जानकारी जोड़ सकते हैं।'
                       : 'When our team replies, it will appear here. You can add more details below.'}
+                  </p>
+                  {/* Published SLA — shown ONLY on the genuinely-empty thread,
+                      which is exactly the student waiting to hear back. Not on
+                      the repliesUnavailable error state (a promise beside a
+                      failure reads as an excuse), and not once replies exist.
+                      Numbers live only in @alfanumrik/lib/support/response-sla
+                      (CEO-set). No countdown is derived from them. */}
+                  <p
+                    className="text-[11px] mt-2"
+                    style={{ color: 'var(--text-3)' }}
+                    data-testid="support-sla-note"
+                  >
+                    {supportSlaLine(isHi)}
                   </p>
                 </div>
               )}

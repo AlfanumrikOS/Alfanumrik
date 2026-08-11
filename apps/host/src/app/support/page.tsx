@@ -24,6 +24,7 @@ import {
   Badge,
 } from '@alfanumrik/ui/ui';
 import { CardListSkeleton } from '@alfanumrik/ui/Skeleton';
+import { supportSlaLine } from '@alfanumrik/lib/support/response-sla';
 
 /* ── Types matching backend contract ─────────────────────────── */
 type TicketCategory = 'bug' | 'billing' | 'content' | 'account' | 'other';
@@ -221,6 +222,18 @@ export default function SupportListPage() {
             {toast.message}
           </div>
         )}
+
+        {/* Published SLA — one unobtrusive line. A student looking at an open
+            ticket is exactly who needs to know when to expect a reply. Copy and
+            numbers come from @alfanumrik/lib/support/response-sla (CEO-set);
+            never inline them, and never render a countdown off them. */}
+        <p
+          className="text-[11px] px-1"
+          style={{ color: 'var(--text-3)' }}
+          data-testid="support-sla-note"
+        >
+          {supportSlaLine(isHi)}
+        </p>
 
         {/* Loading */}
         {swrLoading && !data && (
