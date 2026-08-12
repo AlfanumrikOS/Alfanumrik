@@ -29,11 +29,11 @@
 > If you are reading a pre-2026-08-11 copy of this runbook, or an operator note
 > that says "apply `…0014`", it means `…0020`.
 
-> **Purpose**: apply migrations `20260814000007` … `20260814000023` — the Phase 3
+> **Purpose**: apply migrations `20260814000007` … `20260814000024` — the Phase 3
 > subject restriction (M1, M2, M4, M5, M6, M3, M8), the `quiz_session_shuffles`
 > answer-key column ACL, the `session_mode` column, the P0 written-answer
-> scoring fix, and the keyless-serving / server-side-P6 change — and *prove* each
-> one landed.
+> scoring fix, the keyless-serving / server-side-P6 change, and the
+> `subjects_allowed` reconciliation — and *prove* each one landed.
 >
 > **Owner**: ops (this runbook + the gate script). **Executor**: architect or ops
 > with prod DB access. **Approver**: user (CEO) — `20260814000018` is a pricing
@@ -58,6 +58,17 @@
 > | `20260814000021` | `quiz_session_shuffles_session_mode` | ✅ **APPLIED** |
 > | `20260814000022` | `submit_quiz_v2_written_answer_scoring` | ✅ **APPLIED** |
 > | `20260814000023` | `keyless_question_serving_and_server_side_p6` | 🔴 **STILL PENDING — deliberately held. See PF-9.** |
+> | `20260814000024` | `reconcile_subjects_allowed_with_plan_reality` | 🔴 **STILL PENDING — landed on disk 2026-08-12, after the apply. Cannot ship alone; see below.** |
+>
+> **`…0024` is pending for a coupling reason, not a risk reason.** It sets the
+> dead `subscription_plans.subjects_allowed` column to `-1` on every plan and
+> changes **no price** (it carries its own in-transaction tamper assertion that
+> aborts if any price, Razorpay id, `plan_code` or `is_active` moves). On its own
+> it would be safe to ship today. But it sorts **above** `…0023`, and
+> `supabase db push` cannot apply a subset — so any push that takes `…0024` takes
+> `…0023` with it, and `…0023` must not ship before the frontend deploys. **`…0024`
+> therefore inherits `…0023`'s hold.** To ship it earlier, stream its body alone
+> via STDIN (§3.2) and record the version afterwards.
 >
 > **🔴 R1 — the session-scoped answer-key leak — is CLOSED.** Proven by a
 > before/after anon-key probe whose *control* flipped, not merely by the absence
@@ -326,15 +337,21 @@ surface list and the open action.
 | — | `20260814000021_quiz_session_shuffles_session_mode.sql` | persists `session_mode`; exam sessions become non-resumable | quiz resume path |
 | — | `20260814000022_submit_quiz_v2_written_answer_scoring.sql` | **P0** — `submit_quiz_results_v2` scores written answers instead of aborting | *every* quiz containing a non-MCQ question |
 | K | `20260814000023_keyless_question_serving_and_server_side_p6.sql` | **SECURITY + P6** — removes `correct_answer_index` from three serving RPC payloads, adds the `question_bank_p6_valid()` predicate as a server-side filter, makes `start_quiz_session` the P6 checkpoint, adds `check_formative_answer()` | every question-serving path |
+| SA | `20260814000024_reconcile_subjects_allowed_with_plan_reality.sql` | **DATA HYGIENE, NOT PRICING** — sets `subscription_plans.subjects_allowed = -1` (this table's own unlimited sentinel) on every plan, so the column stops encoding the pre-`…0018` `free = 2` / `starter = 4` cap that no longer exists in any enforcement path; adds a `COMMENT ON COLUMN` marking it non-enforcing. Writes **exactly one column** and asserts in-transaction that **no price, Razorpay id, `plan_code` or `is_active` moved** | none at runtime — the column has **zero** readers (see below) |
 
 > **`…0023` was added by a concurrent agent *while this runbook was being
-> written*.** It was caught by the gate script's `ST-4` check ("no newer
-> `20260814*` migration has appeared outside this gate"), read in full, and
-> folded into Sections 1, 2, 4, 5 and 6 below. **`…0024` and later do not exist
-> on disk** as of the last check. Re-run `node
-> scripts/verify-20260814-migrations.mjs --offline` immediately before applying:
-> if `ST-4` warns, another migration has landed and this runbook is incomplete
-> until you read it and extend `MIGRATION_SET` in the script.
+> written*, and `…0024` was added by another one *after the 2026-08-11 apply*.**
+> Both were caught the same way and neither was found by reading the diff: the
+> gate script's `ST-4` warned ("no newer `20260814*` migration has appeared
+> outside this gate") and `ST-5` **failed**, taking the offline lane to exit 1
+> until the file was read in full and folded into `MIGRATION_SET`. That exit 1 is
+> the mechanism working, not a defect in it. **`…0025` and later do not exist on
+> disk** as of 2026-08-12. Re-run `node scripts/verify-20260814-migrations.mjs
+> --offline` immediately before applying: if `ST-4` warns or `ST-5` fails, another
+> migration has landed and this runbook is incomplete until you read it and extend
+> `MIGRATION_SET` + `PENDING_VERSIONS` in the script. **Do not weaken `ST-4`/`ST-5`
+> to quiet them** — a file outside `MIGRATION_SET` is *unverified*, not
+> verified-clean.
 
 ---
 
@@ -360,6 +377,12 @@ arbitrary, i.e. what breaks if you cherry-pick out of it.
                                          same P1 substrate, and 0023 replaces
                                          start_quiz_session, which 0022's written lane
                                          depends on.
+20260814000024  SA  subjects_allowed  ← MUST follow 0018 (it reconciles against the
+                                         max_subjects=NULL / all-five-grants reality
+                                         0018 establishes) and 20260620000800 (whose
+                                         razorpay_plan_id_quarterly column its tamper
+                                         guard snapshots). Independent of 0020-0023 —
+                                         but sorts above them, so db push drags them in.
 ```
 
 **`…0009` after `…0007` + `…0008`.** M4's repair is keyed on
@@ -424,6 +447,34 @@ Check 3's served-row `COUNT(*)` correct for mixed quizzes (`…0022:20-28`). **S
 both in the same release.** The migration alone leaves the pure-written case
 still broken.
 
+**`…0024` after `…0018`, and it CANNOT BE APPLIED ALONE via `db push`.** This is
+the whole of its scheduling story, so state it exactly:
+
+- **Why it must follow `…0018`.** `…0024` reconciles `subjects_allowed` against
+  the reality `…0018` created — `max_subjects = NULL` on every plan and all five
+  keep-set codes granted to every plan in `plan_subject_access`. Run before
+  `…0018` it would assert `-1` against a paywall that is still live, encoding a
+  false statement rather than removing one. `…0018` is already applied
+  (2026-08-11), so this ordering constraint is already satisfied.
+- **Second dependency: `20260620000800`.** `…0024`'s very first statement snapshots
+  `razorpay_plan_id_quarterly` into its `_plan_price_guard` temp table. If that
+  column is absent the migration errors there and rolls back cleanly — a wasted
+  push, not a half-apply. **PF-10 checks this for one query.**
+- **Why it is nevertheless PENDING.** `supabase db push` applies every unapplied
+  file at the migrations root in version order and **cannot apply a subset**.
+  `…0024` sorts *above* `…0023`, so pushing `…0024` pushes `…0023` too — and
+  `…0023` renders **empty quizzes in production** until the repointed frontend
+  deploys (PF-9). **`…0024` therefore inherits `…0023`'s hold.** It is not held
+  because it is dangerous; it is held because it is downstream of something that
+  is.
+- **If you need `…0024` before the frontend ships**, stream its body alone via
+  STDIN (§3.2) and record `20260814000024` in
+  `supabase_migrations.schema_migrations` afterwards. There is no reason to rush
+  this — the column it fixes has **zero runtime readers** (grepped repo-wide:
+  the only occurrences are the generated `database.types.ts`, the baseline column
+  definition, and `…0018`'s comment explaining why it was skipped), so the drift
+  it closes is a correctness-of-the-record problem, not a live defect.
+
 ---
 
 ## 2. Pre-flight — run every one of these BEFORE `db push`
@@ -446,6 +497,7 @@ still broken.
 > | **PF-7b chain-dep ledger rows** | 🔴 **NEVER VERIFIED** |
 > | PF-8 pricing copy staged | 🔴 **DID NOT HOLD** — see PF-8 |
 > | PF-9 `…0023` client half deployed | 🔴 **DID NOT HOLD** — `…0023` was held back instead; see PF-9 |
+> | PF-10 `…0024` guard columns exist | ⚪ **N/A on 2026-08-11** — `…0024` did not exist on disk yet; run it before the next push |
 >
 > **10 checks are UNVERIFIED, not passed.** Do not read this table as a pass with
 > caveats. The apply went ahead **without** PF-6, PF-7a and PF-7b, relying instead
@@ -467,7 +519,8 @@ read-only.
 
 ```bash
 export DB_URL="postgresql://postgres.${TARGET_PROJECT_REF}:${TARGET_DB_PASSWORD}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
-node scripts/verify-20260814-migrations.mjs --preflight      # runs PF-1..PF-8 below
+node scripts/verify-20260814-migrations.mjs --preflight      # runs PF-1..PF-7, PF-9, PF-10 below
+                                                            # (PF-8 is human-only — see its note)
 ```
 
 Or by hand:
@@ -480,11 +533,11 @@ SELECT version
  WHERE version IN ('20260814000007','20260814000008','20260814000009',
                    '20260814000010','20260814000011','20260814000018',
                    '20260814000019','20260814000020','20260814000021',
-                   '20260814000022','20260814000023')
+                   '20260814000022','20260814000023','20260814000024')
  ORDER BY version;
 ```
 
-> **Why an explicit list and not `BETWEEN '…0007' AND '…0023'`.** After the
+> **Why an explicit list and not `BETWEEN '…0007' AND '…0024'`.** After the
 > 2026-08-11 renumber this set is **non-contiguous** — there is nothing at
 > `…0012`-`…0017`, and those versions now belong to
 > `fix/ci-structural-defects`'s migrations. A range would report *those* as
@@ -959,6 +1012,33 @@ means the deployed body is not the one it was written against, and `CREATE OR
 REPLACE` would add an overload instead of replacing. This repo has been burned by
 exactly that twice (`20260702170000`, `20260729130000`). Stop and reconcile.
 
+### PF-10 — ⚪ every `subscription_plans` column `…0024` reads or writes exists — **NOT YET RUN**
+
+`…0024`'s very first statement is a `CREATE TEMP TABLE _plan_price_guard AS
+SELECT …` over the pricing columns, and its audit payload also reads
+`max_subjects`. A column missing from that list errors out at statement one.
+
+```sql
+SELECT c
+  FROM UNNEST(ARRAY['plan_code','price_monthly','price_yearly','price_display',
+                    'razorpay_plan_id','razorpay_plan_id_monthly',
+                    'razorpay_plan_id_quarterly','is_active','max_subjects',
+                    'subjects_allowed']) AS c
+ WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='subscription_plans'
+                      AND column_name = c);                  -- expect: 0 rows
+```
+
+**Expected**: **zero rows.** `razorpay_plan_id_quarterly` is the youngest of them
+(added by `20260620000800`) and so the likeliest absentee on a forked or older
+database; apply that migration first if it is listed.
+
+> **This is a convenience gate, not a safety gate** — unlike PF-6, a miss here
+> produces a clean transaction-wide abort, not a half-apply, because `…0024` is
+> wrapped `BEGIN; … COMMIT;`. It exists to save you a failed push. **Do not
+> "fix" a failure by removing a column from the migration's guard snapshot**: the
+> guard is the entire proof that `…0024` moved no price.
+
 ---
 
 ## 3. Apply
@@ -981,6 +1061,14 @@ exactly that twice (`20260702170000`, `20260729130000`). Stop and reconcile.
 > `supabase/migrations/` before the push so `db push` could not pick it up, and
 > restored unchanged afterwards. See PF-9 for why; see §4 `…0023` for what remains
 > unverified as a result.
+>
+> **Not applied — did not exist yet:** `20260814000024`, which landed on disk on
+> **2026-08-12**, after this apply. It is now also pending, and pending for a
+> *coupling* reason rather than a risk one — it sorts above `…0023` and `db push`
+> cannot apply a subset. **The same move-it-aside trick used for `…0023` will not
+> help here**: moving `…0024` aside does not release `…0023`. Either ship both
+> after the frontend deploys, or stream `…0024`'s body alone via §3.2. See §1 and
+> §4 `…0024`.
 >
 > **No staging rehearsal was performed**, contrary to §3.1's instruction below.
 > Recorded as a deviation, not a footnote.
@@ -1744,6 +1832,92 @@ probe for the client coupling. In a browser:
 > shipping every key in the page payload, but not zero, and it has **no
 > replay-lock** (unlike `check_quiz_answer`). Deferred to architect.
 
+### `20260814000024` — `subjects_allowed` reconciliation 💰 — 🔴 **NOT APPLIED; NONE OF THIS HAS RUN**
+
+> **`…0024` landed on disk on 2026-08-12, after the apply, and is PENDING for a
+> coupling reason** — it sorts above `…0023` and `db push` cannot apply a subset
+> (§1). Every check here (**SA-1 … SA-3**) is therefore **UNEXECUTED** and every
+> "expect" is derived from the migration source, never observed.
+>
+> **Do not run SA-1/SA-2 against production today.** They will fail, correctly:
+> `subjects_allowed` still reads `free = 2 | starter = 4 | pro = -1 |
+> unlimited = -1` there and no reconciliation audit row exists. A failure right
+> now is the expected state, not a defect.
+
+```sql
+-- SA-1 (blocking): every plan reads -1, the table's own unlimited sentinel.
+-- IS DISTINCT FROM, not <>, so a NULL-valued row is offending too — NULL is
+-- ambiguous with "not configured" and the column DEFAULT is 1, i.e. a cap of ONE.
+SELECT plan_code, subjects_allowed
+  FROM public.subscription_plans
+ WHERE subjects_allowed IS DISTINCT FROM -1
+ ORDER BY 1;                                                 -- expect: 0 rows
+
+-- SA-2 (blocking): exactly one reconciliation audit row, carrying the rollback
+-- payload. Guarded by NOT EXISTS on the action code, so "exactly 1" is the
+-- derivable post-state (same shape as M2-6, M3-4, M8-3).
+SELECT count(*)
+  FROM public.admin_audit_log
+ WHERE action = 'subscription_plans.subjects_allowed.reconciled'
+   AND details ? 'subjects_allowed_before';                  -- expect: 1
+
+-- SA-3 (ADVISORY, value-report): the pricing surface the migration asserts it
+-- did not touch. No pass/fail — read it and reconcile (see below).
+SELECT plan_code, price_monthly, price_yearly, price_display,
+       razorpay_plan_id, razorpay_plan_id_monthly, razorpay_plan_id_quarterly,
+       is_active
+  FROM public.subscription_plans
+ ORDER BY plan_code;
+```
+
+**SA-1 completes a coherence triangle, and all three legs must agree.**
+`…0018` left the plan row internally contradictory: `max_subjects = NULL`
+("unlimited") and five `plan_subject_access` grants, but `subjects_allowed` still
+encoding the pre-`…0018` `free = 2` / `starter = 4` cap. Read SA-1 **together
+with** the `…0018` checks already in this section:
+
+| Leg | Check | Expectation |
+|---|---|---|
+| grants | **M3-1** | exactly 5 `plan_subject_access` rows per plan |
+| selection cap | **M3-3** | `max_subjects IS NULL` on every plan |
+| entitlement counter | **SA-1** | `subjects_allowed = -1` on every plan |
+
+Any one of the three disagreeing means a plan row contradicts itself again.
+
+> **Anti-vacuity: read M3-0 alongside SA-1.** On a database where
+> `subscription_plans` has not been seeded there are no rows, so SA-1 passes with
+> nothing to check — correct, but not a pass on production. M3-0 (already in this
+> lane) is the guard that says at least one `plan_code` exists.
+
+**SA-2 is also the price-invariance proof — this is the important part.** The
+migration is a single `BEGIN; … COMMIT;` whose step-4b assertion compares every
+live pricing/identity column against a `_plan_price_guard` temp snapshot taken
+*before* the `UPDATE`, via `FULL OUTER JOIN` + `IS DISTINCT FROM` (so an added or
+deleted plan row is caught too, and NULL-valued columns compare correctly instead
+of silently passing). If anything moved, it `RAISE`s — **which rolls back the
+audit row SA-2 is looking for.** So a committed audit row *is* the post-hoc
+evidence that no price, Razorpay id, `plan_code` or `is_active` changed during
+the apply. It is the strongest such statement obtainable after the fact: the
+snapshot table is `ON COMMIT DROP`, so nothing else survives to compare against.
+
+**Why SA-3 is advisory and carries no expected values.** Neither this runbook nor
+the gate script hard-codes a price literal, for the same reason the migration
+refuses to (`…0024:118-127`): a hard-coded price turns the check into a landmine
+that fails on the next legitimate, CEO-approved price change. SA-3 prints the
+live surface so a human can compare it against the customer-facing copy — and
+that copy is a **known live discrepancy** since `…0018` shipped ahead of it
+(PF-8). **A mismatch SA-3 surfaces is a PF-8 finding, not a `…0024` failure.**
+
+> **What `…0024` does NOT do.** It does not change any entitlement, any price, or
+> anything a customer can buy or see. The live subject-count enforcement path is
+> `max_subjects` read by `set_student_subjects` (`IF v_max IS NOT NULL AND
+> v_count > v_max`), surfaced as the 422 `max_subjects_exceeded` — untouched, and
+> still unlimited exactly as `…0018` left it. `subjects_allowed` has **zero
+> runtime readers** (grepped repo-wide 2026-08-11: generated
+> `database.types.ts`, the baseline column definition, and `…0018`'s comment
+> explaining the skip). So there is no behavioural acceptance test for this
+> migration — there is no behaviour to test. SA-1..SA-3 are the whole of it.
+
 ---
 
 ## 5. Rollback
@@ -1993,6 +2167,43 @@ Recorded in the migration's own rollback note (`…0023:146-152`).
 is no reason to drop them, and dropping `check_formative_answer` would break the
 `/learn` Quick Check if its client half has shipped. Leave both in place.
 
+### 5.11 `20260814000024` — `subjects_allowed` reconciliation
+
+Compensating, single statement, and the rollback source is the migration's own
+audit row — the same audit-row-keyed discipline as `…0007` and `…0018`:
+
+```sql
+-- 1. Read the pre-change values (a plan_code → value JSONB object).
+SELECT details->'subjects_allowed_before'
+  FROM public.admin_audit_log
+ WHERE action = 'subscription_plans.subjects_allowed.reconciled';
+
+-- 2. Restore each plan from it.
+UPDATE public.subscription_plans sp
+   SET subjects_allowed = (b.value)::INT
+  FROM (SELECT key, value
+          FROM public.admin_audit_log l,
+               jsonb_each_text(l.details->'subjects_allowed_before')
+         WHERE l.action = 'subscription_plans.subjects_allowed.reconciled') b
+ WHERE sp.plan_code = b.key;
+```
+
+Then optionally restore the column comment (or drop it with
+`COMMENT ON COLUMN public.subscription_plans.subjects_allowed IS NULL`).
+
+⚠️ **There is no operational reason to roll this back, and one reason not to.**
+The column has zero runtime readers, so reverting changes no behaviour — it only
+puts the stale `free = 2` / `starter = 4` cap back into the row. If anything ever
+*starts* reading the column, that restored `2` silently reinstates exactly the
+free-tier limit `…0018` was written to remove. **If you are rolling back `…0018`
+itself, roll this back too** (the values become true again); otherwise leave it.
+
+> **If the audit row is missing, you cannot roll back from it.** The `NOT EXISTS`
+> guard means the row is written once; a `…0024` that aborted wrote no row *and*
+> made no change, so there is nothing to revert. A row that is absent on a
+> database where `subjects_allowed` already reads `-1` everywhere means someone
+> changed it out of band — reconcile before touching anything.
+
 ---
 
 ## 6. Discharging REG-380's `P` status — the 6 skipped live-DB probes
@@ -2101,7 +2312,8 @@ summary line) in the change ticket.
 supabase link --project-ref "$TARGET_PROJECT_REF" --password "$TARGET_DB_PASSWORD"
 export DB_URL="postgresql://postgres.${TARGET_PROJECT_REF}:${TARGET_DB_PASSWORD}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 
-# 1. pre-flight  (PF-1..PF-8; exits non-zero on any blocker)
+# 1. pre-flight  (PF-1..PF-7, PF-9, PF-10; exits non-zero on any blocker.
+#                 PF-8 is human-only — pricing copy — and lives in §2 alone)
 node scripts/verify-20260814-migrations.mjs --preflight
 psql "$DB_URL" -f docs/subject-restriction-teacher-impact.sql   # record would_be_left_with_zero
 
@@ -2143,11 +2355,16 @@ npx vitest run apps/host/src/__tests__/security/quiz-session-shuffles-answer-key
       `…0023` WAS HELD BACK and is still pending.** Client is committed but **not
       deployed**; applying `…0023` first = empty quizzes in production. Serving-
       function signature check also **not** run
-- [x] `ST-4` clean — no `20260814*` migration newer than `…0023` has appeared
-- [x] `ST-5` clean (**blocking**) — no `20260814*` migration exists outside this
-      gate at *any* version, including the `…0012`-`…0017` hole the renumber
-      left. A file there is another branch's, and is the collision this whole
-      renumber existed to prevent
+- [ ] PF-10 all ten `subscription_plans` guard columns present — ⚪ **NOT RUN**;
+      `…0024` did not exist on disk at the 2026-08-11 apply
+- [x] `ST-4` / `ST-5` clean as of **2026-08-12** — but note they were **NOT clean
+      in between**: `…0024` landed after the apply, `ST-4` warned, `ST-5` failed,
+      and the `--offline` lane exited **1** until `…0024` was read and folded into
+      `MIGRATION_SET` + `PENDING_VERSIONS`. That is the tripwire working. **Re-run
+      `--offline` immediately before any push** — a `20260814*` file outside the
+      gate at *any* version, including the `…0012`-`…0017` hole the renumber left,
+      is unverified, not verified-clean. A file in the hole is another branch's,
+      and is the collision this whole renumber existed to prevent
 - [ ] `subjects` snapshot taken (M1 rollback insurance, §3.2) — ⚠️ **not recorded
       as taken**; catalogue rollback source does not exist
 - [ ] Staging rehearsal done — 🔴 **NOT DONE.** Applied straight to production
@@ -2162,6 +2379,16 @@ npx vitest run apps/host/src/__tests__/security/quiz-session-shuffles-answer-key
 - [ ] K-5 checked in staging: MCQ quiz renders **and** submits (this is what a
       missing `…0023` client half breaks), payloads keyless, Quick Check works —
       **not done; blocked until `…0023` is applied to staging**
+- [ ] SA-1 every plan reads `subjects_allowed = -1` (read with M3-1 + M3-3 as the
+      coherence triangle, and with M3-0 as the anti-vacuity guard) — **not done;
+      `…0024` is pending.** It will fail on prod today, correctly
+- [ ] SA-2 exactly one `subscription_plans.subjects_allowed.reconciled` audit row
+      carrying `subjects_allowed_before` — **not done.** This row is both the
+      rollback source (§5.11) **and** the post-hoc proof that `…0024`'s
+      in-transaction price/Razorpay/`plan_code`/`is_active` tamper guard passed
+- [ ] SA-3 live pricing surface read and reconciled against the customer-facing
+      copy — **not done.** Advisory: a mismatch here is a **PF-8** finding, not a
+      `…0024` failure
 - [x] **R1 (session-scoped answer-key leak) CLOSED** — anon probe re-run
       identically before/after; the `question_id` control flipped `[]` → `42501`,
       proving `REVOKE ALL … FROM anon` executed

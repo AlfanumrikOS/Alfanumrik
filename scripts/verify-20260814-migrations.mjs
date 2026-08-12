@@ -2,7 +2,7 @@
 // scripts/verify-20260814-migrations.mjs
 //
 // Deploy gate for the `20260814*` migration block
-// (20260814000007-11 and 20260814000018-23 — NON-CONTIGUOUS; see the
+// (20260814000007-11 and 20260814000018-24 — NON-CONTIGUOUS; see the
 // MIGRATION_VERSIONS comment for why 0012-0017 are deliberately absent).
 //
 // Companion to docs/runbooks/2026-08-11-unapplied-migrations-20260814-apply.md.
@@ -11,21 +11,30 @@
 // somebody skims at 2am. (The runbook's FILENAME still says "unapplied" — that
 // is now historical, it names the day of the apply, not today's state.)
 //
-// ─── STATUS OF THE MIGRATIONS THIS VERIFIES — as of 2026-08-11 ──────────────
-// APPLIED TO PRODUCTION (project shktyoxqhundlvkiwguu), 10 of the 11 covered:
+// ─── STATUS OF THE MIGRATIONS THIS VERIFIES — as of 2026-08-12 ──────────────
+// APPLIED TO PRODUCTION (project shktyoxqhundlvkiwguu), 10 of the 12 covered:
 //   20260814000007-11  applied earlier
 //   20260814000018-22  applied 2026-08-11 via `supabase db push --db-url`, exit 0
 //
-// STILL PENDING — 20260814000023, and it is being held ON PURPOSE. It strips
-// correct_answer_index out of the serving RPC payloads. The repointed client
-// that no longer needs that field is COMMITTED BUT NOT DEPLOYED, so applying
-// 0023 first would fail the live client's P6 gate and render EMPTY QUIZZES in
-// production. It ships only after the frontend does.
+// STILL PENDING — TWO of them, 20260814000023 and 20260814000024, and neither
+// can be pushed on its own because `supabase db push` cannot apply a subset:
+//
+//   0023 is held ON PURPOSE. It strips correct_answer_index out of the serving
+//   RPC payloads. The repointed client that no longer needs that field is
+//   COMMITTED BUT NOT DEPLOYED, so applying 0023 first would fail the live
+//   client's P6 gate and render EMPTY QUIZZES in production. It ships only
+//   after the frontend does.
+//
+//   0024 is harmless on its own (it reconciles the dead
+//   subscription_plans.subjects_allowed column to -1 and changes NO price —
+//   see the SA-* checks), but it sorts ABOVE 0023, so a `db push` that takes
+//   0024 takes 0023 with it. 0024 therefore inherits 0023's hold: same
+//   frontend-first ordering, or stream 0024's body alone via STDIN (§3.2).
 //
 // Consequence for how you run this: the POST-APPLY lane (no flag) is now the
 // CORRECT lane for 0007-0022 — it measures a real database rather than a
 // hypothesis, and it has still never been run. `--preflight` is now meaningful
-// only for 0023 (PF-9) and for a fresh/staging database.
+// only for 0023 (PF-9), 0024 (PF-10) and for a fresh/staging database.
 //
 // ─── WHAT THE 2026-08-11 APPLY DID *NOT* ESTABLISH ──────────────────────────
 // Do not read "db push exit 0" as "verified clean". The preflight DB lane could
@@ -116,19 +125,38 @@ const MIGRATION_SET = [
   // this array is the gate's coverage boundary and a file outside it is
   // unverified, not verified-clean.
   //
-  // THE ONE STILL PENDING (2026-08-11). Held deliberately: it removes
+  // PENDING #1 (2026-08-11). Held deliberately: it removes
   // correct_answer_index from the serving RPC payloads, and the client that no
   // longer needs it is committed but NOT deployed. Push this before the
   // frontend ships and the live client's P6 gate rejects every question —
   // empty quizzes in production. Order is frontend deploy, THEN this.
   '20260814000023_keyless_question_serving_and_server_side_p6.sql',
+  // PENDING #2 (2026-08-12). Added by a concurrent agent AFTER this gate was
+  // written — caught exactly as the comment above predicts, by ST-4 (WARN) and
+  // ST-5 (FAIL, offline lane exit 1), then read in full and folded in here.
+  // That FAIL was correct and must not be silenced by weakening ST-4/ST-5;
+  // this array is the only place that makes it go quiet legitimately.
+  //
+  // What it does: sets subscription_plans.subjects_allowed = -1 (this table's
+  // own unlimited sentinel) on every plan, so the column stops encoding the
+  // pre-0018 free=2 / starter=4 subject cap that no longer exists in any
+  // enforcement path. NO PRICE CHANGES — it carries an in-transaction
+  // _plan_price_guard temp table + FULL OUTER JOIN / IS DISTINCT FROM tamper
+  // assertion that aborts the whole transaction if any price, Razorpay id,
+  // plan_code or is_active moved. Verified by SA-1..SA-3 below; PF-10 is its
+  // pre-flight.
+  //
+  // Cannot be shipped alone: it sorts ABOVE 0023, and `db push` cannot apply a
+  // subset, so pushing 0024 also pushes 0023 — which must not ship before the
+  // frontend deploys. It inherits 0023's hold.
+  '20260814000024_reconcile_subjects_allowed_with_plan_reality.sql',
 ];
 
 /**
  * The 14-digit version prefixes, DERIVED from MIGRATION_SET so the two cannot
  * drift apart. Used by PF-1.
  *
- * NOTE THE GAP — it is deliberate. This set is 0007-0011 then 0018-0023, with
+ * NOTE THE GAP — it is deliberate. This set is 0007-0011 then 0018-0024, with
  * NOTHING at 0012-0017. Those six versions were ours until 2026-08-11, when the
  * block was renumbered: `main` and `fix/ci-structural-defects` had landed
  * DIFFERENT files at the same four versions (0012-0015), and since
@@ -156,10 +184,15 @@ const MIGRATION_VERSIONS_SQL = MIGRATION_VERSIONS.map((v) => `'${v}'`).join(',')
  * about to push already being recorded); PF-1b reports the batch state without
  * being able to fail the run.
  *
- * When 0023 ships, move it out of PENDING_VERSIONS — leaving it here would make
- * PF-1 stop protecting the next push.
+ * When 0023 or 0024 ships, move it out of PENDING_VERSIONS — leaving it here
+ * would make PF-1 stop protecting the next push.
+ *
+ * 0024 was appended on 2026-08-12. It is listed PENDING not because it is risky
+ * on its own — it changes one dead column and asserts in-transaction that it
+ * moved no price — but because `db push` cannot apply a subset and it sorts
+ * ABOVE 0023, so any push that takes 0024 takes 0023 too.
  */
-const PENDING_VERSIONS = ['20260814000023'];
+const PENDING_VERSIONS = ['20260814000023', '20260814000024'];
 const APPLIED_VERSIONS = MIGRATION_VERSIONS.filter((v) => !PENDING_VERSIONS.includes(v));
 const APPLIED_VERSIONS_SQL = APPLIED_VERSIONS.map((v) => `'${v}'`).join(',');
 
@@ -189,6 +222,31 @@ const ACL_ALLOWLIST = [
 
 /** The two columns no client role may ever read. */
 const ANSWER_KEY_COLUMNS = ['correct_answer_index_snapshot', 'integrity_hash'];
+
+/**
+ * Every public.subscription_plans column 20260814000024 touches: the seven its
+ * _plan_price_guard tamper snapshot reads, plus max_subjects (read into the
+ * audit payload) and subjects_allowed (the ONE column it writes).
+ *
+ * razorpay_plan_id_quarterly is the youngest of them (added by 20260620000800)
+ * and is therefore the one most likely to be absent on an older or forked
+ * database — where its absence errors out the migration's very first statement.
+ */
+const PLAN_GUARD_COLUMNS = [
+  'plan_code', 'price_monthly', 'price_yearly', 'price_display',
+  'razorpay_plan_id', 'razorpay_plan_id_monthly', 'razorpay_plan_id_quarterly',
+  'is_active', 'max_subjects', 'subjects_allowed',
+];
+
+/**
+ * The pricing surface 20260814000024 asserts it did NOT move. Read-only; used
+ * by the advisory SA-3 report, never written.
+ */
+const PLAN_PRICE_COLUMNS = [
+  'plan_code', 'price_monthly', 'price_yearly', 'price_display',
+  'razorpay_plan_id', 'razorpay_plan_id_monthly', 'razorpay_plan_id_quarterly',
+  'is_active',
+];
 
 const SHUFFLES = 'public.quiz_session_shuffles';
 
@@ -438,6 +496,16 @@ const PREFLIGHT_CHECKS = [
         ? null
         : `expected ${SERVING_OVERLOAD_COUNT} overloads (rag 8-arg, v2 7-arg, get_quiz_questions 4-arg AND 5-arg, start_quiz_session 2-arg), got ${rows.length}: ${preview(rows, 8)}`,
     hint: '20260814000023 is a full-body CREATE OR REPLACE of each. A signature that does not match means the deployed body is not the one it was written against, and CREATE OR REPLACE would ADD an overload instead of replacing. This repo has been burned by exactly that twice (20260702170000, 20260729130000).',
+  },
+  {
+    id: 'PF-10', migration: '20260814000024', severity: 'blocking',
+    title: 'every subscription_plans column 20260814000024 reads or writes already exists',
+    sql: `SELECT c FROM UNNEST(ARRAY[${PLAN_GUARD_COLUMNS.map((c) => `'${c}'`).join(',')}]) AS c
+           WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_schema='public' AND table_name='subscription_plans'
+                                AND column_name = c)`,
+    expect: empty,
+    hint: "20260814000024's FIRST statement is `CREATE TEMP TABLE _plan_price_guard AS SELECT <these columns>` — a missing one errors there and rolls the whole transaction back, so this is a clean abort rather than a half-apply, but it is a wasted push you can avoid for one query. razorpay_plan_id_quarterly (20260620000800) is the youngest and the likeliest absentee on a forked or older database; apply that migration first. Do NOT drop a column from the guard's snapshot to make this pass — the guard is what proves the migration moved no price.",
   },
 ];
 
@@ -935,6 +1003,36 @@ const VERIFY_CHECKS = [
     expect: boolsAre(['t', 'f', 't']),
     hint: 'Column 1 is the critical one: if start_quiz_session stopped snapshotting the key, submit_quiz_results_v2 would have NOTHING to grade against and P1 would be silently broken for every quiz.',
   },
+
+  // ── 20260814000024 — subjects_allowed reconciliation (NO PRICE CHANGE) ─────
+  {
+    id: 'SA-1', migration: '20260814000024', severity: 'blocking',
+    title: 'every plan reads subjects_allowed = -1 (the unlimited sentinel)',
+    sql: `SELECT plan_code, subjects_allowed FROM public.subscription_plans
+           WHERE subjects_allowed IS DISTINCT FROM -1 ORDER BY 1`,
+    expect: empty,
+    hint: 'IS DISTINCT FROM, so a NULL-valued row is also offending — NULL is ambiguous with "not configured" and the column DEFAULT is 1, i.e. a cap of ONE. This is the third leg of the coherence triangle 20260814000018 left incomplete: M3-1 (exactly 5 grants per plan) + M3-3 (max_subjects IS NULL) + SA-1 (subjects_allowed = -1). Any one of the three disagreeing means a plan row contradicts itself. Anti-vacuity is already covered by M3-0 in this lane — on a database with no plan rows SA-1 passes with nothing to check, which is why M3-0 must be read alongside it.',
+  },
+  {
+    id: 'SA-2', migration: '20260814000024', severity: 'blocking',
+    title: 'exactly one reconciliation audit row, carrying the rollback payload — AND therefore proof the price guard passed',
+    sql: `SELECT count(*) FROM public.admin_audit_log
+           WHERE action = 'subscription_plans.subjects_allowed.reconciled'
+             AND details ? 'subjects_allowed_before'`,
+    expect: scalarIs(1),
+    hint: 'Two facts, one row. (1) Rollback: details->>\'subjects_allowed_before\' is a plan_code→value object written BEFORE the UPDATE and is the ONLY record of the pre-change values; the NOT EXISTS guard on the action code is what makes "exactly 1" derivable (same shape as M2-6, M3-4, M8-3). (2) P11: the migration is one BEGIN…COMMIT whose step-4b tamper assertion RAISEs — rolling back this very row — if any price, Razorpay id, plan_code or is_active differs from the _plan_price_guard snapshot taken before the UPDATE. So a committed row here IS the post-hoc evidence that no price moved during the apply. It is the strongest price-invariance statement obtainable after the fact: the snapshot table is ON COMMIT DROP, so nothing else survives to compare against.',
+  },
+  {
+    id: 'SA-3', migration: '20260814000024', severity: 'advisory',
+    title: 'the live pricing surface 20260814000024 asserts it did not touch',
+    sql: `SELECT ${PLAN_PRICE_COLUMNS.join(', ')}
+            FROM public.subscription_plans ORDER BY plan_code`,
+    expect: (rows) => {
+      if (rows.length === 0) return 'no subscription_plans rows — nothing to report (see M3-0)';
+      return `READ THESE AND RECONCILE → ${PLAN_PRICE_COLUMNS.join('/')}: ${preview(rows, 8)}`;
+    },
+    hint: 'Deliberately advisory and deliberately value-free: this script CANNOT prove price invariance after the fact (no price literal is hard-coded here, for the same reason the migration refuses to hard-code one — it would fail on the next legitimate CEO-approved price change). SA-2 carries the actual proof. This exists so the operator can eyeball the live prices against the customer-facing copy, which PF-8 records as a KNOWN LIVE DISCREPANCY since 20260814000018 shipped ahead of it. A mismatch here is a PF-8 finding, not a 20260814000024 failure.',
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1054,7 +1152,7 @@ function parseArgs() {
 
 function usage() {
   console.log(`
-verify-20260814-migrations — deploy gate for migrations 20260814000007..11 + ..18..23
+verify-20260814-migrations — deploy gate for migrations 20260814000007..11 + ..18..24
 Runbook: ${RUNBOOK}
 
   node scripts/verify-20260814-migrations.mjs              post-apply verification
@@ -1062,9 +1160,10 @@ Runbook: ${RUNBOOK}
   node scripts/verify-20260814-migrations.mjs --offline    static checks only (NOT a gate)
   node scripts/verify-20260814-migrations.mjs --json       machine-readable output
 
-As of 2026-08-11, ${APPLIED_VERSIONS.length} of these ${MIGRATION_VERSIONS.length} migrations are APPLIED to production
-(20260814000007-11, 20260814000018-22); only ${PENDING_VERSIONS.join(', ')} is still pending,
-held until the repointed client deploys. So POST-APPLY is the lane that matters
+As of 2026-08-12, ${APPLIED_VERSIONS.length} of these ${MIGRATION_VERSIONS.length} migrations are APPLIED to production
+(20260814000007-11, 20260814000018-22). Still pending: ${PENDING_VERSIONS.join(', ')}
+— 0023 is held until the repointed client deploys, and 0024 sorts above it, so a
+\`db push\` that takes 0024 takes 0023 too. So POST-APPLY is the lane that matters
 for 0007-0022 and has never been run — most of all WA-1, the retroactive form of
 the PF-7a overload check that the 2026-08-11 apply skipped.
 
@@ -1189,14 +1288,17 @@ function report(results, checks, lane, asJson, degradedReason) {
       (lane === 'PRE-FLIGHT' ? ' --preflight' : ''),
     );
     console.error(
-      `\nSTATE OF THE WORLD (2026-08-11) — ${APPLIED_VERSIONS.length} of the ` +
+      `\nSTATE OF THE WORLD (2026-08-12) — ${APPLIED_VERSIONS.length} of the ` +
       `${MIGRATION_VERSIONS.length} migrations this gate\n` +
       'covers ARE APPLIED TO PRODUCTION: 20260814000007-11 earlier, and\n' +
       '20260814000018-22 on 2026-08-11 via `supabase db push --db-url` (exit 0).\n' +
-      `Still pending, ON PURPOSE: ${PENDING_VERSIONS.join(', ')} — it strips\n` +
-      'correct_answer_index from the serving RPCs, and the client that no longer\n' +
-      'needs it is committed but NOT deployed. Pushing it first would fail the live\n' +
-      'client P6 gate and serve EMPTY QUIZZES.\n' +
+      `Still pending: ${PENDING_VERSIONS.join(', ')}.\n` +
+      '20260814000023 is held ON PURPOSE — it strips correct_answer_index from the\n' +
+      'serving RPCs, and the client that no longer needs it is committed but NOT\n' +
+      'deployed. Pushing it first would fail the live client P6 gate and serve\n' +
+      'EMPTY QUIZZES. 20260814000024 is benign on its own (one dead column set to\n' +
+      '-1, with an in-transaction assertion that no price moved) but sorts ABOVE\n' +
+      '0023, and `db push` cannot apply a subset — so it inherits the same hold.\n' +
       '\nSo these checks are not hypothetical any more: the POST-APPLY lane is the\n' +
       'right lane for 0007-0022, and it has still never been run against anything.\n' +
       '`db push` exiting 0 is not verification.\n' +

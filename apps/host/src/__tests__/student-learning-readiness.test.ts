@@ -32,56 +32,48 @@ const requiredArtifactIds = [
 ] as const;
 
 /**
- * ── Superseded manifest evidence ─────────────────────────────────────────
+ * ── Why there is no SUPERSEDED_EVIDENCE table here ────────────────────────
  *
  * The manifest's `evidence` strings are a PROXY: "this substring is still in
  * the artifact" stands in for "the artifact still does the thing". That proxy
  * rots the moment the artifact is legitimately re-baselined, and it can rot
  * while still looking authoritative.
  *
- * `pre-rollout-shuffle-map-check` rotted exactly that way. It pinned the
- * comment sentence `Our spec says 5` inside `scripts/pre-rollout-checklist.ts`
- * — i.e. it pinned an exact COUNT of `shuffle_map` push sites in the quiz
- * page. That count was the WEAKEST thing in the check it guarded: it was
- * silent about the VALUE (five sites writing `shuffle_map: buildLocalMap()`
- * would have satisfied it, which is precisely the P1/REG-51 defect the check
- * exists to prevent) and it broke on any honest new response construction.
- * Phase 4's session-resume path (b008c20c7) legitimately added a sixth; all
- * six write `null`. Commit 717265e6b turned the check into a property pin:
+ * `pre-rollout-shuffle-map-check` rotted exactly that way: it pinned the
+ * comment sentence `Our spec says 5` in `scripts/pre-rollout-checklist.ts`,
+ * i.e. an exact COUNT of `shuffle_map` push sites. That count was the WEAKEST
+ * thing in the check it guarded — silent about the VALUE (five sites writing
+ * `shuffle_map: buildLocalMap()` satisfied it, which is exactly the P1/REG-51
+ * defect the check exists to prevent) and broken by any honest new response
+ * construction. Commit 717265e6b re-based the check on the property instead:
  * `MIN_SHUFFLE_MAP_PUSH_SITES` is a FLOOR, plus an assertion that every
  * captured value is exactly `null`.
  *
- * So an entry here is NOT a skip. Three things happen instead, and all three
- * must hold:
+ * This file used to reconcile that here, via a `SUPERSEDED_EVIDENCE` table
+ * that asserted the stale snippet ABSENT, required a named replacement pin on
+ * disk, and — crucially — failed the day the manifest stopped declaring the
+ * snippet, demanding its own deletion. Ops fixed
+ * `scripts/student-learning-readiness.json` at source, that guard fired, and
+ * the table went with it. `git show 37e02a250` has the full mechanism if the
+ * situation ever recurs.
  *
- *   1. The superseded snippet is asserted ABSENT. If it ever reappears the
- *      artifact has been reverted, and this test fails demanding the entry be
- *      deleted — so the table cannot quietly outlive its reason.
- *   2. The named replacement pin must exist on disk, so the guarantee is
- *      re-homed rather than dropped.
- *   3. `ADDITIONAL_EVIDENCE` below re-pins the artifact on the load-bearing
- *      property instead, using strings that survive a floor re-baseline.
- *
- * Keep this table empty unless you can state, as below, what replaced the
- * claim. The correct durable fix is to update the evidence strings in
- * `scripts/student-learning-readiness.json` itself; that file is outside this
- * agent's ownership, so the reconciliation lives here.
+ * The correct fix is always to repair the evidence strings in the manifest.
+ * Re-introduce a reconciliation table here only if that file is genuinely
+ * unreachable, and only with a guard that deletes it again.
  */
-const SUPERSEDED_EVIDENCE: Record<
-  string,
-  Array<{ snippet: string; replacementPin: string }>
-> = {
-  'pre-rollout-shuffle-map-check': [
-    {
-      snippet: 'Our spec says 5',
-      replacementPin: 'apps/host/src/__tests__/quiz/shuffle-map-push-site-check.test.ts',
-    },
-  ],
-};
 
 /**
  * Test-owned evidence, asserted IN ADDITION to whatever the manifest declares.
  * Never a replacement for it.
+ *
+ * Two of these three strings are ALSO declared by the manifest today. That
+ * overlap is deliberate, not leftover. `scripts/` is outside this agent's
+ * ownership, so a future manifest edit could drop the P1 value pin without
+ * this file changing at all — and that pin is the load-bearing one. Asserting
+ * it from here too means the guarantee survives any edit to the manifest. The
+ * third string (`a response construction lost its stamp`) is intentionally
+ * test-owned only, so the floor-failure branch stays pinned from here
+ * regardless of what the manifest declares.
  *
  * Every string here is deliberately free of any site count, so re-baselining
  * `MIN_SHUFFLE_MAP_PUSH_SITES` (which happens whenever a response
@@ -122,24 +114,8 @@ describe('student learning readiness manifest (RCA-04/RCA-06)', () => {
       expect(['RCA-04', 'RCA-06']).toContain(artifact.rcaItem);
       expect(existsSync(repoPath(artifact.path)), `${artifact.id} path does not exist`).toBe(true);
       const source = readFileSync(repoPath(artifact.path), 'utf8');
-      const superseded = SUPERSEDED_EVIDENCE[artifact.id] ?? [];
 
       for (const snippet of artifact.evidence) {
-        const entry = superseded.find((s) => s.snippet === snippet);
-        if (entry) {
-          expect(
-            source,
-            `${artifact.id}: superseded evidence "${snippet}" is present again — ` +
-              'the artifact was reverted, or the SUPERSEDED_EVIDENCE entry is stale. ' +
-              'Delete the entry and restore the direct pin.',
-          ).not.toContain(snippet);
-          expect(
-            existsSync(repoPath(entry.replacementPin)),
-            `${artifact.id}: replacement pin ${entry.replacementPin} is missing — ` +
-              'superseded evidence must be re-homed, never dropped.',
-          ).toBe(true);
-          continue;
-        }
         expect(source, `${artifact.id} missing evidence: ${snippet}`).toContain(snippet);
       }
 
@@ -151,26 +127,11 @@ describe('student learning readiness manifest (RCA-04/RCA-06)', () => {
       }
     }
 
-    // Guard the tables themselves: an id that no longer exists in the manifest
-    // means the reconciliation is addressing a ghost.
+    // Guard the table itself: an id that no longer exists in the manifest
+    // means the test-owned evidence is addressing a ghost.
     const byId = new Map(manifest.artifacts.map((a) => [a.id, a]));
-    for (const id of [...Object.keys(SUPERSEDED_EVIDENCE), ...Object.keys(ADDITIONAL_EVIDENCE)]) {
+    for (const id of Object.keys(ADDITIONAL_EVIDENCE)) {
       expect(byId.has(id), `evidence table names unknown artifact: ${id}`).toBe(true);
-    }
-
-    // ...and a supersession whose snippet the manifest no longer declares is
-    // dead weight. This is what fires the day `scripts/student-learning-
-    // readiness.json` is corrected at source: the entry stops having anything
-    // to supersede and must be deleted, rather than lingering as a permanent
-    // exemption for a string nobody asserts.
-    for (const [id, entries] of Object.entries(SUPERSEDED_EVIDENCE)) {
-      for (const entry of entries) {
-        expect(
-          byId.get(id)?.evidence ?? [],
-          `SUPERSEDED_EVIDENCE["${id}"] still exempts "${entry.snippet}", but the manifest ` +
-            'no longer declares it. The manifest was fixed at source — delete the entry.',
-        ).toContain(entry.snippet);
-      }
     }
   });
 });
