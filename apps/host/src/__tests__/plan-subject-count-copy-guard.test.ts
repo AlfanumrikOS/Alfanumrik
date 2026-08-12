@@ -146,12 +146,15 @@ const PLAN_COPY_SURFACES = [
   'packages/ui/src/landing/v3/FAQV3.tsx',
   'packages/ui/src/landing/PricingTeaserV2.tsx',
   'packages/ui/src/landing/FAQV2.tsx',
-  // NOT listed: packages/ui/src/landing/FinalCTA.tsx. It has ZERO importers
-  // (verified by grep) — it is unmounted dead code, so it is not a surface a
-  // visitor can reach. It carries three separate falsehoods (a "2 subjects"
-  // plan claim, stale ₹399/₹999 prices, and a "16 subjects" catalog claim) and
-  // is reported for deletion rather than patched here; adding it would make
-  // this guard assert things about copy nobody renders.
+  // packages/ui/src/landing/FinalCTA.tsx was DELETED on 2026-08-12, which is
+  // why it is not listed. This comment previously read "reported for deletion".
+  // It had ZERO importers (re-verified by grep before removal) and carried
+  // three separate falsehoods: a "2 subjects" plan claim, two stale monthly
+  // prices that no longer matched the live ladder, and a "16 subjects"
+  // catalogue claim. Patching unmounted copy would have made this guard assert
+  // things about strings nobody renders; deleting it removed the falsehoods
+  // outright. No rupee figure is restated here — REG-65 and
+  // `contract/alfabot-kb-pricing-drift.test.ts` own the price verbatim.
   'packages/ui/src/onboarding/SubjectStep.tsx',
   'packages/ui/src/PlanBadge.tsx',
   'packages/ui/src/billing/v2/PlanModal.tsx',

@@ -105,8 +105,12 @@ const INCLUDED: FeatureGridItem[] = [
     icon: <IconMessageCircle />,
     titleEn: 'Foxy for Every Student',
     titleHi: 'हर छात्र के लिए Foxy',
-    bodyEn: 'Foxy teaches 16 subjects in Hindi and English with step-by-step explanations.',
-    bodyHi: 'Foxy 16 विषय हिंदी और अंग्रेज़ी में स्टेप-बाय-स्टेप समझाता है।',
+    // CATALOGUE-CLAIM FIX (2026-08-12): read "16 subjects" / "16 विषय".
+    // `subjects.is_active` is true for five codes only (math, science, physics,
+    // chemistry, biology). A school evaluating us on a 16-subject promise would
+    // be evaluating something that does not exist.
+    bodyEn: 'Foxy teaches Mathematics and Science in Hindi and English with step-by-step explanations.',
+    bodyHi: 'Foxy गणित और विज्ञान हिंदी और अंग्रेज़ी में स्टेप-बाय-स्टेप समझाता है।',
   },
   {
     icon: <IconLayers />,

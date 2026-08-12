@@ -208,8 +208,13 @@ const faqItems: { q: { en: string; hi: string }; a: { en: string; hi: string } }
       hi: 'Alfanumrik किन विषयों को कवर करता है?',
     },
     a: {
-      en: 'Alfanumrik covers all major CBSE subjects: Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, Social Studies, Computer Science, Economics, Accountancy, and more — for Classes 6 through 12.',
-      hi: 'Alfanumrik सभी प्रमुख CBSE विषयों को कवर करता है: गणित, विज्ञान, भौतिकी, रसायन विज्ञान, जीव विज्ञान, अंग्रेज़ी, हिंदी, सामाजिक विज्ञान, कंप्यूटर विज्ञान, अर्थशास्त्र, लेखाशास्त्र और बहुत कुछ — कक्षा 6 से 12 तक।',
+      // CATALOGUE-CLAIM FIX (2026-08-12): read "covers all major CBSE
+      // subjects" followed by an eleven-name list ending in "and more".
+      // `subjects.is_active` is true for five codes only (math, science,
+      // physics, chemistry, biology). House wording:
+      // docs/alfabot/knowledge-base.md (product-features).
+      en: 'Alfanumrik teaches Mathematics and Science, and nothing else. Classes 6 to 10 study Maths and Science; Classes 11 and 12 study Maths plus Physics, Chemistry and Biology, presented together as one Science group. That is the whole catalogue — we would rather cover Maths and Science properly than spread thin across a timetable.',
+      hi: 'Alfanumrik केवल गणित और विज्ञान पढ़ाता है, और कुछ नहीं। कक्षा 6 से 10 में गणित और विज्ञान; कक्षा 11 और 12 में गणित के साथ भौतिकी, रसायन और जीवविज्ञान, जो एक ही Science समूह के रूप में मिलते हैं। यही हमारा पूरा catalogue है — हम गणित और विज्ञान को ठीक से पढ़ाना चुनते हैं, कई विषयों में बिखरना नहीं।',
     },
   },
   {

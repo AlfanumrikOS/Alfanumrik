@@ -8,13 +8,18 @@ import s from './welcome-v3.module.css';
  * the features grid. Pure content, no interaction.
  */
 
+// CATALOGUE-CLAIM FIX (2026-08-12): this strip carried SST, English and हिंदी
+// chips. Production `subjects.is_active` is true for exactly five codes —
+// math, science, physics, chemistry, biology — so under an aria-label reading
+// "Coverage" those three chips claimed subjects we do not teach. Replaced with
+// the real catalogue: Maths and Science, with Physics/Chemistry/Biology named
+// as the 11–12 Science group (see docs/alfabot/knowledge-base.md,
+// product-features). The `alwaysHi` escape hatch went with the हिंदी chip; it
+// had no other user.
 const CHIPS = [
   { en: 'Maths', hi: 'गणित' },
   { en: 'Science', hi: 'विज्ञान' },
-  { en: 'SST', hi: 'सामाजिक विज्ञान' },
-  { en: 'English', hi: 'अंग्रेज़ी' },
-  // हिंदी stays Devanagari in both languages (it names the subject itself).
-  { en: 'हिंदी', hi: 'हिंदी', alwaysHi: true },
+  { en: 'Physics · Chemistry · Biology (11–12)', hi: 'भौतिकी · रसायन · जीवविज्ञान (11–12)' },
   { en: 'Classes 6–12', hi: 'कक्षा 6–12' },
   { en: 'CBSE', hi: 'CBSE' },
   { en: 'NCERT', hi: 'NCERT' },
@@ -29,10 +34,7 @@ export default function TrustStripV3() {
       <div className={s.wrap}>
         <ul>
           {CHIPS.map((chip) => (
-            <li
-              key={chip.en}
-              lang={'alwaysHi' in chip && chip.alwaysHi ? 'hi' : isHi ? 'hi' : undefined}
-            >
+            <li key={chip.en} lang={isHi ? 'hi' : undefined}>
               {t(chip.en, chip.hi)}
             </li>
           ))}
