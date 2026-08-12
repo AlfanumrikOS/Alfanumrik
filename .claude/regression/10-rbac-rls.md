@@ -1210,5 +1210,138 @@ Pre-REG-383: 382 entries (through REG-382, the leaderboard SEV1 batch — see
 `15-cross-cutting.md`). This section adds REG-383 and REG-384.
 **Total catalog: 384 entries (target: 35 — TARGET EXCEEDED). REG-385 is the next free id**
 (REG-371..REG-377 remain RESERVED).
+**Superseded** — REG-385..REG-389 were taken on 2026-08-11 (see
+`03-quiz-integrity.md`) and the live-P0 Bearer batch below takes
+REG-390..REG-393, so REG-394 is the next free id.
+
+---
+
+## The identity-route family: Bearer callers silently had no student — 2026-08-12
+
+Added 2026-08-12 (testing agent), same live-P0 batch as REG-390/REG-391
+(`03-quiz-integrity.md`) and REG-393 (`11-infrastructure.md`), branch
+`Alfanumrik/e2e-p0-bearer-quiz-submit`.
+
+**The defect.** Twelve request-scoped routes built their student-scoped Supabase
+client with the cookie-only `createSupabaseServerClient()`. The Flutter app
+authenticates with `Authorization: Bearer <jwt>` and sends no Supabase cookie,
+so PostgREST saw no user, `auth.uid()` resolved NULL, and every RLS SELECT
+denied. The routes did not error — **they degraded**:
+
+| Route | What a Bearer caller got |
+|---|---|
+| `/api/v2/today`, `/api/rhythm/today`, `/api/learner/next`, `/api/learner/revise-stack`, `/api/learner/weak-topics`, `/api/learner/scheduled`, `/api/dive/state`, `/api/synthesis/state` | `404 no_student_profile` — for a student whose row was perfectly fine |
+| `/api/dive/history` | the **empty-history success shape** — the student's real dives looked like they had never happened |
+| `/api/lesson` | `NO_GRADE` |
+| `/api/quiz/submit`, `/api/v2/quiz/submit` | `503 RPC_FAILED` (see REG-390) |
+
+The silent-empty half is the dangerous one. A 404 at least shows up in a
+dashboard; a 200 carrying `[]` alerts nothing and simply presents the student
+with an app that has forgotten them.
+
+This is a P8 story as much as a transport one: the fix moves these reads onto
+`createSupabaseRouteClient(request)`, which forwards the caller's own JWT under
+the **anon** key. RLS is enforced identically on both transports and the
+service-role key is never reachable from this helper (pinned separately by
+REG-219). Widening access by reaching for `supabaseAdmin` would have "fixed" the
+symptom by deleting the boundary.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-392 | `identity_routes_bearer_resolves_own_student` | **Part 1 — BEHAVIOURAL, on the three prioritised routes** (`/api/v2/today`, `/api/rhythm/today`, `/api/learner/next`). Two doubles with identical surfaces are installed at the module boundary — one returned by `@supabase/supabase-js` `createClient` (the Bearer/anon path), one by `createSupabaseServerClient` (the cookie path) — and the canonical state builder / rhythm-queue builder RECORDS which client it was constructed with. With a Bearer header and no cookie, the recorded client is the Bearer one, the cookie factory is never called at all, and the response is the student's real state — explicitly `not.toBe(404)` on `/api/v2/today`, a real `schemaVersion:1` action on `/api/learner/next`, the real queue on `/api/rhythm/today`. The forwarded header is asserted verbatim (`Bearer <jwt>`) against the **anon** key and the project URL. Every route is then re-run cookie-only to pin that web is byte-identical: the cookie client is recorded, `createClient` is never called, and the status is unchanged. **Part 2 — STRUCTURAL, over all twelve routes.** Each route file is asserted to import `@alfanumrik/lib/supabase-route` and to call `createSupabaseRouteClient(request)` WITH the request threaded in (a zero-arg call cannot read the header and silently reverts to the cookie path), and to have no UNDOCUMENTED `createSupabaseServerClient()` construction left. Comments are stripped before matching, deliberately: every one of these routes now carries a long comment naming the old client in prose, and matching raw source would make the documentation fail the test and tempt someone to delete the explanation to go green. Exactly one holdout is allowed and is named with its reason — `POST /api/rhythm/today`, which authenticates via session-based `supabase.auth.getUser()` that cannot work on a stateless Bearer client (`persistSession:false`); moving it onto `authorizeRequest()` is an auth-semantics change deferred to architect. A list-drift guard pins the family at twelve distinct routes so a thirteenth migration cannot silently escape the check. | `apps/host/src/__tests__/api/identity-routes-bearer-transport.test.ts` (32 tests) | E | P8, P9, P13 |
+
+### Deliberate limits — stated so a green run is never over-read
+
+Part 2 is a **pattern check and says so in the file header**. It proves the
+Bearer-aware helper is wired into all twelve routes; it does NOT prove each
+route's RLS reads succeed under a real JWT. Only the three Part-1 suites do
+that, and they do it against doubles, not Postgres. Behavioural coverage for the
+remaining nine (`/api/learner/revise-stack`, `/api/learner/weak-topics`,
+`/api/learner/scheduled`, `/api/dive/state`, `/api/dive/history`,
+`/api/synthesis/state`, `/api/lesson`, and both submit routes via REG-390) is
+owed; `/api/dive/history` is the highest-value one to add next because its
+failure mode is the silent-empty 200 rather than a 404.
+
+### Catalog total
+
+Pre-REG-392: 391 entries (through REG-391 — see `03-quiz-integrity.md`, same
+batch). This section adds REG-392; REG-393 is taken by the same batch in
+`11-infrastructure.md`.
+**Total catalog: 393 entries (target: 35 — TARGET EXCEEDED). REG-394 is the next
+free id** (REG-371..REG-377 remain RESERVED).
+
+---
+
+## REG-395 — the ownership-guard RPC family: a SECURITY DEFINER check silently disarmed for every mobile caller
+
+**Filed 2026-08-12, same branch (`Alfanumrik/e2e-p0-bearer-quiz-submit`), as
+architect Condition A on the REG-390/391 fix.**
+
+**The defect, and why it is not the same one as REG-392.** REG-392 covers routes
+that *resolved the caller's own profile* and degraded to `404 no_student_profile`
+or an empty 200. This entry covers three routes whose SECURITY DEFINER RPCs carry
+the ownership guard:
+
+```sql
+IF auth.uid() IS NOT NULL AND NOT EXISTS (
+  SELECT 1 FROM students WHERE id = p_student_id AND auth_user_id = auth.uid()
+) THEN RAISE EXCEPTION 'Access denied: caller does not own student %', p_student_id;
+```
+
+The `auth.uid() IS NOT NULL` conjunct exists so service-role / cron callers can
+still invoke these functions. With the cookie-only client, a Bearer caller
+arrived as `anon` with `auth.uid()` NULL — so **the guard short-circuited and did
+nothing for every mobile caller**. Access was still refused by the route-layer
+403 (`STUDENT_ID_MISMATCH`), so this was never a live cross-student hole; it was
+the database half of a two-layer check silently switched off. That is the exact
+latent shape that only a missing GRANT happened to contain on the submit path.
+
+**The second half — it was one revoke from breaking.** These calls worked as
+`anon` only because each function retains a residual **PUBLIC** EXECUTE grant:
+the `REVOKE EXECUTE … FROM anon` in migration `20260515000002` is a silent no-op
+while `PUBLIC` still grants the same privilege. The active anon-revocation
+campaign (cf. `20260813000006`, which correctly does `REVOKE ALL … FROM PUBLIC`)
+removes it — and then quiz **START** 42501s for every mobile user exactly as
+submit did. Start is the direct predecessor in the funnel: a student cannot
+submit a quiz they cannot start, so shipping REG-390 alone left the funnel one
+migration away from the same outage.
+
+| Route | RPC | Why it matters |
+|---|---|---|
+| `POST /api/v2/quiz/start` | `start_quiz_session` | Funnel predecessor to submit |
+| `POST /api/learner/lesson/progress` | `update_chapter_progress` | Web-only caller today; pre-emptive |
+| `GET /api/v2/student/leaderboard` | `get_leaderboard` | Mobile-visible read |
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-395 | `ownership_guard_rpc_routes_use_bearer_client` | **Behavioural half (`/api/v2/quiz/start`, the priority route), asserted at the MODULE BOUNDARY:** with a Bearer header and no cookie, `start_quiz_session` runs on a client built by `@supabase/supabase-js` `createClient` with the **anon** key and the caller's JWT forwarded, and the cookie-only client is proven NOT to be what `.rpc()` landed on (`createSupabaseServerClient` is never called). Both doubles expose an identical `rpc` surface, so only the spy distinguishes them — a silent revert fails the spy, not a string match. P8 rider: the transported key is asserted `=== NEXT_PUBLIC_SUPABASE_ANON_KEY` and `!==` the service-role key, which matters doubly here because service-role ALSO has `auth.uid()` NULL and would re-disarm the very guard this fix re-arms. Payload transport-neutrality pinned (`p_student_id` / `p_question_ids` identical on both paths). `Authorization: Basic` still takes the cookie path (no silent downgrade). RBAC order pinned: an unauthorized caller gets 401 and **no client is constructed at all**. The `students` cross-check is asserted to REMAIN on the service-role client — a documented holdout, because it maps `auth_user_id → student id` before we know who the caller is (exactly what RLS cannot help with) and its only effect is to refuse requests. **Behaviour-neutrality for web pinned explicitly:** a cookie caller still runs on the cookie client, gets the same 200 envelope with `shuffle_map`/`correct_answer_index` still absent (P6), the same `503 START_SESSION_FAILED` on a null RPC, and `STUDENT_ID_MISMATCH` still fires **before** the RPC on BOTH transports (asserted with zero `.rpc()` calls on either spy) — the route-layer guard is what actually contained the disarmed DB guard, so it must keep firing first. **Structural half:** the family conformance check in `identity-routes-bearer-transport.test.ts` is extended from 12 to 15 routes — each must import `@alfanumrik/lib/supabase-route` and call `createSupabaseRouteClient(request)` **with the request threaded in** (a no-arg call cannot read the Authorization header and silently reverts to cookie), with no undocumented `createSupabaseServerClient()` left. Comments are stripped before matching, so the long explanatory notes naming the old client do not fail the test (and nobody is tempted to delete the explanation to go green). Two list drift-guards: the counts (12 / 3 / 15, all distinct) and a disjointness assertion that no route is in both families, since the two lists mean different things. | `apps/host/src/__tests__/api/quiz-start-bearer-transport.test.ts` (13 tests) + `apps/host/src/__tests__/api/identity-routes-bearer-transport.test.ts` (extended to 15 routes) | E | P6, P8, P9 |
+
+### Honest limits of this entry
+
+- **Behavioural coverage is `/api/v2/quiz/start` only.** `/api/learner/lesson/progress`
+  and `/api/v2/student/leaderboard` are covered by the structural pattern check
+  alone. That check proves the helper is wired in; it does not prove their RLS
+  reads or RPC calls succeed under a real JWT.
+- **No test executes against real Postgres.** "The guard is now armed for Bearer
+  callers" rests on `auth.uid()` resolving from the forwarded JWT — which the
+  doubles cannot demonstrate. The strictly stronger check is a live smoke with a
+  real Bearer session, and it is not part of this pass.
+- **`/api/learner/lesson/progress` has no mobile caller today** — its only caller
+  is `updateChapterProgress()` in `packages/lib/src/supabase.ts`, a browser fetch
+  on the session cookie. The migration is pre-emptive: zero behaviour change now,
+  and it removes a future trap. Stated so nobody reads this entry as evidence of
+  a fixed mobile bug there.
+- The residual-PUBLIC-grant analysis is read from the migration chain, **not**
+  measured against production. Per the constitution's own standing lesson
+  (on-disk ≠ deployed), confirming it needs `\df+`/`information_schema.role_routine_grants`
+  against the live database. The fix is correct either way — it only stops
+  depending on the answer.
+
+### Catalog total
+
+Pre-REG-395: 394 entries (through REG-394 — see `03-quiz-integrity.md`, same
+follow-up batch). This section adds REG-395.
+**Total catalog: 395 entries (target: 35 — TARGET EXCEEDED). REG-396 is the next
+free id** (REG-371..REG-377 remain RESERVED).
 
 ---

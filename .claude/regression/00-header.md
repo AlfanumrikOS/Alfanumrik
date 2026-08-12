@@ -6,7 +6,33 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 389 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 395 entries (target: 35 — TARGET EXCEEDED).**
+
+> Counting note (backend, 2026-08-12, the architect-conditions follow-up on the
+> same branch): 393 + 2 filed, body-backed entries (**REG-394** — the P0001
+> collision, in `03-quiz-integrity.md`; **REG-395** — the ownership-guard RPC
+> family, in `10-rbac-rls.md`) = **395**. This pass adds 2 and deletes 0, and
+> renumbers nothing. **REG-396 is now the next free id**; REG-371..REG-377
+> remain RESERVED. The counting note immediately below (and every discrepancy
+> it carries forward) is untouched.
+
+> Counting note (testing, 2026-08-12, the live-P0 Bearer batch): 389 + 4 filed,
+> body-backed entries (REG-390..REG-393 — each has a `| REG-N |` table row:
+> REG-390 + REG-391 in `03-quiz-integrity.md`, REG-392 in `10-rbac-rls.md`,
+> REG-393 in `11-infrastructure.md`) = **393**. This pass adds 4 and deletes 0.
+> Every carried-forward discrepancy below — the 7-entry shard-chain gap, the
+> REG-361..REG-365 upstream gap, and the independently derived 326 body-backed
+> figure — is UNTOUCHED and still open; none of them was reconciled here and
+> none of them shifts an id.
+>
+> **Numbering note, recorded because the instruction was wrong and following it
+> would have corrupted the catalog:** the task brief for this batch stated
+> "latest id is REG-369, so start at REG-370". REG-370 is the Foxy
+> MasteryAwareness ring no-shrink entry in `02-foxy-ai.md`; REG-371..REG-377 are
+> the RESERVED ops block; REG-378, REG-379 and REG-387..REG-389 are all filed.
+> Starting at 370 would have collided with four existing entries and consumed the
+> reserved block. This header already declared **REG-390** the next free id, so
+> this batch takes REG-390..REG-393 and renumbers nothing.
 
 > Counting note (testing, 2026-08-11): this header declared **372** immediately
 > before this batch while the shard-chain running counters had reached **379** —
@@ -26,7 +52,100 @@ Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 > which is count-neutral by design — it was already covered under REG-386's
 > neighbourhood and takes no new id.
 
-Latest: REG-387..REG-389 (2026-08-11, the TIERED-VERIFICATION batch — quality
+Latest: REG-394..REG-395 (2026-08-12, the ARCHITECT-CONDITIONS follow-up on the
+LIVE-P0 Bearer batch, same branch `Alfanumrik/e2e-p0-bearer-quiz-submit`.
+Architect returned APPROVE WITH CONDITIONS on REG-390/391; both conditions are
+closed here.
+
+- **REG-394** (`03-quiz-integrity.md`) — **the P0001 collision.** A bare
+  `RAISE EXCEPTION` in PL/pgSQL is SQLSTATE P0001, so the quiz RPCs' SECURITY
+  DEFINER ownership-guard denial (`Access denied: caller does not own student %`)
+  and their routine `session_not_started` refusal arrive with the SAME code.
+  Both submit routes branched on the code alone, so a genuine cross-student
+  submission was answered `409 session_not_started` + `hint: 'restart_quiz'`,
+  bypassed the REG-391 classifier, and wrote NOTHING to `ops_events`. The denial
+  now gets its own 403 + `STUDENT_OWNERSHIP_DENIED` + an `ops_events` row at
+  severity `error` under category `security`, carrying the transport
+  (bearer/cookie) so a denial is attributable. `session_not_started` is
+  byte-unchanged; branch ORDER is pinned as its own property, since ordering is
+  the only thing separating the two.
+- **REG-395** (`10-rbac-rls.md`) — **the ownership-guard RPC family.** Three
+  routes (`/api/v2/quiz/start` → `start_quiz_session`,
+  `/api/learner/lesson/progress` → `update_chapter_progress`,
+  `/api/v2/student/leaderboard` → `get_leaderboard`) called SECURITY DEFINER
+  RPCs whose guard is written `auth.uid() IS NOT NULL AND NOT EXISTS (…)` so
+  service-role/cron callers still work. Bearer callers arrived as `anon` with
+  `auth.uid()` NULL, so **the guard short-circuited for every mobile caller** —
+  never a live hole (the route-layer 403 still refused) but the database half of
+  a two-layer check silently switched off. They also worked only because of a
+  residual **PUBLIC** EXECUTE grant: the `REVOKE EXECUTE … FROM anon` in
+  migration `20260515000002` is a no-op while PUBLIC still grants it, and the
+  anon-revocation campaign removes it. Quiz START is the funnel predecessor to
+  submit, so REG-390 alone left the funnel one migration from the same outage.
+
+Owed follow-up recorded with these entries: `/api/v2/quiz/start` still swallows
+its own ownership-guard denial into `503 START_SESSION_FAILED` ("please retry") —
+the REG-394 defect shape, deliberately out of scope because Condition B named the
+two submit routes.
+
+Prior: REG-390..REG-393 (2026-08-12, the LIVE-P0 Bearer batch — branch
+`Alfanumrik/e2e-p0-bearer-quiz-submit`. A production E2E run of 411 requests
+found `POST /api/quiz/submit` and `POST /api/v2/quiz/submit` returning
+`503 RPC_FAILED` for **every** `Authorization: Bearer` caller: both routes built
+their DB client with the cookie-only `createSupabaseServerClient()`, the Flutter
+app is Bearer-only, so PostgREST ran the request as `anon` and
+`submit_quiz_results_v2` — granted only to `authenticated, service_role` —
+raised SQLSTATE 42501. **No quiz submitted from the mobile app had ever scored.**
+Twelve routes shared the defect; the other ten degraded to
+`404 no_student_profile`, an empty-history 200, or `NO_GRADE` instead. Four
+entries:
+
+- **REG-390** (`03-quiz-integrity.md`) — the transport P0, asserted at the MODULE
+  BOUNDARY: with a Bearer header and no cookie the RPC provably runs on the
+  anon-key client carrying the caller's forwarded JWT, and the cookie-only client
+  is provably NOT what `.rpc()` landed on. Both doubles expose an identical `rpc`
+  surface, so only the spy can distinguish them — a silent revert fails the spy,
+  not a string match. Includes the P8 rider (transported key is the anon key, not
+  service-role), payload transport-neutrality, and an explicit
+  behaviour-neutral-for-web sweep (200 / 409 / 503 / cached replay all unchanged
+  for a cookie caller).
+- **REG-391** (`03-quiz-integrity.md`) — PERMANENT vs TRANSIENT and the
+  `retryable` cross-client contract. 42501 / 42883 / 23514 / PGRST202 / PGRST203
+  → 500 `RPC_PERMANENT` `retryable:false` with a message that never says retry;
+  everything else → 503 `RPC_FAILED` `retryable:true`. **Fail-open toward
+  transient is pinned as a DIRECTION** (14 enumerated non-matches plus a noise
+  sweep), because a wrong "permanent" verdict stops a client retrying a
+  recoverable failure and quarantines a real completed quiz. `retryable` is
+  asserted as a TOP-LEVEL boolean via `hasOwnProperty` — the Flutter drain reads
+  exactly that field at exactly that position, so its name and position are a
+  cross-client contract, not an implementation detail.
+- **REG-392** (`10-rbac-rls.md`) — the identity-route family. Behavioural for
+  `/api/v2/today`, `/api/rhythm/today`, `/api/learner/next`; structural pattern
+  check across all twelve, with comments stripped before matching (every route
+  now names the old client in prose, and matching raw source would make the
+  documentation fail the test) and exactly ONE documented cookie holdout
+  (`POST /api/rhythm/today`, session-based `auth.getUser()`). **States its own
+  limit in the file header:** Part 2 proves the helper is wired in, not that each
+  route's RLS reads succeed.
+- **REG-393** (`11-infrastructure.md`) — the `__noProfile` cache sentinel. A
+  truthy failure marker is a cache HIT, so ONE Bearer miss pinned a 404 for that
+  student — web included — for the whole TTL. Pins that a failed build is not
+  retained as an answer, that recovery is immediate on the next request, that no
+  truthy sentinel is written, AND that a REAL result is still cached (the fix
+  must not degrade into "never cache anything"). The cache module is deliberately
+  REAL; mocking it to a pass-through would have made the suite vacuous.
+
+Reported, not fixed (product defects found while writing these): a quarantined
+mobile attempt has **no recovery path** — `failed()` surfaces it but the only
+operations are `remove()` / `clearFailed()`, both of which delete the student's
+completed quiz; and `QuizRepository.submitOfflineReplay`, the seam that wires the
+server's `retryable` into the classifier, is **untested** (both halves are
+covered independently, so dropping the argument at that call site keeps all 29
+drain tests green while the fix does nothing end to end) — unclosable without a
+production seam, since `V2ApiClient` has a private constructor.
+**REG-394 is now the next free id**; REG-371..REG-377 remain RESERVED.
+
+Prior: REG-387..REG-389 (2026-08-11, the TIERED-VERIFICATION batch — quality
 finding #7, MAJOR: the content-remediation change set shipped with NO regression
 coverage while migration `20260814000014`'s own header documented a one-line path
 to undoing its central safety property. Three entries, all in
@@ -69,7 +188,9 @@ Also repaired in this pass, no new id: the pre-existing
 `select-quiz-questions-rag-tier0-floor.test.ts` mirror was **stale while still
 passing** — it modelled two of the three disproved states as SERVABLE, so it
 could not have caught the regression it existed to catch. 10 tests → 15.
-**REG-390 is now the next free id**; REG-371..REG-377 remain RESERVED.
+~~**REG-390 is now the next free id**~~ **← superseded 2026-08-12: the live-P0
+Bearer batch above took REG-390..REG-393, so REG-394 is the next free id.**
+REG-371..REG-377 remain RESERVED.
 OWED: a reconciliation entry for migration `20260814000013` (cbse_syllabus corpus
 reconciliation), deliberately NOT pinned because architect was still actively
 revising it (rewritten mid-session, 61 kB → 103 kB) after a quality REJECT.

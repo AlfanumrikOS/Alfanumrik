@@ -520,6 +520,8 @@ class QuizRepository {
   /// discard-vs-retain matrix using the HTTP status the server returned:
   ///   * 200 / idempotent replay        → success (store result, remove)
   ///   * 4xx (409/422/400/...)          → discard (un-replayable)
+  ///   * 5xx + `retryable: false`       → failedPermanent (terminal, kept
+  ///                                      on-device, never re-sent)
   ///   * 5xx / network / timeout        → retain (retry, key unchanged)
   Future<DrainOutcome> submitOfflineReplay(QueuedQuizAttempt attempt) async {
     final v2Client = _v2;
@@ -561,10 +563,17 @@ class QuizRepository {
       // Surface the server's structured error code (e.g. SHUFFLE_MAP_MISMATCH)
       // as the reason — NEVER any answer text / PII (P13).
       final reason = _errorCode(e) ?? 'http_${status ?? 'unknown'}';
+      // The server's EXPLICIT permanence signal (`retryable: false` on a 5xx
+      // whose SQLSTATE can never succeed — 42501/42883/23514). Absent on older
+      // servers → null → the classifier keeps the historical status-only
+      // behaviour. Parsing never throws and never changes the outcome on its
+      // own.
+      final retryable = OfflineDrainService.parseRetryable(e.response?.data);
       return OfflineDrainService.classify(
         ApiFailure('offline replay failed: $reason', status),
         statusCode: status,
         reasonCode: reason,
+        retryable: retryable,
       );
     } catch (e) {
       // Non-Dio error (serialization, etc.) — no HTTP status → retain.

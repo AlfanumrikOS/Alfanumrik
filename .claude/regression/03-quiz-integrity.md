@@ -2027,5 +2027,170 @@ Pre-REG-387: 386 entries (through REG-386, the truthy-`[]` serving batch above).
 This section adds REG-387, REG-388 and REG-389.
 **Total catalog: 389 entries (target: 35 — TARGET EXCEEDED). REG-390 is the next
 free id** (REG-371..REG-377 remain RESERVED).
+**Superseded 2026-08-12** by the live-P0 Bearer section below, which takes
+REG-390..REG-393.
+
+---
+
+## Bearer quiz submit: mobile has never scored — 2026-08-12
+
+Added 2026-08-12 (testing agent), pinning the two durable properties of the
+live-P0 fix on branch `Alfanumrik/e2e-p0-bearer-quiz-submit`.
+
+**The defect.** A production E2E run (411 requests) found that
+`POST /api/quiz/submit` and `POST /api/v2/quiz/submit` answered
+`503 RPC_FAILED` for **every** `Authorization: Bearer` caller. Both routes built
+their DB client with the cookie-only `createSupabaseServerClient()`. The Flutter
+app is Bearer-only and sends no Supabase auth cookie, so PostgREST saw no user,
+`auth.uid()` was NULL, the request executed as role `anon`, and
+`submit_quiz_results_v2` — granted only to `authenticated, service_role` —
+raised SQLSTATE **42501**. **No quiz submitted from the mobile app has ever
+scored.**
+
+The comment above that client had said "JWT-bound supabase client so SECURITY
+DEFINER's `auth.uid()` check sees the calling student" since the route was
+written. The intent was always right; the code never matched it. Nothing failed
+loudly — a `503` labelled "temporary" is exactly what a healthy system emits
+under load, so a total, permanent, 100% failure was indistinguishable from
+transient noise in the dashboards.
+
+**The second defect, downstream of the first.** Reporting 42501 as transient
+told the client to retry. The Flutter offline drain queue classifies
+`5xx → retain`, so it retried an attempt that could never succeed, forever —
+one request per app-foreground, on metered Indian 4G, for a missing GRANT.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-390 | `bearer_submit_reaches_rpc_as_authenticated` | **The P0, asserted at the MODULE BOUNDARY rather than by reading the route's source.** Both submit routes are driven twice through the SAME assertions. Bearer + no cookie: `submit_quiz_results_v2` runs on a client built by `@supabase/supabase-js` `createClient` with the **anon** key and the caller's JWT forwarded as `global.headers.Authorization` — and the cookie-only client is proven NOT to be the one `.rpc()` landed on (`createSupabaseServerClient` is never even called). The two doubles expose an IDENTICAL `rpc` surface, so the only thing that can distinguish them is which spy recorded the call; a route that silently reverted to the cookie client fails on the spy, not on a string match. P8 rider: the transported key is asserted `=== NEXT_PUBLIC_SUPABASE_ANON_KEY` and `!==` the service-role key, so the fix can never be "solved" by reaching for the admin client. Transport-neutrality of the PAYLOAD is pinned separately: the RPC args sent on the Bearer path `toEqual` those sent on the cookie path (transport changes who PostgREST thinks is calling, never what is written). A non-Bearer `Authorization: Basic` still takes the cookie path (no silent downgrade). **Behaviour-neutrality for web is pinned explicitly, not assumed:** a cookie-only caller still runs on the cookie client, never builds a Bearer client, and still gets the same 200 body (score/XP/`idempotent_replay`/`marking_authenticity_path`, and no stray `retryable` key on a success envelope), the same 409 on P0001, the same 503 on a transient, and the same cached idempotent replay on a 23505 race. | `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (48 tests, `describe.each` over both routes) | E | P4, P8, P9 |
+| REG-391 | `rpc_permanent_vs_transient_retryable_contract` | **A permanent failure must stop the client without eating the student's work.** Unit half (`packages/lib/src/quiz/rpc-error-classification.ts`): SQLSTATE `42501` / `42883` / `23514` and PostgREST `PGRST202` / `PGRST203` classify PERMANENT (the PostgREST codes matter because a missing function surfaces as `PGRST202`/404, never as a raw 42883, so a SQLSTATE-only check would misfile an undeployed RPC as transient); the exported set is asserted to be EXACTLY those three SQLSTATEs, so widening it is a visible, reviewed act. **FAIL-OPEN TOWARD TRANSIENT is pinned as a DIRECTION, not a list:** fourteen enumerated non-matches (deadlock, serialization failure, connection loss, statement timeout, 23505, P0001, unknown SQLSTATEs, empty object, null/undefined error, null fields) plus a noise sweep all assert `false`. That asymmetry is the safety property — a wrong "permanent" verdict stops a client retrying a recoverable failure and quarantines a real completed quiz; a wrong "transient" verdict costs one idempotent retry the RPC short-circuits anyway. Route half, on BOTH submit routes: permanent → HTTP **500** + `code:'RPC_PERMANENT'` + **top-level** `retryable:false`; transient → **503** + `RPC_FAILED` + `retryable:true`; `EMPTY_RESPONSE` stays 503/`retryable:true`; and a 409 `SESSION_NOT_STARTED` carries **no** `retryable` field at all (the field is emitted only in the 5xx band where the client's status-code matrix is ambiguous — a `retryable:true` on an already-refused 4xx would be an infinite loop by another name). `retryable` is asserted as a top-level BOOLEAN with `hasOwnProperty`, because the Flutter drain reads exactly `body['retryable']` at exactly that position: the field's NAME and POSITION are a cross-client contract. The permanent message is asserted NOT to carry the retry instruction and to positively say "do not retry"; P13 rider — neither client-facing body matches `42501|42883|23514|PGRST|submit_quiz_results_v2`. Ops separation pinned (`submit_quiz_results_v2_failed_permanent` + `failure_class:'permanent'`), and a cross-route parity pair asserts the two routes translate an identical error to an identical status/code/`retryable`/message so they cannot drift. | `apps/host/src/__tests__/lib/quiz/rpc-error-classification.test.ts` (29 tests) + `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (48 tests) | E | P4, P13 |
+
+### Mobile half — REVIEWED, not duplicated
+
+`mobile/test/data/repositories/offline_drain_service_test.dart` (29 tests, added
+by the mobile agent in the same change set) was re-run and audited against the
+four properties this batch requires. All four are genuinely covered:
+
+1. `retryable:false` → `failedPermanent`, which is **terminal-but-RETAINED** —
+   `store.queueLength == 0` (stops being re-sent) AND `store.failedLength == 1`
+   (still on the device). Never `discard`. A completed quiz is student work.
+2. A **MISSING** `retryable` preserves the historical `5xx → retain` byte for
+   byte, so an app talking to an older server behaves exactly as before.
+3. The LOCAL retry budget bounds the loop with **no server signal at all** —
+   an endlessly-503ing server is capped at `maxDrainAttempts` (12) sends, then
+   quarantined `MAX_DRAIN_ATTEMPTS`; the 168h age cap quarantines without
+   spending a request.
+4. The **Idempotency-Key survives quarantine unchanged** (asserted in the drain
+   suite, the store suite and the model suite), so a later re-queue replays with
+   the same key and cannot double-score (P2).
+
+Also verified: `retryable` can NEVER resurrect a 4xx the server already refused.
+
+Two mobile gaps found and REPORTED rather than pinned:
+
+- **A quarantined attempt has no recovery path.** `failed()` lists terminal
+  records and `offlineFailedCountProvider` surfaces the count, but the only
+  operations available on them are `remove()` and `clearFailed()` — both of
+  which DELETE. The retained-work property is therefore currently "kept, but
+  unrecoverable". Product decision, not a test's.
+- **`QuizRepository.submitOfflineReplay` — the seam that wires the server's
+  body into the classifier — is untested.** `parseRetryable` and `classify` are
+  each thoroughly covered, but nothing proves the repository composes them. If
+  the `retryable:` argument were dropped at that call site, all 29 drain tests
+  still pass while the fix does nothing end to end. Not closed here because
+  `V2ApiClient` has a private constructor and reads `Supabase.instance`, so a
+  Dio-adapter test needs a production-code seam — out of scope for a test-only
+  pass.
+
+### Honest limits of this batch
+
+- The Bearer path is proven to CONSTRUCT the right client and forward the right
+  header. **No test in this batch executes against real Postgres**, so "the RPC
+  now succeeds as `authenticated`" rests on the GRANT being what the fix's
+  analysis says it is. A live smoke against a real Bearer session is the
+  strictly stronger check and is not part of this pass.
+- The mobile and web halves of the `retryable` contract are pinned on each side
+  independently; there is no shared fixture tying the literal field name across
+  the two repos. A coordinated rename would pass both suites.
+
+### Catalog total
+
+Pre-REG-390: 389 entries (through REG-389, the tiered-verification batch above).
+This section adds REG-390 and REG-391. REG-392 and REG-393 are taken by the same
+batch in `10-rbac-rls.md` and `11-infrastructure.md`.
+**Total catalog: 393 entries (target: 35 — TARGET EXCEEDED). REG-394 is the next
+free id** (REG-371..REG-377 remain RESERVED).
+
+> Numbering note: the task brief for this batch stated "latest id is REG-369, so
+> start at REG-370". That is stale — REG-370 is the Foxy MasteryAwareness ring
+> no-shrink entry in `02-foxy-ai.md`, and `00-header.md` already declared REG-390
+> the next free id. Starting at 370 would have collided with four filed entries
+> and with the reserved 371..377 block, so this batch takes REG-390..REG-393.
+> No existing entry was renumbered.
+
+---
+
+## REG-394 — the P0001 collision: an ownership-guard denial answered as "session not started"
+
+**Filed 2026-08-12, same branch (`Alfanumrik/e2e-p0-bearer-quiz-submit`), as
+architect Condition B on the REG-390/391 fix.**
+
+**The defect.** Every quiz RPC opens with the same SECURITY DEFINER guard:
+
+```sql
+IF auth.uid() IS NOT NULL AND NOT EXISTS (
+  SELECT 1 FROM students WHERE id = p_student_id AND auth_user_id = auth.uid()
+) THEN
+  RAISE EXCEPTION 'Access denied: caller does not own student %', p_student_id;
+END IF;
+```
+
+A bare `RAISE EXCEPTION` in PL/pgSQL is SQLSTATE **P0001** — the *identical*
+SQLSTATE the RPC uses for its routine `session_not_started` refusal. Both submit
+routes branched on `rpcErr.code === 'P0001'` alone, so a genuine **cross-student
+submission attempt** was answered:
+
+```
+409 { error: 'session_not_started', hint: 'restart_quiz', code: 'SESSION_NOT_STARTED' }
+```
+
+The single most security-relevant outcome the RPC can produce was indistinguish-
+able on the wire from the most routine one, it bypassed the REG-391 classifier
+entirely, and it wrote **nothing** to `ops_events` — the 409 branch logs nothing
+at all. This is the only signal that the route-layer `STUDENT_ID_MISMATCH` 403
+was bypassed, or that the route layer and the database disagree about who owns a
+student row. It was invisible.
+
+**Why it surfaced now.** Before the REG-390 transport fix, Bearer callers reached
+PostgREST as `anon` with `auth.uid()` NULL, so the `auth.uid() IS NOT NULL`
+conjunct short-circuited the guard and mobile could never trigger it. Cookie/web
+callers always could. The fix makes the guard live on both transports, which
+makes swallowing it materially worse.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-394 | `ownership_guard_denial_is_403_not_409` | **The two P0001 meanings are separated by MESSAGE, and the split is pinned in both directions.** Unit half (`packages/lib/src/quiz/rpc-error-classification.ts` → `isOwnershipGuardDenial`): matches the guard's own server-generated wording including the `student auth %` variant (migration `20260814000000`), with no code at all (transports that drop the SQLSTATE), case-insensitively, and with extra whitespace. **Fail-CLOSED in the opposite direction to `isPermanentRpcFailure`** — `session_not_started` (bare and with a suffix), an unrelated P0001, a 42501, the bare `'Access denied'` template form, an empty message, `null` and `undefined` all assert `false`, so no other `RAISE EXCEPTION` can be mis-reported as a security event. The two classifiers are asserted **DISJOINT on their own inputs**: the denial is not "permanent" (must not become a 500 + `retryable:false`) and a permanent failure is not a denial (must not become a 403) — overlap either way would silently reroute a whole class. Route half, on BOTH submit routes via `describe.each`: 403 + `code:'STUDENT_OWNERSHIP_DENIED'` (asserted `!== 'SESSION_NOT_STARTED'`), **no `hint`**, and **no `retryable` field** (that field exists only for the ambiguous 5xx band; a 403 already means discard to the mobile drain). **Branch ORDER is pinned as its own property** — the denial is asserted `!== 500`/`RPC_PERMANENT`, and an unrecognised P0001 is asserted to still reach 409 — because ordering is the only thing separating the branches. P13 rider: the response body is stringified and asserted to contain neither the probed student id, nor the caller's own id, nor `caller does not own`, nor `P0001|submit_quiz_results_v2|students` — echoing the guard's raw message back would confirm to a prober that the id they supplied exists. Ops half: an `ops_events` row at severity **`error`**, category **`security`** (not `quiz` — it is an authorization event that merely originates in the quiz funnel, and must route to security triage without dragging in every scoring failure), message `submit_quiz_results_v2_ownership_denied`, carrying `guard`, `session_id`, `auth_user_id` and the **transport** — and asserted NOT to carry the raw SQL text, which would only duplicate the id already in `student_id`. The write is **`await`ed**, unlike the `void`ed sibling RPC-failure event: a serverless invocation can be torn down the moment the response returns, and a fire-and-forget write is acceptable for a scoring metric but not for the only record that a cross-student attempt happened (the path is rare and abnormal, so the latency is free; `logOpsEvent` never throws, so awaiting cannot turn the 403 into a 500). The `transport` label is computed by the shared `authTransportLabel()` — one copy, so the two routes cannot drift — and is pinned to **MIRROR** `createSupabaseRouteClient`'s own `startsWith('Bearer ')` test: `Authorization: Basic …`, `Bearertoken` and a lowercase `bearer ` all label **`cookie`**, because a truthiness check on the header (the obvious shortcut, and what the first cut of this code did) would label a Basic caller "bearer" and send a forensic investigation after the wrong client. Asserted on both the bearer and cookie paths so a web denial is attributable too. **The legitimate case is pinned unchanged:** a real `session_not_started` is still 409 + `SESSION_NOT_STARTED` on both routes and both transports, and emits no denial event. Cross-route parity pair asserts both routes translate the denial to an identical status/code/message. | `apps/host/src/__tests__/lib/quiz/rpc-error-classification.test.ts` (+18 tests) + `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (+17 tests) + `apps/host/src/__tests__/api/v2/contract-conformance.test.ts` (envelope conformance for the new code, plus `retryable` boolean-type drift guards) | E | P8, P9, P13 |
+
+### Honest limits
+
+- The denial branch is **unreachable in practice today**: the route-layer
+  `STUDENT_ID_MISMATCH` 403 (which cross-checks the JWT's resolved student
+  against `body.studentId` on the service-role client) fires first for the
+  ordinary attack. This branch is defense-in-depth — it fires only when the
+  route layer and the database disagree, which is exactly the state nobody would
+  otherwise find out about. It is pinned by driving the RPC double to raise the
+  guard's message; no test proves Postgres raises it, only that the routes
+  translate it correctly.
+- `/api/v2/quiz/start` calls `start_quiz_session`, whose identical guard is
+  still swallowed into `503 START_SESSION_FAILED` ("please retry"). Same defect
+  shape, deliberately NOT fixed in this pass — Condition B named the two submit
+  routes. **Owed follow-up.**
+
+### Catalog total
+
+Pre-REG-394: 393 entries (through REG-393, the LIVE-P0 Bearer batch above).
+This section adds REG-394; REG-395 is taken by the same follow-up batch in
+`10-rbac-rls.md`.
+**Total catalog: 395 entries (target: 35 — TARGET EXCEEDED). REG-396 is the next
+free id** (REG-371..REG-377 remain RESERVED).
 
 ---

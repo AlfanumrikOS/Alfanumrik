@@ -38,7 +38,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
 import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
@@ -86,7 +86,17 @@ export const GET = withRoute(async (request: NextRequest) => {
     const scope = 'global' as const;
 
     // Same RPC as the web leaderboard. Forward the period verbatim.
-    const supabase = await createSupabaseServerClient();
+    //
+    // Bearer-aware client (same swap as the quiz submit/start routes). This was
+    // the cookie-only client, so mobile callers reached `get_leaderboard` as
+    // role `anon` and only succeeded because of a residual PUBLIC EXECUTE grant
+    // — the `REVOKE EXECUTE ... FROM anon` in migration 20260515000002 is a
+    // silent no-op while PUBLIC still grants it. The anon-revocation campaign
+    // (cf. 20260813000006's `REVOKE ALL ... FROM PUBLIC`) removes that and the
+    // mobile leaderboard would break. Web/cookie callers are unaffected:
+    // `createSupabaseRouteClient` delegates verbatim to
+    // `createSupabaseServerClient()` when there is no Bearer header.
+    const supabase = await createSupabaseRouteClient(request);
     const { data, error } = await supabase.rpc('get_leaderboard', {
       p_period: period,
       p_limit: LIMIT,

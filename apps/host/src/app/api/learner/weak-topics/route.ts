@@ -28,7 +28,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { createStudentStateBuilder } from '@alfanumrik/lib/state/student-state-builder';
@@ -49,10 +49,15 @@ export interface WeakTopicsResponse {
   items: WeakTopic[];
 }
 
-export async function GET(_request: Request) {
-  const supabase = await createSupabaseServerClient();
+export async function GET(request: Request) {
+  // Bearer-AWARE, RLS-respecting client. The cookie-only
+  // createSupabaseServerClient() NULLed auth.uid() for `Authorization: Bearer`
+  // callers (the entire Flutter app), so the state builder's RLS reads denied
+  // and this route answered a spurious 404 no_student_profile. Never
+  // service-role; RLS enforced on both transports.
+  const supabase = await createSupabaseRouteClient(request);
 
-  const auth = await authorizeRequest(_request, 'study_plan.view', { requireStudentId: true });
+  const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
   if (!auth.authorized || !auth.userId) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }

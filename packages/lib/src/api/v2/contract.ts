@@ -66,12 +66,22 @@ export const registry = new OpenAPIRegistry();
 // `{ success: true }` / `{ success: false, error }`, which this matches.
 // ════════════════════════════════════════════════════════════════════════
 
-/** Generic error envelope — every /v2 route returns this shape on failure. */
+/** Generic error envelope — every /v2 route returns this shape on failure.
+ *
+ * `retryable` is OPTIONAL and, when present, states whether re-sending this
+ * exact request (same Idempotency-Key) could ever succeed. It is emitted today
+ * by POST /v2/quiz/submit: `false` on a PERMANENT scoring failure (HTTP 500,
+ * code RPC_PERMANENT — missing grant / undeployed RPC / CHECK violation) and
+ * `true` on a genuine transient (HTTP 503, code RPC_FAILED). The mobile offline
+ * drain queue branches on this field because its status-code matrix
+ * (`5xx → retain`, `4xx → discard`) cannot express "stop retrying but keep the
+ * data". Absent on every other error response. */
 export const ErrorResponse = z
   .object({
     success: z.literal(false),
     error: z.string().openapi({ example: 'Validation failed' }),
     code: z.string().optional().openapi({ example: 'VALIDATION_ERROR' }),
+    retryable: z.boolean().optional().openapi({ example: false }),
   })
   .openapi('ErrorResponse');
 
@@ -748,10 +758,11 @@ registry.registerPath({
   responses: {
     200: { description: 'Graded result (server-authoritative).', content: { 'application/json': { schema: QuizSubmitResult } } },
     400: { description: 'Missing/invalid Idempotency-Key or body; missing capturedAt or clientCapturedTotalSeconds mismatch on an offline replay.', content: { 'application/json': { schema: ErrorResponse } } },
-    403: { description: 'Missing quiz.attempt or studentId mismatch.', content: { 'application/json': { schema: ErrorResponse } } },
+    403: { description: 'Missing quiz.attempt (403), studentId mismatch (STUDENT_ID_MISMATCH), or the scoring RPC\'s SECURITY DEFINER ownership guard denied the caller (STUDENT_OWNERSHIP_DENIED). The guard raises SQLSTATE P0001 — the SAME code as session_not_started — so it is discriminated by message and answered 403, never 409. No retryable field: a 403 is already unambiguous (the client must not resend, and the mobile drain discards).', content: { 'application/json': { schema: ErrorResponse } } },
     409: { description: 'session_not_started — client should restart the quiz.', content: { 'application/json': { schema: ErrorResponse } } },
     422: { description: 'Offline replay rejected: REPLAY_CLOCK_INVALID, REPLAY_TOO_STALE, or SHUFFLE_MAP_MISMATCH.', content: { 'application/json': { schema: ErrorResponse } } },
-    503: { description: 'Transient scoring failure — retry with same Idempotency-Key.', content: { 'application/json': { schema: ErrorResponse } } },
+    500: { description: 'PERMANENT scoring failure (RPC_PERMANENT) — SQLSTATE 42501 / 42883 / 23514. Body carries retryable: false. Retrying with the same Idempotency-Key can never succeed, so the client must STOP retrying; it must NOT discard the attempt (the captured data is still valid).', content: { 'application/json': { schema: ErrorResponse } } },
+    503: { description: 'Transient scoring failure (RPC_FAILED) — body carries retryable: true. Retry with the same Idempotency-Key.', content: { 'application/json': { schema: ErrorResponse } } },
   },
 });
 

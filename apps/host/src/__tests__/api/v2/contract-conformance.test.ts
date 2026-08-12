@@ -376,6 +376,9 @@ describe('/v2 contract conformance — error envelopes parse against ErrorRespon
     ['NO_STUDENT_PROFILE', 'No student profile found for this account'],
     ['VALIDATION_ERROR', 'Invalid query params'],
     ['SESSION_NOT_STARTED', 'session_not_started'],
+    // Shares SQLSTATE P0001 with SESSION_NOT_STARTED but is a 403, not a 409 —
+    // the ownership-guard denial (REG-394). No student id in the message (P13).
+    ['STUDENT_OWNERSHIP_DENIED', 'Access denied for this student'],
     ['RPC_FAILED', 'Temporary scoring failure — retry with same Idempotency-Key'],
     ['INSUFFICIENT_QUESTIONS_IN_SCOPE', 'insufficient_questions_in_scope (available=2, requested=10)'],
     ['GRADE_MISMATCH', 'Requested grade does not match your profile grade'],
@@ -387,6 +390,41 @@ describe('/v2 contract conformance — error envelopes parse against ErrorRespon
 
   it('ErrorResponse conforms when code is omitted (code is optional)', () => {
     expectParses(ErrorResponse, { success: false, error: 'Unauthorized' });
+  });
+
+  // ── `retryable` — the cross-client field the Flutter drain branches on ──────
+  // Its NAME and TOP-LEVEL POSITION are the contract (REG-391); the generated
+  // Dart client reads it straight off the error envelope.
+  it('ErrorResponse conforms with retryable:false on a PERMANENT scoring failure', () => {
+    expectParses(ErrorResponse, {
+      success: false,
+      error:
+        'Scoring failed permanently for this submission. Do not retry — this has been reported to support.',
+      code: 'RPC_PERMANENT',
+      retryable: false,
+    });
+  });
+
+  it('ErrorResponse conforms with retryable:true on a TRANSIENT scoring failure', () => {
+    expectParses(ErrorResponse, {
+      success: false,
+      error: 'Temporary scoring failure — retry with same Idempotency-Key',
+      code: 'RPC_FAILED',
+      retryable: true,
+    });
+  });
+
+  it('ErrorResponse REJECTS a non-boolean retryable (drift guard)', () => {
+    // A string "false" is truthy in Dart/JS — a silent regression here would
+    // restore the infinite-retry defect the field exists to stop.
+    expect(
+      ErrorResponse.safeParse({
+        success: false,
+        error: 'x',
+        code: 'RPC_PERMANENT',
+        retryable: 'false',
+      }).success,
+    ).toBe(false);
   });
 
   it('ErrorResponse REJECTS a bare {error} (legacy v1 envelope drift guard)', () => {

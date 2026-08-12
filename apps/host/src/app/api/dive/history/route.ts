@@ -15,7 +15,7 @@
  * so policies enforce authorization; no service-role bypass needed.
  */
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { logger } from '@alfanumrik/lib/logger';
@@ -26,7 +26,13 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 60;
 
 export async function GET(request: Request) {
-  const supabase = await createSupabaseServerClient();
+  // Bearer-AWARE, RLS-respecting client. The cookie-only
+  // createSupabaseServerClient() NULLed auth.uid() for `Authorization: Bearer`
+  // callers (the entire Flutter app), so the `students` lookup returned no row
+  // and this route silently answered the EMPTY-history success shape — the
+  // student's real dives looked like they had never happened. Never
+  // service-role; RLS enforced on both transports.
+  const supabase = await createSupabaseRouteClient(request);
 
   const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
   if (!auth.authorized || !auth.userId) {

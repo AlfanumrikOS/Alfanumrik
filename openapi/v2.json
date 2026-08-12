@@ -250,6 +250,10 @@
             "example": "Validation failed",
             "type": "string"
           },
+          "retryable": {
+            "example": false,
+            "type": "boolean"
+          },
           "success": {
             "enum": [
               false
@@ -2349,7 +2353,7 @@
                 }
               }
             },
-            "description": "Missing quiz.attempt or studentId mismatch."
+            "description": "Missing quiz.attempt (403), studentId mismatch (STUDENT_ID_MISMATCH), or the scoring RPC's SECURITY DEFINER ownership guard denied the caller (STUDENT_OWNERSHIP_DENIED). The guard raises SQLSTATE P0001 — the SAME code as session_not_started — so it is discriminated by message and answered 403, never 409. No retryable field: a 403 is already unambiguous (the client must not resend, and the mobile drain discards)."
           },
           "409": {
             "content": {
@@ -2371,6 +2375,16 @@
             },
             "description": "Offline replay rejected: REPLAY_CLOCK_INVALID, REPLAY_TOO_STALE, or SHUFFLE_MAP_MISMATCH."
           },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "PERMANENT scoring failure (RPC_PERMANENT) — SQLSTATE 42501 / 42883 / 23514. Body carries retryable: false. Retrying with the same Idempotency-Key can never succeed, so the client must STOP retrying; it must NOT discard the attempt (the captured data is still valid)."
+          },
           "503": {
             "content": {
               "application/json": {
@@ -2379,7 +2393,7 @@
                 }
               }
             },
-            "description": "Transient scoring failure — retry with same Idempotency-Key."
+            "description": "Transient scoring failure (RPC_FAILED) — body carries retryable: true. Retry with the same Idempotency-Key."
           }
         },
         "security": [
