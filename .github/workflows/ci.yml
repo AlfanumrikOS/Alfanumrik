@@ -16,13 +16,19 @@ on:
     # `e2e-full` — re-triggers this whole workflow. Mitigation: the
     # ci-${{ github.ref }} concurrency group below cancels the in-flight
     # run, and warm node_modules/.next caches keep the re-run at ~5-7 min.
-    # SAFE for the merge gate: every ruleset-required context ("CI Gate",
-    # "Lint, Type-check & Test") is re-produced on labeled-event runs
-    # because no required job is gated on the event *type* — labeled IS a
-    # pull_request event, so their `if:` guards (event_name/base_ref/
-    # same-repo) all still pass, and ci-gate/unit-tests-merge run under
-    # `if: always()`. Only the advisory label-gated `e2e` job reads the
-    # label list.
+    # SAFE for the merge gate: every ruleset-required context is re-produced
+    # on labeled-event runs because no required job is gated on the event
+    # *type* — labeled IS a pull_request event, so their `if:` guards
+    # (event_name/base_ref/same-repo) all still pass, and
+    # ci-gate/unit-tests-merge run under `if: always()`. Only the advisory
+    # label-gated `e2e` job reads the label list.
+    #
+    # (The live `main-protection` ruleset requires exactly four contexts:
+    # "Secret Scanning", "Lint, Type-check & Test", "Production Build" and
+    # "CodeQL Analysis". "CI Gate" is NOT ruleset-required — it is the
+    # aggregate gate that deploy-production.yml / deploy-staging.yml poll
+    # before deploying, so it must stay green for a different reason. Keep
+    # this list in sync with the note above the `ci-gate` job.)
     types: [opened, synchronize, reopened, labeled]
 
 permissions:
@@ -66,6 +72,7 @@ jobs:
   secret-scan:
     name: Secret Scanning
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read       # gitleaks needs to read repo history
       pull-requests: read  # gitleaks needs the PR commit list (fixes 403)
@@ -1092,10 +1099,10 @@ jobs:
           fi
           printf '%s\n' "$files" > "$RUNNER_TEMP/changed-migrations.txt"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         if: steps.changes.outputs.changed == 'true'
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSION }}
           check-latest: true
 
       - name: Run protected-flag migration guard
@@ -1188,6 +1195,7 @@ jobs:
   quality:
     name: Lint & Type-check
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
 
@@ -1196,21 +1204,9 @@ jobs:
         run: |
           if [ -f vercel.json ]; then echo "::error::root vercel.json must not exist (apps/host/vercel.json is authoritative)"; exit 1; fi
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
-          check-latest: true
-
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
 
       # ADR-006 #4: both Anthropic call paths (Node claude.ts, Deno
       # reliability.ts) must keep exponential-backoff retry on 429/5xx/529.
@@ -1555,6 +1551,7 @@ jobs:
   unit-tests:
     name: Unit Tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -1562,21 +1559,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
-          check-latest: true
-
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
 
       # Vitest 4.1.8 enforces coverage thresholds on EVERY run that reports
       # coverage — including partial shard runs, where the global and per-file
@@ -1651,6 +1636,7 @@ jobs:
   unit-tests-merge:
     name: Lint, Type-check & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # `if: always()` so this job is never SKIPPED when a shard or quality
     # fails — a skipped job would otherwise satisfy the required status check.
     # The first step re-asserts success explicitly instead (same node-script
@@ -1674,21 +1660,9 @@ jobs:
 
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
-          check-latest: true
-
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
 
       - name: Download shard blob reports
         uses: actions/download-artifact@v8
@@ -1894,6 +1868,7 @@ jobs:
   edge-function-tests:
     name: Edge Function Deno Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       # ════════════════════════════════════════════════════════════════════════
       #  SINGLE SOURCE OF TRUTH for the Deno test target set.
@@ -2412,41 +2387,51 @@ jobs:
 
   # ── Step 1b: Integration Tests (live Supabase) ──
   # Runs migration/trigger/view/CHECK-constraint tests that require a real
-  # Postgres backend. Gated on the presence of repository secrets, so PRs from
-  # forks (which don't get secrets) skip cleanly instead of failing.
-  # Non-blocking for now; flip `continue-on-error` to false once the staging
-  # Supabase instance is reliably reachable from GH-hosted runners.
+  # Postgres backend.
+  #
+  # BEHAVIOUR (corrected 2026-08-12 — the previous comment here described a
+  # posture this job has not had since 2026-05-05):
+  #   - BLOCKING wherever it runs. The test step carries an explicit
+  #     `continue-on-error: false` (see the note on that step), and the job is
+  #     in the ci-gate `required` list on push and same-repo PRs.
+  #   - It does NOT "skip cleanly" on a missing secret. Where the job runs, a
+  #     missing STAGING_SUPABASE_URL / STAGING_SUPABASE_SERVICE_ROLE_KEY is a
+  #     hard `::error::` + exit 1 (fail-closed) — a silently-degraded run would
+  #     be indistinguishable from a passing one.
+  #   - The only "skip" is at the JOB level, via the `if:` below: fork PRs get
+  #     no secrets, so the job is never scheduled there. ci-gate then asserts
+  #     the job is EXACTLY skipped rather than dropping the check.
   integration-tests:
     name: Integration Tests (live DB)
     runs-on: ubuntu-latest
-    # Skip on PRs from forked repos: secrets are not available there and the
-    # job would always fail boot. Trusted PRs (same-repo) and pushes still run.
+    timeout-minutes: 20
+    # Runs on same-repo PRs and pushes only. Fork PRs and workflow_dispatch get
+    # no secrets / do not populate github.event.pull_request, so the job would
+    # always fail at boot; it is skipped there and ci-gate expects that skip.
     # (Previously also `needs: secret-scan` — removed for the same masking
     # reason documented on the `quality` job above.)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
-          check-latest: true
 
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
-
+      # Secrets are bound through `env:` and tested as shell VARIABLES. Never
+      # interpolate `${{ secrets.* }}` directly into a bash line: `${{ }}` is
+      # substituted textually BEFORE bash parses the script, so a secret value
+      # containing a quote, backtick or $(...) would be spliced into the script
+      # itself (command injection / parse break). The steps below already use
+      # this convention; this step now matches it. Fail-closed behaviour on a
+      # missing secret is unchanged: ::error:: + exit 1.
       - name: Verify integration secrets are present
         id: check-secrets
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -z "${{ secrets.STAGING_SUPABASE_URL }}" ] || [ -z "${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+          if [ -z "$STAGING_SUPABASE_URL" ] || [ -z "$STAGING_SUPABASE_SERVICE_ROLE_KEY" ]; then
             echo "::error::Trusted integration job requires STAGING_SUPABASE_URL and STAGING_SUPABASE_SERVICE_ROLE_KEY."
             exit 1
           fi
@@ -2486,24 +2471,13 @@ jobs:
   build:
     name: Production Build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
-          check-latest: true
-
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
 
       # Next.js incremental build cache (per Next.js CI-caching guidance:
       # https://nextjs.org/docs/app/guides/ci-build-caching#github-actions).
@@ -2771,6 +2745,7 @@ jobs:
   e2e-critical-paths:
     name: E2E Critical Paths (blocking)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Only run on PRs targeting main/staging branches. Don't slow down feature
     # branches that haven't proposed a merge yet. Skip on forked PRs (no
     # secrets) — when staging fixtures are wired in, this `if` should also
@@ -2781,19 +2756,9 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
-          check-latest: true
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
       - run: npx playwright install --with-deps chromium
 
       - name: Run critical-path E2E specs
@@ -2875,6 +2840,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: ${{ always() }}
     needs:
       - secret-scan
@@ -2898,18 +2864,61 @@ jobs:
         run: |
           node <<'NODE'
           const needs = JSON.parse(process.env.NEEDS_JSON || '{}');
-          const required = ['secret-scan','selected-school-rpc-integration','protected-flag-migration-guard','foxy-alignment','gen-mol-matrix','quality','unit-tests','unit-tests-merge','edge-function-tests','integration-tests','build'];
-          const forkSkips = [];
-          if (process.env.EVENT_NAME === 'pull_request') {
-            if (process.env.SAME_REPOSITORY_PR === 'true') {
-              required.push('e2e-critical-paths');
-            } else {
-              required.splice(required.indexOf('integration-tests'), 1);
-              forkSkips.push('integration-tests', 'e2e-critical-paths');
-            }
+          const eventName = process.env.EVENT_NAME;
+          const sameRepoPr = process.env.SAME_REPOSITORY_PR === 'true';
+
+          // ── EVENT MATRIX ──────────────────────────────────────────────────
+          // Two upstream jobs are conditionally scheduled, so the gate must
+          // classify them PER EVENT. Every job in `needs` lands in exactly one
+          // of two lists — `required` (must be 'success') or `expectedSkips`
+          // (must be EXACTLY 'skipped'). Nothing is ever silently unchecked,
+          // and nothing is ever forgiven for failing: a job that RAN and
+          // FAILED is never 'skipped', so it fails the gate on every event.
+          //
+          //   integration-tests  if: same-repo PR || push
+          //   e2e-critical-paths if: PR && base main/master/staging && same-repo
+          //
+          //                     | integration-tests | e2e-critical-paths
+          //   push              | required          | expected skip
+          //   PR (same repo)    | required          | required
+          //   PR (fork)         | expected skip     | expected skip
+          //   workflow_dispatch | expected skip     | expected skip
+          //
+          // WHY workflow_dispatch IS CALLED OUT: this gate used to be
+          // unpassable there. integration-tests stayed in `required` on every
+          // event, but its own `if:` is false outside push/same-repo-PR, so on
+          // a manual dispatch the job was SKIPPED, the gate read
+          // skipped !== 'success', and it exited 1 — with every other job
+          // green. Both workflow_dispatch runs ever attempted (31258602448,
+          // 31128820645) failed the gate with `integration-tests=skipped` in
+          // the failure list. Both ALSO had genuine failures (secret-scan, and
+          // in 31128820645 quality/unit-tests too), so they are not clean
+          // proof on their own — the proof is structural: with integration-
+          // tests in `required` and its `if:` false, no dispatch run could
+          // pass no matter how green everything else was.
+          // The job is moved into expectedSkips on those events rather than
+          // dropped, so the check is RELOCATED, not deleted: if it ever runs
+          // on a dispatch (an `if:` drift), 'success' !== 'skipped' and the
+          // gate still fails, loudly.
+          const required = ['secret-scan','selected-school-rpc-integration','protected-flag-migration-guard','foxy-alignment','gen-mol-matrix','quality','unit-tests','unit-tests-merge','edge-function-tests','build'];
+          // Formerly `forkSkips` — same mechanism, now covering every event on
+          // which a conditional job is legitimately not scheduled.
+          const expectedSkips = [];
+
+          if (eventName === 'push' || (eventName === 'pull_request' && sameRepoPr)) {
+            required.push('integration-tests');
+          } else {
+            expectedSkips.push('integration-tests');
           }
+
+          if (eventName === 'pull_request' && sameRepoPr) {
+            required.push('e2e-critical-paths');
+          } else {
+            expectedSkips.push('e2e-critical-paths');
+          }
+
           const failures = required.filter((job) => needs[job]?.result !== 'success');
-          failures.push(...forkSkips.filter((job) => needs[job]?.result !== 'skipped'));
+          failures.push(...expectedSkips.filter((job) => needs[job]?.result !== 'skipped'));
           if (failures.length) {
             // DIAGNOSTIC PARTITION ONLY — the gate still exits 1 in every
             // non-success case. A cancelled upstream is NEVER forgiven: a
