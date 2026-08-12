@@ -1345,3 +1345,45 @@ follow-up batch). This section adds REG-395.
 free id** (REG-371..REG-377 remain RESERVED).
 
 ---
+
+## Leadership route: authorize BEFORE the flag gate (2026-08-12, E2E Batch 2 P2-5) — REG-397
+
+Source: the 2026-08-12 production E2E report, finding P2-5.
+`GET /api/school-admin/leadership` ran its `ff_school_pulse_v1` gate as step 0,
+BEFORE `resolveCommandCenterContext` — so with the flag OFF (its seeded
+production state) **every caller answered `200 {success:true, data:null,
+gated:true}`: no session, student token, anyone.** It was the only route out of
+240 in the unauthenticated sweep to answer 200 with a role-gated shape. No data
+leaked (`data:null`), but the denial was invisible to monitoring and the route's
+401/403 path was dead code — a fail-soft contract meant for AUTHORIZED school
+admins had leaked to the world. The fix reorders: resolve/authorize first
+(matching siblings `overview` / `classes-at-risk` / `teacher-engagement`), flag
+gate second, for authorized callers only.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-397 | `leadership_auth_before_flag_gate` | With the flag OFF (the defect's exact posture, set in `beforeEach`): an unauthenticated caller gets the resolver's **401 UNCHANGED** — the body has NO `gated` property, the flag reader is NEVER consulted, and no read-model RPC fires; an unauthorized caller (student token) gets the resolver's **403 unchanged**, flag reader never consulted; the resolver's **400 multi-school `{school_ids}` hint propagates unchanged** before the flag gate. For an AUTHORIZED school admin: flag OFF keeps the fail-soft `200 {success:true, data:null, gated:true}` contract byte-identical WITH the `Cache-Control: private, max-age=30` header and zero read-model RPCs; flag ON proceeds to the read model (all three RPCs — `get_school_overview`, `get_school_safeguarding_counts`, `get_school_competency_summary` — fire with `p_school_id` scoped to the resolved school); a flag-READER failure fails soft to `200 {gated:true}` (never 500s the dashboard mid-toggle). Only the resolution seam + flag reader are stubbed (mock pattern mirrors `command-center-routes.test.ts`). | `apps/host/src/__tests__/api/school-admin/leadership-route-auth.test.ts` (6 tests) | E | P9, P13-adjacent |
+
+### Honest limits of this entry
+
+- The resolver itself (`resolveCommandCenterContext`) is a mocked seam here — its
+  own 401/403 derivation is covered by the sibling command-center suites, not
+  re-proven in this file. This entry pins the ORDER (auth before flag) and the
+  contract on each branch, not the resolver's internals.
+- No live flag store: `isFeatureEnabled` is a double. The seeded-OFF production
+  posture is asserted as the test default, not measured against production.
+
+### Invariants covered by this section
+
+- P9 (RBAC enforcement — the fail-soft `gated` contract is reachable only AFTER
+  authorization; anonymous denials are visible 401/403s again)
+- P13-adjacent (denials carry no payload and are no longer disguised as success)
+
+### Catalog total
+
+Pre-REG-397: 396 entries (REG-396 in `06-auth-onboarding.md`, same batch).
+This section adds REG-397; REG-398 lands in `01-subject-governance.md`.
+**Total catalog: 398 entries (target: 35 — TARGET EXCEEDED). REG-399 is the next
+free id** (REG-371..REG-377 remain RESERVED).
+
+---

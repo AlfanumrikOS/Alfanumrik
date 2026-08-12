@@ -23,7 +23,7 @@ class StudentApi {
   const StudentApi(this._dio, this._serializers);
 
   /// XP leaderboard
-  /// Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own.
+  /// Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own. &#x60;scope&#x60; accepts only &#x60;global&#x60;; &#x60;scope&#x3D;school&#x60; returns 400 SCOPE_UNSUPPORTED because the underlying RPC has no school scoping (it previously returned global rows labelled \&quot;school\&quot;). &#x60;school&#x60;/&#x60;city&#x60;/&#x60;avatar_url&#x60; on each entry are always null.
   ///
   /// Parameters:
   /// * [period] 

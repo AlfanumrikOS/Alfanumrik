@@ -446,15 +446,20 @@ class QuizRepository {
         ..totalTimeSeconds = timeTakenSeconds
         ..responses.replace(buildV2SubmitItems(responses)));
 
-      // Idempotency-Key (UUID) header — required by the route contract.
-      final headers = <String, dynamic>{
-        if (idempotencyKey != null && idempotencyKey.isNotEmpty)
-          'Idempotency-Key': idempotencyKey,
-      };
-
+      // Idempotency-Key (UUID) — REQUIRED by the route contract and, since the
+      // spec declares it as a required header parameter, a required argument of
+      // the generated client. The generated method stamps this argument on the
+      // `Idempotency-Key` header itself — do NOT also pass it via `headers:`
+      // (the manual map spreads AFTER the parameter and would shadow it).
+      // The key is the attempt's stored key, generated ONCE by
+      // `QuizNotifier.startQuiz` and reused VERBATIM on every retry — never
+      // regenerated here (double-scoring guard, P2). A null/empty key is
+      // forwarded as '' so the SERVER stays the authority for the
+      // 400 IDEMPOTENCY_KEY_REQUIRED rejection — the same terminal outcome the
+      // previously-omitted header produced.
       final resp = await _v2!.quizApi.postQuizSubmit(
+        idempotencyKey: idempotencyKey ?? '',
         quizSubmitRequest: req,
-        headers: headers.isEmpty ? null : headers,
       );
       final body = resp.data;
       if (body == null) {
@@ -535,13 +540,15 @@ class QuizRepository {
     try {
       final req = buildOfflineSubmitRequest(attempt);
 
-      final headers = <String, dynamic>{
-        'Idempotency-Key': attempt.idempotencyKey,
-      };
-
+      // The generated client stamps this required argument on the
+      // `Idempotency-Key` header (same header name as before; sent exactly
+      // once). [attempt.idempotencyKey] flows through VERBATIM — never
+      // regenerated (see the method doc above). Do NOT also pass the key via
+      // `headers:` — the manual map spreads AFTER the parameter inside the
+      // generated method and would silently shadow it.
       final resp = await v2Client.quizApi.postQuizSubmit(
+        idempotencyKey: attempt.idempotencyKey,
         quizSubmitRequest: req,
-        headers: headers,
       );
       final body = resp.data;
       if (body == null) {

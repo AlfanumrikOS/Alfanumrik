@@ -6,7 +6,19 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 395 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 398 entries (target: 35 — TARGET EXCEEDED).**
+
+> Counting note (testing, 2026-08-12, E2E Batch 2 — the denial-contract batch,
+> branch `Alfanumrik/e2e-batch2-denial-contract`): 395 + 3 filed, body-backed
+> entries (**REG-396** — bootstrap role-echo + validate-before-dedup, in
+> `06-auth-onboarding.md`; **REG-397** — leadership auth-before-flag-gate, in
+> `10-rbac-rls.md`; **REG-398** — the /v2 subject denial contract, a–d as ONE
+> entry, in `01-subject-governance.md`) = **398**. This pass adds 3, deletes 0,
+> renumbers nothing. The batch brief said "should be REG-396 but VERIFY" — the
+> id was verified against the shard bodies before use (grep max body-backed id
+> = 395; 396 appeared only as "next free" prose), so no collision this time.
+> **REG-399 is now the next free id**; REG-371..REG-377 remain RESERVED. Every
+> carried-forward discrepancy in the notes below is untouched and still open.
 
 > Counting note (backend, 2026-08-12, the architect-conditions follow-up on the
 > same branch): 393 + 2 filed, body-backed entries (**REG-394** — the P0001
@@ -52,7 +64,56 @@ Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 > which is count-neutral by design — it was already covered under REG-386's
 > neighbourhood and takes no new id.
 
-Latest: REG-394..REG-395 (2026-08-12, the ARCHITECT-CONDITIONS follow-up on the
+Latest: REG-396..REG-398 (2026-08-12, E2E Batch 2 — the DENIAL-CONTRACT batch,
+branch `Alfanumrik/e2e-batch2-denial-contract`. Three findings from the same
+2026-08-12 production E2E report, all variants of "a denial that lies about
+itself":
+
+- **REG-396** (`06-auth-onboarding.md`) — **bootstrap role-echo + validate-
+  before-dedup.** `POST /api/auth/bootstrap`'s two dedup short-circuits ran
+  BEFORE validation and echoed unvalidated state: an already-bootstrapped
+  student posting `{"role":"institution_admin"}` was mirrored back
+  `institution_admin` + `/school-admin` (the frontend routes on this echo), the
+  Redis branch answered `role:'unknown'`, an invalid role was 400 on a fresh
+  profile but 200 on an existing one, and a garbage first call burned the 30s
+  Redis TTL for the subsequent good call. Pinned: role validation above BOTH
+  short-circuits (400 with the lock provably never taken), DB-truth echo via
+  the `resolveIdentity` ladder on `already_completed` AND `deduplicated`,
+  `'unknown'` dead, P15 fail-soft totality (no-rows AND thrown identity read
+  both fall back to the VALIDATED request role, never 500), and the fresh
+  `success` hot path byte-identical with no profile-table re-read.
+- **REG-397** (`10-rbac-rls.md`) — **leadership auth-before-flag-gate.**
+  `GET /api/school-admin/leadership` ran its `ff_school_pulse_v1` gate before
+  auth, so with the flag OFF (seeded state) every anonymous caller got
+  `200 {gated:true}` — the only route of 240 in the unauth sweep to answer 200
+  with a role-gated shape; the 401/403 path was dead code. Pinned: resolver
+  first (its 401/403/400-multi-school pass through UNCHANGED, flag reader never
+  consulted on denial), the fail-soft `200 {gated:true}` + private cache header
+  reachable ONLY authorized, flag-ON read-model path, and flag-reader failure
+  failing soft for authorized callers.
+- **REG-398** (`01-subject-governance.md`, a–d as one entry) — **the /v2
+  subject denial contract.** (a) the quiz/questions governance 403 names the
+  SUBJECT with `details:{subject,reason,allowed}` — never the old
+  wrong-variable "Subject not allowed: grade" — and a denial never carries
+  `retryable:true`; (b) governance outage FAILS CLOSED: 503
+  `SUBJECT_GOVERNANCE_UNAVAILABLE` `retryable:true` with the questions RPC
+  provably never called, the direction pinned total over throw shapes
+  (Error AND bare-string rejection — REG-391 style); (c) learn
+  curriculum/concept unknown subject → 400 `UNKNOWN_SUBJECT` with `allowed[]`,
+  the empty-success 200 reserved for zero-subjects-no-filter (branch-order
+  pinned at the boundary: zero subjects + filter = 400 `allowed:[]`), locked
+  subjects stay valid read params, concept's 404 reserved for known-subject
+  content gaps; (d) `ErrorResponse.details` + `SubjectNotAllowedDetails`
+  (rejects missing `allowed[]`) + the REQUIRED `Idempotency-Key` header now in
+  the generated OpenAPI spec, `gen:openapi:check` run green.
+
+Reported, not fixed (defect found while pinning): `/v2/learn/curriculum` still
+answers **500 INTERNAL_ERROR** on a `get_available_subjects` outage while its
+siblings now answer 503 `retryable:true` for the same dependency — a retrying
+client treats the curriculum failure as permanent. Owed to backend.
+**REG-399 is now the next free id**; REG-371..REG-377 remain RESERVED.
+
+Prior: REG-394..REG-395 (2026-08-12, the ARCHITECT-CONDITIONS follow-up on the
 LIVE-P0 Bearer batch, same branch `Alfanumrik/e2e-p0-bearer-quiz-submit`.
 Architect returned APPROVE WITH CONDITIONS on REG-390/391; both conditions are
 closed here.
