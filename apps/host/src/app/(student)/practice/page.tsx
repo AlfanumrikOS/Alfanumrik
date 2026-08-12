@@ -26,12 +26,31 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useRequireAuth } from '@alfanumrik/lib/useRequireAuth';
 import { usePracticeOsFlag } from '@alfanumrik/lib/use-practice-os-flag';
-import { LoadingFoxy } from '@alfanumrik/ui/ui';
+import { Skeleton } from '@alfanumrik/ui/ui';
 
-// Lazy-load the hub so the flag-OFF/404 path never fetches this bundle.
+// Keep the pending state within the same content column as PracticeCenter.
+// A full-viewport fallback moves the persistent student navigation and causes
+// a large layout shift when the flag/auth state and lazy chunk resolve.
+function PracticeCenterSkeleton() {
+  return (
+    <main
+      className="mx-auto w-full max-w-2xl px-4 py-5 flex flex-col gap-5"
+      aria-busy="true"
+      aria-label="Loading practice center"
+    >
+      <Skeleton height={112} rounded="rounded-2xl" />
+      <Skeleton height={156} rounded="rounded-2xl" />
+      <Skeleton height={112} rounded="rounded-2xl" />
+      <Skeleton height={120} rounded="rounded-2xl" />
+      <Skeleton height={120} rounded="rounded-2xl" />
+    </main>
+  );
+}
+
+// Lazy-load the hub so the flag-OFF path never fetches this bundle.
 const PracticeCenter = dynamic(() => import('@alfanumrik/ui/practice/os/PracticeCenter'), {
   ssr: false,
-  loading: () => <LoadingFoxy />,
+  loading: () => <PracticeCenterSkeleton />,
 });
 
 function LegacyPracticePage() {
@@ -46,12 +65,12 @@ function LegacyPracticePage() {
   // Resolved OFF → the route does not exist. (PENDING falls through to a
   // skeleton so we never 404 a legitimately-ON user on first paint.)
   if (flag === 'off') {
-    return <LoadingFoxy />;
+    return <PracticeCenterSkeleton />;
   }
 
-  // Still resolving the flag, or auth not ready yet → neutral loading.
+  // Still resolving the flag, or auth not ready yet → preserve final layout.
   if (flag === 'pending' || !isReady) {
-    return <LoadingFoxy />;
+    return <PracticeCenterSkeleton />;
   }
 
   // flag === 'on' and auth ready → render the Practice Center.
