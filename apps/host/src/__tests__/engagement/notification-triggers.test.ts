@@ -2,8 +2,11 @@
  * Notification triggers — onLevelUp, onChapterComplete, onStreakMilestone (REG-136)
  *
  * Pins:
- *   1. P7 BILINGUAL: Every notification row carries both `body` (English) and
- *      `body_hi` (Hindi). Devanagari strings must be non-empty.
+ *   1. P7 BILINGUAL: Every notification row carries top-level `message`
+ *      (NOT NULL) and `body` (English), with Hindi copy NESTED under
+ *      `data.body_hi` — the `notifications` table has no top-level
+ *      body_hi/title_hi/message_hi column. Devanagari strings must be
+ *      non-empty.
  *   2. P13 PRIVACY: `data` field carries only opaque IDs, numbers, and trigger
  *      strings — never email, phone, or name.
  *   3. STUDENT ROW ALWAYS INSERTED: Even when there are no linked guardians, the
@@ -112,7 +115,7 @@ describe('onLevelUp notification trigger (REG-136)', () => {
     expect(studentRow?.type).toBe('achievement');
   });
 
-  it('student notification row has English body and Hindi body_hi (P7)', async () => {
+  it('student notification row has English message/body and nested data.body_hi (P7)', async () => {
     guardianQueryResult = [];
     const { onLevelUp } = await import('@alfanumrik/lib/notification-triggers');
     await onLevelUp('student-2', {
@@ -123,10 +126,16 @@ describe('onLevelUp notification trigger (REG-136)', () => {
 
     const rows = insertedRows[0]?.rows as Array<Record<string, unknown>>;
     const studentRow = rows?.find((r) => r.recipient_type === 'student');
+    // NOT-NULL `message` column must always be set.
+    expect(typeof studentRow?.message).toBe('string');
+    expect((studentRow?.message as string).length).toBeGreaterThan(0);
     expect(typeof studentRow?.body).toBe('string');
     expect((studentRow?.body as string).length).toBeGreaterThan(0);
-    expect(typeof studentRow?.body_hi).toBe('string');
-    expect((studentRow?.body_hi as string).length).toBeGreaterThan(0);
+    // No top-level body_hi column exists on `notifications`.
+    expect(studentRow).not.toHaveProperty('body_hi');
+    const data = studentRow?.data as Record<string, unknown>;
+    expect(typeof data.body_hi).toBe('string');
+    expect((data.body_hi as string).length).toBeGreaterThan(0);
   });
 
   it('student notification data carries no email, phone, or name (P13)', async () => {
@@ -199,16 +208,20 @@ describe('onChapterComplete notification trigger (REG-136)', () => {
     expect(studentRow?.type).toBe('achievement');
   });
 
-  it('includes XP amount in both English and Hindi body (P7)', async () => {
+  it('includes XP amount in English message/body and nested data.body_hi (P7)', async () => {
     guardianQueryResult = [];
     const { onChapterComplete } = await import('@alfanumrik/lib/notification-triggers');
     await onChapterComplete('student-11', { subject: 'Chemistry', xpEarned: 100 });
 
     const rows = insertedRows[0]?.rows as Array<Record<string, unknown>>;
     const studentRow = rows?.find((r) => r.recipient_type === 'student');
+    const messageEn = studentRow?.message as string;
     const bodyEn = studentRow?.body as string;
-    const bodyHi = studentRow?.body_hi as string;
+    expect(messageEn).toContain('100');
     expect(bodyEn).toContain('100');
+    expect(studentRow).not.toHaveProperty('body_hi');
+    const data = studentRow?.data as Record<string, unknown>;
+    const bodyHi = data.body_hi as string;
     expect(bodyHi).toContain('100');
     expect(bodyHi.length).toBeGreaterThan(0);
   });
@@ -268,15 +281,18 @@ describe('onStreakMilestone notification trigger (REG-136)', () => {
     expect(studentRow?.type).toBe('achievement');
   });
 
-  it('streak day count appears in both English and Hindi body (P7)', async () => {
+  it('streak day count appears in English message/body and nested data.body_hi (P7)', async () => {
     guardianQueryResult = [];
     const { onStreakMilestone } = await import('@alfanumrik/lib/notification-triggers');
     await onStreakMilestone('student-21', { days: 30, coinsAwarded: 150 });
 
     const rows = insertedRows[0]?.rows as Array<Record<string, unknown>>;
     const studentRow = rows?.find((r) => r.recipient_type === 'student');
+    expect((studentRow?.message as string)).toContain('30');
     expect((studentRow?.body as string)).toContain('30');
-    expect((studentRow?.body_hi as string)).toContain('30');
+    expect(studentRow).not.toHaveProperty('body_hi');
+    const data = studentRow?.data as Record<string, unknown>;
+    expect((data.body_hi as string)).toContain('30');
   });
 
   it('fans out parent_achievement to linked guardians', async () => {

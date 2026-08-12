@@ -1,11 +1,31 @@
 'use client';
 import React, { useState } from 'react';
+import { notFound } from 'next/navigation';
 import { useFoxyOS } from '@alfanumrik/lib/hooks/useFoxyOS';
 import { FoxyRenderEngine } from '@alfanumrik/ui/FoxyRenderEngine';
+import { useRequireAuth } from '@alfanumrik/lib/useRequireAuth';
+import { LoadingFoxy } from '@alfanumrik/ui/ui';
 
+// Internal dev/E2E proving ground for the Foxy-X OS loop. It hardcodes a
+// fixture student id ("STU_E2E_1") — it must never be reachable in
+// production by an unauthenticated visitor. Two layers: (1) a hard 404 on
+// any production build, regardless of auth, since the fixture id is never a
+// real student's id; (2) useRequireAuth so a non-production build still
+// requires a logged-in session before rendering.
 export default function FoxyTestPage() {
+  // Hooks must run unconditionally on every render (rules-of-hooks) — the
+  // production/auth gates below run AFTER all hooks are called, not before.
+  const { isReady } = useRequireAuth();
   const { uiState, loading, error, startTopic, submitEvent } = useFoxyOS("STU_E2E_1");
   const [topic, setTopic] = useState('newtons_third_law');
+
+  if (process.env.NODE_ENV === 'production') {
+    notFound();
+  }
+
+  if (!isReady) {
+    return <LoadingFoxy />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 p-8 text-slate-200">

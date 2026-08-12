@@ -27,6 +27,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logAdminAction } from '@alfanumrik/lib/admin-auth';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
+import { logger } from '@alfanumrik/lib/logger';
 
 export const runtime = 'nodejs';
 
@@ -37,6 +38,89 @@ const REPLY_MAX_LENGTH = 5000;
 
 /** Hard ceiling on thread length returned in one operator response. */
 const MAX_REPLIES = 500;
+
+// ── Ticket-owner notification (F4 fix) ──────────────────────────────────
+//
+// When an operator replies (student-visible) or resolves a ticket, the
+// requester previously got no signal at all — the reply/resolution sat
+// silently in `support_tickets`/`support_ticket_replies` until the student
+// happened to reopen the support page. This fires ONE best-effort in-app
+// `notifications` row to the ticket's owning student.
+//
+// Scope: `support_tickets` only carries a single ownership anchor
+// (`student_id` + `user_role`; see ../../support/tickets/route.ts:16-25 for
+// why there is no dedicated `created_by_user_id` column). This helper only
+// notifies when `user_role === 'student'` — i.e. the ticket's own filer is a
+// student with a direct `student_id` anchor. Parent- and teacher-filed
+// tickets are intentionally skipped (a parent ticket's student_id anchor is
+// the CHILD, not the filer, and notifying the child would leak the
+// existence/content of a ticket the child never filed and may not know
+// about — a P13 concern; teacher tickets carry no anchor at all).
+//
+// P7: top-level `message`/`body` carry English (NOT NULL); Hindi lives
+// nested under `data.title_hi`/`data.body_hi` — mirrors the verified
+// notification-triggers.ts house shape, NOT a top-level body_hi column.
+// P13: `data` carries only the ticket id and a deep-link target — no ticket
+// subject/body text, and errors here are logged with ids only.
+async function notifyTicketOwner(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  ticketId: string,
+  kind: 'reply' | 'resolved',
+): Promise<void> {
+  try {
+    const { data: ticket, error } = await supabase
+      .from('support_tickets')
+      .select('student_id, user_role')
+      .eq('id', ticketId)
+      .maybeSingle();
+    if (error || !ticket || !ticket.student_id || ticket.user_role !== 'student') {
+      return; // no direct student anchor — best-effort only, never blocks the caller
+    }
+
+    const type = kind === 'reply' ? 'support_ticket_reply' : 'support_ticket_resolved';
+    const titleEn = kind === 'reply' ? 'New reply on your support ticket' : 'Your support ticket is resolved';
+    const titleHi = kind === 'reply' ? 'आपकी सहायता टिकट पर नया उत्तर' : 'आपकी सहायता टिकट हल हो गई है';
+    const bodyEn =
+      kind === 'reply'
+        ? 'Support has replied to your ticket. Tap to view the response.'
+        : 'Your support ticket has been marked resolved. Tap to view the details.';
+    const bodyHi =
+      kind === 'reply'
+        ? 'सहायता टीम ने आपकी टिकट का उत्तर दिया है। उत्तर देखने के लिए टैप करें।'
+        : 'आपकी सहायता टिकट को हल के रूप में चिह्नित किया गया है। विवरण देखने के लिए टैप करें।';
+
+    const { error: insertError } = await supabase.from('notifications').insert({
+      recipient_type: 'student',
+      recipient_id: ticket.student_id,
+      type,
+      title: titleEn,
+      message: bodyEn,
+      body: bodyEn,
+      data: {
+        ticket_id: ticketId,
+        trigger: type,
+        action: `/support/${ticketId}`,
+        title_hi: titleHi,
+        body_hi: bodyHi,
+      },
+      is_read: false,
+      created_at: new Date().toISOString(),
+    });
+    if (insertError) {
+      logger.error('support_ticket_notify_insert_failed', {
+        error: new Error(insertError.message),
+        ticketId,
+        kind,
+      });
+    }
+  } catch (err) {
+    logger.error('support_ticket_notify_unexpected_error', {
+      error: err instanceof Error ? err : new Error(String(err)),
+      ticketId,
+      kind,
+    });
+  }
+}
 
 // GET /api/internal/admin/support?status=open|pending|resolved|all&page=&limit=
 // GET /api/internal/admin/support?ticket_id=<uuid>  → single ticket + full thread
@@ -120,6 +204,11 @@ export async function PATCH(request: NextRequest) {
 
     const { error } = await supabase.from('support_tickets').update(updates).eq('id', id);
     if (error) throw error;
+
+    // Best-effort ticket-owner notification — never fails the status change.
+    if (status === 'resolved') {
+      await notifyTicketOwner(supabase, id, 'resolved');
+    }
 
     // P13: the note text is NOT audited — only the new status and a length.
     // `admin_audit_log` is readable by every admin (`audit_read` USING is_admin()),
@@ -221,6 +310,12 @@ export async function POST(request: NextRequest) {
       updates.status = 'pending';
     }
     await supabase.from('support_tickets').update(updates).eq('id', ticketId);
+
+    // Best-effort ticket-owner notification — student-visible replies only,
+    // never internal notes. Never fails the reply itself.
+    if (!isInternal) {
+      await notifyTicketOwner(supabase, ticketId, 'reply');
+    }
 
     // P13: the reply text is NOT audited — only ids, the visibility flag and a
     // length. A support body routinely contains student-identifiable detail.

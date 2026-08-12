@@ -6,8 +6,12 @@ import { FoxyAvatar } from '@alfanumrik/ui/ui';
 import { CELEBRATION_CONFETTI, WARM_CONFETTI, NEUTRAL_BURST } from '@alfanumrik/lib/confetti-palette';
 
 interface CelebrationOverlayProps {
-  scorePercent: number;
-  xpEarned: number;
+  // Both optional: some completion events (e.g. chapter completion on /learn)
+  // have no real per-event score/XP to report. When omitted, the overlay
+  // renders a generic, honest completion message instead of fabricating a
+  // number — see .claude/CLAUDE.md P1/P2 (no invented score/XP values).
+  scorePercent?: number;
+  xpEarned?: number;
   isHi: boolean;
   onDismiss: () => void;
 }
@@ -38,32 +42,39 @@ export default function CelebrationOverlay({
   const rafRef = useRef<number | null>(null);
   const scoreRafRef = useRef<number | null>(null);
 
-  const isPerfect = scorePercent === 100;
-  const isHigh = scorePercent >= 80;
-  const isGood = scorePercent >= 60;
+  const hasScore = typeof scorePercent === 'number';
+  const hasXP = typeof xpEarned === 'number' && xpEarned > 0;
 
-  const grade =
-    scorePercent >= 90 ? 'A+' :
-    scorePercent >= 80 ? 'A' :
-    scorePercent >= 70 ? 'B' :
-    scorePercent >= 60 ? 'C' :
-    scorePercent >= 40 ? 'D' : 'F';
+  const isPerfect = hasScore && scorePercent === 100;
+  const isHigh = hasScore && scorePercent! >= 80;
+  const isGood = hasScore && scorePercent! >= 60;
 
-  const gradeColor =
-    scorePercent >= 80 ? 'var(--green)' :
-    scorePercent >= 60 ? 'var(--teal)' :
+  const grade = !hasScore ? null :
+    scorePercent! >= 90 ? 'A+' :
+    scorePercent! >= 80 ? 'A' :
+    scorePercent! >= 70 ? 'B' :
+    scorePercent! >= 60 ? 'C' :
+    scorePercent! >= 40 ? 'D' : 'F';
+
+  const gradeColor = !hasScore ? 'var(--teal)' :
+    scorePercent! >= 80 ? 'var(--green)' :
+    scorePercent! >= 60 ? 'var(--teal)' :
     // warm channel so the "good" grade band reads warm-orange (not violet) under cosmic
-    scorePercent >= 40 ? 'var(--accent-warm)' : 'var(--red)';
+    scorePercent! >= 40 ? 'var(--accent-warm)' : 'var(--red)';
 
-  const message = isPerfect
-    ? (isHi ? 'PERFECT!' : 'PERFECT!')
-    : isHigh
-      ? (isHi ? '\u0936\u093E\u0928\u0926\u093E\u0930!' : 'Outstanding!')
-      : isGood
-        ? (isHi ? '\u0905\u091A\u094D\u091B\u093E \u0915\u093F\u092F\u093E!' : 'Great job!')
-        : (isHi ? '\u091C\u093E\u0930\u0940 \u0930\u0916\u094B!' : 'Keep going!');
+  // No score to report (e.g. chapter completion): a single honest, bilingual
+  // completion message \u2014 never a fabricated grade/tier.
+  const message = !hasScore
+    ? (isHi ? '\u0905\u0927\u094D\u092F\u093E\u092F \u092A\u0942\u0930\u093E!' : 'Chapter complete!')
+    : isPerfect
+      ? (isHi ? 'PERFECT!' : 'PERFECT!')
+      : isHigh
+        ? (isHi ? '\u0936\u093E\u0928\u0926\u093E\u0930!' : 'Outstanding!')
+        : isGood
+          ? (isHi ? '\u0905\u091A\u094D\u091B\u093E \u0915\u093F\u092F\u093E!' : 'Great job!')
+          : (isHi ? '\u091C\u093E\u0930\u0940 \u0930\u0916\u094B!' : 'Keep going!');
 
-  const messageEmoji = isPerfect ? '\u{1F31F}' : isHigh ? '\u{1F3C6}' : isGood ? '\u{1F44D}' : '\u{1F9CA}';
+  const messageEmoji = !hasScore ? '\u{1F389}' : isPerfect ? '\u{1F31F}' : isHigh ? '\u{1F3C6}' : isGood ? '\u{1F44D}' : '\u{1F9CA}';
 
   // ── Fire canvas-confetti ──
   const fireConfetti = useCallback(() => {
@@ -117,12 +128,22 @@ export default function CelebrationOverlay({
         colors: silverColors,
         disableForReducedMotion: true,
       });
+    } else if (!hasScore) {
+      // Generic completion (no score to grade against) still gets a small,
+      // neutral celebratory burst.
+      confetti({
+        particleCount: 40,
+        spread: 60,
+        origin: { y: 0.6 },
+        colors: silverColors,
+        disableForReducedMotion: true,
+      });
     }
-  }, [isPerfect, isHigh, isGood]);
+  }, [isPerfect, isHigh, isGood, hasScore]);
 
   // ── Score count-up animation ──
   useEffect(() => {
-    if (scorePercent <= 0) return;
+    if (!hasScore || scorePercent! <= 0) return;
     const duration = 1200;
     const start = performance.now();
 
@@ -130,18 +151,18 @@ export default function CelebrationOverlay({
       const elapsed = now - start;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - (1 - progress) * (1 - progress); // ease-out quad
-      setDisplayScore(Math.round(eased * scorePercent));
+      setDisplayScore(Math.round(eased * scorePercent!));
       if (progress < 1) {
         scoreRafRef.current = requestAnimationFrame(animate);
       }
     }
     scoreRafRef.current = requestAnimationFrame(animate);
     return () => { if (scoreRafRef.current) cancelAnimationFrame(scoreRafRef.current); };
-  }, [scorePercent]);
+  }, [hasScore, scorePercent]);
 
   // ── XP count-up animation (starts after score finishes) ──
   useEffect(() => {
-    if (xpEarned <= 0) return;
+    if (!hasXP) return;
     const delay = 1300; // start after score count-up
     const duration = 800;
     const t = setTimeout(() => {
@@ -150,7 +171,7 @@ export default function CelebrationOverlay({
         const elapsed = now - start;
         const progress = Math.min(elapsed / duration, 1);
         const eased = 1 - (1 - progress) * (1 - progress);
-        setDisplayXP(Math.round(eased * xpEarned));
+        setDisplayXP(Math.round(eased * xpEarned!));
         if (progress < 1) {
           rafRef.current = requestAnimationFrame(animate);
         }
@@ -161,7 +182,7 @@ export default function CelebrationOverlay({
       clearTimeout(t);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [xpEarned]);
+  }, [hasXP, xpEarned]);
 
   // ── Phase transitions + confetti trigger ──
   useEffect(() => {
@@ -218,36 +239,40 @@ export default function CelebrationOverlay({
         <FoxyAvatar state="happy" size="lg" />
       </div>
 
-      {/* Score percentage — count-up */}
-      <div className="animate-count-up" style={{ animationDelay: '0.2s' }}>
-        <div
-          className="text-7xl font-bold tabular-nums"
-          style={{
-            fontFamily: 'var(--font-display)',
-            color: '#fff',
-            textShadow: `0 0 40px color-mix(in srgb, ${gradeColor} 38%, transparent)`,
-          }}
-        >
-          {displayScore}%
+      {/* Score percentage — count-up (only when a real score was given) */}
+      {hasScore && (
+        <div className="animate-count-up" style={{ animationDelay: '0.2s' }}>
+          <div
+            className="text-7xl font-bold tabular-nums"
+            style={{
+              fontFamily: 'var(--font-display)',
+              color: '#fff',
+              textShadow: `0 0 40px color-mix(in srgb, ${gradeColor} 38%, transparent)`,
+            }}
+          >
+            {displayScore}%
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Grade badge */}
-      <div className="animate-grade-reveal mt-3">
-        <span
-          className="inline-flex items-center justify-center text-2xl font-bold rounded-full"
-          style={{
-            width: 56,
-            height: 56,
-            background: gradeColor,
-            color: '#fff',
-            fontFamily: 'var(--font-display)',
-            boxShadow: `0 4px 24px color-mix(in srgb, ${gradeColor} 31%, transparent)`,
-          }}
-        >
-          {grade}
-        </span>
-      </div>
+      {/* Grade badge — only when a real score was given */}
+      {hasScore && grade && (
+        <div className="animate-grade-reveal mt-3">
+          <span
+            className="inline-flex items-center justify-center text-2xl font-bold rounded-full"
+            style={{
+              width: 56,
+              height: 56,
+              background: gradeColor,
+              color: '#fff',
+              fontFamily: 'var(--font-display)',
+              boxShadow: `0 4px 24px color-mix(in srgb, ${gradeColor} 31%, transparent)`,
+            }}
+          >
+            {grade}
+          </span>
+        </div>
+      )}
 
       {/* Motivational message */}
       <p
@@ -263,7 +288,7 @@ export default function CelebrationOverlay({
       </p>
 
       {/* XP earned — animated count-up */}
-      {xpEarned > 0 && (
+      {hasXP && (
         <div className="animate-count-up mt-3" style={{ animationDelay: '0.6s' }}>
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold tabular-nums"
