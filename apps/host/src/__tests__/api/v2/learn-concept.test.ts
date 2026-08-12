@@ -2,6 +2,13 @@
  * Contract tests for GET /api/v2/learn/concept.
  * Pins: auth 401 + study_plan.view, param validation (400), grade-mismatch
  * (403), fetchChapterContent reuse, 404 on no content, envelope (schemaVersion 1).
+ *
+ * 2026-08-12 E2E batch (P2-7c sibling): an unknown `subject` (display name
+ * "Mathematics", garbage) is a 400 UNKNOWN_SUBJECT with details
+ * { subject, reason, allowed } — it must never fall through to the 404
+ * NO_CONTENT path, which is reserved for a KNOWN subject whose chapter
+ * genuinely has no content. Subject validation fails CLOSED (503) when the
+ * get_available_subjects RPC errors.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -16,6 +23,12 @@ const STUDENT_A = '11111111-1111-4111-8111-111111111111';
 let _student: { data: { grade: string; preferred_language: string } | null } = {
   data: { grade: '9', preferred_language: 'en' },
 };
+// get_available_subjects — subject-code validation source (P2-7c sibling).
+let _availableSubjects: { data: unknown; error: unknown } = {
+  data: [{ code: 'science' }, { code: 'math' }],
+  error: null,
+};
+const subjectsRpcSpy = vi.fn();
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => ({
     from: () => {
@@ -23,6 +36,10 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
       for (const m of ['select', 'eq']) chain[m] = () => chain;
       chain.maybeSingle = () => Promise.resolve(_student);
       return chain;
+    },
+    rpc: (...args: unknown[]) => {
+      subjectsRpcSpy(...args);
+      return Promise.resolve(_availableSubjects);
     },
   }),
 }));
@@ -58,6 +75,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   setAuthorized();
   _student = { data: { grade: '9', preferred_language: 'en' } };
+  _availableSubjects = { data: [{ code: 'science' }, { code: 'math' }], error: null };
   _content = {
     markdown: '# Atoms\nText',
     sources: [{ chunk_id: 'c1', chapter_title: 'Atoms', chunk_index: 0, page_number: 12 }],
@@ -125,5 +143,55 @@ describe('GET /api/v2/learn/concept', () => {
     const res = await GET(url({ subject: 'science', grade: '9', chapter: '3' }));
     expect(res.status).toBe(404);
     expect((await res.json()).code).toBe('NO_CONTENT');
+  });
+
+  // ── P2-7c sibling: unknown subject must not masquerade as NO_CONTENT ──────
+  it('returns 400 UNKNOWN_SUBJECT (not 404 NO_CONTENT) for a display-name subject like "Mathematics"', async () => {
+    const res = await GET(url({ subject: 'Mathematics', grade: '9', chapter: '3' }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.code).toBe('UNKNOWN_SUBJECT');
+    expect(body.error).toContain("'Mathematics'");
+    expect(body.details).toEqual({
+      subject: 'Mathematics',
+      reason: 'unknown_subject',
+      allowed: ['science', 'math'],
+    });
+    // The content reader must never have been consulted for a bad param.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('FAILS CLOSED with 503 SUBJECT_GOVERNANCE_UNAVAILABLE (retryable:true) when the subjects RPC errors', async () => {
+    _availableSubjects = { data: null, error: { message: 'down' } };
+    const res = await GET(url({ subject: 'science', grade: '9', chapter: '3' }));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.code).toBe('SUBJECT_GOVERNANCE_UNAVAILABLE');
+    expect(body.retryable).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('a LOCKED subject is still a valid read param (param validation, not plan gating)', async () => {
+    // The curriculum sibling pins this for the filter; pin it here too — the
+    // concept route validates against ALL of the student's subject codes,
+    // locked included. Reading chapter prose for a plan-locked subject must
+    // not 400 (and this route deliberately adds no 403 plan gate).
+    _availableSubjects = { data: [{ code: 'science', is_locked: true }], error: null };
+    const res = await GET(url({ subject: 'science', grade: '9', chapter: '3' }));
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ subjectCode: 'science', chapterNumber: 3 }),
+    );
+  });
+
+  it('keys the subjects lookup by the AUTH user id (same as /v2/learn/curriculum), not the students.id', async () => {
+    // get_available_subjects takes the auth.users UUID (curriculum precedent).
+    // Silently swapping to studentId would resolve nobody's subjects and turn
+    // every request into a spurious 400 UNKNOWN_SUBJECT.
+    await GET(url({ subject: 'science', grade: '9', chapter: '3' }));
+    expect(subjectsRpcSpy).toHaveBeenCalledWith('get_available_subjects', {
+      p_student_id: 'auth-user-1',
+    });
   });
 });

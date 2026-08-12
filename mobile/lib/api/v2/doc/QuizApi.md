@@ -19,7 +19,7 @@ Method | HTTP request | Description
 
 Fetch quiz questions in academic scope
 
-Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than `count` in-scope questions exist. Requires quiz.attempt.
+Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. Subject governance FAILS CLOSED: if the governance RPC is unavailable the route returns 503 SUBJECT_GOVERNANCE_UNAVAILABLE (retryable: true) rather than serving ungated questions. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than `count` in-scope questions exist. Requires quiz.attempt.
 
 ### Example
 ```dart
@@ -30,7 +30,7 @@ import 'package:alfanumrik_api_v2/api.dart';
 //defaultApiClient.getAuthentication<ApiKeyAuth>('cookieAuth').apiKeyPrefix = 'Bearer';
 
 final api = AlfanumrikApiV2().getQuizApi();
-final String subject = math; // String | 
+final String subject = math; // String | Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A code the student is not allowed returns 403 `subject_not_allowed` with `details: SubjectNotAllowedDetails` naming the rejected value and listing the allowed codes.
 final String grade = grade_example; // String | 
 final int count = 10; // int | 
 final int chapter = 56; // int | 
@@ -49,7 +49,7 @@ try {
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
- **subject** | **String**|  | 
+ **subject** | **String**| Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A code the student is not allowed returns 403 `subject_not_allowed` with `details: SubjectNotAllowedDetails` naming the rejected value and listing the allowed codes. | 
  **grade** | **String**|  | 
  **count** | **int**|  | 
  **chapter** | **int**|  | [optional] 
@@ -119,7 +119,7 @@ Name | Type | Description  | Notes
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **postQuizSubmit**
-> QuizSubmitResult postQuizSubmit(quizSubmitRequest)
+> QuizSubmitResult postQuizSubmit(idempotencyKey, quizSubmitRequest)
 
 Submit a quiz for server-authoritative grading
 
@@ -134,10 +134,11 @@ import 'package:alfanumrik_api_v2/api.dart';
 //defaultApiClient.getAuthentication<ApiKeyAuth>('cookieAuth').apiKeyPrefix = 'Bearer';
 
 final api = AlfanumrikApiV2().getQuizApi();
+final String idempotencyKey = 550e8400-e29b-41d4-a716-446655440000; // String | REQUIRED grading idempotency key (UUID). The raw header value IS the idempotency key forwarded to the scoring RPC as p_idempotency_key — there is no session-id rebinding. Missing or non-UUID → 400 IDEMPOTENCY_KEY_REQUIRED. Retries of the same submission (including offline-drain retries after RPC_FAILED/503) MUST reuse the same key; a new key makes the RPC treat the request as a new submission.
 final QuizSubmitRequest quizSubmitRequest = ; // QuizSubmitRequest | 
 
 try {
-    final response = api.postQuizSubmit(quizSubmitRequest);
+    final response = api.postQuizSubmit(idempotencyKey, quizSubmitRequest);
     print(response);
 } catch on DioException (e) {
     print('Exception when calling QuizApi->postQuizSubmit: $e\n');
@@ -148,6 +149,7 @@ try {
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
+ **idempotencyKey** | **String**| REQUIRED grading idempotency key (UUID). The raw header value IS the idempotency key forwarded to the scoring RPC as p_idempotency_key — there is no session-id rebinding. Missing or non-UUID → 400 IDEMPOTENCY_KEY_REQUIRED. Retries of the same submission (including offline-drain retries after RPC_FAILED/503) MUST reuse the same key; a new key makes the RPC treat the request as a new submission. | 
  **quizSubmitRequest** | [**QuizSubmitRequest**](QuizSubmitRequest.md)|  | [optional] 
 
 ### Return type

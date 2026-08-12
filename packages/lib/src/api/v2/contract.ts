@@ -82,8 +82,49 @@ export const ErrorResponse = z
     error: z.string().openapi({ example: 'Validation failed' }),
     code: z.string().optional().openapi({ example: 'VALIDATION_ERROR' }),
     retryable: z.boolean().optional().openapi({ example: false }),
+    details: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .openapi({
+        description:
+          'OPTIONAL machine-readable, code-specific detail payload. For code `subject_not_allowed` (403) and `UNKNOWN_SUBJECT` (400) the shape is `SubjectNotAllowedDetails` ({ subject, reason, allowed }). Absent on every other error response.',
+        example: { subject: 'Mathematics', reason: 'grade', allowed: ['math', 'science'] },
+      }),
   })
   .openapi('ErrorResponse');
+
+/**
+ * The `details` payload carried by subject-validation errors:
+ *   - 403 `subject_not_allowed`  (GET /v2/quiz/questions — subject governance
+ *     rejected the write: not in this student's grade list, or plan-locked)
+ *   - 400 `UNKNOWN_SUBJECT`      (GET /v2/learn/curriculum, GET /v2/learn/concept
+ *     — the subject param matched none of the student's subjects)
+ *
+ * `subject` echoes the rejected value exactly as the client sent it (a display
+ * name like "Mathematics" is the classic mistake — the param takes subject
+ * CODES). `allowed` is the authoritative subject-code list to retry with.
+ * Registered explicitly (registry.register) so it emits into
+ * components.schemas even though ErrorResponse.details stays a generic record.
+ */
+export const SubjectNotAllowedDetails = registry.register(
+  'SubjectNotAllowedDetails',
+  z.object({
+    subject: z.string().openapi({
+      example: 'Mathematics',
+      description: 'The rejected subject value, verbatim as the client sent it.',
+    }),
+    reason: z.string().openapi({
+      example: 'grade',
+      description:
+        "Cause discriminator. Governance rejections (403 subject_not_allowed) emit 'grade' (not in this student's grade subject list) or 'plan' (plan-locked); other SubjectWriteError reasons ('stream', 'inactive', 'unknown', 'max_subjects') are reserved. The learn routes' 400 UNKNOWN_SUBJECT emits 'unknown_subject'. Kept a string (not an enum) so adding a reason is non-breaking for generated clients.",
+    }),
+    allowed: z.array(z.string()).openapi({
+      example: ['math', 'science'],
+      description:
+        'The subject CODES valid for this student on the rejecting route. For the 403 governance rejection: unlocked codes only. For the learn routes: every subject in the student tree (locked included — locked subjects are still valid read params).',
+    }),
+  }),
+);
 
 /** Bare success acknowledgement — `{ success: true }` (no data payload). */
 export const SuccessAck = z
@@ -699,12 +740,16 @@ registry.registerPath({
   operationId: 'getQuizQuestions',
   summary: 'Fetch quiz questions in academic scope',
   description:
-    'Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than `count` in-scope questions exist. Requires quiz.attempt.',
+    'Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. Subject governance FAILS CLOSED: if the governance RPC is unavailable the route returns 503 SUBJECT_GOVERNANCE_UNAVAILABLE (retryable: true) rather than serving ungated questions. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than `count` in-scope questions exist. Requires quiz.attempt.',
   tags: ['quiz'],
   security: SECURITY,
   request: {
     query: z.object({
-      subject: z.string().openapi({ example: 'math' }),
+      subject: z.string().openapi({
+        example: 'math',
+        description:
+          'Subject CODE (e.g. `math`, `science`) — NOT the display name ("Mathematics"). A code the student is not allowed returns 403 `subject_not_allowed` with `details: SubjectNotAllowedDetails` naming the rejected value and listing the allowed codes.',
+      }),
       grade: zGrade,
       chapter: z.number().int().positive().optional(),
       // Allowed values are 5 | 10 | 15 | 20 (validated in the route). Declared as
@@ -721,9 +766,10 @@ registry.registerPath({
       content: { 'application/json': { schema: QuizQuestionsResponse } },
     },
     400: { description: 'Invalid query params.', content: { 'application/json': { schema: ErrorResponse } } },
-    403: { description: 'Missing quiz.attempt, grade mismatch, or subject not allowed.', content: { 'application/json': { schema: ErrorResponse } } },
+    403: { description: 'Missing quiz.attempt, grade mismatch (GRADE_MISMATCH), or subject not allowed (subject_not_allowed — body carries details: SubjectNotAllowedDetails with the rejected subject, the reason (grade | plan), and the allowed subject codes).', content: { 'application/json': { schema: ErrorResponse } } },
     422: { description: 'Insufficient questions in scope.', content: { 'application/json': { schema: ErrorResponse } } },
     500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
+    503: { description: 'Subject governance temporarily unavailable (SUBJECT_GOVERNANCE_UNAVAILABLE) — the route fails CLOSED instead of serving ungated questions. Body carries retryable: true; retry the same request.', content: { 'application/json': { schema: ErrorResponse } } },
   },
 });
 
@@ -754,7 +800,16 @@ registry.registerPath({
     'Thin pass-through to the submit_quiz_results_v2 RPC, which owns P1 scoring, P2 XP + 200/day cap, all 3 P3 anti-cheat checks, and P4 atomicity. The route does NO score / XP / anti-cheat math — it forwards inputs and returns the RPC result verbatim. Requires an Idempotency-Key (UUID) header and quiz.attempt. studentId is cross-checked against the JWT (403 on mismatch). When attemptMode === offline_replay the route runs offline gates BEFORE the RPC: capturedAt required (400 OFFLINE_CAPTURED_AT_REQUIRED), clock-skew (422 REPLAY_CLOCK_INVALID), staleness >168h (422 REPLAY_TOO_STALE), clientCapturedTotalSeconds mismatch (400 OFFLINE_TIME_INCONSISTENT), and shuffle-map verification against the server snapshot (422 SHUFFLE_MAP_MISMATCH). Online submissions are byte-identical to today — no offline gate fires.',
   tags: ['quiz'],
   security: SECURITY,
-  request: { body: { content: { 'application/json': { schema: QuizSubmitRequest } } } },
+  request: {
+    headers: z.object({
+      'Idempotency-Key': zUuid.openapi({
+        example: '550e8400-e29b-41d4-a716-446655440000',
+        description:
+          'REQUIRED grading idempotency key (UUID). The raw header value IS the idempotency key forwarded to the scoring RPC as p_idempotency_key — there is no session-id rebinding. Missing or non-UUID → 400 IDEMPOTENCY_KEY_REQUIRED. Retries of the same submission (including offline-drain retries after RPC_FAILED/503) MUST reuse the same key; a new key makes the RPC treat the request as a new submission.',
+      }),
+    }),
+    body: { content: { 'application/json': { schema: QuizSubmitRequest } } },
+  },
   responses: {
     200: { description: 'Graded result (server-authoritative).', content: { 'application/json': { schema: QuizSubmitResult } } },
     400: { description: 'Missing/invalid Idempotency-Key or body; missing capturedAt or clientCapturedTotalSeconds mismatch on an offline replay.', content: { 'application/json': { schema: ErrorResponse } } },
@@ -826,12 +881,21 @@ registry.registerPath({
   operationId: 'getLearnCurriculum',
   summary: 'Curriculum tree (subjects → chapters → topics)',
   description:
-    'Returns the plan-gated curriculum tree the mobile Learn screen needs. Reuses get_available_subjects (plan/grade/stream gating) + curriculum_topics. Requires study_plan.view.',
+    'Returns the plan-gated curriculum tree the mobile Learn screen needs. Reuses get_available_subjects (plan/grade/stream gating) + curriculum_topics. An unknown `subject` filter is a 400 UNKNOWN_SUBJECT (never an empty-success 200 — that shape is reserved for a student who genuinely has zero subjects and sent no filter). Requires study_plan.view.',
   tags: ['learn'],
   security: SECURITY,
-  request: { query: z.object({ subject: z.string().optional() }) },
+  request: {
+    query: z.object({
+      subject: z.string().optional().openapi({
+        example: 'math',
+        description:
+          "Optional filter. Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes (locked subjects included — they are valid filter values and render with is_locked).",
+      }),
+    }),
+  },
   responses: {
     200: { description: 'Curriculum tree.', content: { 'application/json': { schema: CurriculumResponse } } },
+    400: { description: "Unknown subject filter (UNKNOWN_SUBJECT) — the value matched none of the student's subjects. Body carries details: SubjectNotAllowedDetails with the rejected value and the valid subject codes.", content: { 'application/json': { schema: ErrorResponse } } },
     404: { description: 'No student profile for this account.', content: { 'application/json': { schema: ErrorResponse } } },
     500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
   },
@@ -843,21 +907,26 @@ registry.registerPath({
   operationId: 'getLearnConcept',
   summary: 'Concept content for a subject + chapter',
   description:
-    'Returns the ordered NCERT chapter prose (markdown + source attribution) for a subject + chapter. Reuses fetchChapterContent (rag_content_chunks read used by /learn). Requires study_plan.view.',
+    'Returns the ordered NCERT chapter prose (markdown + source attribution) for a subject + chapter. Reuses fetchChapterContent (rag_content_chunks read used by /learn). An unknown `subject` is a 400 UNKNOWN_SUBJECT — the 404 NO_CONTENT response is reserved for a KNOWN subject whose chapter genuinely has no content. Requires study_plan.view.',
   tags: ['learn'],
   security: SECURITY,
   request: {
     query: z.object({
-      subject: z.string().openapi({ example: 'science' }),
+      subject: z.string().openapi({
+        example: 'science',
+        description:
+          "Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes.",
+      }),
       grade: zGrade,
       chapter: z.number().int().positive().openapi({ example: 3 }),
     }),
   },
   responses: {
     200: { description: 'Concept content.', content: { 'application/json': { schema: ConceptResponse } } },
-    400: { description: 'Invalid query params.', content: { 'application/json': { schema: ErrorResponse } } },
-    404: { description: 'No content for this chapter.', content: { 'application/json': { schema: ErrorResponse } } },
+    400: { description: "Invalid query params, or unknown subject (UNKNOWN_SUBJECT — body carries details: SubjectNotAllowedDetails with the rejected value and the student's valid subject codes).", content: { 'application/json': { schema: ErrorResponse } } },
+    404: { description: 'No content for this chapter (subject is known — a genuine content gap, not an input error).', content: { 'application/json': { schema: ErrorResponse } } },
     500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
+    503: { description: 'Subject validation temporarily unavailable (SUBJECT_GOVERNANCE_UNAVAILABLE) — body carries retryable: true; retry the same request.', content: { 'application/json': { schema: ErrorResponse } } },
   },
 });
 
@@ -1126,6 +1195,7 @@ registry.registerPath({
 
 // ── Inferred TS types (convenient for route handlers to import) ─────────────
 export type TErrorResponse = z.infer<typeof ErrorResponse>;
+export type TSubjectNotAllowedDetails = z.infer<typeof SubjectNotAllowedDetails>;
 export type TSuccessAck = z.infer<typeof SuccessAck>;
 export type TTodayResponse = z.infer<typeof TodayResponse>;
 export type TTodayQueueItem = z.infer<typeof TodayQueueItem>;

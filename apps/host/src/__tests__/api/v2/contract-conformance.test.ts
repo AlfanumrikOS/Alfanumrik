@@ -31,6 +31,7 @@ import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import {
   ErrorResponse,
+  SubjectNotAllowedDetails,
   SuccessAck,
   TodayResponse,
   QuizQuestion,
@@ -432,6 +433,58 @@ describe('/v2 contract conformance — error envelopes parse against ErrorRespon
     // discriminant. The /v2 contract requires success:false — this proves the
     // schema would catch a route that regressed to the v1 envelope.
     expect(ErrorResponse.safeParse({ error: 'oops' }).success).toBe(false);
+  });
+
+  // ── `details` — subject-validation structured payload (2026-08-12 E2E batch) ──
+  // P2-7a/P2-7c: the 403 subject_not_allowed (quiz/questions) and 400
+  // UNKNOWN_SUBJECT (learn/curriculum, learn/concept) bodies carry
+  // details: { subject, reason, allowed } so clients render the rejected value
+  // and the allowed subject-code list instead of string-parsing the message.
+  it('ErrorResponse conforms with subject_not_allowed details (403 GET /v2/quiz/questions)', () => {
+    expectParses(ErrorResponse, {
+      success: false,
+      error:
+        "Subject 'Mathematics' is not allowed (not available for your grade). Allowed subject codes: math, science",
+      code: 'subject_not_allowed',
+      details: { subject: 'Mathematics', reason: 'grade', allowed: ['math', 'science'] },
+    });
+  });
+
+  it('ErrorResponse conforms with UNKNOWN_SUBJECT details (400 learn routes)', () => {
+    expectParses(ErrorResponse, {
+      success: false,
+      error:
+        "Unknown subject 'Mathematics' — subject must be one of this student's subject codes: math, science",
+      code: 'UNKNOWN_SUBJECT',
+      details: { subject: 'Mathematics', reason: 'unknown_subject', allowed: ['math', 'science'] },
+    });
+  });
+
+  // P2-7b: governance-RPC outage fails CLOSED — 503 + the top-level retryable
+  // idiom (#1526) so the mobile drain retries instead of discarding.
+  it('ErrorResponse conforms with SUBJECT_GOVERNANCE_UNAVAILABLE + retryable:true (fail-closed 503)', () => {
+    expectParses(ErrorResponse, {
+      success: false,
+      error: 'Subject eligibility could not be verified — please retry',
+      code: 'SUBJECT_GOVERNANCE_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+
+  it('SubjectNotAllowedDetails accepts the wire shape', () => {
+    expectParses(SubjectNotAllowedDetails, {
+      subject: 'Mathematics',
+      reason: 'grade',
+      allowed: ['math'],
+    });
+  });
+
+  it('SubjectNotAllowedDetails REJECTS a missing allowed[] (drift guard)', () => {
+    // `allowed` is the actionable half of the payload — a regression that
+    // drops it re-creates the "rejected, but with what valid values?" defect.
+    expect(
+      SubjectNotAllowedDetails.safeParse({ subject: 'Mathematics', reason: 'grade' }).success,
+    ).toBe(false);
   });
 });
 
