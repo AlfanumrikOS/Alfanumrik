@@ -11,8 +11,20 @@
  * an "own" endpoint).
  *
  * Response: `{ success: true, data: { period, rank, percentile, xp, band,
- * neighbours[] } }`. The `band` label is UI convenience only — the raw
- * `percentile` is authoritative.
+ * neighbours[], performance_score, level_name } }`. The `band` label is UI
+ * convenience only — the raw `percentile` is authoritative.
+ *
+ * `performance_score` / `level_name` (added 2026-08) are the CALLER'S OWN
+ * Performance Score — the mean of their `performance_scores.overall_score`
+ * across subjects, rounded. This is the privacy-safe home for that number.
+ * The /leaderboard page used to compute it for EVERY student by reading
+ * `performance_scores` + `score_history` cross-student from the browser; both
+ * tables are own-row-only under RLS, so the read returned exactly one row (the
+ * caller's), every peer scored `-1` in the client re-sort, and the caller was
+ * handed rank #1 with a gold medal. Peer Performance Scores are NOT served
+ * anywhere on the public board — see the P13 note in
+ * `apps/host/src/app/api/v1/leaderboard/route.ts`. Own score is own data, so it
+ * belongs here, on the private per-caller endpoint.
  *
  * Cache: `Cache-Control: private, max-age=300` (5 minutes, per-caller —
  * NEVER `public` because the response is caller-specific).
@@ -22,6 +34,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 
 const ROUTE = '/api/v1/leaderboard/me';
 const VALID_PERIODS = new Set(['daily', 'weekly', 'monthly', 'all_time']);
@@ -95,6 +108,8 @@ export async function GET(request: NextRequest) {
           xp: 0,
           band: null,
           neighbours: [],
+          performance_score: null,
+          level_name: null,
         },
       },
       { status: 200, headers: { 'Cache-Control': 'private, max-age=300' } },
@@ -121,6 +136,36 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  // 3. The caller's OWN Performance Score: mean of overall_score across their
+  //    subjects, rounded — the same formula the browser used to run, now scoped
+  //    server-side to a single student id. Fail-soft to null: a missing score
+  //    must not 500 an endpoint the dashboard band card depends on.
+  let performanceScore: number | null = null;
+  try {
+    const { data: perfRows, error: perfErr } = await admin
+      .from('performance_scores')
+      .select('overall_score')
+      .eq('student_id', studentRow.id);
+    if (!perfErr && Array.isArray(perfRows) && perfRows.length > 0) {
+      const values = perfRows
+        .map((r: Record<string, unknown>) => Number(r.overall_score))
+        .filter((n) => Number.isFinite(n));
+      if (values.length > 0) {
+        performanceScore = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+      }
+    }
+  } catch (err) {
+    logger.warn('leaderboard_me_performance_score_failed', {
+      route: ROUTE,
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  }
+
+  const ownScore = {
+    performance_score: performanceScore,
+    level_name: performanceScore == null ? null : getLevelFromScore(performanceScore),
+  };
+
   const body = percentile
     ? {
         period,
@@ -131,6 +176,7 @@ export async function GET(request: NextRequest) {
           percentile.band ??
           (percentile.percentile != null ? bandFromPercentile(percentile.percentile) : null),
         neighbours: percentile.neighbours ?? [],
+        ...ownScore,
       }
     : {
         period,
@@ -139,6 +185,7 @@ export async function GET(request: NextRequest) {
         xp: 0,
         band: null,
         neighbours: [],
+        ...ownScore,
       };
 
   return NextResponse.json(

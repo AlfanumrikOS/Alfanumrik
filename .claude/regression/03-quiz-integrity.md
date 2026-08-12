@@ -1871,3 +1871,161 @@ the one that actually occurs, from nullable columns such as
 **Total catalog: 359 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Quiz serving — the truthy-`[]` silent zero, and the Tier-0 floor it exposed — 2026-08-11
+
+`getQuizQuestions()` short-circuits an RPC ladder. Its top rung read:
+
+```ts
+const { data, error } = await supabase.rpc('get_quiz_questions', params);
+if (!error && data) return validateQuestions(data);   // ← the defect
+```
+
+`get_quiz_questions` returns `COALESCE(jsonb_agg(q), '[]'::JSONB)` and filters
+`is_verified = true` (migration `20260505155525`). **An empty array is truthy in
+JavaScript.** So a chapter whose forty questions were structurally valid but merely
+UNVERIFIED came back as `[]`, satisfied the `data` guard, and the student was served a
+quiz containing ZERO questions. The direct `question_bank` fallback below — which does
+NOT filter on `is_verified` and would have served them — never ran.
+
+The RPC applies a strictly NARROWER filter than the fallback, so "the RPC found none"
+does not imply "the bank has none". Only a NON-EMPTY result may short-circuit the ladder.
+(Contrast `getLeaderboard` / `getReviewCards`, where the RPC and its fallback query the
+same population and empty IS the final answer — which is why this is a per-call-site
+judgement and not a blanket rule.)
+
+Fixing it made the fallback rung genuinely reachable for the first time, which made its
+weaker filter a live risk: it filtered `is_active` only, so a soft-deleted, draft, or
+**verifier-DISPROVED** row was servable there. The fix added the same never-serve floor
+the RPC rung above it enforces.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-385 | `quiz_serving_truthy_empty_rpc_falls_through` | Ladder semantics, against the REAL `getQuizQuestions` with a recording query-builder double: an RPC result of `[]` runs the `question_bank` fallback and serves questions (the silent zero); a NON-empty RPC result short-circuits and issues NO second read; RPC rows that ALL fail the P6 gate also fall through rather than serving zero; a MISSING RPC (older env) and an RPC ERROR both reach the fallback; a genuinely empty bank still returns `[]` (emptiness stays representable); a FAILED fallback read THROWS rather than degrading to an empty quiz. The fallback re-runs the SAME P6 gate and is not a relaxation — a six-row pool containing a `[BLANK]` marker, duplicate options, an empty explanation, an out-of-range `correct_answer_index` and a 3-option row yields exactly the one valid question. Verified to FAIL against the pre-fix `if (!error && data) return validateQuestions(data)`. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P6 |
+| REG-386 | `quiz_fallback_tier0_never_serve_floor` | The now-reachable fallback query enforces the floor, asserted on the predicates the function actually issues (a double that honoured nothing would let the floor be deleted silently): EVERY verifier-disproved state is excluded — `failed`, `failed_fix_in_flight` AND `failed_unfixable`, not just the literal `failed` (the CHECK was widened to six states by migration `20260510064952`, and a row mid-repair on a disproved question is still disproved); `deleted_at IS NULL`; `content_status` matched as "NULL or published" rather than by strict equality, because the column is nullable with `DEFAULT 'published'` and a strict `eq` would drop every legacy row carrying an explicit NULL and re-empty the very quizzes this fix restores; subject/grade/`is_active` scoping retained with grade asserted as a STRING (P5); the optional chapter filter forwarded; and the serving projection asserted free of `student_id`, `created_by`, `verification_state`, `deleted_at`. DELIBERATE NON-ASSERTION, recorded so it is not "fixed" by accident: `is_verified` is NOT filtered on this rung. Neither this rung nor either RPC rung above it has ever gated serving on the human SME flag (migration `20260802100000` records it as ranking/administrative metadata only), and adding it would recreate the empty quiz REG-385 removes. Whether SME sign-off should gate serving at all is a CEO decision, not a test's. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P5, P6 |
+
+### Invariants covered by this section
+
+- **P6 (question quality)** — REG-385 pins that the quality gate is applied identically on
+  BOTH rungs. The fix widened which rows are REACHED, never which rows are ACCEPTABLE.
+- **P5 (grade format)** — the fallback is asserted to scope on the STRING `'8'`.
+
+### Known defect reported upstream, NOT pinned here
+
+`packages/lib/src/supabase.ts` documents that the Tier-0 predicate inside the
+`select_quiz_questions_rag` RPC excludes only the literal `'failed'`, so the two other
+disproved states (`failed_fix_in_flight`, `failed_unfixable`) still pass THAT rung's gate.
+REG-386 covers the TypeScript fallback rung only. Closing the RPC-side gap is a migration
+and is architect/DB-owned; it is deliberately not asserted here, because a test that
+claimed to cover it would be claiming coverage the fix does not have.
+
+### Catalog total
+
+Pre-REG-385: 384 entries (through REG-384, the support thread P13 batch — see
+`10-rbac-rls.md`). This section adds REG-385 and REG-386.
+**Total catalog: 386 entries (target: 35 — TARGET EXCEEDED). REG-387 is the next free id**
+(REG-371..REG-377 remain RESERVED).
+**Superseded 2026-08-11** by the tiered-verification section below, which takes
+REG-387..REG-389.
+
+---
+
+## Tiered verification: the exam SME gate, Tier-0 floor totality, and the truthful badge — 2026-08-11
+
+Added 2026-08-11 (testing agent), pinning the durable properties of the
+content-remediation batch (migration
+`20260814000014_tiered_verification_serving_and_truthful_picker.sql`, CEO-approved
+Decision A option 3). Quality raised this as finding #7, MAJOR: the batch shipped
+with **no regression coverage at all**, while the migration's own header documents
+a one-line path to undoing its central safety property.
+
+Two different "verified" columns were being read as if they were one:
+`is_verified` is the **human SME sign-off** (written only by
+`POST /api/super-admin/questions/verify`, `DEFAULT false`);
+`verification_state` / `verified_against_ncert` are **agent-written**. The
+AI-repair agent (`fix-failed-questions/tools/commit-fix.ts`) sets the agent pair
+and never `is_verified`, so a repaired question raised chapter readiness and the
+picker badge while `get_quiz_questions` — which filtered `is_verified` — could not
+serve it. We advertised a question count we could not deliver.
+
+Decision A resolves it by AUDIENCE rather than uniformly: **practice** serves
+AI-verified content (a wrong question costs one confusing minute and is
+recoverable); **mock tests / exams** keep the human-SME gate (a wrong question
+corrupts a permanent record a parent will screenshot). Option 1 (SME gate
+everywhere) was rejected as an availability killer, option 2 (drop it everywhere)
+as a scoring-integrity risk.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-387 | `mock_test_sme_gate_all_three_rungs` | **The exam gate.** `start_mock_test_attempt`'s three-step question-assembly fallback ladder keeps `is_verified = true` on ALL THREE rungs — exact target difficulty, the ±1 band, and the "any difficulty" last-resort top-up. The effective definition is RESOLVED AT TEST TIME (every migration that CREATE-OR-REPLACEs the function, last one wins, exactly as Postgres applies them) rather than read from a hardcoded path, so a future `..._relax_mock_test_gate.sql` is read and FAILS instead of leaving the pin passing against a superseded definition. Also: exactly three gates (none added, none lost); each paired with `is_active = true` so it is a real row filter; the three rungs are the documented widening ladder (`difficulty = v_target`, `BETWEEN v_target-1 AND v_target+1`, then no difficulty predicate at all); no migration DROPs the function; and migration `20260814000014` issues NO DDL against it. **Mutation-tested:** the contract routine is re-run against five corrupted copies of the real SQL — all three gates removed, EACH ONE removed individually, and a whole rung deleted — and every mutant is asserted to fail. Additionally spot-checked against the real file: removing ladder-step 3's predicate turns the suite red 8/13 with the diagnostic naming step 3. | `apps/host/src/__tests__/regressions/reg-387-mock-test-sme-gate.test.ts` (13 tests) | E | P1 (score integrity), P6 |
+| REG-388 | `tier0_floor_serving_rung_totality` | **Cross-rung totality.** A verifier-disproved row is never servable on ANY rewritten rung. The floor is THREE states, not one: the CHECK was widened four→six by `20260510064952_qb_fixer.sql`, and `failed_fix_in_flight` (proven wrong, claimed by the repair agent) and `failed_unfixable` (proven wrong AND unrepairable) are both disproved, not "in progress". Asserts the six-state CHECK really allows exactly the six states this test partitions and that the two halves are disjoint + exhaustive; that EVERY `question_bank` row-filter block in all four rewritten functions (`get_quiz_questions` BOTH overloads, `select_quiz_questions_rag`, `select_quiz_questions_v2`) excludes all three states and also `deleted_at IS NULL`; that no rung narrows back to the pre-fix `verification_state != 'failed'` dialect; that the four rungs agree LITERALLY (one set, not four coincidentally-equal ones — this is the assertion per-rung tests structurally cannot make); and SQL/TS literal parity with `DISPROVED_VERIFICATION_STATES` in `packages/lib/src/supabase.ts`, including that the constant is APPLIED (`.neq` per state) and not merely declared. One deliberate, documented allowance: a block may satisfy the floor IMPLICITLY by pinning `verification_state = 'verified'` (the RAG rung's `v_verified_pool` count query), since an equality to a non-disproved state is strictly narrower than the `NOT IN` — the equality target is itself asserted to be in the non-disproved half, so pinning to `= 'failed'` still fails. | `apps/host/src/__tests__/regressions/reg-388-tier0-floor-serving-rung-totality.test.ts` (24 tests) | E | P6 |
+| REG-389 | `chapter_badge_unknown_is_never_zero` | **Badge honesty, three-valued.** The `/learn` chapter badge renders `practice_ready_count` (what practice can actually serve), never `verified_question_count` (a readiness signal) and never `exam_ready_count`. The third state is the one that matters: against a database predating migration `20260814000014` the column is absent and arrives `undefined`, meaning UNKNOWN. `undefined` → NO badge; `0` → NO badge; `n > 0` → "n questions". A `?? 0` anywhere would paint "0 questions" onto chapters full of them — a fresh instance of the defect class (a failure rendered as a confident, reassuring, wrong empty state) this whole effort exists to eliminate; a student reading "0 questions" does not retry, they leave. Pinned BEHAVIOURALLY on the REAL page component in JSDOM, in both languages (P7, with Hindi numerals asserted to stay Arabic), with per-row independence so one unknown chapter cannot suppress a known sibling, and with the row asserted to stay rendered — unknown count is not a broken chapter. Companion seam test drives the REAL `getChaptersForSubject` over a mocked transport: `undefined`→`undefined`, `0`→`0`, `n`→`n`, plus the DELIBERATE ASYMMETRY that `verified_question_count` keeps its `?? 0` back-compat coercion (pinned so a future "harmonise these three fields" refactor cannot move the two honest fields onto the coercing branch). **Both spot-checked:** reverting the guard to `(x ?? verified_question_count) !== undefined` with a `?? 0` render turns the render suite red 5/6. | `apps/host/src/__tests__/regressions/reg-389-chapter-badge-honesty.test.tsx` (6 tests) + `apps/host/src/__tests__/regressions/reg-389-chapter-count-transport-seam.test.ts` (6 tests) | E | P7, P6 |
+
+### Stale-mirror repair (no new id — REG-386's neighbourhood)
+
+`apps/host/src/__tests__/regressions/select-quiz-questions-rag-tier0-floor.test.ts`
+was **stale while still passing** — the most dangerous state a mirror can be in,
+because a green suite reads as coverage. Its `VerificationState` union listed only
+four states and `isRowServable` tested `=== 'failed'`, so it modelled
+`failed_fix_in_flight` and `failed_unfixable` as SERVABLE — the exact opposite of
+the floor it exists to enforce. It agreed with a predicate the SQL no longer had,
+and therefore could not have caught the regression it was written to catch.
+
+Repaired: the union now carries all six CHECK states, the floor is expressed as a
+SET (`DISPROVED_VERIFICATION_STATES`) rather than an equality so a seventh state
+forces a visible edit instead of silently defaulting to servable, and a totality
+test asserts the disproved/non-disproved halves partition the CHECK behaviourally.
+A regression witness reconstructs the pre-repair predicate and pins that it would
+have leaked exactly `['failed_fix_in_flight','failed_unfixable']`. 10 tests → 15.
+
+### Upstream gap CLOSED by this batch
+
+REG-386's "Known defect reported upstream, NOT pinned here" — that
+`select_quiz_questions_rag` excluded only the literal `'failed'` — **is now closed**
+by migration `20260814000014` §3, and is pinned by REG-388. The parallel note in
+`packages/lib/src/supabase.ts` was rewritten by the same change.
+
+### Known gaps — recorded so these entries never read as full coverage
+
+1. **`quiz-generator` — the PRIMARY serving path — still has NO verification floor
+   at all.** It filters `is_active` only: no `verification_state`, no `deleted_at`,
+   no `content_status` (verified by direct read of
+   `supabase/functions/quiz-generator/index.ts`). It is the fifth of the five
+   dialects ai-engineer's audit found, and it was out of scope for migration
+   `20260814000014` (an Edge Function, not SQL). ai-engineer owns the follow-up.
+   REG-388 carries an explicit **defect witness** asserting the gap STILL EXISTS, so
+   a passing REG-388 can never be misread as "the floor is total"; the witness FAILS
+   the moment the floor is added, which is the trigger to delete it and fold
+   `quiz-generator` into the totality assertions. **Do not relax the witness — fix
+   the Edge Function.**
+2. **No live Postgres.** REG-387 and REG-388 are SOURCE-TEXT contract pins in the
+   style this repo already uses for SQL contracts
+   (`__tests__/contract/select-quiz-questions-rag-verification-gate.test.ts`) and for
+   SQL/TS literal parity (REG-48). They cannot execute the RPCs, so they prove the
+   predicate is PRESENT and identical across rungs, not that it behaves as an
+   unconditional floor at runtime. The behavioural mirror for that exists only for
+   the RAG rung (`select-quiz-questions-rag-tier0-floor.test.ts`). Neither proves the
+   deployed database matches these files — see
+   `docs/runbooks/edge-function-drift-report.md` for the precedent where on-disk and
+   deployed genuinely disagreed in production.
+3. **RECORDED DIVERGENCE, deliberately not unified:** `select_quiz_questions_rag`
+   uses a STRICT `content_status = 'published'` while the other three rungs are
+   null-tolerant (`IS NULL OR = 'published'`), because the column is nullable with
+   `DEFAULT 'published'` and legacy rows carry explicit NULLs. Relaxing the RAG
+   predicate would WIDEN what serves, and no widening ships during a SEV1 without a
+   census. Architect owns it. REG-388 pins the divergence so that changing it is a
+   deliberate, visible act rather than a drive-by consistency edit.
+4. **Migration `20260814000013` (cbse_syllabus corpus reconciliation) is NOT pinned
+   — OWED.** It was still being actively revised by architect at the time of writing
+   (rewritten mid-session, 61 kB → 103 kB, after a quality REJECT). Pinning internals
+   that are about to shift would produce a test that fails for the wrong reason.
+   A reconciliation entry is owed once that revision settles.
+
+### Catalog total
+
+Pre-REG-387: 386 entries (through REG-386, the truthy-`[]` serving batch above).
+This section adds REG-387, REG-388 and REG-389.
+**Total catalog: 389 entries (target: 35 — TARGET EXCEEDED). REG-390 is the next
+free id** (REG-371..REG-377 remain RESERVED).
+
+---

@@ -6,8 +6,116 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 372 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
+**Total catalog: 389 entries (target: 35 — TARGET EXCEEDED).**
+
+> Counting note (testing, 2026-08-11): this header declared **372** immediately
+> before this batch while the shard-chain running counters had reached **379** —
+> a pre-existing 7-entry discrepancy of exactly the kind the header itself warns
+> about, and NOT introduced here. It is carried forward, not silently
+> reconciled: 379 (shard chain) + 7 (this batch) = **386**, which both this line
+> and the three shard totals now agree on. If a later reconciliation finds the
+> shard chain was the wrong side of the discrepancy, every total shifts down by
+> 7 in lock-step and the ids assigned below do not move.
+>
+> Addendum (testing, same day, tiered-verification batch): 386 + 3 filed,
+> body-backed entries (REG-387..REG-389, all with a `| REG-N |` table row in
+> `03-quiz-integrity.md`) = **389**. The carried-forward 7-entry discrepancy
+> above is untouched and still open; so is the separately-recorded 326
+> body-derived figure. This pass adds 3 and deletes 0. One test file was
+> REPAIRED rather than added (`select-quiz-questions-rag-tier0-floor.test.ts`),
+> which is count-neutral by design — it was already covered under REG-386's
+> neighbourhood and takes no new id.
+
+Latest: REG-387..REG-389 (2026-08-11, the TIERED-VERIFICATION batch — quality
+finding #7, MAJOR: the content-remediation change set shipped with NO regression
+coverage while migration `20260814000014`'s own header documented a one-line path
+to undoing its central safety property. Three entries, all in
+`03-quiz-integrity.md`:
+
+- **REG-387 — the exam SME gate.** `start_mock_test_attempt` keeps
+  `is_verified = true` on ALL THREE rungs of its fallback ladder. This is the
+  human-SME gate that stops AI-verified-but-not-human-approved questions reaching
+  a mock test whose score a parent will screenshot. Decision A (CEO-approved
+  option 3) deliberately split the audiences — practice serves AI-verified
+  content, exams keep the human gate — and migration 14's `TO REVERSE THIS
+  DECISION:` block names the exact one-line edit that removes it. The pin
+  resolves the EFFECTIVE definition at test time (last CREATE-OR-REPLACE wins,
+  as Postgres applies them) so a future relaxing migration is read and FAILS
+  rather than leaving the pin green against a superseded file. Mutation-tested
+  against five corrupted copies (all three gates, each one individually, and a
+  deleted rung), and spot-checked against the real migration: removing ladder
+  step 3 turns it red 8/13.
+- **REG-388 — Tier-0 floor totality.** A verifier-disproved row is never servable
+  on ANY rewritten rung. The floor is THREE states (`failed`,
+  `failed_fix_in_flight`, `failed_unfixable`), not the literal `'failed'` every
+  gate had been testing since the CHECK was widened four→six by
+  `20260510064952`. Pins that all four rewritten functions agree LITERALLY — the
+  assertion per-rung tests structurally cannot make, and the reason the floor had
+  drifted into five different dialects. **Carries a deliberate defect witness:
+  `quiz-generator`, the PRIMARY serving path, still has no floor at all and was
+  out of scope (ai-engineer's follow-up); the witness asserts the gap STILL
+  EXISTS so a passing REG-388 can never be misread as full coverage, and FAILS
+  the moment the floor is added.**
+- **REG-389 — the truthful badge.** The `/learn` chapter badge renders
+  `practice_ready_count`, and `undefined` (pre-migration DB) renders as UNKNOWN —
+  no badge — never as "0 questions". Rendering zero on a chapter full of
+  questions is a fresh instance of the same defect class as REG-380..REG-386:
+  a failure dressed as a confident, reassuring, wrong empty state. Pinned
+  behaviourally on the real page in both languages, plus a transport-seam
+  companion pinning `undefined`→`undefined` through the real
+  `getChaptersForSubject` mapper.
+
+Also repaired in this pass, no new id: the pre-existing
+`select-quiz-questions-rag-tier0-floor.test.ts` mirror was **stale while still
+passing** — it modelled two of the three disproved states as SERVABLE, so it
+could not have caught the regression it existed to catch. 10 tests → 15.
+**REG-390 is now the next free id**; REG-371..REG-377 remain RESERVED.
+OWED: a reconciliation entry for migration `20260814000013` (cbse_syllabus corpus
+reconciliation), deliberately NOT pinned because architect was still actively
+revising it (rewritten mid-session, 61 kB → 103 kB) after a quality REJECT.
+
+Prior: REG-380..REG-386 (2026-08-11, the SEV1 fix batch for the platform's two
+dominant defect classes — **failures rendered as reassuring empty states**, and
+**structurally impossible features** (cross-student data read from the browser
+against own-row RLS, returning exactly one row and rendered as a peer board).
+Seven entries across three shards:
+
+- **REG-380..REG-382** (`15-cross-cutting.md`) — the leaderboard batch.
+  REG-380 pins the `/leaderboard` ↔ `/api/v1/leaderboard/me` ENVELOPE SEAM by
+  driving the REAL route handler and the REAL `PercentileBandCard` in one test,
+  with no fixture between them: the page read `.band` off the `{success, data}`
+  envelope instead of off `data`, got `undefined`, and the resulting TypeError
+  tripped the `SectionErrorBoundary` wrapping all seven tabs. Both sides had
+  green tests; nothing tested the pair. REG-381 pins band-union TOTALITY plus a
+  drift guard asserting the card's union is a superset of BOTH producers (the TS
+  `bandFromPercentile()` swept 0..100, and the SQL `CASE` in migration
+  `20260813000006`, which is the sole emitter of `top_50`). REG-382 pins that
+  the page never reads `performance_scores` / `score_history` /
+  `challenge_streaks` / `student_titles` from the browser, and pins the three
+  own-scoped replacement routes incl. the `/streaks` P13 peer-field whitelist.
+- **REG-383..REG-384** (`10-rbac-rls.md`) — the support batch. REG-383 pins the
+  P13 leak the lane existed to close: a student must 404 on a PARENT-authored
+  thread (parent tickets anchor to the child's `student_id` with
+  `user_role='parent'`; the detail route filtered on `student_id` alone), with a
+  FILTER-AWARE double so the assertion is behavioural rather than "an `.eq()`
+  was called". REG-384 pins `replies_unavailable` as a distinct retry state, the
+  operator composer's fail-safe internal default + post-send reset, the reply
+  rate limiter's machine-readable 429, and category-alias normalisation.
+- **REG-385..REG-386** (`03-quiz-integrity.md`) — the truthy-`[]` serving bug:
+  `if (!error && data)` accepted the RPC's `COALESCE(jsonb_agg(q),'[]')`, so a
+  chapter with 40 valid-but-unverified questions served ZERO and never reached
+  the fallback. REG-386 pins the Tier-0 never-serve floor that the fix made
+  reachable — all THREE verifier-disproved states, not just `'failed'`.
+
+**REG-387 was the next free id** at that point — superseded above; the
+2026-08-11 tiered-verification batch took REG-387..REG-389, so **REG-390 is now
+the next free id**. REG-371..REG-377 remain RESERVED.
+Two defects found while writing these and reported rather than pinned as
+correct: the `normalizeTicketCategory()` prototype-inheritance hole
+(`10-rbac-rls.md`) and the `select_quiz_questions_rag` RPC's single-state
+`verification_state` exclusion (`03-quiz-integrity.md`).
+
+Prior: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
 `JSON.parse(null)` returns `null` rather than throwing, so six of the seven
 duplicate `parseOptions` copies could return `null` from a function annotated
 `: string[]`, crashing the caller's `.map()` at render on the quiz, learn,
@@ -20,8 +128,7 @@ exactly-four) and option ORDER (bound to the server shuffle snapshot and
 all E. Documented known gap: the literal STRING `'null'` still parses to `null`
 verbatim, preserved-not-introduced from all seven originals and pinned
 deliberately; tightening it is a P6 behaviour change needing assessment
-sign-off. Full entry in `03-quiz-integrity.md`. **REG-380 is now the next free
-id**; REG-371..REG-377 remain RESERVED.)
+sign-off. Full entry in `03-quiz-integrity.md`.)
 
 2026-08-10 reconciliation — 4 test files deleted in the orphan-consolidation
 pass, 3 catalog entries repaired, **0 entries deleted**. The deleted files were

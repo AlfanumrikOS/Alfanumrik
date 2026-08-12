@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 398,
+  "routeCount": 404,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -560,6 +560,14 @@
       "owner": "admin-platform",
       "rationale": "Internal platform-admin endpoint; access must derive from internal admin secret/session controls.",
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/internal/admin/support/metrics",
+      "file": "apps/host/src/app/api/internal/admin/support/metrics/route.ts",
+      "access": "internal_admin",
+      "owner": "admin-platform",
+      "rationale": "Read-only first-response-time (FRT) metric for the published 2-business-day support SLA - the route that makes that public promise falsifiable. Lives under /api/internal/admin/support/ because that IS the support operator console (ticket list, thread view, status PATCH and operator reply POST are all in the sibling route.ts), so it follows this directory's convention: authorizeRequest(request, 'support.view_tickets'), the READ code already granted to the support role by 20260612123200 - not support.manage_tickets, and no new permission code was invented (P9). Both query params are clamped server-side (days 1..365 default 30, queue_limit 1..500 default 100); there is no id or tenant parameter, so nothing caller-supplied steers a row filter. The summary is windowed by ticket created_at, but the work queue is deliberately NOT windowed - a six-month-old ignored ticket is the single most important row an operator can see.",
+      "serviceRoleUse": "Service-role is required, not convenience: NEITHER table read here has any operator/admin/support-role SELECT policy. support_tickets has exactly two SELECT policies, both requester-anchored ('Users can read own tickets' on own auth email or own student_id; support_tickets_self_select on own student_id). support_ticket_replies (20260814000012) has exactly three (_owner_select, _owner_insert, _service_role_all), and that migration states the design outright: the operator surface goes through the service-role client, with authorization enforced in the route by authorizeRequest(), not by RLS. An RLS-scoped client would therefore show an operator only the tickets that operator personally filed, and this metric would report breach_count 0 / meeting_promise true over a near-empty set - silently certifying that we meet the SLA precisely because it cannot see the breaches. A metric that fails toward 'all clear' is worse than no metric, so RLS here is a silent-zero rather than a second line of defense. The sibling /api/internal/admin/support is already ledgered, reads the same two tables and carries the same permission gate. Bounded surface: read-only, no writes or RPCs; three capped SELECTs (tickets in window LIMIT 5000; still-open tickets LIMIT 2000; replies chunked by ticket_id IN <=200, filtered is_internal=false AND author_role IN operator/admin/system). P13 field whitelist: support_tickets carries email, user_name, subject, message, device_info and admin_notes and NONE is selected - the ticket projection is pinned to the single TICKET_COLUMNS constant 'id, category, status, created_at, resolved_at' and the reply projection to 'ticket_id, created_at, author_role', so no message body and no author identity can reach the response. Output is aggregates plus a (ticket_id, category, status, created_at, age) queue: UUIDs only. DB errors return a generic body so the PostgREST string cannot echo the ticket-id list back; nothing is logged or audited (read-only aggregate). Ledgered in scripts/admin-client-allowlist.json. Ratchet-down path: add a SECURITY DEFINER RPC get_support_first_response_metrics(p_days, p_queue_limit) that gates on the existing baseline helper check_permission(auth.uid(), 'support.view_tickets') and projects the same eight columns, GRANT EXECUTE to authenticated, then move this route to the RLS-scoped client and prune both justifications. Note the support_ticket_first_response view proposed in this route's header comment is NOT that path - it is security_invoker and granted to service_role only, so it still needs this client. Do not instead add an operator SELECT policy on support_tickets: that widens RLS over the full PII row and trades a narrow column whitelist for table-level exposure."
     },
     {
       "path": "/api/internal/admin/users",
@@ -2899,6 +2907,29 @@
       "owner": "core-backend",
       "rationale": "Foxy North-Star Phase 5 lane U10: caller's OWN leaderboard band (percentile + rank + neighbours) for the requested period. authorizeRequest('leaderboard.view'); studentId resolved from auth.uid() only — ?student_id ignored.",
       "serviceRoleUse": "Service-role read of the get_leaderboard_percentile RPC scoped to the session-derived studentId (never a request-supplied id); RPC returns caller-owned band + PII-free neighbour names only. Ratchet-down path: replace with an auth.uid()-anchored SECURITY DEFINER RPC then move to the RLS-scoped client."
+    },
+    {
+      "path": "/api/v1/leaderboard/my-class",
+      "file": "apps/host/src/app/api/v1/leaderboard/my-class/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Leaderboard SEV1 Pattern-B repair: the caller's OWN class leaderboard, with class membership resolved server-side from class_students (students.class_id does not exist). authorizeRequest('leaderboard.view') - a permission held by student, teacher and tutor, hence 'auth' rather than 'student', matching every sibling /api/v1/leaderboard/*. studentId is resolved from the session only; a ?student_id param is ignored (P13). Additionally gated by ff_class_leaderboard_v1 (404 when OFF). NO serviceRoleUse entry by design: this route uses the RLS-scoped createSupabaseRouteClient, so the class_students own-enrollment policy plus the already-SECURITY-DEFINER get_class_leaderboard RPC (EXECUTE granted to authenticated) are a real second line of defence behind authorizeRequest. It is correspondingly absent from scripts/admin-client-allowlist.json."
+    },
+    {
+      "path": "/api/v1/leaderboard/streaks",
+      "file": "apps/host/src/app/api/v1/leaderboard/streaks/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Leaderboard SEV1 Pattern-B repair: daily-challenge streak board (peer rows plus the caller's own row). authorizeRequest('leaderboard.view') - a permission held by student, teacher and tutor, hence 'auth' rather than 'student', matching every sibling /api/v1/leaderboard/*. The caller's own students.id comes from the session only; a ?student_id param is ignored (P13). Response is Cache-Control: private because it carries a caller-specific 'me' block.",
+      "serviceRoleUse": "Service-role is required, not convenience: challenge_streaks RLS is own-row-only (challenge_streaks_student_select) and students_select_merged is own/teacher-of/guardian-of, so a cross-student board is structurally impossible under RLS - the page previously read it from the BROWSER and rendered the single returned row as a 'Top Streaks' board. Bounded surface: two capped read-only SELECTs (challenge_streaks at or above the visibility threshold, then students by id IN the surviving set), projected through an explicit P13 whitelist - peers get rank/student_id/name/grade/current_streak plus only those badges already implied by the exposed current_streak; best_streak, avatar_url, school, city, last_challenge_date and the mercy-day counters never leave the server. No request-supplied id reaches any filter. Ledgered in scripts/admin-client-allowlist.json. Ratchet-down path: add an auth.uid()-anchored SECURITY DEFINER get_streak_leaderboard(p_limit) GRANTed to authenticated, mirroring get_class_leaderboard, then move to the RLS-scoped client and prune both this justification and the allowlist entry."
+    },
+    {
+      "path": "/api/v1/leaderboard/titles",
+      "file": "apps/host/src/app/api/v1/leaderboard/titles/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Leaderboard SEV1 Pattern-B repair: the CALLER'S OWN earned titles - own-data only, no peer titles ever. authorizeRequest('progress.view_own'); studentId is resolved from the session only and a ?student_id param is ignored (P13). Declared 'auth' to stay consistent with the path-prefix taxonomy the manifest generator derives ('student' is reserved for /api/student|students|v2/student prefixes) and with every sibling /api/v1/leaderboard/*; an authorized caller that has no students row receives an empty list, never another student's rows. Field whitelist: id, title, title_hi, icon, tier, source, earned_at - source_id and student_id are deliberately omitted. Cache-Control: private.",
+      "serviceRoleUse": "Service-role is required, not convenience: student_titles has RLS ENABLED with EXACTLY ONE policy, 'Service role full access on student_titles'. There is no student SELECT policy at all, so an RLS-scoped client reads 0 rows for every caller and the 'My Titles' tab was permanently empty. The fix is a service-role read scoped SERVER-SIDE to the caller's own students.id, NOT an RLS change (P8: no policy is weakened). Bounded surface: one read-only SELECT on student_titles filtered on the session-derived student_id and is_active, capped at 50 rows. No cross-student path exists. Ledgered in scripts/admin-client-allowlist.json. Ratchet-down path: add an auth.uid()-anchored SECURITY DEFINER get_my_titles() GRANTed to authenticated, then move to the RLS-scoped client and prune both this justification and the allowlist entry."
     },
     {
       "path": "/api/v1/performance",

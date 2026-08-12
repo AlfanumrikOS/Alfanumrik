@@ -1145,3 +1145,70 @@ deletion with lock-step ledger ratchets).
 **Total catalog: 339 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Support thread P13 — a student must 404 on a parent-authored ticket — 2026-08-11
+
+A support ticket is scoped by TWO columns, not one:
+
+```
+student_id ∈ (caller's anchor set)   AND   user_role = (caller's role anchor)
+```
+
+A guardian's ticket is anchored to the **CHILD's** `student_id` with
+`user_role = 'parent'`. The LIST route narrowed on both columns. The DETAIL route
+narrowed on `student_id` ALONE — so a student could open a ticket their parent had
+filed about them. That was uncomfortable but bounded while a ticket was a single
+frozen message. Migration `20260814000012_support_ticket_replies.sql` attaches a
+reply thread, which turns the same asymmetry into disclosure of the entire support
+conversation about the child: refund disputes, escalations, behavioural concerns,
+and the operator's replies to them.
+
+Both routes now derive their scope from one shared helper
+(`apps/host/src/app/api/support/_lib/ticket-auth.ts`), so they cannot drift apart again.
+
+Compounding it: both routes use `supabaseAdmin`, which **BYPASSES RLS**. The
+`support_ticket_replies_owner_select` policy (which requires `is_internal = false`)
+is a backstop that this client never consults. The route's own
+`.eq('is_internal', false)` filter and its four-column projection are the actual
+enforcement.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-383 | `support_ticket_parent_thread_no_student_read` | BEHAVIOURAL, not structural: the supabaseAdmin double is FILTER-AWARE (it holds a two-ticket table and applies the route's own `.in()` / `.eq()` predicates AND its `.select()` column projection), so "the student gets 404" is decided by whether the route's filters actually exclude the row — not by whether an `.eq()` was called. Pins: a student 404s on their parent's ticket while still reading their OWN; the parent reads their own ticket about the child but NOT the child's; an unlinked parent and a guardian with no children 404 (never 403 — ticket existence is not leaked); a non-existent ticket and a not-yours ticket return byte-identical bodies; no deny path carries the subject, the message or the child's `student_id`. Internal notes: an `is_internal` reply never appears in the student-facing payload, replies expose exactly `{id, author_role, body, created_at}`, and `author_user_id` / `is_internal` never ride along. Failure honesty: a failed thread read sets `replies_unavailable: true`, and a SUCCESSFUL empty read does NOT set it — the two are distinguishable, which is what lets the UI tell silence from failure. Writes: POST is guarded by the SAME two-column scope (a student replying into the parent thread 404s and performs NO insert), and every security-relevant field (`author_role`, `is_internal`, `author_user_id`, `ticket_id`) is server-derived with hostile payload values ignored. Verified to FAIL (4 tests) with the `user_role` narrowing removed from the shared helper. | `apps/host/src/__tests__/api/support/ticket-detail-cross-role-leak.test.ts` (18 tests) + `apps/host/src/__tests__/api/support/tickets.test.ts` (filter-level pins) | E | P8, P13 |
+| REG-384 | `support_thread_and_operator_composer_honesty` | UI half. `replies_unavailable: true` renders a DISTINCT retry state — never "No replies yet" — and the copy explicitly denies the empty reading ("This does not mean there are no replies"); the conversation COUNT is suppressed while unavailable so the lie is not restated as a number; Retry re-reads and recovers; a genuinely empty thread renders the empty state and NOT the retry state (both directions, because a new ticket really has no replies); bilingual per P7. Authorship renders from `author_role` only — "Alfanumrik Support" vs "You", never a name. Operator composer (internal-admin `SupportTab`): opens in INTERNAL mode; an untouched composer posts `is_internal: true`; student-visible is honoured when chosen; it RESETS to internal after every SUCCESSFUL send; it deliberately does NOT reset after a FAILED send (the operator will retry the same message, and silently flipping the mode would route a student reply into a private note); switching tickets reopens internal and clears the draft; a failed student-visible send says "The student did NOT receive it" and a failed note says "Nothing was sent to the student"; a failed thread/list read says so rather than rendering silence. Verified to FAIL (1 test) with the post-send reset removed. Also pins the reply rate limiter (20/hour/user, 429 carrying `code: RATE_LIMITED` + `retry_after_ms` + a `Retry-After` header so the UI can say HOW LONG, limited BEFORE any DB write, keyed per user, body free of ticket/student ids), the operator reply POST (`author_role` server-pinned to `operator`, strict `=== true` on `is_internal`, student-visible reply moves an OPEN ticket to `pending` while a note does not, 404 on a missing ticket, and an audit row carrying ids + the visibility flag but NEVER the reply text) and support category-alias normalisation (`payment→billing`, `feature→other`; alias targets are canonical, no alias chains, no key collisions, idempotent and total over the accepted-input set — so the two intake routes can no longer write mutually-incompatible strings into the same free-TEXT column). | `apps/host/src/__tests__/app/support-thread-honesty.test.tsx` (11) + `apps/host/src/__tests__/app/internal-admin-support-composer-safety.test.tsx` (11) + `apps/host/src/__tests__/api/support/reply-limits-and-category-aliases.test.ts` (21) | E | P7, P13 |
+
+### Invariants covered by this section
+
+- **P13 (data privacy)** — REG-383 is the disclosure boundary itself. Note which side of the
+  line the enforcement sits on: because the route uses the service-role client, the RLS
+  policy is NOT the guard. Deleting `.eq('is_internal', false)` "because the policy covers
+  it" would ship every operator note to the requester, and REG-383 is what says so.
+- **P8 (RLS boundary)** — the new `support_ticket_replies` policies exist and are correct,
+  but they are defence in depth behind an RLS-BYPASSING client. The catalog records this
+  explicitly so a future reader does not mistake the policy for the enforcement.
+- **P7 (bilingual UI)** — the retry state is asserted in both languages; a failure state
+  that only exists in English is a failure state half the users cannot read.
+
+### Known gap, reported not pinned
+
+`normalizeTicketCategory()` (`packages/lib/src/support/ticket-categories.ts`) ends with
+`ALIASES[category] ?? 'other'` over a PLAIN OBJECT LITERAL, so it inherits
+`Object.prototype`: `ALIASES['__proto__']` is an object and `ALIASES['toString']` is a
+function, both non-nullish, so `?? 'other'` does not fire and the function returns a
+NON-STRING as a "canonical category". This is the identical prototype-inheritance hole
+already documented at length on `FEATURE_PERMISSION` in
+`apps/host/src/app/api/usage/daily/route.ts` (fixed there by switching to a `Map`). It is
+NOT currently exploitable — the intake route validates `z.enum(SUPPORT_TICKET_CATEGORY_INPUTS)`
+BEFORE calling it, so a prototype key is rejected with a 400 and never reaches the function
+— and REG-384 pins THAT boundary rather than the function's own broken totality claim.
+TODO(backend): make the alias table a `Map` (or `Object.create(null)`), then fold the three
+prototype keys back into the ordinary unknown-value test.
+
+### Catalog total
+
+Pre-REG-383: 382 entries (through REG-382, the leaderboard SEV1 batch — see
+`15-cross-cutting.md`). This section adds REG-383 and REG-384.
+**Total catalog: 384 entries (target: 35 — TARGET EXCEEDED). REG-385 is the next free id**
+(REG-371..REG-377 remain RESERVED).
+
+---

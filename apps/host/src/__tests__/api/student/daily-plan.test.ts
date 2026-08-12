@@ -179,12 +179,24 @@ describe('GET /api/student/daily-plan: flag ON', () => {
     expect(body.data.items).toEqual([]);
   });
 
+  // Class membership comes from `class_students`, NOT from a `students.class_id`
+  // column — that column does not exist in the schema. This test used to hand
+  // the route a fabricated `class_id` on the students row, which is a shape the
+  // database can never return: in production the `select('id, academic_goal,
+  // class_id')` was rejected outright and the route always 404'd. The mock now
+  // matches the real two-step read (students → class_students → lesson plan).
   it('returns classroom-aligned daily plan if classroom lesson plan exists', async () => {
     mockIsFeatureEnabled.mockResolvedValueOnce(true);
     mockSingle.mockResolvedValueOnce({
-      data: { id: STUDENT_ID, academic_goal: 'board_topper', class_id: 'class-123' },
+      data: { id: STUDENT_ID, academic_goal: 'board_topper' },
       error: null,
     });
+    // 1st maybeSingle → class_students enrolment lookup
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: { class_id: 'class-123' },
+      error: null,
+    });
+    // 2nd maybeSingle → classroom_lesson_plans for that class
     mockMaybeSingle.mockResolvedValueOnce({
       data: {
         topic_id: 'topic-999',

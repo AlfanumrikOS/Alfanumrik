@@ -40,11 +40,32 @@ export interface EngagementSnapshot {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await authorizeRequest(request, 'student.profile.read');
-  if (!auth.authorized) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  // Permission: progress.view_own — the student's own learning state.
+  //
+  // This route previously authorized against 'student.profile.read', a code
+  // that existed at exactly one place in the repo: this call site. It was never
+  // seeded into the `permissions` table and never named in any role grant, so
+  // hasPermission() resolved it for NO role and the super_admin bypass at
+  // rbac.ts:779-780 was the only way through — every real student got denied.
+  // Repointed to the already-granted semantic twin used by the sibling
+  // own-progress reads (/api/practice/history, /api/dashboard/reviews-due,
+  // /api/v2/student/progress). Grant proof: 'progress.view_own' is seeded at
+  // supabase/migrations/20260612123200_rbac_matrix_conformance.sql:125 and
+  // granted to the student role at line 225 of that same migration.
+  //
+  // Do NOT reintroduce a bespoke code here: new permission codes require user
+  // approval, and an ungranted code fails closed and silently.
+  const auth = await authorizeRequest(request, 'progress.view_own', {
+    requireStudentId: true,
+  });
+  // Return the REAL auth error, not a hand-rolled 401. A permission denial is a
+  // 403; emitting 401 told the client its session was invalid and could drive a
+  // spurious logout loop.
+  if (!auth.authorized) return auth.errorResponse!;
 
+  // studentId is resolved server-side by authorizeRequest from the JWT
+  // (SELECT id FROM students WHERE auth_user_id = <jwt sub>) — never read from
+  // query or body, so there is no IDOR surface here.
   const studentId = auth.studentId;
   if (!studentId) {
     return NextResponse.json({ error: 'Student not found' }, { status: 404 });

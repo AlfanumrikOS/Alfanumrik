@@ -553,7 +553,14 @@ export const StudentProgressResponse = z
   })
   .openapi('StudentProgressResponse');
 
-/** One ranked leaderboard entry. No PII beyond the existing leaderboard (P13). */
+/**
+ * One ranked leaderboard entry. No PII beyond the existing leaderboard (P13).
+ *
+ * `avatar_url` / `school` / `city` are ALWAYS null: the `get_leaderboard` RPC
+ * does not emit them, and enriching them would place a minor's institution and
+ * city on a peer board. They are retained only so the generated mobile client
+ * keeps deserializing (removing them would be a breaking contract change).
+ */
 export const LeaderboardEntry = z
   .object({
     rank: z.number().int().openapi({ example: 1 }),
@@ -561,20 +568,43 @@ export const LeaderboardEntry = z
     name: z.string().nullable().openapi({ example: 'Asha' }),
     total_xp: z.number().int().openapi({ example: 1450 }),
     streak: z.number().int().openapi({ example: 7 }),
-    avatar_url: z.string().nullable(),
+    avatar_url: z.string().nullable().openapi({ description: 'Always null (not emitted by get_leaderboard).' }),
     grade: z.string().nullable().openapi({ example: '9' }),
-    school: z.string().nullable(),
-    city: z.string().nullable(),
+    school: z.string().nullable().openapi({ description: 'Always null (P13 — not exposed for peers).' }),
+    city: z.string().nullable().openapi({ description: 'Always null (P13 — not exposed for peers).' }),
   })
   .openapi('LeaderboardEntry');
 
-/** Response for GET /v2/student/leaderboard. */
+/**
+ * The caller's own standing on the board. `get_leaderboard` applies
+ * `HAVING SUM(xp_earned) > 0`, so a zero-XP student is absent from their own
+ * leaderboard — `on_board: false` / `rank: null` states that explicitly rather
+ * than leaving the client to infer a failure.
+ */
+export const LeaderboardSelf = z
+  .object({
+    student_id: zUuid.nullable(),
+    on_board: z.boolean().openapi({ example: false }),
+    rank: z.number().int().nullable().openapi({ example: null }),
+    total_xp: z.number().int().nullable().openapi({ example: null }),
+  })
+  .openapi('LeaderboardSelf');
+
+/**
+ * Response for GET /v2/student/leaderboard.
+ *
+ * `scope` is always `'global'`. The endpoint used to accept `scope=school` and
+ * echo it back while serving global rows (the RPC has no scope parameter);
+ * `scope=school` is now rejected with 400 `SCOPE_UNSUPPORTED`. The enum keeps
+ * both members so the generated mobile client still deserializes.
+ */
 export const LeaderboardResponse = z
   .object({
     schemaVersion: z.literal(1),
     period: z.enum(['weekly', 'monthly', 'all']).openapi({ example: 'weekly' }),
     scope: z.enum(['school', 'global']).openapi({ example: 'global' }),
     entries: z.array(LeaderboardEntry),
+    me: LeaderboardSelf.optional(),
   })
   .openapi('LeaderboardResponse');
 
@@ -763,17 +793,18 @@ registry.registerPath({
   operationId: 'getStudentLeaderboard',
   summary: 'XP leaderboard',
   description:
-    'Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own.',
+    'Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own. `scope` accepts only `global`; `scope=school` returns 400 SCOPE_UNSUPPORTED because the underlying RPC has no school scoping (it previously returned global rows labelled "school"). `school`/`city`/`avatar_url` on each entry are always null.',
   tags: ['student'],
   security: SECURITY,
   request: {
     query: z.object({
       period: z.enum(['weekly', 'monthly', 'all']).optional(),
-      scope: z.enum(['school', 'global']).optional(),
+      scope: z.literal('global').optional(),
     }),
   },
   responses: {
     200: { description: 'Ranked leaderboard.', content: { 'application/json': { schema: LeaderboardResponse } } },
+    400: { description: 'Unsupported scope (SCOPE_UNSUPPORTED).', content: { 'application/json': { schema: ErrorResponse } } },
     500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
   },
 });

@@ -368,12 +368,14 @@
       "LeaderboardEntry": {
         "properties": {
           "avatar_url": {
+            "description": "Always null (not emitted by get_leaderboard).",
             "type": [
               "string",
               "null"
             ]
           },
           "city": {
+            "description": "Always null (P13 — not exposed for peers).",
             "type": [
               "string",
               "null"
@@ -398,6 +400,7 @@
             "type": "integer"
           },
           "school": {
+            "description": "Always null (P13 — not exposed for peers).",
             "type": [
               "string",
               "null"
@@ -437,6 +440,9 @@
             },
             "type": "array"
           },
+          "me": {
+            "$ref": "#/components/schemas/LeaderboardSelf"
+          },
           "period": {
             "enum": [
               "weekly",
@@ -466,6 +472,42 @@
           "period",
           "scope",
           "entries"
+        ],
+        "type": "object"
+      },
+      "LeaderboardSelf": {
+        "properties": {
+          "on_board": {
+            "example": false,
+            "type": "boolean"
+          },
+          "rank": {
+            "example": null,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "student_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_xp": {
+            "example": null,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "student_id",
+          "on_board",
+          "rank",
+          "total_xp"
         ],
         "type": "object"
       },
@@ -2356,7 +2398,7 @@
     },
     "/v2/student/leaderboard": {
       "get": {
-        "description": "Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own.",
+        "description": "Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own. `scope` accepts only `global`; `scope=school` returns 400 SCOPE_UNSUPPORTED because the underlying RPC has no school scoping (it previously returned global rows labelled \"school\"). `school`/`city`/`avatar_url` on each entry are always null.",
         "operationId": "getStudentLeaderboard",
         "parameters": [
           {
@@ -2378,7 +2420,6 @@
             "required": false,
             "schema": {
               "enum": [
-                "school",
                 "global"
               ],
               "type": "string"
@@ -2395,6 +2436,16 @@
               }
             },
             "description": "Ranked leaderboard."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported scope (SCOPE_UNSUPPORTED)."
           },
           "500": {
             "content": {

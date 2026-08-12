@@ -196,16 +196,52 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
       id: 'manual-only-containment',
       label: 'broken schedules stay suspended',
       file: '.github/workflows/mesh-cron.yml',
+      pass: (text) => workflowDispatchOnly(text)
+        && includesAll('Agent mesh execution is suspended in Phase 0', 'enabled=false', "if: needs.gate.outputs.enabled == 'true'", 'environment: agent-mesh-break-glass')(text)
+        && !text.includes('eval npm')
+        && !text.includes('inputs.goal_override'),
+      failure: 'The agent mesh cron must remain hard-suspended in Phase 0.',
+    },
+    {
+      // 2026-08-11: the content-quality nightly used to be pinned to the SAME
+      // blanket "workflow_dispatch-only + refuse everything" shape as mesh-cron,
+      // by the check above. That shape was over-broad for this workflow and had
+      // a real cost: it switched off the ONLY automated detector that warns the
+      // question bank is going empty, on a platform where every question
+      // generator is manual-only. The blind spot ran for a month.
+      //
+      // The hazard b66c25c3b actually closed was narrower than "no schedule": a
+      // credentialed job reachable from `workflow_dispatch` on an ARBITRARY ref,
+      // i.e. arbitrary branch-controlled script content executing with the
+      // production Supabase credential. This check now pins that precise
+      // property instead, which is strictly more targeted than the blanket ban:
+      //
+      //   1. no trigger may expose the credential to a contributor-chosen ref
+      //      (`pull_request`/`pull_request_target` are forbidden outright);
+      //   2. the credentialed job carries an explicit main-only ref guard, so a
+      //      dispatch from any other ref skips it rather than running it;
+      //   3. the job still runs inside the protected `production-ops`
+      //      environment.
+      //
+      // Relaxing any of the three re-opens the original hole. Deleting the
+      // schedule re-creates the blind spot. Both are regressions.
+      id: 'content-scan-main-only-containment',
+      label: 'credentialed content scan is scheduled but main-only',
+      file: '.github/workflows/content-quality-nightly.yml',
       pass: (text) => {
-        const content = readFileSync(repoPath('.github/workflows/content-quality-nightly.yml'), 'utf8');
-        return workflowDispatchOnly(text)
-          && workflowDispatchOnly(content)
-          && includesAll('Agent mesh execution is suspended in Phase 0', 'enabled=false', "if: needs.gate.outputs.enabled == 'true'", 'environment: agent-mesh-break-glass')(text)
-          && !text.includes('eval npm')
-          && !text.includes('inputs.goal_override')
-          && includesAll('Credentialed content-quality execution is suspended in Phase 0', 'enabled=false', "if: needs.gate.outputs.enabled == 'true'", 'environment: production-ops')(content);
+        const triggers = triggerKeys(text).slice().sort();
+        return JSON.stringify(triggers) === JSON.stringify(['schedule', 'workflow_dispatch'])
+          && includesAll(
+            "if: github.ref == 'refs/heads/main'",
+            'environment: production-ops',
+          )(text)
+          && excludesAll('pull_request:', 'pull_request_target:')(text);
       },
-      failure: 'Mesh and credentialed content scans must remain hard-suspended in Phase 0.',
+      failure:
+        'The credentialed content scan must stay schedule+dispatch only, guarded by an explicit '
+        + "`if: github.ref == 'refs/heads/main'` ref check, and run in the protected production-ops "
+        + 'environment. Never expose its Supabase credential to a contributor-chosen ref, and never '
+        + 'delete its schedule (that is the question-bank-going-empty detector).',
     },
     {
       id: 'production-cron-break-glass',
