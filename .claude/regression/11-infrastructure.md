@@ -2320,6 +2320,58 @@ REG-371..REG-377 to the ops student-IA-consolidation renumbering pass, which
 has not landed. REG-378 is taken here per that same note ("if that batch lands,
 the next free id becomes REG-378"), deliberately leaving 371..377 to ops so the
 two passes cannot collide. **REG-379 is the next free id after this entry.**
+**Superseded** — REG-379 and REG-385..REG-389 have since been taken (see
+`03-quiz-integrity.md`) and the live-P0 Bearer batch below takes
+REG-390..REG-393, so REG-394 is the next free id.
 
 ---
 
+
+## REG-393 — a failed lookup must never be cached as an answer
+
+Added 2026-08-12 (testing agent), same live-P0 batch as REG-390/REG-391
+(`03-quiz-integrity.md`) and REG-392 (`10-rbac-rls.md`), branch
+`Alfanumrik/e2e-p0-bearer-quiz-submit`.
+
+**The defect.** `GET /api/rhythm/today` memoizes today's queue per student for
+`CACHE_TTL.USER`. `cacheFetchAsync` treats `null` as a miss, so the previous
+implementation could not represent "the build returned nothing" — and reached
+for a **truthy sentinel** instead:
+
+```ts
+const built = await buildRhythmQueue(supabase, userId);
+return built ?? { __noProfile: true };   // ← a cache HIT
+```
+
+A sentinel is servable. Combined with the cookie-only client this batch also
+fixes (REG-392), **one** mobile request was enough to poison the key: the Bearer
+caller's RLS reads denied, the build returned null, the sentinel was written, and
+every subsequent request from that student — **web included, and even after the
+transport bug was fixed** — was answered `404 no_student_profile` straight from
+the cache until the TTL expired. A transient, one-off failure was converted into
+a pinned outage for that user.
+
+This is the general shape, not a rhythm-queue quirk: any cache that stores a
+failure indistinguishably from a success turns a blip into an outage whose
+duration is set by the TTL rather than by the fault.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-393 | `rhythm_today_no_profile_is_not_pinned` | **The failure is not retained as an answer.** A first request whose build returns null answers `404 no_student_profile`; a second request for the SAME user in the SAME day bucket **re-runs the build** (`buildRhythmQueue` called twice) rather than being served the cached failure. **Recovery is immediate:** once the build succeeds, the very next request returns 200 with the real queue — no TTL wait. **No truthy sentinel is written:** `cacheGet` on the exact key the route builds reads back as a MISS (`toBeNull`), and the stored value is asserted not to contain `__noProfile` — so a regression to any truthy marker, however spelled, fails. A THROWN lookup failure is likewise not pinned (500, then the next request re-runs and succeeds). **The cache still does its job** — the fix must not degrade into "never cache anything": a real queue IS cached and the second request does not re-run the build. **P13 riders:** the key is per-student (three interleaved requests across two students each get their own queue), and the response carries `private, max-age=0, must-revalidate` — never a shared/CDN header, because Vercel's edge does not vary by auth and a public cache here would hand one student's queue to another. Harness note: `@alfanumrik/lib/cache` is deliberately REAL (Redis L2 stubbed to "not configured" so only the deterministic in-memory L1 runs). Mocking the cache to a pass-through would make the suite vacuous — the entire defect lived in what the route handed the cache and what the cache did with it. | `apps/host/src/__tests__/api/rhythm/today-no-profile-not-cached.test.ts` (7 tests) | E | P13 |
+
+### Related, not covered here
+
+The same "return null to skip caching" idiom is used by
+`/api/learner/scheduled`. It is not pinned by this entry. A sweep for other
+`cacheFetchAsync` call sites that could still be storing a truthy failure marker
+is owed — the class of defect is generic and this entry closes exactly one
+instance of it.
+
+### Catalog total
+
+Pre-REG-393: 392 entries (through REG-392 — see `10-rbac-rls.md`, same batch).
+This section adds REG-393.
+**Total catalog: 393 entries (target: 35 — TARGET EXCEEDED). REG-394 is the next
+free id** (REG-371..REG-377 remain RESERVED).
+
+---

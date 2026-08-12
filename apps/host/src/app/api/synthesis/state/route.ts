@@ -21,7 +21,7 @@
  * UPDATE policy on the table.
  */
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@alfanumrik/lib/feature-flags';
@@ -60,10 +60,17 @@ interface SynthesisRow {
   createdAt: string;
 }
 
-export async function GET(_request: Request) {
-  const supabase = await createSupabaseServerClient();
+export async function GET(request: Request) {
+  // Bearer-AWARE, RLS-respecting client. The cookie-only
+  // createSupabaseServerClient() NULLed auth.uid() for `Authorization: Bearer`
+  // callers (the entire Flutter app), so the `students` lookup returned no row
+  // and this route answered a spurious 404 no_student_profile. Never
+  // service-role for the READS; the lazy-fill UPDATE below deliberately keeps
+  // its own supabaseAdmin client (monthly_synthesis_runs has no end-user UPDATE
+  // policy) — that is unchanged.
+  const supabase = await createSupabaseRouteClient(request);
 
-  const auth = await authorizeRequest(_request, 'study_plan.view', { requireStudentId: true });
+  const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
   if (!auth.authorized || !auth.userId) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
