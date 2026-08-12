@@ -426,10 +426,11 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
             // gen-mol-matrix were unenforced pre-merge. PR #1514 merged
             // green and turned main red on the next push (repair: #1517).
             //
-            // The pin was also self-contradictory: the two literals directly
-            // below (`SAME_REPOSITORY_PR`, the fork-skip accounting) exist
-            // ONLY to handle pull_request events, and were unreachable for
-            // the whole time the gate was push-only.
+            // The pin was also self-contradictory: the literals directly
+            // below (`SAME_REPOSITORY_PR`, and what was then the fork-skip
+            // accounting — since generalised into the expectedSkips lane
+            // pinned further down) exist to handle pull_request events, and
+            // were unreachable for the whole time the gate was push-only.
             //
             // This check's own label — "CI exposes aggregate gate" — is
             // better served by a gate that runs on every event. Pinning
@@ -438,13 +439,77 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
             // AND restores it on PRs.
             'if: ${{ always() }}',
             'SAME_REPOSITORY_PR',
-            "forkSkips.push('integration-tests', 'e2e-critical-paths')",
+            // ─────────────────────────────────────────────────────────────
+            // EXPECTED-SKIP ACCOUNTING — spelling updated 2026-08-12.
+            //
+            // This slot used to pin one literal:
+            //   forkSkips.push('integration-tests', 'e2e-critical-paths')
+            // That single call encoded a fork-PR-only view of the world and
+            // no longer exists in ci.yml. It was replaced because the shape
+            // it pinned carried two defects, and these three literals exist
+            // to keep both of them out:
+            //
+            // 1. workflow_dispatch could NEVER pass the gate. Under the old
+            //    shape `integration-tests` stayed in `required` on every
+            //    event, but its own `if:` (same-repo PR || push) makes it
+            //    SKIPPED on a manual dispatch — so the gate read
+            //    skipped !== 'success' and exited 1 with every other job
+            //    green. Not flaky: structurally unpassable there.
+            // 2. `e2e-critical-paths` sat in the gate's `needs` but on
+            //    NEITHER list for push and workflow_dispatch, so on those
+            //    events its result was read by nobody. A dependency that is
+            //    declared and then never inspected is indistinguishable
+            //    from one that always passes.
+            //
+            // The replacement classifies PER EVENT: every job in `needs`
+            // lands in exactly one of `required` (must be 'success') or
+            // `expectedSkips` (must be EXACTLY 'skipped'). That is strictly
+            // stronger than what was pinned before — nothing is unchecked,
+            // and nothing is forgiven for failing, because a job that RAN
+            // and FAILED is never 'skipped'.
+            //
+            // Both conditional jobs are pinned INDIVIDUALLY rather than as
+            // one combined literal: the generalised form builds the list
+            // across two independent if/else branches, so a single combined
+            // assertion could be satisfied while one whole branch was
+            // deleted — silently dropping that job back to unchecked with
+            // this check still green.
+            //
+            // The third literal is the load-bearing one. Populating
+            // `expectedSkips` proves nothing unless the list is READ; a
+            // check that only proved the array was built would be exactly
+            // the hole described in (2), just relocated. It pins the
+            // reconciliation into `failures` AND the exact comparison
+            // (`!== 'skipped'`). Dropping the line so the array is built and
+            // discarded, or relaxing the comparison to a truthiness test,
+            // turns the entire expected-skip lane into a no-op.
+            // ─────────────────────────────────────────────────────────────
+            "expectedSkips.push('integration-tests')",
+            "expectedSkips.push('e2e-critical-paths')",
+            "failures.push(...expectedSkips.filter((job) => needs[job]?.result !== 'skipped'));",
             'process.exit(1)',
           )(gate)
           // The event skip must not come back by any spelling. `always()`
           // above is a substring of the old conjunction, so without this the
           // check would pass on a reintroduced PR skip.
           && !/^ {4}if:.*github\.event_name != 'pull_request'/m.test(gate)
+          // Same reasoning applied to the superseded accounting itself: the
+          // three literals above are all positive, so re-adding
+          // `required.splice(required.indexOf('integration-tests'), 1)`
+          // alongside them would satisfy this check while restoring the
+          // mutation-based shape. That shape is the direct cause of both
+          // defects above — it removes a job from `required` at runtime
+          // instead of classifying it, which is why `e2e-critical-paths`
+          // ended up on no list at all for push/dispatch. Classification, not
+          // mutation, is the invariant.
+          //
+          // Scoped to `gate` and to the literal `required.splice(` on
+          // purpose. Verified 2026-08-12: ci.yml contains exactly one match
+          // for "splice" anywhere — the word "spliced" in a shell-quoting
+          // comment at line ~2424, far outside the ci-gate block and not a
+          // match for this literal — so this guard has no false positive to
+          // trip on today.
+          && !gate.includes('required.splice(')
           // Restored 2026-08-11: the four governance jobs 409123b5 dropped
           // must be BOTH declared dependencies and members of the gate
           // script's `required` array. A `needs` entry missing from

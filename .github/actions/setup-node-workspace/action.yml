@@ -1,0 +1,77 @@
+name: 'Setup Node workspace'
+description: >-
+  Sets up Node.js with npm's download cache and installs the workspace
+  dependencies with a frozen lockfile (`npm ci`). Replaces the setup-node +
+  cache(node_modules) + conditional-`npm ci` boilerplate that was duplicated
+  across six CI jobs.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHY THIS CACHES ~/.npm AND ALWAYS RUNS `npm ci`
+#
+# The six blocks this action replaces did something different, and unsound:
+#
+#     - uses: actions/cache@v4
+#       with:
+#         path: node_modules
+#         key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+#     - name: Install dependencies
+#       if: steps.cache.outputs.cache-hit != 'true'
+#       run: npm ci
+#
+# That cached the node_modules DIRECTORY and SKIPPED `npm ci` on a cache hit,
+# keyed on `package-lock.json` only — no `runner.arch`, no Node version. Two
+# consequences:
+#
+#   1. A corrupt or partially-written node_modules (a cancelled run, an aborted
+#      upload, a truncated tarball) gets restored and reused forever, because
+#      `npm ci` — the ONLY step that would detect and repair it — is exactly
+#      what the cache hit skips. There is no integrity check anywhere on that
+#      path.
+#   2. node_modules contains platform-specific artifacts (native addons,
+#      optional per-arch binaries such as the Rollup/SWC/esbuild platform
+#      packages). Keying on the lockfile alone means a tree built for one
+#      arch/Node version can be restored onto another.
+#
+# Caching `~/.npm` (setup-node's built-in `cache: 'npm'`, which keys on the
+# lockfile automatically and is arch/Node aware) and then ALWAYS running
+# `npm ci` keeps the install reproducible and lockfile-frozen — `npm ci`
+# deletes and recreates node_modules from the lockfile every time, verifying
+# integrity hashes — while staying fast, because the packages come from the
+# local npm cache rather than the network.
+# ─────────────────────────────────────────────────────────────────────────────
+
+inputs:
+  node-version:
+    description: 'Node.js version to install. Callers should pass ${{ env.NODE_VERSION }}.'
+    required: false
+    default: '22'
+  install:
+    description: >-
+      Whether to run `npm ci`. Defaults to "true". Set to "false" only for jobs
+      that need a Node runtime but no workspace dependencies (e.g. node-only
+      scripts with zero npm deps).
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    # NOTE: this action runs AFTER the caller's own `actions/checkout` step —
+    # composite actions cannot check the repo out for you, and each job keeps
+    # its own checkout with its own `with:` options (fetch-depth, etc.).
+    - name: Set up Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        check-latest: true
+        # Built-in npm cache: caches ~/.npm (the download cache), keyed on the
+        # lockfile + runner OS/arch + Node version. NOT node_modules.
+        cache: 'npm'
+
+    - name: Install dependencies (npm ci)
+      if: ${{ inputs.install != 'false' }}
+      shell: bash
+      # Unconditional by design — see the header comment. `npm ci` is the
+      # integrity check; skipping it on a cache hit is what made the previous
+      # approach unsound.
+      run: npm ci

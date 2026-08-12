@@ -31,6 +31,9 @@ on:
       - '.github/workflows/mobile-ci.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: mobile-ci-${{ github.ref }}
   cancel-in-progress: true

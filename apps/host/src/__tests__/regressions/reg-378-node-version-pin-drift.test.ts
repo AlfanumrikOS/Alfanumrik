@@ -83,17 +83,34 @@ function unquote(raw: string): string {
 }
 
 /**
- * Resolve a `node-version` value to a major, using SAME-FILE env scope only.
+ * Resolve a `node-version` value to a major, using SAME-FILE scope only.
  * Returns a discriminated result rather than throwing so the caller can report
  * every offender in one go instead of dying on the first.
  */
 type PinResolution =
   | { ok: true; major: number; resolved: string }
-  | { ok: false; reason: 'floating' | 'unresolved-env' | 'unparseable'; resolved: string };
+  | {
+      ok: false;
+      reason: 'floating' | 'unresolved-env' | 'unresolved-input' | 'unparseable';
+      resolved: string;
+    };
+
+/**
+ * The `inputs:` a single .github YAML file declares FOR ITSELF — a composite
+ * action's top-level `inputs:`, or a reusable workflow's
+ * `on.workflow_call.inputs` / `on.workflow_dispatch.inputs`.
+ *
+ * `default` is `undefined` when the input declares none. That distinction is
+ * the whole point: an input WITH a default has a knowable value when no caller
+ * overrides it; an input WITHOUT one is whatever an arbitrary caller passes,
+ * which is not a pin at all.
+ */
+type InputScope = Record<string, { default?: string }>;
 
 function resolveNodePin(
   raw: string,
   envScope: Record<string, unknown>,
+  inputScope: InputScope = {},
 ): PinResolution {
   let value = unquote(String(raw));
 
@@ -108,11 +125,100 @@ function resolveNodePin(
     value = unquote(String(envScope[key]));
   }
 
+  // `${{ inputs.<name> }}` — a composite action's (or reusable workflow's) OWN
+  // input. Resolvable ONLY through that same file's declared `default:`, which
+  // is the value every caller that does not override it actually gets. This is
+  // a real pin and must be checked like one; before this branch existed the
+  // repo's first composite action read as `unparseable`.
+  //
+  // Two shapes stay UNRESOLVED on purpose, because in both of them the
+  // effective Node is chosen by an arbitrary caller rather than by this file:
+  //   - an input that is not declared here at all;
+  //   - a declared input with NO `default:`.
+  // Same failure mode as the cross-file `env:` trap — silently "whatever the
+  // caller/runner supplies" — so it gets the same verdict: offender, not skip.
+  const inputExpr = value.match(/^\$\{\{\s*inputs\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}$/);
+  if (inputExpr) {
+    const key = inputExpr[1];
+    const declared = inputScope[key];
+    if (!declared || declared.default === undefined) {
+      return { ok: false, reason: 'unresolved-input', resolved: value };
+    }
+    value = unquote(String(declared.default));
+  }
+
   if (isFloatingAlias(value)) return { ok: false, reason: 'floating', resolved: value };
 
   const major = value.match(/^(\d+)(?:[.x].*)?$/);
   if (!major) return { ok: false, reason: 'unparseable', resolved: value };
   return { ok: true, major: Number(major[1]), resolved: value };
+}
+
+/**
+ * Extract every `node-version` PIN from raw YAML text — a `node-version:` key
+ * whose value sits ON THE SAME LINE.
+ *
+ * A bare `node-version:` with nothing after the colon is an input DECLARATION
+ * (`inputs: { node-version: { description: ..., default: ... } }`), not a pin,
+ * and contributes nothing. The previous matcher used `\s*` after the colon;
+ * `\s` matches `\n`, so it happily ran on to the NEXT line and reported a
+ * composite action's `description:` line as an unparseable Node pin. Hence
+ * `[^\S\n]*` (horizontal whitespace only) plus a required leading non-space,
+ * which cannot cross a line boundary.
+ */
+function nodeVersionPins(raw: string): string[] {
+  return [...raw.matchAll(/^[^\S\n]*node-version:[^\S\n]*(\S.*?)[^\S\n]*$/gm)].map((m) => m[1]);
+}
+
+/** Same same-line discipline, for a workflow's own `NODE_VERSION:` env key. */
+function nodeVersionEnvValues(raw: string): string[] {
+  return [...raw.matchAll(/^[^\S\n]*NODE_VERSION:[^\S\n]*(\S.*?)[^\S\n]*$/gm)].map((m) => m[1]);
+}
+
+/**
+ * SCREAMING_CASE scalars a file defines for itself, harvested from raw text so
+ * the belt-and-braces scan does not depend on the structural walk. Same-line
+ * only, for the same reason as `nodeVersionPins`: `KEY:` followed by a nested
+ * block is not a scalar assignment and must not be read as one.
+ */
+function rawEnvScope(raw: string): Record<string, unknown> {
+  return Object.fromEntries(
+    [...raw.matchAll(/^[^\S\n]*([A-Z_][A-Z0-9_]*):[^\S\n]*(['"]?[\w./*-]+['"]?)[^\S\n]*$/gm)].map(
+      (m) => [m[1], m[2]],
+    ),
+  );
+}
+
+/**
+ * The `inputs:` scope a .github YAML file declares for itself. Covers both
+ * shapes that can pin Node for their callers: a composite action's top-level
+ * `inputs:` and a reusable/dispatchable workflow's `on.workflow_call.inputs`
+ * (and `on.workflow_dispatch.inputs`). Unparseable YAML yields an EMPTY scope,
+ * so an expression against it stays `unresolved-input` — fail closed.
+ */
+function declaredInputScope(raw: string): InputScope {
+  let doc: any;
+  try {
+    doc = parseYaml(raw);
+  } catch {
+    return {};
+  }
+  if (!doc || typeof doc !== 'object') return {};
+
+  // YAML 1.1 folds a bare `on:` key to boolean true; the `yaml` package's
+  // default 1.2 core schema keeps it a string. Accept either.
+  const on = doc.on ?? doc[true as unknown as string] ?? {};
+  const maps = [doc.inputs, on?.workflow_call?.inputs, on?.workflow_dispatch?.inputs];
+
+  const scope: InputScope = {};
+  for (const map of maps) {
+    if (!map || typeof map !== 'object') continue;
+    for (const [name, decl] of Object.entries<any>(map)) {
+      const hasDefault = decl && typeof decl === 'object' && 'default' in decl;
+      scope[name] = hasDefault ? { default: String(decl.default) } : {};
+    }
+  }
+  return scope;
 }
 
 /**
@@ -322,7 +428,7 @@ describe('REG-378 (a/b) GitHub Actions Node pins', () => {
 
     let pins = 0;
     for (const f of files) {
-      pins += [...read(`.github/workflows/${f}`).matchAll(/^\s*node-version:/gm)].length;
+      pins += nodeVersionPins(read(`.github/workflows/${f}`)).length;
     }
     // 25 setup-node pins existed at the 2026-08-09 pin-down. A scan that
     // suddenly sees almost none is broken, not clean.
@@ -356,6 +462,7 @@ describe('REG-378 (a/b) GitHub Actions Node pins', () => {
       const raw = read(`.github/workflows/${f}`);
       const doc = parseYaml(raw) as any;
       const topEnv: Record<string, unknown> = doc?.env ?? {};
+      const inputScope = declaredInputScope(raw);
 
       for (const [jobName, job] of Object.entries<any>(doc?.jobs ?? {})) {
         const scope = { ...topEnv, ...(job?.env ?? {}) };
@@ -372,7 +479,7 @@ describe('REG-378 (a/b) GitHub Actions Node pins', () => {
             continue;
           }
 
-          const res = resolveNodePin(String(step?.with?.['node-version']), scope);
+          const res = resolveNodePin(String(step?.with?.['node-version']), scope, inputScope);
           if (!res.ok) {
             offenders.push(`${f}::${jobName}#${i} ${res.reason} (${res.resolved})`);
           } else if (res.major !== PINNED_MAJOR) {
@@ -392,19 +499,15 @@ describe('REG-378 (a/b) GitHub Actions Node pins', () => {
     const offenders: string[] = [];
     for (const f of workflowFiles()) {
       const raw = read(`.github/workflows/${f}`);
-      const scope: Record<string, unknown> = Object.fromEntries(
-        [...raw.matchAll(/^\s*([A-Z_][A-Z0-9_]*):\s*(['"]?[\w./*-]+['"]?)\s*$/gm)].map((m) => [
-          m[1],
-          m[2],
-        ]),
-      );
-      for (const m of raw.matchAll(/^\s*node-version:\s*(.+?)\s*$/gm)) {
-        const res = resolveNodePin(m[1], scope);
+      const scope = rawEnvScope(raw);
+      const inputScope = declaredInputScope(raw);
+      for (const value of nodeVersionPins(raw)) {
+        const res = resolveNodePin(value, scope, inputScope);
         if (!res.ok) offenders.push(`${f}: ${res.reason} (${res.resolved})`);
         else if (res.major !== PINNED_MAJOR) offenders.push(`${f}: major ${res.major}`);
       }
-      for (const m of raw.matchAll(/^\s*NODE_VERSION:\s*(.+?)\s*$/gm)) {
-        const res = resolveNodePin(m[1], {});
+      for (const value of nodeVersionEnvValues(raw)) {
+        const res = resolveNodePin(value, {});
         if (!res.ok) offenders.push(`${f}: NODE_VERSION ${res.reason} (${res.resolved})`);
         else if (res.major !== PINNED_MAJOR) offenders.push(`${f}: NODE_VERSION major ${res.major}`);
       }
@@ -415,10 +518,11 @@ describe('REG-378 (a/b) GitHub Actions Node pins', () => {
   it('scans EVERY yaml under .github/, not just .github/workflows/ (composite actions count too)', () => {
     // A composite action (`.github/actions/*/action.yml`) or a reusable
     // workflow parked in a subdirectory can pin Node for every job that
-    // `uses:` it, and a workflows-only scan is blind to all of it. This repo
-    // has no composite action TODAY — the point is that adding one with
-    // `node-version: 20` must fail this suite on day one, not be discovered by
-    // the next hand audit.
+    // `uses:` it, and a workflows-only scan is blind to all of it. As of
+    // 2026-08-12 this is no longer hypothetical: `.github/actions/
+    // setup-node-workspace/action.yml` (the repo's first composite action)
+    // provisions Node for six ci.yml jobs, so its `node-version` IS the pin
+    // for all of them and a workflows-only scan would see none of it.
     const files = githubYamlFiles();
     // Must at least cover every workflow file the narrower scan sees.
     expect(files.length).toBeGreaterThanOrEqual(workflowFiles().length);
@@ -426,19 +530,143 @@ describe('REG-378 (a/b) GitHub Actions Node pins', () => {
     const offenders: string[] = [];
     for (const abs of files) {
       const raw = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n');
-      const scope: Record<string, unknown> = Object.fromEntries(
-        [...raw.matchAll(/^\s*([A-Z_][A-Z0-9_]*):\s*(['"]?[\w./*-]+['"]?)\s*$/gm)].map((m) => [
-          m[1],
-          m[2],
-        ]),
-      );
-      for (const m of raw.matchAll(/^\s*node-version:\s*(.+?)\s*$/gm)) {
-        const res = resolveNodePin(m[1], scope);
+      const scope = rawEnvScope(raw);
+      const inputScope = declaredInputScope(raw);
+      for (const value of nodeVersionPins(raw)) {
+        const res = resolveNodePin(value, scope, inputScope);
         if (!res.ok) offenders.push(`${abs}: ${res.reason} (${res.resolved})`);
         else if (res.major !== PINNED_MAJOR) offenders.push(`${abs}: major ${res.major}`);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('governs composite actions through their OWN declared inputs default, and fails them on drift', () => {
+    // Non-vacuity for the branch above: prove the composite action really is
+    // reached, that its `${{ inputs.node-version }}` really does resolve (not
+    // merely "no pins found, therefore clean"), and — the load-bearing half —
+    // that flipping its default to a non-22 value or dropping the default
+    // makes it an offender. Without these three, the `inputs.` resolution
+    // added on 2026-08-12 could be a hole rather than a guard.
+    const actions = githubYamlFiles().filter((p) =>
+      /[\\/]\.github[\\/]actions[\\/]/.test(p),
+    );
+    expect(actions.length, 'expected at least one composite action to govern').toBeGreaterThan(0);
+
+    let inputPins = 0;
+    for (const abs of actions) {
+      const raw = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n');
+      const scope = rawEnvScope(raw);
+      const inputScope = declaredInputScope(raw);
+
+      for (const value of nodeVersionPins(raw)) {
+        const res = resolveNodePin(value, scope, inputScope);
+        expect(res, `${abs} pin ${value}`).toMatchObject({ ok: true });
+        expect((res as { major: number }).major, `${abs} pin ${value}`).toBe(PINNED_MAJOR);
+
+        const key = value.match(/^\$\{\{\s*inputs\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}$/)?.[1];
+        if (!key) continue;
+        inputPins += 1;
+
+        // MUTATION 1 — the default reverts to the pre-pin-down major.
+        expect(resolveNodePin(value, scope, { [key]: { default: '20' } })).toMatchObject({
+          ok: true,
+          major: 20,
+        });
+        // MUTATION 2 — the default goes floating.
+        expect(resolveNodePin(value, scope, { [key]: { default: 'lts/*' } })).toMatchObject({
+          ok: false,
+          reason: 'floating',
+        });
+        // MUTATION 3 — the `default:` line is deleted, so the effective Node
+        // becomes whatever an arbitrary caller passes. Not a pin.
+        expect(resolveNodePin(value, scope, { [key]: {} })).toMatchObject({
+          ok: false,
+          reason: 'unresolved-input',
+        });
+        // MUTATION 4 — the input is renamed/removed out from under the pin.
+        expect(resolveNodePin(value, scope, {})).toMatchObject({
+          ok: false,
+          reason: 'unresolved-input',
+        });
+      }
+    }
+    // The whole point of this test is the `${{ inputs.* }}` path; if the repo
+    // ever stops exercising it here, say so rather than passing on zero work.
+    expect(inputPins, 'no composite-action ${{ inputs.* }} Node pin was exercised').toBeGreaterThan(
+      0,
+    );
+  });
+
+  it('fails end-to-end on a reverted composite-action default (whole chain, in-memory mutation)', () => {
+    // The mutations above inject a synthetic scope. This one mutates the REAL
+    // file's TEXT and re-runs the entire chain — read -> parseYaml ->
+    // declaredInputScope -> nodeVersionPins -> resolveNodePin — so the proof
+    // covers the YAML plumbing too, not just the resolver. Purely in memory:
+    // nothing is written back to `.github/`.
+    const abs = githubYamlFiles().find((p) =>
+      /[\\/]\.github[\\/]actions[\\/]setup-node-workspace[\\/]action\.ya?ml$/.test(p),
+    );
+    expect(abs, 'setup-node-workspace composite action not found by the scan').toBeDefined();
+    const raw = readFileSync(abs!, 'utf8').replace(/\r\n/g, '\n');
+
+    const scanFor = (text: string) =>
+      nodeVersionPins(text).map((v) => resolveNodePin(v, rawEnvScope(text), declaredInputScope(text)));
+
+    // Shipped state: exactly one pin, resolving to 22 via the declared default.
+    expect(scanFor(raw)).toEqual([{ ok: true, major: PINNED_MAJOR, resolved: '22' }]);
+
+    for (const [bad, expected] of [
+      ["default: '20'", { ok: true, major: 20, resolved: '20' }],
+      ["default: 'lts/*'", { ok: false, reason: 'floating', resolved: 'lts/*' }],
+      ["default: 'latest'", { ok: false, reason: 'floating', resolved: 'latest' }],
+      ["default: 'node'", { ok: false, reason: 'floating', resolved: 'node' }],
+      ["default: '*'", { ok: false, reason: 'floating', resolved: '*' }],
+      ['required: false', { ok: false, reason: 'unresolved-input', resolved: '${{ inputs.node-version }}' }],
+    ] as const) {
+      // Replace ONLY the node-version input's default (it is the first
+      // `default:` in the file); `install`'s default must stay untouched.
+      const mutated = raw.replace("default: '22'", bad);
+      expect(mutated, `mutation ${bad} was a silent no-op`).not.toBe(raw);
+      expect(scanFor(mutated), `mutation ${bad}`).toEqual([expected]);
+      // ...and the suite's own verdict on that mutated file is OFFENDER.
+      const [res] = scanFor(mutated);
+      expect(res.ok && res.major === PINNED_MAJOR, `mutation ${bad} must NOT pass`).toBe(false);
+    }
+  });
+
+  it('reads a bare `node-version:` key as an input DECLARATION, never as a pin', () => {
+    // The exact regression: `\s` matches `\n`, so a matcher using `\s*` after
+    // the colon ran past the end of the line and reported the NEXT line — an
+    // input's `description:` — as an unparseable Node pin. A declaration has
+    // no value on its own line and must contribute NO pin at all.
+    const declaration = [
+      'inputs:',
+      '  node-version:',
+      "    description: 'Node.js version to install. Callers should pass ${{ env.NODE_VERSION }}.'",
+      '    required: false',
+      "    default: '22'",
+    ].join('\n');
+    expect(nodeVersionPins(declaration)).toEqual([]);
+    expect(declaredInputScope(declaration)).toEqual({ 'node-version': { default: '22' } });
+
+    // A trailing-whitespace-only value is still a declaration, not a pin.
+    expect(nodeVersionPins('  node-version:   \n    default: 22\n')).toEqual([]);
+
+    // ...while a real same-line pin IS still collected, in every shape the
+    // repo uses. (If this half broke, the fix above would be a blind spot.)
+    expect(nodeVersionPins('        node-version: 22\n')).toEqual(['22']);
+    expect(nodeVersionPins("        node-version: '22'\n")).toEqual(["'22'"]);
+    expect(nodeVersionPins('        node-version: ${{ env.NODE_VERSION }}\n')).toEqual([
+      '${{ env.NODE_VERSION }}',
+    ]);
+    expect(nodeVersionPins('        node-version: ${{ inputs.node-version }}\n')).toEqual([
+      '${{ inputs.node-version }}',
+    ]);
+    // And a drifted pin on a declaration-shaped block is still caught.
+    expect(nodeVersionPins('inputs:\n  node-version:\n    default: 20\nwith:\n  node-version: 20\n')).toEqual(
+      ['20'],
+    );
   });
 
   it('rejects the exact drift shapes this pin-down removed (mutation proof)', () => {
@@ -458,6 +686,53 @@ describe('REG-378 (a/b) GitHub Actions Node pins', () => {
       reason: 'unresolved-env',
     });
     expect(resolveNodePin('${{ env.NODE_VERSION }}', env)).toMatchObject({ ok: true, major: 22 });
+
+    // The composite-action trap (added 2026-08-12 with the repo's first
+    // composite action): `${{ inputs.<name> }}` resolves ONLY through that
+    // action's own declared `default:`. A pin is a pin whichever context it
+    // reads from, so every drift shape must still be caught through it.
+    const pin = '${{ inputs.node-version }}';
+    expect(resolveNodePin(pin, env, { 'node-version': { default: '22' } })).toMatchObject({
+      ok: true,
+      major: 22,
+    });
+    expect(resolveNodePin(pin, env, { 'node-version': { default: "'22'" } })).toMatchObject({
+      ok: true,
+      major: 22,
+    });
+    // Drift in the default is drift in the pin — six ci.yml jobs would silently
+    // move to Node 20.
+    expect(resolveNodePin(pin, env, { 'node-version': { default: '20' } })).toMatchObject({
+      ok: true,
+      major: 20,
+    });
+    expect(resolveNodePin(pin, env, { 'node-version': { default: 'lts/*' } })).toEqual({
+      ok: false,
+      reason: 'floating',
+      resolved: 'lts/*',
+    });
+    expect(resolveNodePin(pin, env, { 'node-version': { default: 'latest' } })).toMatchObject({
+      ok: false,
+      reason: 'floating',
+    });
+    // Declared but with NO default: the effective version is whatever an
+    // arbitrary caller passes, which is not a pin. Must stay an offender.
+    expect(resolveNodePin(pin, env, { 'node-version': {} })).toMatchObject({
+      ok: false,
+      reason: 'unresolved-input',
+    });
+    // Not declared in this file at all — same verdict, and notably NOT
+    // satisfiable by a same-named env var (contexts do not cross).
+    expect(resolveNodePin(pin, env, {})).toMatchObject({ ok: false, reason: 'unresolved-input' });
+    expect(resolveNodePin(pin, { 'node-version': '22' }, {})).toMatchObject({
+      ok: false,
+      reason: 'unresolved-input',
+    });
+    // And the env path is unchanged by any of this: an inputs scope must not
+    // rescue an unresolved `env.` expression.
+    expect(resolveNodePin('${{ env.NODE_VERSION }}', {}, { NODE_VERSION: { default: '22' } })).toMatchObject(
+      { ok: false, reason: 'unresolved-env' },
+    );
 
     // And the good shapes still pass.
     expect(resolveNodePin("'22'", env)).toMatchObject({ ok: true, major: 22 });

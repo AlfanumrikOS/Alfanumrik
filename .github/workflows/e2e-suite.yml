@@ -44,6 +44,12 @@ on:
         required: false
         default: true
 
+# Least-privilege default. A reusable workflow may declare its own
+# `permissions:`; the effective token is the intersection of this and what the
+# caller grants, so this can only narrow, never widen, a caller's token.
+permissions:
+  contents: read
+
 env:
   # ci.yml's workflow-level env does not cross the workflow_call boundary.
   # Keep in sync with ci.yml's NODE_VERSION.
@@ -98,9 +104,23 @@ jobs:
 
       # Fail loudly in BOTH modes instead of silently baking empty strings
       # into the client bundle.
+      #
+      # The secrets are bound through `env:` and tested as shell VARIABLES, not
+      # spliced in as `${{ secrets.* }}`. `${{ }}` is expanded by the Actions
+      # runner BEFORE bash ever parses the line, so an interpolated form
+      # textually pastes the secret's characters into the script: a value
+      # containing a quote, a backtick or `$(...)` would break out of the test
+      # and execute as code. Reading `$VAR` keeps the value inside the
+      # environment where bash never re-parses it. Behaviour is unchanged — an
+      # absent secret yields an empty env var, so `-z` still trips and the step
+      # still exits 1.
       - name: Verify staging secrets are present
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -z "${{ secrets.STAGING_SUPABASE_URL }}" ] || [ -z "${{ secrets.STAGING_SUPABASE_ANON_KEY }}" ] || [ -z "${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+          if [ -z "$STAGING_SUPABASE_URL" ] || [ -z "$STAGING_SUPABASE_ANON_KEY" ] || [ -z "$STAGING_SUPABASE_SERVICE_ROLE_KEY" ]; then
             echo "::error::E2E suite requires STAGING_SUPABASE_URL, STAGING_SUPABASE_ANON_KEY and STAGING_SUPABASE_SERVICE_ROLE_KEY (call with secrets: inherit from a non-fork context)."
             exit 1
           fi
