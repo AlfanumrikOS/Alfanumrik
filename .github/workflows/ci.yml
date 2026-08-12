@@ -2411,6 +2411,56 @@ jobs:
     # (Previously also `needs: secret-scan` — removed for the same masking
     # reason documented on the `quality` job above.)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+    # ── JOB-LEVEL concurrency: serialize live-DB runs across ALL refs ──
+    # (added 2026-08-12)
+    #
+    # THE CONTENDED RESOURCE IS THE SHARED STAGING SUPABASE PROJECT, NOT THE REF.
+    # This job is the only one in this workflow that talks to a real, single,
+    # shared live database (STAGING_SUPABASE_URL). The workflow-level group is
+    # `ci-${{ github.ref }}` — deliberately PER-REF — so runs on different refs
+    # execute simultaneously. Every other job is ref-isolated (hermetic runners,
+    # placeholder env) and correctly stays parallel; this one is not, because two
+    # runners on two refs mutate the SAME rows in the SAME project. Hence a group
+    # name with no `github.ref` in it: the lock must be global to the database.
+    #
+    # OBSERVED COLLISION (2026-08-12): run 31599688759 (push to `main`, started
+    # 13:05:50) and run 31599712987 (PR, started 13:07) overlapped in this job and
+    # corrupted each other's fixtures. Both failed with state-dependent assertions:
+    #   AssertionError: a scope that never had content must read 0: expected 1786540072 to be +0
+    #   AssertionError: expected +0 to be 1
+    # across curriculum-version-monotonicity.test.ts, error-type-remediate-e2e.test.ts,
+    # and state-runtime/{dispatcher.replay,offsets,retry-state}.test.ts. PROOF this
+    # is contention and not a code defect: re-running 31599712987's failed jobs with
+    # ZERO code changes went fully green, and the same tests passed on `main` at
+    # 12:18 (run 31595779888).
+    #
+    # WHY THIS MATTERS BEYOND A RED CHECK: a failure here turns `CI Gate` red, and
+    # deploy-production.yml's "Quality Gate" fail-closed polls `CI Gate` for the
+    # exact SHA — so a transient cross-run collision blocks production deploys
+    # outright. That is exactly what happened to run 31599688759.
+    #
+    # WHY `cancel-in-progress: false` IS LOAD-BEARING: a queued run must WAIT, not
+    # be cancelled. A cancelled job reports `cancelled` to `ci-gate`, which
+    # correctly treats anything other than `success`/expected-skip as a failure.
+    # Cancelling would therefore just trade one red gate for another — and on
+    # `main` it would re-create the stranded-deploy failure mode the workflow-level
+    # `cancel-in-progress` guard already exists to prevent.
+    #
+    # QUEUEING IS BOUNDED: `timeout-minutes: 20` above starts when the job BEGINS
+    # EXECUTING, not while it sits queued behind the lock, so waiting for the lock
+    # cannot itself trip the job timeout. (Queue wait is bounded by the workflow
+    # run's own overall limit, and each holder releases in ~1 min at current runtime.)
+    #
+    # THIS SERIALIZES, IT DOES NOT ISOLATE. The durable fix is per-run data
+    # isolation inside the tests themselves (unique per-run scope/tenant keys and
+    # teardown) — owned by the testing agent. This concurrency guard is the
+    # stop-the-bleeding measure and MUST stay until that lands; removing it before
+    # then re-opens the deploy-blocking flake. Nothing here weakens a test: the job
+    # is still BLOCKING, still in ci-gate's `required` list, and a REAL failure
+    # still fails the gate.
+    concurrency:
+      group: integration-tests-live-staging-db
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
 
