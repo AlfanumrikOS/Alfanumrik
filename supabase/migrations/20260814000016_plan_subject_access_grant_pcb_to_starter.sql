@@ -7,6 +7,40 @@
 --   `free` stays math-only at grades 11-12 and is NOT touched by this file.
 -- ═══════════════════════════════════════════════════════════════════════════
 --
+-- ═══════════════════════════════════════════════════════════════════════════
+-- APPLY-ORDER NOTE — SUPERSEDED IN EFFECT BY 20260814000018 (read before
+-- interpreting this file's apply log). Added 2026-08-12 during the migration-
+-- ledger reconcile; header-only edit, no SQL below was changed.
+-- ═══════════════════════════════════════════════════════════════════════════
+--   Production received 20260814000018_plan_subject_access_restrict BEFORE
+--   this file runs (018 was applied out of band and imported into the repo;
+--   this file had not yet run anywhere). 018 implements a LATER CEO decision
+--   that subsumes option B: it grants the full keep-set (math, science,
+--   physics, chemistry, biology) to EVERY plan and sets
+--   subscription_plans.max_subjects = NULL everywhere.
+--
+--   This file is therefore a PROVABLE NO-OP on any environment where 018 has
+--   already applied, and it does NOT undo any part of 018:
+--     * it contains no DELETE and no UPDATE — it cannot re-grant anything 018
+--       removed (018 removed only NON-keep-set grants; the three codes below
+--       are all inside the keep-set 018 itself granted);
+--     * step 1 inserts (starter, physics/chemistry/biology), all three of
+--       which already exist post-018, so ON CONFLICT DO NOTHING inserts 0
+--       rows;
+--     * step 2's audit row is gated on the RETURNING set, so no audit row is
+--       written — correct, because nothing changed;
+--     * step 0's hard precondition still holds (018..22 do not touch
+--       grade_subject_map);
+--     * step 0b's ADVISORY WARNING ("plan_subject_access already grants ... to
+--       the FREE plan") WILL fire. Post-018 that state is the approved
+--       end-state, not drift — treat the warning as expected log noise, not a
+--       signal to investigate.
+--   The file is kept (rather than dropped from the chain) because it is
+--   load-bearing on environments replayed from scratch WITHOUT 018 hand-
+--   applied first — there it still closes the grade 11-12 starter dead end in
+--   the interval between 016 and 018 in the version order — and because the
+--   ledger must match what main ships.
+--
 -- WHY THIS EXISTS
 --   20260814000007 (M1) header, lines 39-53, documents this hole and
 --   deliberately left the fix unwritten pending CEO approval. Recap:

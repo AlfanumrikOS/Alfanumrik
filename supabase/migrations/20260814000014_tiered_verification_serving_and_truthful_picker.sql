@@ -113,6 +113,25 @@
 -- No RLS surface is created or changed (P8: nothing new to police here — all
 -- four functions are pre-existing SECURITY DEFINER RPCs whose grants are
 -- preserved or restated verbatim).
+--
+-- LEDGER-RECONCILE EDIT (2026-08-12, architect; file had not yet run anywhere):
+-- the §5 audit marker was a bare INSERT INTO admin_audit_log — the one
+-- statement in this file that was NOT replay-safe (a re-run or fresh-
+-- environment replay would append a duplicate marker and make it ambiguous
+-- which row records the real apply). It is now gated NOT EXISTS on its action
+-- code, the same guard 20260814000018/000019 document as load-bearing for
+-- exactly this reason. No SQL that touches a function, grant, or row of
+-- application data was changed by this edit.
+--
+-- APPLY-ORDER NOTE (2026-08-12): production received 20260814000018..22 BEFORE
+-- this file (ledger reconcile — see 20260814000018's header). Verified
+-- compatible: 018/019 touch plan_subject_access / subscription_plans /
+-- teachers only; 020/021 are ACL + one column on quiz_session_shuffles; 022
+-- redefines submit_quiz_results_v2 ONLY. None of the four functions this file
+-- (re)defines — get_quiz_questions (both overloads),
+-- available_chapters_for_student_subject_v2, select_quiz_questions_rag,
+-- select_quiz_questions_v2 — is touched by 018..22, so applying this file
+-- after them clobbers nothing and regresses no production body.
 
 BEGIN;
 
@@ -869,8 +888,12 @@ COMMENT ON FUNCTION public.select_quiz_questions_v2 IS
 -- ═══════════════════════════════════════════════════════════════════════════
 -- §5  Audit marker
 -- ═══════════════════════════════════════════════════════════════════════════
+-- Guarded NOT EXISTS on the action code (2026-08-12 ledger-reconcile edit) so
+-- exactly one marker row ever exists for this migration. On a replay the
+-- INSERT matches zero rows; without the guard a replay would append a second
+-- "applied" marker and destroy the signal of when the decision actually landed.
 INSERT INTO public.admin_audit_log (admin_id, action, entity_type, entity_id, details, created_at)
-VALUES (
+SELECT
   NULL,
   'content_integrity.tiered_verification_serving_applied',
   'system',
@@ -896,6 +919,9 @@ VALUES (
     'migration_slot', '20260814000014'
   ),
   now()
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.admin_audit_log l
+   WHERE l.action = 'content_integrity.tiered_verification_serving_applied'
 );
 
 COMMIT;
