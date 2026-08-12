@@ -4,18 +4,32 @@ name: Migration Lint — SELECT-1 placeholder guard
 # Files can opt out with a top-of-file `-- lint:allow-placeholder` marker
 # (see scripts/lint-migrations.js).
 #
-# This workflow ALWAYS runs on pull_request — no `paths:` filter — because
-# "Lint migrations" is a REQUIRED status check in the repository ruleset.
-# A required check that is paths-filtered never reports on PRs outside those
-# paths, leaving them permanently unmergeable ("Required status check
-# 'Lint migrations' is expected"; rulesets ignore admin bypass). PR #1298
-# (UI-only) hit exactly this. Paths filter removed 2026-07-16. The job costs
-# ~14s (checkout + node + lint of the migrations dir in the tree) and passes
-# when the tree is clean, so unconditional runs are cheap. Do NOT re-add a
-# paths filter while this check is required by the ruleset.
+# This workflow ALWAYS runs — no `paths:` filter.
+#
+# Status as of 2026-08-12 (verified against the live `main-protection` ruleset,
+# id 20528052, updated 2026-08-07): "Lint migrations" is NOT currently a
+# required status check. The ruleset requires exactly four contexts:
+# "Secret Scanning", "Lint, Type-check & Test", "Production Build" and
+# "CodeQL Analysis". An earlier version of this comment asserted this job WAS
+# required; that is no longer true, so do not rely on it as a merge gate.
+#
+# The historical reason to be careful still stands: a required check that is
+# paths-filtered never reports on PRs outside those paths, leaving them
+# permanently unmergeable ("Required status check '...' is expected"; rulesets
+# ignore admin bypass). PR #1298 (UI-only) hit exactly this, which is why the
+# paths filter was removed 2026-07-16. The job costs ~14s (checkout + node +
+# lint of the migrations dir in the tree) and passes when the tree is clean, so
+# unconditional runs stay cheap — and they keep this job safe to promote back
+# into the ruleset at any time without re-introducing the #1298 deadlock.
 
 on:
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: migration-lint-${{ github.ref }}
@@ -25,10 +39,11 @@ jobs:
   lint:
     name: Lint migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           check-latest: true
