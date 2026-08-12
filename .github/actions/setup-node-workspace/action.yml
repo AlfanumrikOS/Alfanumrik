@@ -40,9 +40,25 @@ description: >-
 # local npm cache rather than the network.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# DO NOT put expression syntax (a dollar sign followed by double braces) in
+# action METADATA strings — that means `name:`, any `description:`, and any
+# `default:`. The runner EVALUATES expressions in action metadata, and most
+# contexts (notably `env`) are simply not available there, so an otherwise
+# harmless-looking doc string aborts loading of the entire action file before a
+# single step runs. That exact mistake — an env expression inside the
+# node-version description below — failed all six consuming jobs on run
+# 31592734054 with "Unrecognized named-value: 'env'". Metadata is literal text.
+# Expressions are only valid under `runs.steps` (e.g. the `with:` and `if:`
+# below) and inside `#` comments like this one, which the runner never reads.
+# ─────────────────────────────────────────────────────────────────────────────
+
 inputs:
   node-version:
-    description: 'Node.js version to install. Callers should pass ${{ env.NODE_VERSION }}.'
+    description: >-
+      Node.js version to install. Callers should pass the workflow-level
+      NODE_VERSION env value (referenced as env.NODE_VERSION in an expression
+      on the caller's side, not here — see the note above).
     required: false
     default: '22'
   install:
