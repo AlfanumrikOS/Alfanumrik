@@ -55,20 +55,32 @@ CREATE POLICY "Students can insert own foxy messages"
   WITH CHECK (student_id = public.get_my_student_id());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 3. foxy_sessions (INSERT + UPDATE) -- inline students subquery form,
---    matching the coexisting correct policies of the same name already
---    proven correct in the current schema.
+-- 3. foxy_sessions (INSERT + UPDATE) -- get_my_student_id() form. The original
+--    draft of this migration matched the inline `students` subquery form these
+--    two policies already carried (from an earlier, independently-reviewed
+--    migration) rather than the helper form used by the other 6 tables below.
+--    P8 review (RLS no-cross-table-recursion guard, apps/host/src/__tests__/
+--    rls-no-cross-table-recursion.test.ts) flagged that as a fresh violation on
+--    re-creation: every NEW/RENAMED policy is checked against the current
+--    frozen ledger regardless of what it replaces, and only "Students can
+--    update own foxy sessions" happened to already be grandfathered there --
+--    "Students can insert own foxy sessions" was not, so recreating it inline
+--    pushed the detector from 225 to +1 new offender. Both are switched to
+--    public.get_my_student_id() (SECURITY DEFINER; baseline_from_prod.sql)
+--    here for consistency with the other 6 tables and to close the INSERT
+--    offender; see the matching ledger prune in
+--    rls-no-cross-table-recursion.test.ts for the UPDATE side (225 -> 224).
 -- ─────────────────────────────────────────────────────────────────────────────
 DROP POLICY IF EXISTS "Students can insert own foxy sessions" ON public.foxy_sessions;
 CREATE POLICY "Students can insert own foxy sessions"
   ON public.foxy_sessions FOR INSERT TO authenticated
-  WITH CHECK (student_id = (SELECT s.id FROM public.students s WHERE s.auth_user_id = auth.uid() LIMIT 1));
+  WITH CHECK (student_id = public.get_my_student_id());
 
 DROP POLICY IF EXISTS "Students can update own foxy sessions" ON public.foxy_sessions;
 CREATE POLICY "Students can update own foxy sessions"
   ON public.foxy_sessions FOR UPDATE TO authenticated
-  USING (student_id = (SELECT s.id FROM public.students s WHERE s.auth_user_id = auth.uid() LIMIT 1))
-  WITH CHECK (student_id = (SELECT s.id FROM public.students s WHERE s.auth_user_id = auth.uid() LIMIT 1));
+  USING (student_id = public.get_my_student_id())
+  WITH CHECK (student_id = public.get_my_student_id());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 4. student_learning_profiles (UPDATE) -- get_my_student_id() form,
@@ -111,20 +123,27 @@ CREATE POLICY "Students can update own topic_mastery"
   WITH CHECK (student_id = public.get_my_student_id());
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 7. bloom_progression (INSERT + UPDATE) -- inline auth.uid() IN (...) form,
---    matching the coexisting correct "bloom_own_insert" / "bloom_own_update"
---    policies already proven correct in the current schema.
+-- 7. bloom_progression (INSERT + UPDATE) -- get_my_student_id() form. Same P8
+--    review finding as foxy_sessions above: the original draft matched the
+--    inline `auth.uid() IN (SELECT ... FROM students ...)` form of the
+--    coexisting "bloom_own_insert"/"bloom_own_update" policies, but neither of
+--    THESE two policy names was already grandfathered in the recursion-guard
+--    ledger, so both were fresh offenders on re-creation. `student_id =
+--    public.get_my_student_id()` is the equivalent boundary (get_my_student_id()
+--    returns the caller's own students.id via SECURITY DEFINER, so its inner
+--    read bypasses RLS -- same intent as `auth.uid() IN (SELECT auth_user_id
+--    FROM students WHERE id = student_id)`, just delegated instead of inlined).
 -- ─────────────────────────────────────────────────────────────────────────────
 DROP POLICY IF EXISTS "Students can insert own bloom_progression" ON public.bloom_progression;
 CREATE POLICY "Students can insert own bloom_progression"
   ON public.bloom_progression FOR INSERT TO authenticated
-  WITH CHECK (auth.uid() IN (SELECT students.auth_user_id FROM public.students WHERE students.id = bloom_progression.student_id));
+  WITH CHECK (student_id = public.get_my_student_id());
 
 DROP POLICY IF EXISTS "Students can update own bloom_progression" ON public.bloom_progression;
 CREATE POLICY "Students can update own bloom_progression"
   ON public.bloom_progression FOR UPDATE TO authenticated
-  USING (auth.uid() IN (SELECT students.auth_user_id FROM public.students WHERE students.id = bloom_progression.student_id))
-  WITH CHECK (auth.uid() IN (SELECT students.auth_user_id FROM public.students WHERE students.id = bloom_progression.student_id));
+  USING (student_id = public.get_my_student_id())
+  WITH CHECK (student_id = public.get_my_student_id());
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 8. student_achievements (INSERT) -- get_my_student_id() form, matching
