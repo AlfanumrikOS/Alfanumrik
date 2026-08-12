@@ -336,7 +336,21 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'foxy_chat_messages::school_admins_see_school_foxy_messages',
   'foxy_scan_queries::foxy_scan_insert',
   'foxy_scan_queries::foxy_scan_own',
-  'foxy_sessions::Students can update own foxy sessions',
+  // (architect fix, migration 20260815000002_fix_rls_with_check_student_id_drift.sql,
+  // 2026-08-13): removed 'foxy_sessions::Students can update own foxy sessions' from
+  // here. It was already grandfathered in this inline `(SELECT s.id FROM public.students
+  // s WHERE s.auth_user_id = auth.uid() LIMIT 1)` form from an earlier migration. The
+  // student_id-drift fix migration originally re-created it (DROP+CREATE, same name)
+  // with the SAME inline shape while switching the coexisting "Students can insert own
+  // foxy sessions" and both bloom_progression policies onto the SECURITY DEFINER helper
+  // public.get_my_student_id() -- inconsistent, and it left 3 NEW un-grandfathered
+  // inline offenders on those other 3 policies (225 -> 228, the CI failure this fix
+  // resolves). Rather than grandfather 3 new entries, all 4 policies (foxy_sessions
+  // INSERT+UPDATE, bloom_progression INSERT+UPDATE) were switched to
+  // get_my_student_id() for consistency with the other 6 tables in that migration.
+  // That also drains this UPDATE policy's inline shape -- it no longer inlines any
+  // FROM/JOIN, so it is no longer detected and its grandfather entry is stale.
+  // Ledger: 225 -> 224 (net: -3 avoided offenders, -1 additional drain).
   'grade_book_entries::grade_book_entries_teacher_delete',
   'grade_book_entries::grade_book_entries_teacher_insert',
   'grade_book_entries::grade_book_entries_teacher_select',
@@ -764,8 +778,25 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // students policy reads either support table back, so no cycle can close.
     // Ledger: 223 -> 225. See the TODO(architect) on the ledger entries:
     // draining them onto a SECURITY DEFINER helper returns this to 223.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(225);
-    expect(detectedRiskKeys().length).toBe(225);
+    // Architect fix (migration 20260815000002_fix_rls_with_check_student_id_drift.sql,
+    // 2026-08-13): that migration's original draft re-created
+    // 'foxy_sessions::Students can update own foxy sessions' with the SAME already-
+    // grandfathered inline `students` subquery shape, but re-created 3 SIBLING
+    // policies ('foxy_sessions::Students can insert own foxy sessions',
+    // 'bloom_progression::Students can insert own bloom_progression',
+    // 'bloom_progression::Students can update own bloom_progression') with their own
+    // fresh inline cross-table subqueries that had never been grandfathered under
+    // those names — 225 -> 228, tripping this guard in CI. Fixed by switching all 4
+    // policies (not just the 3 offenders) to the existing SECURITY DEFINER helper
+    // public.get_my_student_id() for consistency with the other 6 tables that
+    // migration touches. That also drains the previously-grandfathered UPDATE
+    // policy's inline shape (no longer inlines any FROM/JOIN), pruning its ledger
+    // entry too. Net: 225 - 3 (offenders avoided) - 1 (UPDATE drained) = 221... but
+    // the 3 offenders were never added to the ledger in the first place (they were
+    // fixed before merge, not grandfathered), so the net change from the last
+    // committed 225 is just the single UPDATE drain: 225 -> 224.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(224);
+    expect(detectedRiskKeys().length).toBe(224);
   });
 });
 

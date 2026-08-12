@@ -180,7 +180,19 @@ describe('/memory erase confirm flow', () => {
     fireEvent.click(screen.getByRole('button', { name: /Learning memory/ }));
     const dialog = await screen.findByRole('dialog', { name: 'Confirm erase' });
     // The 30-day purge explanation is present (scoped purge worker has landed).
-    expect(within(dialog).getByText(/purged from our systems within 30 days/)).toBeTruthy();
+    expect(
+      within(dialog).getByText(/permanently removed from our systems within 30 days/)
+    ).toBeTruthy();
+    // F8 honesty fix: a scoped/per-layer erase does NOT purge the raw Foxy
+    // chat transcript — the dialog must disclose that conversation history
+    // survives until full-account deletion, not silently over-claim a full
+    // purge. This assertion fails if the copy regresses to the old
+    // over-claiming "fully purged" promise.
+    expect(
+      within(dialog).getByText(
+        "Your full conversation history with Foxy isn't included — removing that requires deleting your account."
+      )
+    ).toBeTruthy();
     // Assessment-mandated cognitive reset warning (erase is all-subjects).
     expect(
       within(dialog).getByText(

@@ -199,8 +199,8 @@ export default function MemoryPage() {
           </h1>
           <p className="text-sm leading-relaxed mb-6" style={{ color: 'var(--text-2)' }}>
             {isHi
-              ? 'तुम्हारा मिटाने का अनुरोध स्वीकार हो गया है। फॉक्सी की याददाश्त अभी खाली है और तुम्हारा डेटा 30 दिनों के भीतर पूरी तरह हटा दिया जाएगा।'
-              : "Your erase request has been accepted. Foxy's memory is blank now, and your data will be fully purged within 30 days."}
+              ? 'तुम्हारा मिटाने का अनुरोध स्वीकार हो गया है। फॉक्सी की याददाश्त अभी खाली है, और चुनी गई मेमोरी 30 दिनों के भीतर हमारे सिस्टम से हटा दी जाएगी। तुम्हारी फॉक्सी के साथ पूरी बातचीत का इतिहास इसमें शामिल नहीं है — वह सिर्फ़ अकाउंट पूरी तरह हटाने पर मिटता है।'
+              : "Your erase request has been accepted. Foxy's memory here is blank now, and the memory you erased will be removed from our systems within 30 days. Your full conversation history with Foxy isn't included in this — that's removed only if you delete your account."}
           </p>
           <Link
             href="/dashboard"

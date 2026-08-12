@@ -121,6 +121,34 @@ const TICKET_CATEGORIES = [
   { value: 'other', label: 'Feature request / Other', labelHi: 'फीचर अनुरोध / अन्य' },
 ];
 
+// Same 5-state status vocabulary as the canonical thread view
+// (apps/host/src/app/support/page.tsx's statusLabel/statusColor) so a ticket
+// never reads as "open" here and something more specific there. Duplicated
+// rather than imported to keep this an edit-only, minimal-diff fix — a
+// shared module would be a new file. Keep both in sync if either changes.
+function helpTicketStatusLabel(status: string, isHi: boolean): string {
+  const map: Record<string, [string, string]> = {
+    open: ['Open', 'खुला'],
+    pending: ['Pending', 'लंबित'],
+    in_progress: ['In Progress', 'चल रहा है'],
+    resolved: ['Resolved', 'हल'],
+    closed: ['Closed', 'बंद'],
+  };
+  const pair = map[status];
+  return pair ? (isHi ? pair[1] : pair[0]) : status;
+}
+
+function helpTicketStatusColor(status: string): string {
+  switch (status) {
+    case 'open': return '#DC2626';
+    case 'pending': return '#D97706';
+    case 'in_progress': return '#7C3AED';
+    case 'resolved': return '#16A34A';
+    case 'closed': return 'var(--text-3)';
+    default: return 'var(--text-3)';
+  }
+}
+
 /* ── AI Support Bot via Foxy API route ── */
 async function askSupportBot(message: string, history: Array<{role: string; content: string}>, userContext: string, studentGrade?: string): Promise<string> {
   try {
@@ -687,9 +715,15 @@ export default function HelpPage() {
                 {myTickets.map(ticket => {
                   const catObj = TICKET_CATEGORIES.find(c => c.value === ticket.category);
                   const catLabel = catObj ? (isHi ? catObj.labelHi : catObj.label) : ticket.category;
-                  const isResolved = ticket.status === 'resolved';
+                  const statusColor = helpTicketStatusColor(ticket.status);
                   return (
-                    <div key={ticket.id} className="rounded-xl p-4 space-y-2" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                    <button
+                      key={ticket.id}
+                      onClick={() => router.push(`/support/${ticket.id}`)}
+                      className="w-full rounded-xl p-4 space-y-2 text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
+                      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+                      data-testid="help-ticket-row"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-bold truncate">{ticket.subject}</div>
@@ -698,17 +732,17 @@ export default function HelpPage() {
                         <span
                           className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full"
                           style={{
-                            background: isResolved ? '#D1FAE5' : '#FEF3C7',
-                            color: isResolved ? '#065F46' : '#92400E',
+                            background: `color-mix(in srgb, ${statusColor} 16%, transparent)`,
+                            color: statusColor,
                           }}
                         >
-                          {isResolved ? (isHi ? 'हल हुआ' : 'Resolved') : (isHi ? 'खुला' : 'Open')}
+                          {helpTicketStatusLabel(ticket.status, isHi)}
                         </span>
                       </div>
                       <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>
                         {isHi ? 'भेजा:' : 'Submitted:'} {new Date(ticket.created_at).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>

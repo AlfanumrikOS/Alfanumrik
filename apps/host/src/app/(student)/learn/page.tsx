@@ -239,9 +239,11 @@ function LegacyLearnPage() {
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
       {showChapterCelebration && (
+        // No real per-chapter score/XP exists at this call site (chapter
+        // completion has no scoring event) — CelebrationOverlay renders a
+        // generic, honest "Chapter complete!" message when these are
+        // omitted. Do NOT reintroduce fabricated numeric values here.
         <CelebrationOverlay
-          scorePercent={80}
-          xpEarned={100}
           isHi={isHi}
           onDismiss={() => setShowChapterCelebration(false)}
         />
