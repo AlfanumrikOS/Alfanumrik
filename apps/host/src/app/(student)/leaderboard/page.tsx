@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { authedFetch } from '@alfanumrik/lib/authed-fetch';
 import { getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame } from '@alfanumrik/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, Avatar, EmptyState, PremiumCard } from '@alfanumrik/ui/ui';
 import { BarChart } from '@alfanumrik/ui/admin-ui';
@@ -261,7 +262,11 @@ function LoadFailure({
  * exactly how a failed read becomes "No X yet" on screen.
  */
 async function fetchEnvelope<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: 'same-origin' });
+  // authedFetch forwards `Authorization: Bearer <token>` from the live
+  // Supabase session (session lives in localStorage, not a cookie) — every
+  // route behind this fetcher is authorizeRequest()-gated and a bare fetch()
+  // 401s for every student. See @alfanumrik/lib/authed-fetch header comment.
+  const res = await authedFetch(url, { credentials: 'same-origin' });
   if (!res.ok) {
     const err = new Error(`${url}: HTTP ${res.status}`) as Error & { status: number };
     err.status = res.status;
@@ -352,7 +357,7 @@ export default function LeaderboardPage() {
       ? `/api/v1/leaderboard/my-class?period=${classPeriod}&limit=20`
       : null,
     async (url: string): Promise<MyClassResult> => {
-      const res = await fetch(url, { credentials: 'same-origin' });
+      const res = await authedFetch(url, { credentials: 'same-origin' });
       // 404 = `ff_class_leaderboard_v1` is off. That is a deliberate product
       // state, not a failure — it must not raise an error banner.
       if (res.status === 404) return { kind: 'off' };
@@ -377,7 +382,7 @@ export default function LeaderboardPage() {
   const { data: bandData } = useSWR<LeaderboardMeData | null>(
     isLoggedIn ? `/api/v1/leaderboard/me?period=${period}` : null,
     async (url: string) => {
-      const res = await fetch(url, { credentials: 'same-origin' });
+      const res = await authedFetch(url, { credentials: 'same-origin' });
       if (!res.ok) return null;
       const json = (await res.json().catch(() => null)) as LeaderboardMeEnvelope | null;
       // success:false, data:null, or a malformed body → no card, no throw.
@@ -446,7 +451,7 @@ export default function LeaderboardPage() {
     setLoading(true);
     setFetchError(null);
     try {
-      const res = await fetch('/api/v1/leaderboard/mastery?limit=50', {
+      const res = await authedFetch('/api/v1/leaderboard/mastery?limit=50', {
         credentials: 'same-origin',
       });
       if (res.status === 404) {
