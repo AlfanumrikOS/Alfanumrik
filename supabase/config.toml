@@ -44,9 +44,10 @@ port = 54323
 # Studio reaches the local API on this URL.
 api_url = "http://127.0.0.1:54321"
 
-# Local email testing inbox (Inbucket). Auth/confirm/recovery emails land here
-# during local dev instead of being sent for real — open http://localhost:54324.
-[inbucket]
+# Local email testing inbox (Mailpit, formerly Inbucket). Auth/confirm/recovery
+# emails land here during local dev instead of being sent for real — open
+# http://localhost:54324.
+[local_smtp]
 enabled = true
 port = 54324
 

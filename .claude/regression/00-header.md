@@ -6,7 +6,42 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 398 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 400 entries (target: 35 — TARGET EXCEEDED).**
+
+> Counting note (testing, 2026-08-13, the RAG paren-balance regression test,
+> branch `fix/revoke-anon-execute-secdef-rpcs`): 399 + 1 filed, body-backed
+> entry (**REG-400**, `13-rag-cache.md` — `match_rag_chunks` /
+> `match_rag_chunks_ncert` shipped with a dangling unclosed paren TWICE,
+> independently, in `00000000000000_baseline_from_prod.sql` and
+> `20260620000900_fix_match_rag_chunks_drop_syllabus_version.sql`; both are a
+> hard SQL-syntax parse failure — `CREATE OR REPLACE FUNCTION` itself fails
+> SQLSTATE 42601 — not a runtime bug, and distinct from the already-catalogued
+> Project B schema-reproducibility debt, which covers missing-relation/
+> missing-column errors from out-of-band drift, not syntax parse failures. New
+> static no-DB guard `apps/host/src/__tests__/schema/migration-sql-paren-balance.test.ts`
+> scans every root-migration `CREATE FUNCTION` body for paren balance; both
+> bugs are already fixed in this pass and the guard is verified to FLAG
+> against the pre-fix `HEAD` copies of both files) = **400**. This pass adds 1,
+> deletes 0, and renumbers nothing. **REG-401 is now the next free id**;
+> REG-371..REG-377 remain RESERVED.
+>
+> Counting note (testing, 2026-08-13, the anon-EXECUTE P0 batch, branch
+> `fix/revoke-anon-execute-secdef-rpcs`): 398 + 1 filed, body-backed entry
+> (**REG-399** — a + b as ONE entry with a `| REG-399a |` and `| REG-399b |`
+> table row, in `10-rbac-rls.md`) = **399**. This pass adds 1, deletes 0, and
+> renumbers nothing. **REG-400 is now the next free id**; REG-371..REG-377 remain
+> RESERVED. Every carried-forward discrepancy in the notes below — the 7-entry
+> shard-chain gap, the REG-361..REG-365 upstream gap, and the independently
+> derived 326 body-backed figure — is UNTOUCHED and still open. The id was
+> verified against the shard bodies before use (max body-backed id = 398), and
+> the header's own "REG-399 is now the next free id" line agreed.
+>
+> One test file was **REPAIRED rather than added** —
+> `reg-f1-f2-secdef-guards-and-rls-drift.test.ts`, which was FALSE-GREEN: it
+> asserted ownership guards by `readFileSync`-ing migration `20260815000001`, a
+> file still on disk that was NEVER APPLIED to production and was then REVERTED
+> by `20260815000003`. That repair is count-neutral by design and takes no new
+> id; it is documented in full under REG-399 in `10-rbac-rls.md`.
 
 > Counting note (testing, 2026-08-12, E2E Batch 2 — the denial-contract batch,
 > branch `Alfanumrik/e2e-batch2-denial-contract`): 395 + 3 filed, body-backed
@@ -64,7 +99,68 @@ Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 > which is count-neutral by design — it was already covered under REG-386's
 > neighbourhood and takes no new id.
 
-Latest: REG-396..REG-398 (2026-08-12, E2E Batch 2 — the DENIAL-CONTRACT batch,
+Latest: REG-399 (2026-08-13, the anon-EXECUTE P0 batch, branch
+`fix/revoke-anon-execute-secdef-rpcs`. A live probe with the PUBLIC anon key and
+NO session read real student data out of production: `get_student_snapshot`
+returned `{"total_xp":12825,"avg_score":84,"quizzes_taken":70,...}`, with
+`get_student_notifications` / `get_review_cards` / `get_guardian_dashboard`
+likewise 200. 112 of 348 probed PostgREST-exposed RPCs were anon-executable.
+
+**REG-399 is ONE entry with two halves, because they are one root cause at two
+layers — an assertion that was structurally incapable of failing.**
+
+- **REG-399a** (`10-rbac-rls.md`) — **the REVOKE that revokes nothing.**
+  Supabase's baseline `ALTER DEFAULT PRIVILEGES … GRANT ALL ON FUNCTIONS` plus
+  PostgreSQL's implicit PUBLIC grant mean `REVOKE EXECUTE … FROM anon` removes
+  only the `anon=X` ACL entry; the `=X` PUBLIC entry survives and PUBLIC includes
+  anon. The statement succeeds, reads authoritatively in the migration chain, and
+  changes nothing. `20260515000002:212` shipped exactly that for `get_user_role`
+  and the function was STILL anon-executable fifteen months later. Migration
+  `20260815000004` revokes from `PUBLIC, anon` across 106 routines, resolving
+  overloads dynamically from `pg_proc` and re-granting only privileges each role
+  provably already held. Pinned: both-legs revoke, the 106-name list, the 6
+  deliberate RLS-predicate exclusions asserted ABSENT, ON ROUTINE not ON FUNCTION,
+  the capture-BEFORE-revoke ORDER, the closing RAISE EXCEPTION assertion block,
+  and a grants-only scope guard that also forbids re-landing the reverted
+  ownership guards.
+- **REG-399b** (`10-rbac-rls.md`) — **the parity check that compared a set
+  against itself.** The deploy pipeline read the remote ledger with
+  `awk -F'|' '{ v=$2 }'` over `supabase migration list --linked`; the CLI renders
+  leading-pipe markdown, so `$2` is the LOCAL column. The step read the local set
+  back out of the CLI's own output and diffed local against itself — both `comm`
+  directions empty by construction. Four consecutive production deploys printed
+  580/580, 585/585, 587/587, 588/588 while the real ledger max stayed
+  `20260814000011` with eight committed versions absent. That is why REG-399a's
+  hole survived: the pipeline reported green over a database it never read.
+  Pinned with an **EXECUTED** witness — real `awk` run over a synthetic
+  leading-pipe table containing genuine drift, demonstrating the old parser
+  returns the LOCAL set — plus non-vacuity floors, set-not-count comparison, the
+  live-DB `has_function_privilege('anon', …)` assertion, subprocess fail-closed
+  proofs, and the workflow WIRING (blocking, ungated, gate-required) as a
+  first-class property.
+
+Mutation evidence: **15 mutants, 15 killed** (6 against the migration, applied and
+restored byte-identical by SHA-256; 9 against the CI half, evaluated in-memory
+because `.github/**` is hook-protected).
+
+**Repaired, not added, no new id:**
+`apps/host/src/__tests__/regressions/reg-f1-f2-secdef-guards-and-rls-drift.test.ts`
+was FALSE-GREEN — it asserted 9 SECDEF ownership guards by reading migration
+`20260815000001`, a file still on disk that was NEVER APPLIED to production and
+was then deliberately REVERTED by `20260815000003` (59% of active students have
+`students.auth_user_id = NULL`, so the guard denied them). Quarantined with a
+header, per-`describe` title prefixes visible in CI output, and a new always-on
+`EFFECTIVE PRODUCTION STATE` block that asserts the revert is IN FORCE and fails
+the moment guards are re-landed.
+
+Reported, not fixed: the ownership-guard gap is still OPEN (an AUTHENTICATED
+caller can still pass an arbitrary `p_student_id` to all 106 RPCs — blocked on the
+`auth_user_id` backfill); 100 of the 448 exposed RPCs were never probed and need a
+live-`proacl` review; 6 RLS-predicate helpers remain deliberately anon-executable
+pending a live-`pg_policy` dependency audit.
+**REG-400 is now the next free id**; REG-371..REG-377 remain RESERVED.
+
+Prior: REG-396..REG-398 (2026-08-12, E2E Batch 2 — the DENIAL-CONTRACT batch,
 branch `Alfanumrik/e2e-batch2-denial-contract`. Three findings from the same
 2026-08-12 production E2E report, all variants of "a denial that lies about
 itself":
@@ -111,7 +207,9 @@ Reported, not fixed (defect found while pinning): `/v2/learn/curriculum` still
 answers **500 INTERNAL_ERROR** on a `get_available_subjects` outage while its
 siblings now answer 503 `retryable:true` for the same dependency — a retrying
 client treats the curriculum failure as permanent. Owed to backend.
-**REG-399 is now the next free id**; REG-371..REG-377 remain RESERVED.
+~~**REG-399 is now the next free id**~~ **← superseded 2026-08-13: the
+anon-EXECUTE P0 batch above took REG-399, so REG-400 is the next free id.**
+REG-371..REG-377 remain RESERVED.
 
 Prior: REG-394..REG-395 (2026-08-12, the ARCHITECT-CONDITIONS follow-up on the
 LIVE-P0 Bearer batch, same branch `Alfanumrik/e2e-p0-bearer-quiz-submit`.

@@ -603,3 +603,86 @@ fixed).
 
 ---
 
+## REG-400 — `match_rag_chunks` / `match_rag_chunks_ncert` dangling unclosed paren: a hard SQL-syntax parse failure, shipped TWICE (2026-08-13)
+
+Priority: **P0.** Source: this session's fix pass. Both RAG retrieval RPCs —
+`match_rag_chunks` and `match_rag_chunks_ncert` — carried a dangling unclosed
+`(` in their quality-score WHERE-clause predicate, in the SAME shape,
+independently, in TWO files:
+
+```
+AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
+AND (p_chapter IS NULL OR c.chapter_title ILIKE '%' || p_chapter || '%')
+```
+
+— the first `(` is never closed, so the very NEXT line's `AND (...)` reads as
+a continuation of the same parenthesized group rather than a sibling
+predicate. This is not a logic bug: Postgres cannot even PARSE the statement.
+`CREATE OR REPLACE FUNCTION` itself fails with
+`ERROR: mismatched parentheses at or near ";" (SQLSTATE 42601)` before the
+function is created at all. Affected files (fixed in this pass, both
+verified against the pre-fix committed `HEAD` copy to confirm the bug was
+real, not hypothetical):
+
+- `supabase/migrations/00000000000000_baseline_from_prod.sql` — 5
+  occurrences of the pattern across `match_rag_chunks` (2) and
+  `match_rag_chunks_ncert` (3 — it has three WHERE branches: vector, FTS,
+  LIKE-fallback).
+- `supabase/migrations/20260620000900_fix_match_rag_chunks_drop_syllabus_version.sql`
+  — the standalone `match_rag_chunks` hotfix migration, which re-shipped the
+  SAME dangling-paren defect in its own copy of the function body (the
+  syllabus-version fix and the paren bug are in unrelated branches of the same
+  file — fixing one did not fix the other).
+
+**Distinct from the already-catalogued Project B schema-reproducibility debt**
+(`docs/runbooks/schema-reproducibility-debt.md`; referenced via REG-144 in
+`03-quiz-integrity.md`). Project B is about MISSING relations/columns from
+out-of-band prod drift — `CREATE FUNCTION`/`INSERT` statements that parse
+fine but fail at execution time (`42703`/`23503`) because the schema or seed
+data they reference doesn't exist on a fresh DB. This is a different failure
+class: a hard SQL **syntax** parse error that blocks the statement from ever
+reaching `CREATE`, independent of what schema state exists — it breaks the
+baseline itself, not just a fresh DB's ability to reproduce prod. A DB that
+already has the (differently-broken) prod version of these functions would
+never surface this; only an attempt to actually RUN the migration text
+(`CREATE OR REPLACE FUNCTION ...`) would.
+
+**Why it went undetected:** no existing test parses/validates SQL
+function-body syntax. Coverage was either mocked RPC call-site tests (never
+touch the SQL text) or live-DB integration tests (accepted-RED / rarely
+exercise a truly fresh baseline apply — see Project B above). A syntax error
+inside a `CREATE FUNCTION` body was invisible to both lanes.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-400 | `migration_sql_paren_balance` | Every `CREATE [OR REPLACE] FUNCTION ... AS <tag> ... <tag>` body across root `supabase/migrations/*.sql` (baseline + timestamped chain; `_legacy/` excluded, matching what `supabase db push` actually applies) has balanced `(`/`)` after stripping single-quoted string literals (`''` = escaped quote), `--`/`/* */` comments, and nested dollar-quoted sub-strings. Dollar-quote tag resolved dynamically per statement (`$$`, `$_$`, `$function$`, etc. — not hardcoded). Static/no-DB — a lint-style structural guard, not a SQL parser or correctness prover; catches exactly the "fails to CREATE due to unbalanced parens" class, nothing semantic. **Fixture-based proof (not run against real migrations) that the helper actually catches this bug shape:** a deliberately-unbalanced sample `CREATE FUNCTION ... AS $function$ ... AND (c.quality_score >= p_min_quality \n AND (...) ... $function$;` string (the exact REG-400 shape) is asserted to flag `open !== close`; the same body with the paren closed is asserted to pass; companion fixtures pin string-literal stripping (incl. `''` escape), comment stripping, dynamic dollar-tag resolution (`$_$`), and that `CREATE FUNCTION` text inside a `--` comment is not mistaken for a real statement. **Regression pin:** both files this bug shipped in twice (`00000000000000_baseline_from_prod.sql`, `20260620000900_fix_match_rag_chunks_drop_syllabus_version.sql`) are asserted to contain at least one `match_rag_chunks*` body and every such body is paren-balanced — verified to FLAG against the pre-fix committed `HEAD` copies of both files (2 unbalanced functions in the baseline, 1 in the hotfix migration) before the working-tree fix. | `apps/host/src/__tests__/schema/migration-sql-paren-balance.test.ts` (11 tests: 6 fixture-based helper proofs + non-vacuity floor + full-chain scan + 2-file regression pin) | E |
+
+### Invariants covered by this section
+
+- P6 Question quality / RAG retrieval integrity (adjacent) — REG-400 guards
+  the RPCs `match_rag_chunks`/`match_rag_chunks_ncert` that ground
+  NCERT-solver, concept-engine, and (for the `_ncert` variant) Foxy chat
+  retrieval — a SQL syntax failure here is a total outage of those surfaces
+  on any environment that applies the migration, not a quality degradation.
+- Schema reproducibility (adjacent to but distinct from Project B, tracked in
+  `docs/runbooks/schema-reproducibility-debt.md`) — REG-400 closes the
+  syntax-parse-failure sub-class that Project B's audit scope does not cover
+  (Project B is scoped to missing-relation/missing-column errors from
+  out-of-band drift).
+
+### Catalog total
+
+Pre-REG-400: per `00-header.md`, REG-399 (the anon-EXECUTE P0 batch,
+`10-rbac-rls.md`, REG-399a/REG-399b) is the latest filed entry, with REG-400
+declared the next free id. This entry claims REG-400. **Total catalog: 400
+entries (target: 35 — TARGET EXCEEDED).** Per `00-header.md`'s own standing
+caveat, the declared running total and the independently-derived
+body-backed-id count are known to disagree by a pre-existing, tracked
+amount; this entry does not attempt that reconciliation — it only claims the
+next id the header declared free at the time of filing.
+
+**Total: 400 entries (declared) — see `00-header.md` for the authoritative
+running total and its open counting caveats.**
+
+---
+

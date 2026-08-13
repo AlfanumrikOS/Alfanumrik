@@ -5722,7 +5722,7 @@ BEGIN
       AND c.subject = ANY(v_subjects)
       AND c.grade   = v_db_grade
       AND (v_db_board IS NULL OR c.board IS NULL OR upper(c.board) = v_db_board)
-      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
+      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
       AND (p_chapter IS NULL OR c.chapter_title ILIKE '%' || p_chapter || '%')
       AND (p_syllabus_version IS NULL OR c.syllabus_version = p_syllabus_version)
     ORDER BY c.embedding <=> query_embedding
@@ -5757,7 +5757,7 @@ BEGIN
       AND c.subject = ANY(v_subjects)
       AND c.grade   = v_db_grade
       AND (v_db_board IS NULL OR c.board IS NULL OR upper(c.board) = v_db_board)
-      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
+      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
       AND (p_chapter IS NULL OR c.chapter_title ILIKE '%' || p_chapter || '%')
       AND c.search_vector @@ v_query
     ORDER BY ts_rank(c.search_vector, v_query) DESC
@@ -5806,7 +5806,7 @@ BEGIN
         AND c.subject_code = p_subject_code
         AND c.grade_short  = v_grade
         AND c.source       = 'ncert_2025'
-        AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
+        AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
         AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
         AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
         AND (p_concept        IS NULL OR c.concept = p_concept)
@@ -5827,7 +5827,7 @@ BEGIN
         AND c.grade_short  = v_grade
         AND c.source       = 'ncert_2025'
         AND c.search_vector @@ v_query
-        AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
+        AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
         AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
         AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
         AND (p_concept        IS NULL OR c.concept = p_concept)
@@ -5889,7 +5889,7 @@ BEGIN
     AND c.grade_short  = v_grade
     AND c.source       = 'ncert_2025'
     AND c.search_vector @@ v_query
-    AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
+    AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
     AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
     AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
     AND (p_concept        IS NULL OR c.concept = p_concept)
@@ -5911,7 +5911,7 @@ BEGIN
     AND c.subject_code = p_subject_code
     AND c.grade_short  = v_grade
     AND c.source       = 'ncert_2025'
-    AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
+    AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
     AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
     AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
     AND (
