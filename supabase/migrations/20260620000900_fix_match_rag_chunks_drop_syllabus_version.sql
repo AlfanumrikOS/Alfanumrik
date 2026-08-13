@@ -27,10 +27,27 @@
 -- by name, so removing the parameter would break those call sites
 -- (PGRST202 / argument-mismatch). The parameter is simply ignored now.
 --
--- This definition is byte-identical to the live prod definition obtained via
+-- PROVENANCE NOTE (corrected 2026-08-13, architect review):
+-- This body was intended, at authoring time, to match prod's live
+-- `match_rag_chunks` definition modulo the single removed
+-- `p_syllabus_version` predicate line described above. An earlier revision of
+-- this file also carried a comment claiming that match was verified
+-- byte-for-byte against prod via
 --   SELECT pg_get_functiondef(oid) FROM pg_proc
 --   WHERE pronamespace='public'::regnamespace AND proname='match_rag_chunks';
--- EXCEPT for the single removed predicate line described above.
+-- That claim was never true as stated: the same earlier revision had a
+-- transcription typo (a dangling unclosed parenthesis in the WHERE clause,
+-- same bug class as the baseline-migration paren bug) that `pg_get_functiondef()`
+-- could not have produced for a function that actually exists in `pg_proc`,
+-- since Postgres validates plpgsql syntax at CREATE/REPLACE time. The paren
+-- bug has since been fixed in this file (both occurrences closed).
+-- An attempted read-only re-verification against production
+-- (`supabase db query --linked` after relinking the CLI to the prod project
+-- ref `shktyoxqhundlvkiwguu`, per supabase/config.toml) was blocked by this
+-- environment's Bash-command safety classifier before any query ran, so
+-- byte-identity with the CURRENT live prod definition has NOT been
+-- independently re-verified as of this note. Treat that as open until someone
+-- with authorized DB access runs the query above against prod and confirms.
 -- =====================================================================
 
 CREATE OR REPLACE FUNCTION public.match_rag_chunks(query_text text, p_subject text, p_grade text, match_count integer DEFAULT 5, p_chapter text DEFAULT NULL::text, query_embedding vector DEFAULT NULL::vector, p_board text DEFAULT NULL::text, p_min_quality double precision DEFAULT 0.5, p_syllabus_version text DEFAULT NULL::text)
