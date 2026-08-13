@@ -4,7 +4,6 @@ import { logger } from '@alfanumrik/lib/logger';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { validateTwilioSignature } from '@alfanumrik/lib/whatsapp/twilio-signature';
 import { hashPhone, redactPhone } from '@alfanumrik/lib/whatsapp/phone';
-import { istDate } from '@alfanumrik/lib/whatsapp/ist';
 import {
   parseInbound,
   classifyIntent,
@@ -134,6 +133,9 @@ const LINK_REPLIES: Record<LinkBindingOutcome, string> = {
   limit:
     'This WhatsApp number is already connected to the maximum number of student accounts. / ' +
     'यह WhatsApp नंबर पहले से अधिकतम विद्यार्थी खातों से जुड़ा है।',
+  rate_limited:
+    'Too many attempts from this number. Please wait an hour, then get a fresh code from the app. / ' +
+    'इस नंबर से बहुत अधिक प्रयास हुए। कृपया एक घंटे बाद ऐप से नया कोड लें।',
   // Cannot occur on the webhook path (the live inbound carries the phone) —
   // mapped defensively to the generic retry copy.
   phone_unavailable:
@@ -290,70 +292,33 @@ async function handleControlKeyword(
  * Inbound with a click-to-WhatsApp referral opens a 72h `free_entry` window;
  * a normal message opens/extends a 24h `service` window. Day counters reset
  * when the IST civil date rolls over.
+ *
+ * Delegates to the `whatsapp_touch_window` RPC (migration
+ * 20260815000005) — a single atomic `INSERT ... ON CONFLICT DO UPDATE`
+ * replacing the prior unlocked read-then-write pair, which could lose a
+ * concurrent `whatsapp_record_send`'s just-recorded counter under a
+ * same-tick day-rollover race (TOCTOU: this function's stale read would
+ * unconditionally zero sent_today/templates_today, erasing the other
+ * transaction's commit). Business rules (extend-only expiry, day_ist
+ * rollover zeroing the daily counters, last_inbound_at always advancing)
+ * are unchanged — only the atomicity moved server-side. `p_identity_id` is
+ * passed NULL: this call site does not have the identity resolved yet
+ * (Phase 1 dedupe/persist runs before identity resolution); the RPC's
+ * COALESCE never clobbers an already-set value from a future call site
+ * that does have it.
  */
 async function touchConversationWindow(
   msg: NormalizedInbound,
   phoneHash: string,
 ): Promise<void> {
-  const admin = supabaseAdmin;
   const kind = msg.referralSourceId ? 'free_entry' : 'service';
-  const hours = kind === 'free_entry' ? 72 : 24;
-  const newExpiry = new Date(Date.now() + hours * 3_600_000).toISOString();
-  const today = istDate();
-
-  const { data: existing, error: readErr } = await admin
-    .from('whatsapp_conversation_windows')
-    .select('phone_hash, window_kind, expires_at, day_ist')
-    .eq('phone_hash', phoneHash)
-    .maybeSingle();
-  if (readErr) {
-    logger.error('whatsapp webhook: window ledger read failed', { error: readErr.message });
-    return;
-  }
-
-  if (!existing) {
-    const { error: insErr } = await admin.from('whatsapp_conversation_windows').insert({
-      phone_hash: phoneHash,
-      window_kind: kind,
-      opened_at: new Date().toISOString(),
-      expires_at: newExpiry,
-      last_inbound_at: new Date().toISOString(),
-      day_ist: today,
-      sent_today: 0,
-      templates_today: 0,
-      consecutive_failures: 0,
-    });
-    if (insErr) {
-      // PK conflict on concurrent first inbound is benign (read-then-insert race)
-      logger.warn('whatsapp webhook: window ledger insert failed', { error: insErr.message });
-    }
-    return;
-  }
-
-  // last_inbound_at advances on EVERY inbound — it is what the send path
-  // consults to decide whether a free-form send is legal.
-  const updates: Record<string, unknown> = {
-    last_inbound_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-  // Only ever EXTEND the window — never shorten a live free_entry window
-  // because a later plain message computed a nearer service expiry.
-  if (!existing.expires_at || new Date(newExpiry) > new Date(existing.expires_at)) {
-    updates.expires_at = newExpiry;
-    updates.window_kind = kind;
-  }
-  if (existing.day_ist !== today) {
-    updates.day_ist = today;
-    updates.sent_today = 0;
-    updates.templates_today = 0;
-  }
-
-  const { error: updErr } = await admin
-    .from('whatsapp_conversation_windows')
-    .update(updates)
-    .eq('phone_hash', phoneHash);
-  if (updErr) {
-    logger.error('whatsapp webhook: window ledger update failed', { error: updErr.message });
+  const { error } = await supabaseAdmin.rpc('whatsapp_touch_window', {
+    p_phone_hash: phoneHash,
+    p_identity_id: null,
+    p_window_kind: kind,
+  });
+  if (error) {
+    logger.error('whatsapp webhook: window ledger touch failed', { error: error.message });
   }
 }
 

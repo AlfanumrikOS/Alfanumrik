@@ -67,6 +67,7 @@ export type LinkBindingOutcome =
   | 'locked' // matched challenge exhausted OTP_MAX_ATTEMPTS
   | 'limit' // phone already carries MAX_LIVE_STUDENT_BINDINGS_PER_PHONE students
   | 'phone_unavailable' // cron path only: raw phone not recoverable (P13)
+  | 'rate_limited' // sender phone exceeded whatsapp_check_link_attempt's cap
   | 'error'; // transient/unexpected DB failure
 
 export interface LinkBindingInput {
@@ -111,6 +112,31 @@ export async function processLinkBinding(
     }
 
     const nowIso = new Date().toISOString();
+
+    // 0. Per-sender-phone attempt throttle (whatsapp_check_link_attempt RPC,
+    //    migration 20260815000006) — a defense-in-depth backstop the
+    //    per-CHALLENGE attempt_count column cannot provide, since a
+    //    non-matching guess against the system-wide candidate scan below
+    //    cannot be attributed to any specific challenge row. This IS
+    //    scoped to the guesser's own phone_hash, so it closes that gap.
+    //    Runs BEFORE the scan so a throttled sender never even reaches it.
+    const { data: throttleRows, error: throttleErr } = await admin.rpc(
+      'whatsapp_check_link_attempt',
+      { p_phone_hash: input.phoneHash },
+    );
+    if (throttleErr) {
+      logger.error('whatsapp link-binding: attempt-throttle RPC failed', {
+        source: input.source,
+        error: throttleErr.message,
+      });
+      return { outcome: 'error' };
+    }
+    const throttle = (
+      Array.isArray(throttleRows) ? throttleRows[0] : throttleRows
+    ) as { allowed?: boolean } | undefined;
+    if (!throttle?.allowed) {
+      return { outcome: 'rate_limited' };
+    }
 
     // 1. Candidate scan: unexpired AND (never locked OR lock elapsed).
     const { data: candidateRows, error: scanErr } = await admin

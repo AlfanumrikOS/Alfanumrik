@@ -131,6 +131,14 @@ const st = {
   consentError: null as { message: string } | null,
   sessionUpserts: [] as Array<{ row: Record<string, unknown>; opts: Record<string, unknown> }>,
   sessionError: null as { message: string } | null,
+  // whatsapp_check_link_attempt RPC (migration 20260815000006) — the
+  // per-sender-phone OTP-guess throttle. Default 'allowed' so every
+  // pre-existing test below (none of which exercise the throttle) is
+  // unaffected; the dedicated describe block flips these.
+  throttleCalls: [] as Array<Record<string, unknown>>,
+  throttleAllowed: true,
+  throttleLockedUntil: null as string | null,
+  throttleError: null as { message: string } | null,
 };
 
 function resetState() {
@@ -153,6 +161,10 @@ function resetState() {
   st.consentError = null;
   st.sessionUpserts.length = 0;
   st.sessionError = null;
+  st.throttleCalls.length = 0;
+  st.throttleAllowed = true;
+  st.throttleLockedUntil = null;
+  st.throttleError = null;
 }
 
 const fromCalls: string[] = [];
@@ -285,6 +297,18 @@ function buildMockAdmin() {
           throw new Error(`unexpected from(${table})`);
       }
     },
+    rpc(name: string, args: Record<string, unknown>) {
+      if (name === 'whatsapp_check_link_attempt') {
+        seq.push('rpc.whatsapp_check_link_attempt');
+        st.throttleCalls.push(args);
+        if (st.throttleError) return Promise.resolve({ data: null, error: st.throttleError });
+        return Promise.resolve({
+          data: [{ allowed: st.throttleAllowed, locked_until: st.throttleLockedUntil, attempts_remaining: st.throttleAllowed ? 4 : 0 }],
+          error: null,
+        });
+      }
+      throw new Error(`unexpected rpc(${name})`);
+    },
   };
 }
 
@@ -325,12 +349,49 @@ describe('code validation short-circuit', () => {
   });
 });
 
+describe('per-sender-phone attempt throttle (whatsapp_check_link_attempt RPC)', () => {
+  it('runs BEFORE the candidate scan, keyed on phoneHash', async () => {
+    st.candidates = [challengeRow()];
+    await processLinkBinding(webhookInput());
+    expect(st.throttleCalls).toEqual([{ p_phone_hash: PHONE_HASH }]);
+    expect(seq[0]).toBe('rpc.whatsapp_check_link_attempt');
+  });
+
+  it('allowed=false → rate_limited, candidate scan never runs', async () => {
+    st.throttleAllowed = false;
+    st.candidates = [challengeRow()]; // would otherwise match
+    const result = await processLinkBinding(webhookInput());
+    expect(result.outcome).toBe('rate_limited');
+    expect(fromCalls).toEqual([]); // no whatsapp_link_challenges scan
+  });
+
+  it('RPC error → error outcome, fails closed (no candidate scan)', async () => {
+    st.throttleError = { message: 'db down' };
+    const result = await processLinkBinding(webhookInput());
+    expect(result.outcome).toBe('error');
+    expect(fromCalls).toEqual([]);
+  });
+
+  it('allowed=true still proceeds to a normal bind', async () => {
+    st.throttleAllowed = true;
+    st.candidates = [challengeRow()];
+    const result = await processLinkBinding(webhookInput());
+    expect(result.outcome).toBe('bound');
+  });
+});
+
 describe('OTP matching against the candidate scan', () => {
-  it('zero matches → invalid, and NO attempt_count / lockout write is issued', async () => {
+  it('zero matches → invalid, and NO per-CHALLENGE attempt_count / lockout write is issued', async () => {
     st.candidates = [challengeRow({ otp_hash: hashOtp('999888', 'chal-1') })];
     const result = await processLinkBinding(webhookInput());
     expect(result.outcome).toBe('invalid');
-    expect(seq).toEqual([]); // no update / delete / insert of any kind
+    // The per-sender-phone throttle RPC (whatsapp_check_link_attempt) DOES
+    // run — that is the deliberate fix (a non-matching guess is unattributable
+    // to any specific challenge row, but IS attributable to the sender's own
+    // phone_hash, which this RPC rate-limits). What must stay absent is any
+    // per-CHALLENGE write (update/delete/insert on whatsapp_link_challenges
+    // or whatsapp_identities) — the intended challenge is still unknowable.
+    expect(seq).toEqual(['rpc.whatsapp_check_link_attempt']);
   });
 
   it('2+ matches → ambiguous, FAIL CLOSED (no delete, no bind, no consent)', async () => {

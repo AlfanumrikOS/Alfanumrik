@@ -223,8 +223,10 @@ async function drain(): Promise<DrainCounts> {
         });
         counts.failed += 1;
       } else {
-        // bound / invalid / ambiguous / locked / limit — all deterministic,
-        // terminally handled.
+        // bound / invalid / ambiguous / locked / limit / rate_limited — all
+        // deterministic, terminally handled (retrying cannot change any of
+        // them; rate_limited in particular persists via
+        // whatsapp_link_attempt_throttle until its own lockout elapses).
         await setEventStatus(row.id, {
           status: 'done',
           attempts: attemptsAfterClaim,

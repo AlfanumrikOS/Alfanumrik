@@ -122,9 +122,14 @@ const dbState = {
   inboundUpsertThrows: false,
   inboundStatusUpdates: [] as Array<{ update: Record<string, unknown>; filters: FilterCall[] }>,
   seenUpserts: [] as Array<Record<string, unknown>>,
-  windowRow: null as Record<string, unknown> | null,
-  windowInserts: [] as Array<Record<string, unknown>>,
-  windowUpdates: [] as Array<{ update: Record<string, unknown>; filters: FilterCall[] }>,
+  // touchConversationWindow now delegates to the whatsapp_touch_window RPC
+  // (migration 20260815000005 — atomic INSERT ... ON CONFLICT, replacing the
+  // prior unlocked read-then-write pair). The route's own responsibility is
+  // just "call the RPC with the right args, log+continue on error" — the
+  // extend-only / day-rollover business rules now live server-side in the
+  // RPC and are that migration's own verification surface, not this file's.
+  windowRpcCalls: [] as Array<{ p_phone_hash: unknown; p_identity_id: unknown; p_window_kind: unknown }>,
+  windowRpcError: null as { message: string } | null,
 };
 
 function resetDbState() {
@@ -137,9 +142,8 @@ function resetDbState() {
   dbState.inboundUpsertThrows = false;
   dbState.inboundStatusUpdates.length = 0;
   dbState.seenUpserts.length = 0;
-  dbState.windowRow = null;
-  dbState.windowInserts.length = 0;
-  dbState.windowUpdates.length = 0;
+  dbState.windowRpcCalls.length = 0;
+  dbState.windowRpcError = null;
 }
 
 function filterChain(
@@ -204,28 +208,20 @@ function buildMockAdmin() {
               return Promise.resolve({ error: null });
             },
           };
-        case 'whatsapp_conversation_windows':
-          return {
-            select: () => {
-              const c: any = {
-                eq: () => c,
-                maybeSingle: async () => ({ data: dbState.windowRow, error: null }),
-              };
-              return c;
-            },
-            insert: (row: Record<string, unknown>) => {
-              dbState.windowInserts.push(row);
-              return Promise.resolve({ error: null });
-            },
-            update: (update: Record<string, unknown>) => {
-              const rec = { update, filters: [] as FilterCall[] };
-              dbState.windowUpdates.push(rec);
-              return filterChain(rec);
-            },
-          };
         default:
           throw new Error(`unexpected from(${table})`);
       }
+    },
+    rpc(name: string, args: Record<string, unknown>) {
+      if (name === 'whatsapp_touch_window') {
+        dbState.windowRpcCalls.push(args as any);
+        return Promise.resolve(
+          dbState.windowRpcError
+            ? { data: null, error: dbState.windowRpcError }
+            : { data: [{}], error: null },
+        );
+      }
+      throw new Error(`unexpected rpc(${name})`);
     },
   };
 }
@@ -405,7 +401,7 @@ describe('POST — STOP/START/HELP regulatory short-circuit (works with bot flag
     // redelivery of the same STOP MessageSid re-runs the consent inserts.
     await POST(makeRequest(baseParams({ Body: 'STOP' })));
     expect(dbState.inboundUpserts).toHaveLength(0);
-    expect(dbState.windowInserts).toHaveLength(0);
+    expect(dbState.windowRpcCalls).toHaveLength(0);
   });
 });
 
@@ -461,8 +457,7 @@ describe('POST — dedupe + durable persistence', () => {
     expect(await res.text()).toBe(EMPTY_TWIML);
     // Dedupe short-circuits before the seen-ids upsert and the window touch.
     expect(dbState.seenUpserts).toHaveLength(0);
-    expect(dbState.windowInserts).toHaveLength(0);
-    expect(dbState.windowUpdates).toHaveLength(0);
+    expect(dbState.windowRpcCalls).toHaveLength(0);
   });
 
   it('unparseable inbound (missing MessageSid) after a valid signature → 200 empty TwiML, no writes', async () => {
@@ -483,7 +478,7 @@ describe('POST — ALWAYS-200 after verification (WABA quality-rating invariant)
     expect(await res.text()).toBe(EMPTY_TWIML);
     // Continues past the failure: seen-id + window touch still attempted.
     expect(dbState.seenUpserts).toHaveLength(1);
-    expect(dbState.windowInserts).toHaveLength(1);
+    expect(dbState.windowRpcCalls).toHaveLength(1);
   });
 
   it('event-insert THROW → still 200 empty TwiML', async () => {
@@ -525,105 +520,53 @@ describe('POST — master kill switch ff_whatsapp_bot_v1', () => {
 });
 
 describe('POST — conversation-window ledger', () => {
-  it('first inbound with no ReferralSourceId opens a 24h service window', async () => {
-    const before = Date.now();
-    await POST(makeRequest(baseParams()));
-    const after = Date.now();
+  // touchConversationWindow delegates to the whatsapp_touch_window RPC
+  // (migration 20260815000005): a single atomic `INSERT ... ON CONFLICT DO
+  // UPDATE` that replaced this route's prior unlocked read-then-write pair
+  // (a TOCTOU race that could lose a concurrent whatsapp_record_send's
+  // just-recorded counter — see that migration's header). The extend-only /
+  // day-rollover / counter-reset BUSINESS RULES now live server-side inside
+  // the RPC and are that migration's own verification surface (its header
+  // documents 5 manual SQL checks) — this file's remaining responsibility is
+  // just "call the RPC with the right args on the right inbound, log+continue
+  // on error," which is what these tests pin.
 
-    expect(dbState.windowInserts).toHaveLength(1);
-    const row = dbState.windowInserts[0];
-    expect(row.window_kind).toBe('service');
-    expect(row.phone_hash).toBe(PHONE_HASH);
-    expect(row.sent_today).toBe(0);
-    expect(row.templates_today).toBe(0);
-    const expiry = new Date(row.expires_at as string).getTime();
-    expect(expiry).toBeGreaterThanOrEqual(before + 24 * 3_600_000);
-    expect(expiry).toBeLessThanOrEqual(after + 24 * 3_600_000);
-  });
-
-  it('inbound carrying ReferralSourceId opens a 72h free_entry window', async () => {
-    const before = Date.now();
-    await POST(makeRequest(baseParams({ ReferralSourceId: 'wa_me_link' })));
-    const after = Date.now();
-
-    expect(dbState.windowInserts).toHaveLength(1);
-    const row = dbState.windowInserts[0];
-    expect(row.window_kind).toBe('free_entry');
-    const expiry = new Date(row.expires_at as string).getTime();
-    expect(expiry).toBeGreaterThanOrEqual(before + 72 * 3_600_000);
-    expect(expiry).toBeLessThanOrEqual(after + 72 * 3_600_000);
-  });
-
-  it('ONLY-EXTEND: a service inbound never shortens a live free_entry window', async () => {
-    // Existing free_entry window with 70h left — a service message would
-    // compute now+24h, which is EARLIER, so expires_at must NOT be touched.
-    const { istDate } = await import('@alfanumrik/lib/whatsapp/ist');
-    dbState.windowRow = {
-      phone_hash: PHONE_HASH,
-      window_kind: 'free_entry',
-      expires_at: new Date(Date.now() + 70 * 3_600_000).toISOString(),
-      day_ist: istDate(),
-    };
+  it('first inbound with no ReferralSourceId touches the window as a service (24h) kind', async () => {
     await POST(makeRequest(baseParams()));
 
-    expect(dbState.windowInserts).toHaveLength(0);
-    expect(dbState.windowUpdates).toHaveLength(1);
-    const upd = dbState.windowUpdates[0].update;
-    expect(upd).not.toHaveProperty('expires_at');
-    expect(upd).not.toHaveProperty('window_kind');
-    // last_inbound_at advances on EVERY inbound regardless.
-    expect(typeof upd.last_inbound_at).toBe('string');
+    expect(dbState.windowRpcCalls).toHaveLength(1);
+    const call = dbState.windowRpcCalls[0];
+    expect(call.p_phone_hash).toBe(PHONE_HASH);
+    expect(call.p_window_kind).toBe('service');
+    // Not yet resolved at this call site (Phase 1 dedupe/persist runs before
+    // identity resolution) — the RPC's own COALESCE never clobbers a later
+    // call site that does have it.
+    expect(call.p_identity_id).toBeNull();
   });
 
-  it('extends (and re-labels) when the new expiry is later than the stored one', async () => {
-    const { istDate } = await import('@alfanumrik/lib/whatsapp/ist');
-    dbState.windowRow = {
-      phone_hash: PHONE_HASH,
-      window_kind: 'service',
-      expires_at: new Date(Date.now() + 1 * 3_600_000).toISOString(), // 1h left
-      day_ist: istDate(),
-    };
+  it('inbound carrying ReferralSourceId touches the window as a free_entry (72h) kind', async () => {
     await POST(makeRequest(baseParams({ ReferralSourceId: 'wa_me_link' })));
 
-    expect(dbState.windowUpdates).toHaveLength(1);
-    const upd = dbState.windowUpdates[0].update;
-    expect(upd.window_kind).toBe('free_entry');
-    const expiry = new Date(upd.expires_at as string).getTime();
-    expect(expiry).toBeGreaterThan(Date.now() + 71 * 3_600_000);
+    expect(dbState.windowRpcCalls).toHaveLength(1);
+    expect(dbState.windowRpcCalls[0].p_window_kind).toBe('free_entry');
   });
 
-  it('resets the IST day counters when day_ist rolled over', async () => {
-    dbState.windowRow = {
-      phone_hash: PHONE_HASH,
-      window_kind: 'service',
-      expires_at: new Date(Date.now() + 12 * 3_600_000).toISOString(),
-      day_ist: '2020-01-01', // long past
-    };
+  it('touches the window exactly once per processed inbound (not per DB call in the request)', async () => {
     await POST(makeRequest(baseParams()));
-
-    expect(dbState.windowUpdates).toHaveLength(1);
-    const upd = dbState.windowUpdates[0].update;
-    expect(upd.sent_today).toBe(0);
-    expect(upd.templates_today).toBe(0);
-    expect(typeof upd.day_ist).toBe('string');
-    expect(upd.day_ist).not.toBe('2020-01-01');
+    expect(dbState.windowRpcCalls).toHaveLength(1);
   });
 
-  it('does NOT reset counters when the IST day is unchanged', async () => {
-    const { istDate } = await import('@alfanumrik/lib/whatsapp/ist');
-    dbState.windowRow = {
-      phone_hash: PHONE_HASH,
-      window_kind: 'service',
-      expires_at: new Date(Date.now() + 12 * 3_600_000).toISOString(),
-      day_ist: istDate(),
-    };
-    await POST(makeRequest(baseParams()));
-
-    expect(dbState.windowUpdates).toHaveLength(1);
-    const upd = dbState.windowUpdates[0].update;
-    expect(upd).not.toHaveProperty('sent_today');
-    expect(upd).not.toHaveProperty('templates_today');
-    expect(upd).not.toHaveProperty('day_ist');
+  it('RPC error is logged but the request still returns 200 empty TwiML (always-200 posture)', async () => {
+    dbState.windowRpcError = { message: 'row lock timeout' };
+    const res = await POST(makeRequest(baseParams()));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(EMPTY_TWIML);
+    expect(dbState.windowRpcCalls).toHaveLength(1);
+    expect(
+      loggerCalls.some(
+        (c) => c.level === 'error' && c.msg.includes('window ledger touch failed'),
+      ),
+    ).toBe(true);
   });
 });
 

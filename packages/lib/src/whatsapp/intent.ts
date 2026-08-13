@@ -6,7 +6,9 @@
  * plan (`plan-alfanumrik-whatsapp-bot-mighty-frost.md`, "Conversation state
  * machine"):
  *
- *   1. Interactive reply id (`ButtonPayload`) — a private opcode space we
+ *   1. Interactive reply id (`ButtonPayload`, falling back to `ListId` when
+ *      Twilio delivers a list-picker reply without a `ButtonPayload` — see
+ *      `parseInbound`) — a private opcode space we
  *      author ourselves: `d6:start`, `d6:a:<qIdx>:<optIdx>`, `d6:q`,
  *      `subj:<code>`, `db:next`, `db:stuck`, `db:got`, `nb:rt:<id>`,
  *      `sw:<student_id>`, `menu`. `d6:a:<qIdx>:<optIdx>` encodes BOTH the
@@ -105,7 +107,17 @@ export function parseInbound(params: Record<string, string>): NormalizedInbound 
     phoneE164,
     waId,
     body: params.Body ?? '',
-    buttonPayload: params.ButtonPayload || undefined,
+    // Go-live runbook open question (WHATSAPP_GO_LIVE.md §3a step 5c):
+    // Twilio's documented contract for our Content-API-authored quick-reply
+    // sends delivers the tapped id in `ButtonPayload`, but list-picker
+    // replies have historically also been observed on `ListId` depending on
+    // API path/version. Every daily6 opcode we author (`d6:a:<q>:<opt>`,
+    // `subj:<code>`) rides `interactive_list` sends (questionMessage,
+    // subjectPickerMessage in daily6.ts) — if a list tap ever arrives
+    // without `ButtonPayload`, this fallback is the difference between a
+    // captured answer and a silently-dropped one that gets misclassified by
+    // the keyword/state tiers below. Harmless when both are absent.
+    buttonPayload: params.ButtonPayload || params.ListId || undefined,
     numMedia,
     mediaUrl0: params.MediaUrl0 || undefined,
     mediaContentType0: params.MediaContentType0 || undefined,

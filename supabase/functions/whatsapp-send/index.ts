@@ -18,6 +18,12 @@
  *                                                    'unverified' / 'revoked'
  *   3. opt_in_status === 'opted_in'               → 'not_opted_in' / 'blocked'
  *      ('blocked' is terminal — never auto-recovers)
+ *   3.5. DPDP minor-consent gate — student identities under 18 (or with a
+ *      NULL date_of_birth, fail-closed) require a LIVE parental_consent row
+ *      RE-CHECKED ON EVERY SEND, not just once at OTP-issuance time
+ *      (apps/host/src/app/api/whatsapp/link/start/route.ts only gates
+ *      issuing the OTP challenge — it cannot see a LATER revocation).
+ *      Guardian identities skip this gate.        → 'consent_revoked'
  *   4. IST quiet hours — ONLY for kind 'alarm' / 'parent_weekly'; session
  *      replies are always allowed                 → 'quiet_hours'
  *   5. Idempotency — provider-level only for now: createWhatsAppIdempotencyKey
@@ -109,6 +115,27 @@ interface RecordSendRow {
   window_open: boolean
   sent_today: number
   templates_today: number
+}
+
+// ─── DPDP minor-gate helper ──────────────────────────────────────────────────
+// DELIBERATE DUPLICATION of the age computation in
+// apps/host/src/app/api/whatsapp/link/start/route.ts (computeAgeYears) —
+// packages/lib is not importable from the Deno runtime, same rationale as the
+// IST-helper duplication below. Keep the two in sync.
+
+/**
+ * Age in whole years from a `date` column value ('YYYY-MM-DD'). Unparseable
+ * input returns 0 — i.e. fail-closed into the minor gate.
+ */
+function computeAgeYears(dobRaw: string, now: Date): number {
+  const dob = new Date(/^\d{4}-\d{2}-\d{2}$/.test(dobRaw) ? `${dobRaw}T00:00:00Z` : dobRaw)
+  if (Number.isNaN(dob.getTime())) return 0
+  let age = now.getUTCFullYear() - dob.getUTCFullYear()
+  const monthDelta = now.getUTCMonth() - dob.getUTCMonth()
+  if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < dob.getUTCDate())) {
+    age -= 1
+  }
+  return age
 }
 
 // ─── IST helpers ─────────────────────────────────────────────────────────────
@@ -310,6 +337,36 @@ Deno.serve(async (req: Request) => {
     //    consent authority for this channel; 'blocked' is terminal) ───────
     if (identity.opt_in_status !== 'opted_in') {
       return await suppress(identity.opt_in_status === 'blocked' ? 'blocked' : 'not_opted_in')
+    }
+
+    // ── Gate 3.5: DPDP minor-consent gate — RE-CHECKED ON EVERY SEND ─────
+    //    /api/whatsapp/link/start only gates issuing the OTP challenge; it
+    //    cannot see a guardian revoking parental_consent AFTER the student
+    //    is already bound. Without this re-check the bot would keep
+    //    messaging a minor's WhatsApp number indefinitely after revocation.
+    //    Fail-closed on a NULL/unparseable date_of_birth (K-12 population).
+    //    Guardian-role identities (identity.student_id === null) skip this —
+    //    the gate only concerns a STUDENT'S own bound phone.
+    if (identity.student_id) {
+      const { data: studentRow, error: studentErr } = await supabase
+        .from('students')
+        .select('date_of_birth')
+        .eq('id', identity.student_id)
+        .maybeSingle<{ date_of_birth: string | null }>()
+      if (studentErr) return await gateFailure('minor_consent', studentErr.message)
+      const dob = studentRow?.date_of_birth ?? null
+      const isMinor = !dob || computeAgeYears(dob, new Date()) < 18
+      if (isMinor) {
+        const { data: consentRow, error: consentErr } = await supabase
+          .from('parental_consent')
+          .select('id')
+          .eq('student_id', identity.student_id)
+          .is('revoked_at', null)
+          .limit(1)
+          .maybeSingle()
+        if (consentErr) return await gateFailure('minor_consent', consentErr.message)
+        if (!consentRow) return await suppress('consent_revoked')
+      }
     }
 
     // ── Gate 4: IST quiet hours — alarms/parent notes ONLY; session
