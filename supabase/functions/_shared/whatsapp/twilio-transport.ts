@@ -14,12 +14,25 @@
  *     structure lives in the Content resource, NOT in this request. The
  *     resource's numbered placeholders must follow the positional convention
  *     below (buildContentVariables) or substitution silently misfires.
+ *     When the caller passes no content_sid, a default is resolved from the
+ *     TWILIO_CONTENT_SID_MAP secret by message shape (resolveContentSid) —
+ *     this is what lets daily6's dynamically-shaped sends ride generic
+ *     pre-provisioned resources.
  *   - template            → ContentSid + ContentVariables (params positional).
  *
- * Positional ContentVariables convention (pre-created resources MUST match):
+ * Positional ContentVariables convention (pre-created resources MUST match;
+ * scripts/whatsapp/provision-twilio-content.mjs authors resources to exactly
+ * this layout — change BOTH together or substitution silently misfires):
  *   template:            {"1": params[0], "2": params[1], ...}
- *   interactive_buttons: {"1": body, "2": buttons[0].title, "3": buttons[1].title, ...}
- *   interactive_list:    {"1": body, "2": button, "3": items[0].title, ...}
+ *   interactive_buttons: {"1": body, then per button k (1-based):
+ *                          "<2k>"=buttons[k-1].id, "<2k+1>"=buttons[k-1].title}
+ *                        e.g. 2 buttons → 1=body, 2=id1, 3=title1, 4=id2, 5=title2
+ *   interactive_list:    {"1": body, "2": button label, then per item k (1-based):
+ *                          "<3k>"=id, "<3k+1>"=title, "<3k+2>"=description-or-''}
+ *                        e.g. item 1 → vars 3,4,5; item 2 → vars 6,7,8; ...
+ *   Item/button ids MUST be templated (Twilio supports variables in the id
+ *   field) — ids carry the private reply-opcode space (d6:a:<q>:<opt>,
+ *   subj:<code>, ...) that the webhook intent classifier depends on.
  *
  * StatusCallback: set from WHATSAPP_STATUS_CALLBACK_URL when present —
  * delivery receipts (delivered/read/failed, e.g. 63016 out-of-window) feed
@@ -55,10 +68,16 @@ function buildContentVariables(message: TransportSendArgs['message']): string | 
       positional.push(...message.params)
       break
     case 'interactive_buttons':
-      positional.push(message.body, ...message.buttons.map((b) => b.title))
+      // {1: body, then per button: id, title} — ids are templated so the
+      // reply's ButtonPayload carries our opcode space (see module header).
+      positional.push(message.body)
+      for (const b of message.buttons) positional.push(b.id, b.title)
       break
     case 'interactive_list':
-      positional.push(message.body, message.button, ...message.items.map((i) => i.title))
+      // {1: body, 2: button label, then per item: id, title, description}.
+      // Absent descriptions substitute '' (renders as no description line).
+      positional.push(message.body, message.button)
+      for (const item of message.items) positional.push(item.id, item.title, item.description ?? '')
       break
     default:
       return null
@@ -68,6 +87,42 @@ function buildContentVariables(message: TransportSendArgs['message']): string | 
     map[String(index + 1)] = value
   })
   return JSON.stringify(map)
+}
+
+/**
+ * Resolve the Content SID for an interactive send.
+ *
+ * Root-cause fix for the 2026-07-30 smoke-test failures ("Twilio
+ * interactive_* send requires a pre-created content_sid", every outbound row
+ * in whatsapp_message_log failed): daily6's callers never pass content_sid,
+ * so interactive sends had no Content resource to ride. An explicit
+ * caller-supplied content_sid still wins; otherwise the shape-keyed default
+ * is read from the TWILIO_CONTENT_SID_MAP secret:
+ *
+ *   TWILIO_CONTENT_SID_MAP='{"qr2":"HX...","qr3":"HX...","list4":"HX...",...}'
+ *
+ * Keys: qr<buttonCount> for quick-reply, list<itemCount> for list-picker.
+ * Resources are provisioned by scripts/whatsapp/provision-twilio-content.mjs,
+ * which authors variable layouts matching buildContentVariables exactly.
+ * Returns null when unresolvable — send() surfaces the structured error.
+ */
+function resolveContentSid(
+  message: Extract<TransportSendArgs['message'], { type: 'interactive_buttons' | 'interactive_list' }>,
+): string | null {
+  if (message.content_sid) return message.content_sid
+  const raw = Deno.env.get('TWILIO_CONTENT_SID_MAP')
+  if (!raw) return null
+  let map: Record<string, unknown>
+  try {
+    map = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return null
+  }
+  const key = message.type === 'interactive_buttons'
+    ? `qr${message.buttons.length}`
+    : `list${message.items.length}`
+  const sid = map[key]
+  return typeof sid === 'string' && sid.length > 0 ? sid : null
 }
 
 export function createTwilioTransport(): WhatsAppTransport {
@@ -99,11 +154,15 @@ export function createTwilioTransport(): WhatsAppTransport {
         form.set('Body', message.body)
       } else {
         // Interactive + template both ride Content resources on Twilio.
-        const contentSid = message.content_sid
+        // Interactive shapes fall back to the TWILIO_CONTENT_SID_MAP default
+        // when the caller passed no content_sid; templates must be explicit.
+        const contentSid = message.type === 'template'
+          ? message.content_sid
+          : resolveContentSid(message)
         if (!contentSid) {
           return {
             success: false,
-            errorMessage: `Twilio ${message.type} send requires a pre-created content_sid (Content resources are authored out-of-band in the Twilio console / Content API)`,
+            errorMessage: `Twilio ${message.type} send requires a content_sid — none passed by the caller and no matching key in TWILIO_CONTENT_SID_MAP (provision resources with scripts/whatsapp/provision-twilio-content.mjs, then set the secret)`,
           }
         }
         form.set('ContentSid', contentSid)
