@@ -34,6 +34,7 @@ import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { authedFetch } from '@alfanumrik/lib/authed-fetch';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { LoadingFoxy, LockedCard, Skeleton } from '@alfanumrik/ui/ui';
 import {
@@ -333,7 +334,11 @@ export default function DiagnosticPage() {
     setStarting(true);
 
     try {
-      const res = await fetch('/api/diagnostic/start', {
+      // authedFetch forwards `Authorization: Bearer <token>` from the live
+      // Supabase session — the session lives in localStorage, not a cookie,
+      // so a bare fetch() here would 401 against authorizeRequest() on every
+      // request (see @alfanumrik/lib/authed-fetch header comment).
+      const res = await authedFetch('/api/diagnostic/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // P5: grade crosses the boundary as a string.
@@ -487,7 +492,8 @@ export default function DiagnosticPage() {
     setQuizError('');
 
     try {
-      const res = await fetch('/api/diagnostic/complete', {
+      // See handleStart above — authedFetch is required for the same reason.
+      const res = await authedFetch('/api/diagnostic/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId, responses: finalResponses }),

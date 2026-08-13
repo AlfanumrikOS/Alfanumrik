@@ -20,6 +20,7 @@
 
 import useSWR, { SWRConfiguration } from 'swr';
 import { supabase } from './supabase';
+import { authedFetch } from './authed-fetch';
 import {
   getStudentProfiles,
   getSubjects,
@@ -159,7 +160,11 @@ export function useLeaderboard(period = 'weekly', limit = 50) {
     async () => {
       // Use server API route with CDN caching (s-maxage=60) instead of direct
       // Supabase query. At 50K users this reduces DB load from 10K req/min to 1/min.
-      const res = await fetch(`/api/v1/leaderboard?period=${period}&limit=${limit}`);
+      // authedFetch forwards `Authorization: Bearer <token>` from the live
+      // Supabase session (session lives in localStorage, not a cookie) — the
+      // route's authorizeRequest('leaderboard.view') otherwise 401s every
+      // request. See @alfanumrik/lib/authed-fetch header comment.
+      const res = await authedFetch(`/api/v1/leaderboard?period=${period}&limit=${limit}`);
       if (!res.ok) {
         const error = new Error('Leaderboard fetch failed') as Error & { status: number };
         error.status = res.status;
