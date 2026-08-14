@@ -89,6 +89,8 @@ export function useRevisionOverview(enabled: boolean) {
       dedupingInterval: 5000,
       // 5-min client refresh mirrors the route's private 5-min cache.
       refreshInterval: 300_000,
+      errorRetryCount: 1,
+      shouldRetryOnError: false,
     }
   );
 }

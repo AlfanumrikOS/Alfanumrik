@@ -297,6 +297,14 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
           <p className="text-fluid-xs mt-1 leading-relaxed max-w-xs mx-auto" style={{ color: 'var(--text-3)' }}>
             {T.noDataDesc}
           </p>
+          <button
+            type="button"
+            onClick={() => { window.location.href = '/quiz'; }}
+            className="mt-4 min-h-tap-min text-fluid-xs font-bold underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 rounded"
+            style={{ color: WARM }}
+          >
+            {isHi ? 'अभी Quiz खेलें' : 'Play a quiz now'}
+          </button>
         </div>
       </section>
     );

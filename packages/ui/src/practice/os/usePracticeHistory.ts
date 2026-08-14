@@ -117,6 +117,8 @@ export function usePracticeHistory(enabled: boolean) {
       revalidateOnFocus: false,
       dedupingInterval: 5000,
       refreshInterval: 300_000,
+      errorRetryCount: 1,
+      shouldRetryOnError: false,
     }
   );
 }

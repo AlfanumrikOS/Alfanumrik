@@ -57,8 +57,9 @@ export function useUpcomingExams(studentId: string | undefined) {
     key,
     ([, id]) => fetcher(id as string),
     {
-      revalidateOnFocus: true,
+      revalidateOnFocus: false,
       dedupingInterval: 60_000,
+      errorRetryCount: 1,
       shouldRetryOnError: false,
     }
   );

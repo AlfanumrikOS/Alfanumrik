@@ -1,5 +1,6 @@
 {
   "name": "alfanumrik-workspace",
+  "version": "1.0.0",
   "private": true,
   "engines": {
     "node": ">=22.0.0 <23.0.0"
@@ -8,45 +9,5 @@
     "apps/*",
     "packages/*",
     "eslint-plugin-alfanumrik"
-  ],
-  "//dependencies": {
-    "@supabase/supabase-js": "KEEP RANGE-IDENTICAL TO apps/host/package.json. This root entry exists only so the workspace-less repo-root scripts/ and eval/ TypeScript can resolve `@supabase/supabase-js` (npm run type-check:scripts). It is NOT a client dependency -- but npm hoists ONE copy for the whole workspace, so the range written HERE decides which version apps/host BUNDLES INTO THE BROWSER. Declaring ^2.112.2 here floated the hoisted copy 2.108.2 -> 2.112.2, which added +5.4 kB gz of @supabase/auth-js and +2.9 kB gz of @supabase/realtime-js to the shared first-paint chunks and breached the P10 per-page ratchet on /(student)/quiz and /contact (PR #1520). Before bumping either range, bump BOTH together and re-run `npm run build && node scripts/check-bundle-size.mjs`."
-  },
-  "scripts": {
-    "dev": "npm run dev -w apps/host",
-    "build": "npm run build -w apps/host",
-    "vercel-build": "NODE_OPTIONS=--max-old-space-size=4096 npm run build -w apps/host && node -e \"require('fs').cpSync('apps/host/.next', '.next', {recursive: true})\"",
-    "check:bundle-size": "node scripts/check-bundle-size.mjs",
-    "check:bundle-size:baseline": "node scripts/check-bundle-size.mjs --update-baseline",
-    "check:licenses": "node scripts/check-licenses.mjs",
-    "check:lint-coverage": "node scripts/check-workspace-lint-coverage.mjs",
-    "lint:migrations": "node scripts/lint-migrations.js",
-    "lint": "npm run check:lint-coverage && npm run lint --workspaces --if-present",
-    "type-check": "npm run type-check --workspaces --if-present",
-    "type-check:scripts": "tsc -p tsconfig.scripts.json",
-    "type-check:tests": "npm run type-check:tests -w apps/host",
-    "check:script-paths": "node scripts/check-npm-script-paths.mjs",
-    "check:route-wrapper-ratchet": "node scripts/check-route-wrapper-ratchet.mjs",
-    "test": "npm run test --workspaces --if-present",
-    "test:integration": "npm run test:integration --workspaces --if-present",
-    "supabase:gen-types": "npm run supabase:gen-types --workspaces --if-present",
-    "supabase:check-types": "npm run supabase:check-types --workspaces --if-present",
-    "foxy:analyze": "node scripts/foxy-alignment/analyze.mjs",
-    "gen:mol-matrix": "node scripts/gen-mol-matrix.mjs",
-    "gen:mol-matrix:check": "node scripts/gen-mol-matrix.mjs --check",
-    "gen:openapi": "node scripts/gen-openapi.mjs",
-    "gen:openapi:check": "node scripts/gen-openapi.mjs --check",
-    "eval:teacher:harness": "npm run eval:teacher:harness -w apps/host --",
-    "eval:irt:harness": "npx tsx eval/irt/harness/cli.ts"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.62.1",
-    "@types/node": "^22.20.1",
-    "dependency-cruiser": "^18.1.1",
-    "supabase": "^2.113.0",
-    "vitest": "^4.1.10"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.108.2"
-  }
+  ]
 }

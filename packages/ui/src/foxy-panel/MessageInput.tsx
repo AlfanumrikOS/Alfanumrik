@@ -27,6 +27,9 @@ export interface MessageInputProps {
   activeSubject: string;
   onSend: (text: string, image?: File | null) => void;
   onNewConversation: () => void;
+  /** Called when the user taps Stop while a response is being generated.
+   *  No-op when not loading. The panel wires this to useFoxyChat().stop(). */
+  onStop?: () => void;
   /** Voice 3: forwarded to ChatInput; fires with the STT-detected language. */
   onDetectedLanguage?: (lang: string) => void;
 }
