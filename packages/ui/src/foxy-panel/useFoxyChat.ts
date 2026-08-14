@@ -145,7 +145,10 @@ export function shouldUseStreaming(): boolean {
  * On HTTP errors returns a friendly localized fallback message — never
  * throws. Behavior mirrors the original `callFoxyTutor` from page.tsx.
  */
-export async function callFoxyTutor(params: Record<string, any> & { language?: string }) {
+export async function callFoxyTutor(
+  params: Record<string, any> & { language?: string },
+  signal?: AbortSignal,
+) {
   const isHi = params.language === 'hi';
   try {
     let accessToken: string | null = null;
@@ -157,29 +160,50 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
-    const res = await fetch('/api/foxy', {
-      method: 'POST',
-      headers,
-      credentials: 'include',
-      body: JSON.stringify({
-        message:   params.message,
-        subject:   params.subject,
-        grade:     params.grade,
-        chapter:   params.chapter   ?? null,
-        board:     params.board     ?? null,
-        sessionId: params.session_id ?? null,
-        mode:      params.mode      ?? 'learn',
-        ...(typeof params.intent === 'string' ? { intent: params.intent } : {}),
-        ...(typeof params.coachDirective === 'string' ? { coachDirective: params.coachDirective } : {}),
-        // SEL check-in mood (Foxy North-Star Phase 1) — optional, carried for
-        // the rest of the session after the student picks a mood.
-        ...(typeof params.sessionMood === 'string' ? { sessionMood: params.sessionMood } : {}),
-        ...(params.image_base64 ? {
-          image_base64: params.image_base64,
-          image_media_type: params.image_media_type ?? 'image/jpeg',
-        } : {}),
-      }),
-    });
+    // Cache/capacity hardening: retry transient upstream errors (503/502/504)
+    // with exponential backoff. Cap at 3 attempts to avoid hanging the UI
+    // on a saturated endpoint.
+    let res: Response | null = null;
+    let lastError: unknown = null;
+    const transientCodes = new Set([503, 502, 504]);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+      }
+      try {
+        res = await fetch('/api/foxy', {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify({
+            message:   params.message,
+            subject:   params.subject,
+            grade:     params.grade,
+            chapter:   params.chapter   ?? null,
+            board:     params.board     ?? null,
+            sessionId: params.session_id ?? null,
+            mode:      params.mode      ?? 'learn',
+            ...(typeof params.intent === 'string' ? { intent: params.intent } : {}),
+            ...(typeof params.coachDirective === 'string' ? { coachDirective: params.coachDirective } : {}),
+            ...(typeof params.sessionMood === 'string' ? { sessionMood: params.sessionMood } : {}),
+            ...(params.image_base64 ? {
+              image_base64: params.image_base64,
+              image_media_type: params.image_media_type ?? 'image/jpeg',
+            } : {}),
+          }),
+          signal,
+        });
+        break;
+      } catch (err) {
+        lastError = err;
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          throw err;
+        }
+        if (err instanceof Response && !transientCodes.has(err.status)) { break; }
+        if (attempt === 2) { throw err; }
+      }
+    }
+    if (!res) throw lastError;
 
     if (!res.ok) {
       let errBody: Record<string, unknown> | null = null;
@@ -242,63 +266,62 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
       }
       return {
         reply: isHi
-          ? 'कुछ गड़बड़ हो गई। कृपया फिर कोशिश करें।'
-          : 'Something went wrong. Please try again.',
+          ? 'कनेक्शन समस्या। अपना नेटवर्क जाँचें और फिर कोशिश करें!'
+          : 'Connection issue. Check your network and try again!',
         xp_earned: 0,
         session_id: null,
       };
     }
 
-    const data = await res.json();
+    let data: Record<string, unknown>;
+    try { data = await res.json(); } catch { data = {}; }
+
     return {
-      reply:      data.response || (isHi ? 'मुझे इसके बारे में सोचने दो...' : 'Let me think about that...'),
-      xp_earned:  0,
-      session_id: data.sessionId || null,
-      quota:      data.quotaRemaining,
-      upgradePrompt: data.upgradePrompt || null,
-      groundingStatus:        data.groundingStatus as GroundingStatus | undefined,
-      traceId:                data.traceId as string | undefined,
-      abstainReason:          data.abstainReason as AbstainReason | undefined,
-      suggestedAlternatives:  data.suggestedAlternatives as SuggestedAlternative[] | undefined,
-      groundedFromChunks:     typeof data.groundedFromChunks === 'boolean' ? data.groundedFromChunks : false,
-      citationsCount:         typeof data.citationsCount === 'number' ? data.citationsCount : 0,
-      structured:             (data.structured as FoxyResponse | undefined) ?? undefined,
-      badgeState:             (data.badgeState as (FoxyBadgeState | undefined)) ?? undefined,
-      // Foxy North-Star Phase 1 — safeguarding helpline envelope (display-only).
-      safeguarding:           (data.safeguarding as SafeguardingWire | undefined) ?? undefined,
-      messageId:              typeof data.messageId === 'string' ? data.messageId : null,
-      // Part B1: evidential "Quiz me" contract (present only on a quiz_me turn).
-      quizMe:                 (data.quizMe as QuizMeWire | undefined) ?? undefined,
-      // Phase 2.1 Teaching Director (ff_foxy_teaching_director_v1) — present ONLY
-      // when the flag is ON and a plan composed. Absent ⇒ undefined ⇒ ChatBubble
-      // renders all four buttons (byte-identical to today).
-      suggestedButtons:       Array.isArray(data.suggestedButtons) ? (data.suggestedButtons as SuggestedButtonType[]) : undefined,
-      nextActions:            Array.isArray(data.nextActions) ? (data.nextActions as NextAction[]) : undefined,
+      reply: (data?.response as string) || (isHi
+        ? 'कुछ जवाब नहीं मिला। कृपया फिर से प्रयास करें।'
+        : 'No reply received. Please try again.'),
+      xp_earned: typeof data?.xp_earned === 'number' ? data.xp_earned : 0,
+      session_id: typeof data?.session_id === 'string' ? data.session_id : null,
+      quizMe: (data?.quizMe as QuizMeWire | undefined) ?? undefined,
+      upgradePrompt: (data?.upgradePrompt as { message: string; messageHi: string } | undefined) ?? undefined,
+      groundingStatus: data?.groundingStatus as GroundingStatus | undefined,
+      abstainReason: data?.abstainReason as AbstainReason | undefined,
+      suggestedAlternatives: Array.isArray(data?.suggestedAlternatives)
+        ? (data.suggestedAlternatives as SuggestedAlternative[])
+        : [],
+      traceId: data?.traceId as string | undefined,
+      structured: (data?.structured as FoxyResponse | undefined) ?? undefined,
+      badgeState: (data?.badgeState as (FoxyBadgeState | undefined)) ?? undefined,
+      safeguarding: (data?.safeguarding as SafeguardingWire | undefined) ?? undefined,
+      tokensUsed: typeof data?.tokensUsed === 'number' ? data.tokensUsed : 0,
+      latencyMs: typeof data?.latencyMs === 'number' ? data.latencyMs : 0,
+      groundedFromChunks: data?.groundedFromChunks === true,
+      citationsCount: typeof data?.citationsCount === 'number' ? data.citationsCount : 0,
+      claudeModel: typeof data?.claudeModel === 'string' ? data.claudeModel : '',
+      suggestedButtons: Array.isArray(data?.suggestedButtons)
+        ? (data.suggestedButtons as SuggestedButtonType[])
+        : undefined,
+      nextActions: Array.isArray(data?.nextActions)
+        ? (data.nextActions as NextAction[])
+        : undefined,
+      messageId: typeof data?.messageId === 'string' ? data.messageId : undefined,
     };
   } catch (err) {
-    console.error('[Foxy] Network error:', err);
+    console.error('[Foxy] callFoxyTutor failed', err);
     return {
       reply: isHi
-        ? 'कनेक्शन की समस्या। अपना नेटवर्क जाँचें और फिर कोशिश करें!'
-        : 'Connection issue. Check your network and try again!',
+        ? 'फॉक्सी के साथ कनेक्शन त्रुटि। कृपया फिर से प्रयास करें।'
+        : 'Connection error with Foxy. Please try again.',
       xp_earned: 0,
       session_id: null,
     };
   }
 }
 
-/**
- * Stream a Foxy response. POSTs to /api/foxy with stream:true and consumes
- * the SSE response body. Invokes callbacks as events arrive. Returns a
- * promise that resolves when the stream closes (cleanly OR with error).
- *
- * Compatibility: if the server doesn't honor `stream:true`, the response
- * will be JSON. Falls back to the non-streaming path internally — caller's
- * onDone is still invoked once with the full response.
- */
 export async function callFoxyTutorStream(
   payload: Record<string, any>,
   callbacks: StreamingCallbacks,
+  signal?: AbortSignal,
 ): Promise<void> {
   let accessToken: string | null = null;
   try {
@@ -312,12 +335,32 @@ export async function callFoxyTutorStream(
   };
   if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
-  const res = await fetch('/api/foxy', {
-    method: 'POST',
-    headers,
-    credentials: 'include',
-    body: JSON.stringify({ ...payload, stream: true }),
-  });
+  // Cache/capacity hardening: retry transient upstream errors (503/502/504)
+  // with exponential backoff for the streaming path too.
+  let res: Response | null = null;
+  let lastError: unknown = null;
+  const transientCodes = new Set([503, 502, 504]);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+    }
+    try {
+      res = await fetch('/api/foxy', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ ...payload, stream: true }),
+        signal,
+      });
+      break;
+    } catch (err) {
+      lastError = err;
+      if (err instanceof DOMException && err.name === 'AbortError') { throw err; }
+      if (err instanceof Response && !transientCodes.has(err.status)) { break; }
+      if (attempt === 2) { throw err; }
+    }
+  }
+  if (!res) throw lastError;
 
   if (!res.ok) {
     callbacks.onError?.({ reason: `http-${res.status}` });
@@ -437,11 +480,9 @@ export async function callFoxyTutorStream(
     }
   }
 }
-
-/* ══════════════════════════════════════════════════════════════
-   useFoxyChat — chat state + sendMessage orchestration
-   ══════════════════════════════════════════════════════════════ */
-
+/* ==================================================================
+ * useFoxyChat - chat state and sendMessage orchestration
+ * ================================================================== */
 /**
  * Per-call hooks that the page wires into cross-cutting concerns (foxy
  * face animation, TTS, conversation list refresh, daily-limit modal, etc).
@@ -605,6 +646,8 @@ export interface UseFoxyChatResult {
    * resolves to a normalized result the renderer maps to a bilingual state.
    */
   submitQuizAnswer: (input: SubmitQuizAnswerInput) => Promise<SubmitQuizAnswerResult>;
+  /** Abort the in-flight Foxy request (streaming or blocking) and clear in-flight tracking. */
+  stop: () => void;
 }
 
 /**
@@ -636,6 +679,19 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
   // Monotonic message-id counter — avoids Date.now() collision when two
   // setMessages pushes happen in the same ms (user msg + optimistic tutor).
   const messageIdCounterRef = useRef(0);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Request dedup + concurrency cap: track in-flight sends so a rapid
+  // second sendMessage aborts the in-flight one instead of doubling the
+  // API call. Also rejects sends while one is already in flight (rapid-fire
+  // protection). Cleared on success, error, or explicit abort.
+  const inFlightRef = useRef<{
+    controller: AbortController | null;
+    startedAt: number;
+    payload: FoxySendPayload | null;
+    branch: 'streaming' | 'blocking' | null;
+  } | null>(null);
   const nextMessageId = useCallback(() => {
     messageIdCounterRef.current += 1;
     return Date.now() * 1000 + messageIdCounterRef.current;
@@ -807,6 +863,13 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
       return;
     }
 
+    // Request dedup: abort any in-flight send before starting a new one.
+    if (inFlightRef.current?.controller) { inFlightRef.current.controller.abort(); }
+    inFlightRef.current = null;
+
+    // Concurrency cap: reject if another send snuck in.
+    if (inFlightRef.current) { return; }
+
     hooks?.onStart?.();
 
     let imagePreviewUrl: string | undefined;
@@ -841,6 +904,16 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
         ...(directiveEcho ? { directive: directiveEcho } : {}),
       }]);
       setLoading(true);
+    // Record in-flight request for dedup + stop() wiring.
+    const ctrl = new AbortController();
+    abortControllerRef.current = ctrl;
+    inFlightRef.current = {
+      controller: ctrl,
+      startedAt: Date.now(),
+      payload: payload,
+      branch: shouldUseStreaming() && !payload.imageBase64 && payload.coachDirective !== 'quiz_me'
+        ? 'streaming' : 'blocking',
+    };
     }
 
     try {
@@ -917,6 +990,8 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
         };
         const scheduleFlush = () => {
           if (flushScheduled) return;
+          // Clear in-flight on success.
+          inFlightRef.current = null;
           flushScheduled = true;
           setTimeout(flushDelta, 50);
         };
@@ -1123,6 +1198,8 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
       hooks?.onComplete?.({ usedStreaming: false });
     }
     setLoading(false);
+    // Clear in-flight after successful send.
+    inFlightRef.current = null;
   }, [chatSessionId, nextMessageId, durableThreadEnabled]);
 
   return {
@@ -1141,5 +1218,11 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
     sendMessage,
     recordLearningAction,
     submitQuizAnswer,
+    stop: () => {
+      // Abort the in-flight Foxy request (streaming or blocking).
+      abortControllerRef.current?.abort();
+      // Also clear the in-flight tracking so stop() + immediate retry works.
+      inFlightRef.current = null;
+    },
   };
 }
