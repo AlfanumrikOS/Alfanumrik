@@ -201,3 +201,82 @@ Constraints:
 
 Return ONLY the JSON object. Nothing else.
 `.trim();
+
+// ─── Everyday-Indian-life example directive (ff_foxy_everyday_examples_v1) ────
+//
+// ADDITIVE, FLAG-GATED. Appended to FOXY_STRUCTURED_OUTPUT_PROMPT (above) ONLY
+// when ff_foxy_everyday_examples_v1 resolves true for the request — see
+// _everyday-flag.ts (default OFF, fail-CLOSED) and buildStructuredOutputPrompt
+// (below). The flag-OFF path returns FOXY_STRUCTURED_OUTPUT_PROMPT byte-for-
+// byte, so this constant is a strict no-op until the flag is ramped.
+//
+// Source of the language: packages/lib/src/ai/prompts/foxy-system.ts — the
+// `learn`/`explain` MODE_INSTRUCTIONS ("Use examples from everyday Indian
+// life.", line 57) and the warm_mentor persona bullet ("Relate examples to
+// Indian daily life, festivals, cricket, and familiar contexts", line 155).
+// That file is Node-side and CANNOT be imported here (Deno module graph — see
+// config.ts's note on packages/lib), so the language is PORTED, not imported.
+//
+// Reuses the EXISTING "example" block type already in the FoxyResponse union
+// above. No new block type, no TypeScript union change, no schema change.
+//
+// P12 / grounding contract: an everyday example is ILLUSTRATIVE FRAMING ONLY.
+// The directive states explicitly that the example must never be presented as
+// something the NCERT material says, and that every FACTUAL claim still comes
+// from the Reference Material. This is what keeps a relatable framing device
+// from becoming an ungrounded assertion.
+//
+// DELIBERATELY SILENT ON VISUALS: this directive says nothing about figures,
+// diagrams, or pictures, and does not touch the existing "diagram" block rules.
+// Our corpus has no extractable per-figure assets (media_url is a whole-
+// textbook PDF; page_number is NULL on every chunk), so any prompt text that
+// promised one would be a promise we cannot keep. A regex test asserts the
+// absence of those words in this constant.
+//
+// Closing line: the base prompt's final instruction is "Return ONLY the JSON
+// object. Nothing else." Because this directive is appended AFTER it, the
+// directive re-asserts that same closing line so the strict-JSON instruction
+// remains the last thing the model reads in BOTH flag states.
+export const EVERYDAY_EXAMPLE_DIRECTIVE = `
+# EVERYDAY EXAMPLE REQUIREMENT
+
+- For an explanation-style turn (learn, explain, or doubt), you MUST include at least one "example" block. Use the EXISTING "example" block type listed above — do not invent a new block type.
+- The example MUST be concrete and grounded in everyday Indian life: home and school routines, cooking and food, local shops and markets, buses, trains and autos, festivals, cricket, the monsoon, and other contexts an Indian student already knows first-hand.
+- Pitch the example at the student's class level. Keep it age-appropriate for CBSE Classes 6 to 12, respectful of all communities, and free of anything unsafe, political, or promotional.
+- The example is ILLUSTRATIVE FRAMING ONLY. Never present it as something the NCERT book or the Reference Material states, and never attribute it to a chapter or a citation. Every FACTUAL claim in your answer must still come from the Reference Material exactly as instructed above — the everyday example only makes that grounded content easier to relate to.
+- Keep it to two or three sentences in the "example" block's "text" field. It supplements the explanation; it never replaces the definition, the steps, or the answer.
+- Write the example in the same language as the rest of the response (English, Hindi, or Hinglish), following the bilingual rule above.
+
+Return ONLY the JSON object. Nothing else.
+`.trim();
+
+/** Options for {@link buildStructuredOutputPrompt}. */
+export interface StructuredOutputPromptOptions {
+  /**
+   * Resolved value of ff_foxy_everyday_examples_v1 for THIS request. Resolved
+   * ONCE per pipeline run (before the cache lookup) and threaded to BOTH this
+   * composer and buildGenCtx, so the prompt a response was generated under and
+   * the cache key it is stored under can never disagree.
+   */
+  everydayExamples: boolean;
+}
+
+/**
+ * Compose the Foxy structured-output system-prompt addendum.
+ *
+ * Pure function, no I/O. Returns FOXY_STRUCTURED_OUTPUT_PROMPT UNCHANGED (same
+ * reference, byte-identical) when `everydayExamples` is false — the flag-OFF
+ * path is a strict no-op, which is what allows ff_foxy_everyday_examples_v1 to
+ * ship without a PROMPT_REV bump (see config.ts's PROMPT_REV comment and
+ * gen-ctx.ts's `everyday_examples` doc).
+ *
+ * Both pipelines (pipeline.ts and pipeline-stream.ts) MUST call this rather
+ * than referencing FOXY_STRUCTURED_OUTPUT_PROMPT directly, so the streaming and
+ * non-streaming system prompts stay byte-identical to each other.
+ */
+export function buildStructuredOutputPrompt(
+  opts: StructuredOutputPromptOptions,
+): string {
+  if (!opts.everydayExamples) return FOXY_STRUCTURED_OUTPUT_PROMPT;
+  return `${FOXY_STRUCTURED_OUTPUT_PROMPT}\n\n${EVERYDAY_EXAMPLE_DIRECTIVE}`;
+}

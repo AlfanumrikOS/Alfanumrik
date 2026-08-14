@@ -1,0 +1,22 @@
+# Curated-PDF learning-corpus extractor (Phase 2) — OFFLINE TOOL ONLY.
+#
+# This file is deliberately SEPARATE from python/requirements.txt and
+# python/pyproject.toml. That directory is the DEPLOYED Cloud Run AI service
+# (.github/workflows/python-ai-deploy.yml, license = "Proprietary"); adding a
+# PDF library there would ship it inside a distributed service image. This tool
+# is offline, never deployed, and never imported by the service.
+#
+# Install into a throwaway venv:
+#   python -m venv .venv-pdf
+#   .venv-pdf/Scripts/pip install -r scripts/pdf-ingestion/requirements.txt
+
+# pdfplumber — MIT. Exposes per-char size/fontname/bbox and extract_tables(),
+# which is everything the extractor needs.
+#
+# DO NOT swap in PyMuPDF/fitz: it is AGPL-3.0-or-commercial and the licensing
+# call has NOT been made. The reader.py adapter exists so that swap is one file
+# if legal ever signs off.
+pdfplumber>=0.11,<0.12
+
+# Test-only.
+pytest>=8.3,<9.0

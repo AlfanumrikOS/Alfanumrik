@@ -1800,8 +1800,8 @@ jobs:
   #                           Deno.serve() in those index.ts files is never
   #                           reached. No fetch, no Deno.env, no filesystem.
   #
-  #   - grounded-answer/__tests__/  — 20 files ENUMERATED INDIVIDUALLY in
-  #                           DENO_TEST_TARGETS, NOT the whole directory (25 Deno
+  #   - grounded-answer/__tests__/  — 21 files ENUMERATED INDIVIDUALLY in
+  #                           DENO_TEST_TARGETS, NOT the whole directory (26 Deno
   #                           test files live there). Pure helpers only.
   #
   # ── 2026-07-28: the seven-file TODO below was CLOSED BY EXPERIMENT ──────────
@@ -1841,7 +1841,15 @@ jobs:
   #
   # EXCLUDED ON PURPOSE — the remaining exclusions are now exactly the
   # Deno.serve set (plus the Vitest files):
-  #   - grounded-answer/__tests__/ — 5 of its 25 Deno test files are absent from
+  #   2026-08-13: +everyday-examples-directive.test.ts (ff_foxy_everyday_examples_v1).
+  #   Same static verification as the ten above, over its full relative-import
+  #   closure (../structured-prompt.ts and ../_everyday-flag.ts have ZERO imports;
+  #   ../gen-ctx.ts → ./config.ts + type-only ./types.ts — the identical closure
+  #   gen-ctx.test.ts already exercises in this job). No index.ts, no Deno.serve,
+  #   no fetch, no top-level await, no module-scope env read. The DB-failure cases
+  #   use an in-process object stub, not a socket.
+  #
+  #   - grounded-answer/__tests__/ — 5 of its 26 Deno test files are absent from
   #     DENO_TEST_TARGETS: e2e, pipeline, cache-durable-l3,
   #     foxy-answer-continuation and model-order-cache-fix. All five import
   #     ../index.ts, which calls Deno.serve() (binds a socket → requires
@@ -1937,6 +1945,7 @@ jobs:
         supabase/functions/grounded-answer/__tests__/confidence.test.ts
         supabase/functions/grounded-answer/__tests__/coverage.test.ts
         supabase/functions/grounded-answer/__tests__/embedding.test.ts
+        supabase/functions/grounded-answer/__tests__/everyday-examples-directive.test.ts
         supabase/functions/grounded-answer/__tests__/foxy-python-generation.test.ts
         supabase/functions/grounded-answer/__tests__/gen-ctx.test.ts
         supabase/functions/grounded-answer/__tests__/grounding-check.test.ts
