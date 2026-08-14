@@ -143,12 +143,6 @@ interface QuizResultsProps {
     selected_displayed_index: number;
     selected_original_index: number;
   }> | null;
-  /**
-   * Phase 4 U1: optional network-error message for the provisional-results
-   * banner. When present (non-empty string), the results screen renders a
-   * "result provisional" banner above the score card. `null` clears it.
-   */
-  networkError?: string | null;
 }
 
 export default function QuizResults({

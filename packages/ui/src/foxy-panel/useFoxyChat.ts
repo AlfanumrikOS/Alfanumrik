@@ -145,10 +145,7 @@ export function shouldUseStreaming(): boolean {
  * On HTTP errors returns a friendly localized fallback message — never
  * throws. Behavior mirrors the original `callFoxyTutor` from page.tsx.
  */
-export async function callFoxyTutor(
-  params: Record<string, any> & { language?: string },
-  signal?: AbortSignal,
-) {
+export async function callFoxyTutor(params: Record<string, any> & { language?: string }) {
   const isHi = params.language === 'hi';
   try {
     let accessToken: string | null = null;
@@ -166,54 +163,23 @@ export async function callFoxyTutor(
       credentials: 'include',
       body: JSON.stringify({
         message:   params.message,
+        subject:   params.subject,
         grade:     params.grade,
         chapter:   params.chapter   ?? null,
         board:     params.board     ?? null,
         sessionId: params.session_id ?? null,
         mode:      params.mode      ?? 'learn',
-    // Cache/capacity hardening: retry transient upstream errors (503/502/504)
-    // with exponential backoff. Cap at 3 attempts to avoid hanging the UI
-    // on a saturated endpoint.
-    let lastResponse: Response | null = null;
-    let lastError: unknown = null;
-    const transientCodes = new Set([503, 502, 504]);
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
-      }
-      try {
-              ...(typeof params.intent === 'string' ? { intent: params.intent } : {}),
-              ...(typeof params.coachDirective === 'string' ? { coachDirective: params.coachDirective } : {}),
-              // SEL check-in mood (Foxy North-Star Phase 1) — optional, carried for
-              // the rest of the session after the student picks a mood.
-              ...(typeof params.sessionMood === 'string' ? { sessionMood: params.sessionMood } : {}),
-              ...(params.image_base64 ? {
-                image_base64: params.image_base64,
-                image_media_type: params.image_media_type ?? 'image/jpeg',
-              } : {}),
-            }),
-            signal,
-          });
-      } catch (err) {
-        lastError = err;
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          throw err; // dedup abort — don't retry
-        }
-        // Only retry on transient HTTP codes or network errors.
-        if (err instanceof Response && !transientCodes.has(err.status)) {
-          lastResponse = err;
-          break;
-        }
-        if (attempt === 2) {
-          lastResponse = err instanceof Response ? err : null;
-          break;
-        }
-      }
-    }
-    // Build the response object for the existing error-handling code below.
-    // If we got a Response from the retry loop, use it; otherwise re-throw.
-    const res = lastResponse || (lastError instanceof Response ? lastError : null);
-    if (!res && lastError) throw lastError;
+        ...(typeof params.intent === 'string' ? { intent: params.intent } : {}),
+        ...(typeof params.coachDirective === 'string' ? { coachDirective: params.coachDirective } : {}),
+        // SEL check-in mood (Foxy North-Star Phase 1) — optional, carried for
+        // the rest of the session after the student picks a mood.
+        ...(typeof params.sessionMood === 'string' ? { sessionMood: params.sessionMood } : {}),
+        ...(params.image_base64 ? {
+          image_base64: params.image_base64,
+          image_media_type: params.image_media_type ?? 'image/jpeg',
+        } : {}),
+      }),
+    });
 
     if (!res.ok) {
       let errBody: Record<string, unknown> | null = null;
@@ -333,7 +299,6 @@ export async function callFoxyTutor(
 export async function callFoxyTutorStream(
   payload: Record<string, any>,
   callbacks: StreamingCallbacks,
-  signal?: AbortSignal,
 ): Promise<void> {
   let accessToken: string | null = null;
   try {
@@ -352,39 +317,11 @@ export async function callFoxyTutorStream(
     headers,
     credentials: 'include',
     body: JSON.stringify({ ...payload, stream: true }),
-    signal,
   });
 
   if (!res.ok) {
     callbacks.onError?.({ reason: `http-${res.status}` });
     return;
-  // Cache/capacity hardening: retry transient upstream errors (503/502/504)
-  // with exponential backoff for the streaming path too.
-  let lastResponse3: Response | null = null;
-  let lastError3: unknown = null;
-  const transientCodes3 = new Set([503, 502, 504]);
-  for (let attempt3 = 0; attempt3 < 3; attempt3++) {
-    if (attempt3 > 0) {
-      await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt3 - 1)));
-    }
-    try {
-    } catch (err3) {
-      lastError3 = err3;
-      if (err3 instanceof DOMException && err3.name === 'AbortError') {
-        throw err3;
-      }
-      if (err3 instanceof Response && !transientCodes3.has(err3.status)) {
-        lastResponse3 = err3;
-        break;
-      }
-      if (attempt3 === 2) {
-        lastResponse3 = err3 instanceof Response ? err3 : null;
-        break;
-      }
-    }
-  }
-  const res = lastResponse3 || (lastError3 instanceof Response ? lastError3 : null);
-  if (!res && lastError3) throw lastError3;
   }
 
   const contentType = res.headers.get('content-type') || '';
@@ -430,12 +367,7 @@ export async function callFoxyTutorStream(
     return;
   }
 
-  const reader = res.body?.getReader?.();
-  if (!reader) {
-    callbacks.onError?.({ reason: 'no-stream-reader' });
-    return;
-  }
-
+  const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let citationsCount = 0;
@@ -517,7 +449,6 @@ export async function callFoxyTutorStream(
  */
 export interface SendMessageHooks {
   onStart?: () => void;
-  onStop?: () => void;
   onComplete?: (info: {
     reply?: string;
     usedStreaming: boolean;
@@ -674,11 +605,6 @@ export interface UseFoxyChatResult {
    * resolves to a normalized result the renderer maps to a bilingual state.
    */
   submitQuizAnswer: (input: SubmitQuizAnswerInput) => Promise<SubmitQuizAnswerResult>;
-  /** Abort the in-flight Foxy request (streaming or blocking). Safe to call
-   *  when not loading — it's a no-op then. Wires to the Stop button in slim
-   *  embeds (dashboard/learn/quiz-results) where the full /foxy page chrome
-   *  (Stop, Retry, Report, Save-flashcard) is intentionally absent. */
-  stop: () => void;
 }
 
 /**
@@ -710,18 +636,6 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
   // Monotonic message-id counter — avoids Date.now() collision when two
   // setMessages pushes happen in the same ms (user msg + optimistic tutor).
   const messageIdCounterRef = useRef(0);
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  // Request dedup + concurrency cap: track in-flight sends so a rapid
-  // second sendMessage aborts the in-flight one instead of doubling the
-  // API call. Also rejects sends while one is already in flight (rapid-fire
-  // protection). Cleared on success, error, or explicit abort.
-  const inFlightRef = useRef<{
-    controller: AbortController | null;
-    startedAt: number;
-    payload: FoxySendPayload | null;
-    branch: 'streaming' | 'blocking' | null;
-  } | null>(null);
   const nextMessageId = useCallback(() => {
     messageIdCounterRef.current += 1;
     return Date.now() * 1000 + messageIdCounterRef.current;
@@ -929,7 +843,7 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
       setLoading(true);
     }
 
-    {
+    try {
       // Durable-thread id resolution (flag ON): read/mint the conversation id
       // from the ref SYNCHRONOUSLY so a rapid second send in the same tick reuses
       // it (no double session). If an id is already known via state but not yet
@@ -1008,21 +922,17 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
         };
 
         try {
-          const abortController = new AbortController();
-          abortControllerRef.current = abortController;
-          hooks?.onStop?.();
-
-          const streamCallbacks: StreamingCallbacks = {
+          await callFoxyTutorStream(foxyParams, {
             onSession: (sid) => {
               if (durableThreadEnabled) {
                 // Client owns the id (set synchronously at mint time). Ignore the
                 // server's echoed id; just surface the active id to page hooks.
                 hooks?.onSessionId?.(conversationIdRef.current ?? sid);
-                } else if (sid) {
-                  setChatSessionId(sid);
-                  hooks?.onSessionId?.(sid);
-                }
-              },
+              } else if (sid) {
+                setChatSessionId(sid);
+                hooks?.onSessionId?.(sid);
+              }
+            },
             onMetadata: (meta) => {
               setMessages((p) => p.map((m) =>
                 m.id === tutorBubbleId
@@ -1078,7 +988,7 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
                     ? 'मैं अभी जवाब नहीं दे सका। फिर से कोशिश करें या दूसरा chapter चुनें।'
                     : "I couldn't generate a response right now. Try rephrasing or pick a different chapter.",
                 };
-              }))
+              }));
             },
             onAbstain: (info) => {
               flushDelta();
@@ -1108,29 +1018,11 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
                     }
                   : m,
               ));
-            }
-          };
-
-
-          await callFoxyTutorStream(
-            foxyParams,
-            streamCallbacks,
-            abortController.signal,
-          );
-
-          setLoading(false);
-          hooks?.onComplete?.({
-            usedStreaming: true,
-            groundedFromChunks: streamGroundedFromChunks,
-            citationsCount: streamCitationsCount,
+            },
           });
-          return;
-
         } catch (streamErr) {
           flushDelta();
           console.warn('[foxy] stream error:', streamErr);
-          setLoading(false);
-          hooks?.onStop?.();
           setMessages((p) => p.map((m) =>
             m.id === tutorBubbleId && !m.content
               ? {
@@ -1142,15 +1034,18 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
               : m,
           ));
         }
+
+        setLoading(false);
+        hooks?.onComplete?.({
+          usedStreaming: true,
+          groundedFromChunks: streamGroundedFromChunks,
+          citationsCount: streamCitationsCount,
+        });
+        return;
       }
+      // ── End streaming branch ────────────────────────────────────────
 
-      // ── Non-streaming branch (blocking response) ──────────────────────────────────
-        const abortController = new AbortController();
-      abortControllerRef.current = abortController;
-      hooks?.onStop?.();
-
-      try {
-        const resp = await callFoxyTutor(foxyParams, abortController.signal);
+      const resp = await callFoxyTutor(foxyParams);
       if (resp.limitReached) {
         setMessages((p) => [...p, {
           id: nextMessageId(),
@@ -1219,8 +1114,6 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
         citationsCount: typeof resp.citationsCount === 'number' ? resp.citationsCount : 0,
       });
     } catch {
-      abortControllerRef.current = null;
-      hooks?.onStop?.();
       setMessages((p) => [...p, {
         id: nextMessageId(),
         role: 'tutor',
@@ -1230,10 +1123,7 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
       hooks?.onComplete?.({ usedStreaming: false });
     }
     setLoading(false);
-
-  }
-  },
-  [chatSessionId, nextMessageId, durableThreadEnabled]);
+  }, [chatSessionId, nextMessageId, durableThreadEnabled]);
 
   return {
     messages,
@@ -1251,6 +1141,5 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
     sendMessage,
     recordLearningAction,
     submitQuizAnswer,
-    stop: () => { abortControllerRef.current?.abort(); },
   };
 }

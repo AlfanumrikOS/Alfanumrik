@@ -2424,7 +2424,6 @@ export default function QuizPage() {
             onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
             onAskFoxy={(href) => router.push(href)}
             onNextTask={(href) => router.push(href)}
-            networkError={networkError}
           />
           {networkErrorBanner}
         </>
@@ -2462,7 +2461,6 @@ export default function QuizPage() {
           onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
           onGoHome={() => router.push(experienceV3 ? '/today' : '/dashboard')}
           onAskFoxy={() => { /* Phase 4 U1: page mounts the tap-gated launcher below. */ }}
-          networkError={networkError}
         />
         {/* Phase 4 U1: tap-gated "Ask Foxy about this quiz" launcher. Panel is
             dynamic-imported (ssr:false) inside the launcher only on tap. */}

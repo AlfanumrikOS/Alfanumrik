@@ -142,22 +142,6 @@ export default function FoxyPanel({
             ×
           </button>
         )}
-        {chat.loading && (
-          <button
-            onClick={() => chat.stop()}
-            aria-label={isHi ? 'जवाब रोको' : 'Stop answer'}
-            data-testid="foxy-panel-stop"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 shrink-0"
-            style={{
-              background: 'rgb(var(--danger-rgb) / 0.10)',
-              color: 'rgb(var(--danger-rgb))',
-              border: '1px solid rgb(var(--danger-rgb) / 0.30)',
-            }}
-            title={isHi ? 'जवाब रोको' : 'Stop answer'}
-          >
-            ⓪
-          </button>
-        )}
       </div>
 
       {/* Message stream — slim: NO save-flashcard, NO report dialog. Those

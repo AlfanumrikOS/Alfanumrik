@@ -137,9 +137,6 @@ export interface ResultSummaryProps {
   onAskFoxy: (href: string) => void;
   /** Navigate to the "Next task" href. */
   onNextTask: (href: string) => void;
-  /** Optional localized network-error message. When present, renders a
-   *  "result provisional" banner above the score card. */
-  networkError?: string | null;
 }
 
 const BLOOM_LABELS: Record<string, { en: string; hi: string }> = {
@@ -207,7 +204,6 @@ export default function ResultSummary({
   onRetry,
   onAskFoxy,
   onNextTask,
-  networkError,
 }: ResultSummaryProps) {
   const pct = results.score_percent;
   const band = bandForValue(pct);
@@ -260,24 +256,6 @@ export default function ResultSummary({
                 {isHi
                   ? 'इस प्रयास की समीक्षा के लिए चिह्नित किया गया, इसलिए कोई XP नहीं मिला। तुम्हारा स्कोर सहेज लिया गया है।'
                   : 'This attempt was flagged for review, so no XP was awarded. Your score is saved.'}
-              </p>
-            </div>
-          )}
-
-          {networkError && (
-            <div
-              className="rounded-xl p-3 text-center"
-              style={{
-                background: 'rgba(251,146,60,0.08)',
-                border: '1px solid rgba(251,146,60,0.25)',
-                color: 'rgb(180,83,9)',
-              }}
-              data-testid="result-summary-provisional-banner"
-            >
-              <p className="text-xs font-semibold leading-relaxed">
-                {isHi
-                  ? 'नेटवर्क त्रुटि के कारण यह नतीजा अस्थायी है। XP अभी तक नहीं दिया गया। अपनी जानकारी सहेज ली गई है — ज़्यादा जानने के लिए फिर से प्रयास करें।'
-                  : 'This result is provisional due to a network error. No XP awarded yet. Your info is saved — try again for XP!'}
               </p>
             </div>
           )}

@@ -1,4 +1,4 @@
-﻿-- Fix 42702 in compute_subject_readiness.
+-- Fix 42702 in compute_subject_readiness.
 -- Root cause: bare `chapter_number` in the chapter_universe CTE collided with the
 -- RETURNS TABLE OUT variable of the same name. Migration 20260815000005 qualified the
 -- LATERAL subquery in quiz_rollup but left chapter_universe untouched; Postgres aborts on
