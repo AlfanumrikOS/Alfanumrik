@@ -1,0 +1,104 @@
+# Lefthook config.
+#
+# pre-commit vs pre-push split — WHY:
+#   pre-commit runs ONLY staged-file lint/format (seconds). A slow
+#   pre-commit hook gets bypassed (`--no-verify`) or hated; keeping it fast
+#   keeps it honored.
+#   pre-push runs the expensive, full-scope gates that mirror CI's blocking
+#   checks (type-check, changed tests, build, actionlint) — minutes, not
+#   seconds — so a broken push is caught locally before it burns a CI run,
+#   not so every commit pays that cost. Never the reverse: a pre-commit
+#   hook that only lints staged files would let a real break reach
+#   `git push` undetected if it were also the ONLY gate.
+#
+# Neither hook replaces CI. `npm run verify` (root package.json) is the
+# single local command that mirrors CI's actual blocking job list; these
+# hooks are a fast local subset of it, not a substitute for it.
+
+pre-commit:
+  parallel: false
+  jobs:
+    # Staged files only — never the whole repo. This repo has no Prettier
+    # config (verified: no .prettierrc* anywhere, no `format` script in any
+    # workspace package.json), so "format" here means ESLint --fix against
+    # this repo's actual lint setup (root .eslintrc.json, root: true,
+    # resolved by every workspace — verified no package under apps/* or
+    # packages/* declares its own closer .eslintrc), not an invented
+    # toolchain. Fixed files are re-staged so the commit includes the fix.
+    - name: eslint --fix (staged)
+      glob: "*.{ts,tsx,js,jsx}"
+      run: npx eslint --fix --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: false
+  jobs:
+    # Same two commands CI's `quality` job runs (see ci.yml "Type check" +
+    # "Type check (scripts/)" steps). ~40s + ~40s locally — acceptable for
+    # a pre-push gate (measured 2026-08-14: type-check:scripts 38s real;
+    # type-check ~40s real, chained so a scripts/ break still surfaces).
+    - name: type-check
+      run: npm run type-check && npm run type-check:scripts
+
+    # NOT the full ~14,000-test suite (too slow for a pre-push hook).
+    # Vitest 4.1.10 (confirmed via `npx vitest --version`) supports
+    # `--changed [since]`; verified working locally with a real invocation
+    # against `origin/main` before wiring it in here. Falls back to
+    # `origin/main` (this repo's default branch — confirmed via
+    # `origin/HEAD -> origin/main`) when the current branch has no upstream
+    # tracking ref, so a fresh local branch still gets a meaningful diff.
+    #
+    # NOTE on two Windows/lefthook quoting pitfalls hit while writing this
+    # (both confirmed via `npx lefthook run pre-push --job "relevant tests"
+    # --verbose`, which prints the literal command lefthook hands to
+    # `sh.exe -c`):
+    #   1. NOT `@{u}`/`@{upstream}` — lefthook's own `run:` strings use
+    #      `{name}` as TEMPLATE placeholder syntax (like `{staged_files}`
+    #      above); `%(upstream:short)` uses parentheses, not braces, so it
+    #      is not at risk of the same collision.
+    #   2. NO DOUBLE QUOTES anywhere in this script. On this Windows/
+    #      Git-Bash setup, lefthook builds the child process command line as
+    #      `sh.exe -c "<run script, unescaped>"` — a run script that itself
+    #      contains any `"` (even simple, non-nested ones) prematurely
+    #      closes that outer double-quoted argument, corrupting everything
+    #      after it (observed: `for-each-ref: -c: line 2: unexpected EOF
+    #      while looking for matching ')'`, i.e. the shell only ever saw a
+    #      truncated fragment of line 1). Single quotes and a bare `case`
+    #      empty-check avoid the problem entirely and were verified to work.
+    - name: relevant tests
+      run: |
+        BASE=$(git for-each-ref --format='%(upstream:short)' $(git symbolic-ref -q HEAD))
+        case $BASE in
+          '') BASE=origin/main ;;
+        esac
+        npm test -w apps/host -- --changed=$BASE --reporter=dot
+
+    # Same command CI's "Production Build" job runs. Slow (multiple
+    # minutes) — expected and correct for a pre-push gate per spec; not
+    # weakened.
+    - name: build
+      run: npm run build
+
+    # actionlint + Go toolchain are both absent on this dev machine
+    # (confirmed: `where.exe actionlint`, `where.exe go` both empty). This
+    # is one of four explicitly-requested pre-push gates, so unlike an
+    # advisory dev-experience hook it must actually BLOCK when the binary
+    # is missing, not silently no-op — no attempt to auto-download it here
+    # (that would make an offline git hook depend on network access on
+    # every push without the dev opting in). When actionlint IS present, it
+    # is invoked with no arguments from the repo root, which is its
+    # documented default: it auto-discovers `.github/workflows/*.yml`.
+    # NO DOUBLE QUOTES here either — see the "relevant tests" note above on
+    # why (verified the hard way on this platform).
+    - name: actionlint
+      run: |
+        if ! command -v actionlint >/dev/null 2>&1; then
+          echo 'actionlint not found on PATH -- install one of:' >&2
+          echo '  scoop install actionlint                                                        (Windows/scoop)' >&2
+          echo '  choco install actionlint                                                         (Windows/choco)' >&2
+          echo '  go install github.com/rhysd/actionlint/cmd/actionlint@latest                     (requires Go)' >&2
+          echo '  brew install actionlint                                                          (macOS)' >&2
+          echo '  bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)   (no package manager needed)' >&2
+          exit 1
+        fi
+        actionlint

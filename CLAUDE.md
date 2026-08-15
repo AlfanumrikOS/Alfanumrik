@@ -207,3 +207,13 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | Pedagogy v2 specs / plans / runbooks | `docs/superpowers/specs/2026-05-08-pedagogy-v2-three-speed-rhythm-design.md` (strategic), `docs/superpowers/plans/2026-05-08-*` + `2026-05-09-*` (Wave 1-3), `docs/superpowers/runbooks/2026-05-09-pedagogy-v2-wave-1-rollout.md` |
 | Adaptive program + Pulse specs / runbooks | `docs/superpowers/specs/2026-06-12-rbac-conformance-and-student-pulse-design.md`, `docs/superpowers/specs/2026-06-12-phase-a-loop-a-adaptive-remediation-design.md`, `docs/superpowers/specs/2026-06-13-phase-a-loops-b-c-design.md`; runbooks `docs/runbooks/adaptive-remediation-rollout.md` (Loop A) + `docs/runbooks/adaptive-program-rollout.md` (program-level: Loops A+B+C + Pulse). |
 | RAG retrieval-quality eval-harness (B1) | CLI `eval/rag/harness/cli.ts` at the **repo root** (`eval/` is NOT inside `apps/host/`); core modules runner `eval/rag/harness/run-eval.ts`, metrics `metrics.ts`, verdict `verdict.ts`, golden-set schema `golden-schema.ts`, relevance judge `relevance-judge.ts`. Data: `eval/rag/golden/` (seed-queries + README), baseline `eval/rag/baseline/ncert-baseline-v1.json`. Tests `apps/host/src/__tests__/eval/rag/`. **`npm run eval:rag:harness` is declared only in `apps/host/package.json`, NOT the root** — the root exposes `eval:teacher:harness` but has no `eval:rag:harness`, so running it from the repo root fails. ⚠️ Unresolved (2026-07-17): the `apps/host` script body is `npx tsx eval/rag/harness/cli.ts`, which resolves relative to `apps/host/` where no `eval/` dir exists — the declaration and the file location disagree. Verify before relying on it. Offline read-only measurement harness (sub-project B1); pinned by REG-140. Spec `docs/superpowers/specs/2026-06-13-rag-retrieval-quality-design.md`; plan `docs/superpowers/plans/2026-06-13-rag-eval-harness.md`; runbook `docs/runbooks/2026-06-14-rag-eval-harness-operation.md`. |
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

@@ -187,6 +187,14 @@ function SupportContent() {
         <p className="m-0 text-[13px] text-muted-foreground">
           Investigate user issues, monitor background jobs, and verify data integrity
         </p>
+        {/* Known gap: this page shows user-activity/diagnostics lookups, not the actual support ticket queue.
+            The operator console for ticket content is at /internal/admin (SupportTab).
+            Ref: .claude/CLAUDE.md line 88; F12 audit 2026-08-12. */}
+        <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800">
+          <strong>Note:</strong> Ticket content (threads, replies, status history) is managed via{' '}
+          <Link href="/internal/admin" className="font-medium underline">/internal/admin</Link> → Support tab.
+          This page shows diagnostics and relationship integrity checks.
+        </div>
       </div>
 
       {/* ── SECTION 1: Operations Summary ─────────── */}

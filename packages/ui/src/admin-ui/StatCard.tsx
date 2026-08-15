@@ -59,7 +59,11 @@ export function StatCard({ label, value, icon, accentColor, subtitle, trend, onC
             <div
               className={[
                 'mt-1 text-[11px] font-semibold',
-                trendIsPositive ? 'text-success' : 'text-danger',
+                // AA fix (2026-08-15): the raw fill hues are 3.30:1 (--success)
+                // and 4.14:1 (--danger) as text — at 11px, well under AA. The
+                // `*-strong` companions clear it: #166534 = 7.13:1 and #B91C1C
+                // = 6.47:1 on --surface-1. See globals.css :root.
+                trendIsPositive ? 'text-success-strong' : 'text-danger-strong',
               ].join(' ')}
             >
               {trendIsPositive ? '+' : ''}{trend.value} {trend.label}
