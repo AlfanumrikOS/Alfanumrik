@@ -315,7 +315,16 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 //     SECURITY DEFINER get_support_first_response_metrics() gated on the existing
 //     baseline helper check_permission(auth.uid(), 'support.view_tickets')
 //     (:1973), granted to authenticated; then move to the RLS-scoped client.
-const EXPECTED_COUNT = 270;
+// Learning-sources signed-URL route (2026-08-15, architect-reviewed): 270 -> 271
+// for the new route src/app/api/learning-sources/route.ts. Service-role is
+// REQUIRED, not convenience: the private `learning-sources` storage bucket
+// (migration 20260816000001) is service-role-only by design — it carries NO
+// per-user storage RLS policies, so an RLS-scoped client cannot mint the
+// signed URLs this route exists to serve. The route is authenticated
+// (authorizeRequest) BEFORE any minting; signed URLs carry a 300s TTL; the
+// object path shape is validated; no PII is logged. Ledger entry added in the
+// same change in scripts/admin-client-allowlist.json.
+const EXPECTED_COUNT = 271;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

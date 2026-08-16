@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 404,
+  "routeCount": 406,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -704,6 +704,14 @@
       "access": "auth",
       "owner": "core-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work."
+    },
+    {
+      "path": "/api/learning-sources",
+      "file": "apps/host/src/app/api/learning-sources/route.ts",
+      "access": "auth",
+      "owner": "ai-learning-backend",
+      "rationale": "Authenticated endpoint that mints 5-minute (300s) signed URLs for objects in the PRIVATE learning-sources curated-corpus storage bucket; authorizeRequest() gates every call before minting and the route validates the content-addressed path shape (board/grade/subject_code/sha256_16/filename, whitelisted extensions, no traversal). No PII in the response.",
+      "serviceRoleUse": "Service-role is required by design, not convenience: the learning-sources bucket is private with ZERO storage.objects policies (migration 20260816000001 — service-role-only house convention for rights-restricted PDFs), so an RLS-scoped client cannot mint signed URLs at all. The route authenticates via authorizeRequest() before the single read-only createSignedUrl call, TTL 300s, path shape validated."
     },
     {
       "path": "/api/lesson",
@@ -1480,6 +1488,13 @@
       "access": "auth",
       "owner": "core-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work."
+    },
+    {
+      "path": "/api/student-router",
+      "file": "apps/host/src/app/api/student-router/route.ts",
+      "access": "student",
+      "owner": "student-learning-backend",
+      "rationale": "Gated deep-link router for student session continuity; RBAC-gated on student.router_access (seeded + granted to the student role by migration 20260816000006) and restricted to a fixed ALLOWED_TARGETS whitelist before issuing any redirect. No service-role/admin client."
     },
     {
       "path": "/api/student/assignments/[id]/complete",

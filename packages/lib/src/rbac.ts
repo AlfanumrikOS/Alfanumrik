@@ -882,6 +882,12 @@ export const PERMISSIONS = {
   // admin via wildcard, super_admin via hasPermission() bypass).
   PAYMENTS_SUBSCRIBE: 'payments.subscribe',
 
+  // ── Student router access ──────────────────────────────────
+  // Gated deep-link router for student session continuity.
+  // Any authenticated student role can access; admin/super_admin
+  // bypass via wildcard. Seeded by companion migration below.
+  STUDENT_ROUTER_ACCESS: 'student.router_access',
+
   // ── Study plan ──────────────────────────────────────────────
   STUDY_PLAN_VIEW: 'study_plan.view',
   STUDY_PLAN_CREATE: 'study_plan.create',

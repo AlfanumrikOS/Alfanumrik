@@ -33,7 +33,10 @@ import { join } from 'node:path';
 const REPO_ROOT =
   typeof __dirname !== 'undefined' ? join(__dirname, '..', '..', '..') : process.cwd();
 
-const SCAN_DIRS = [join('src', 'app'), join('src', 'components')];
+const SCAN_DIRS = [
+  join(REPO_ROOT, 'src', 'app'),
+  join(REPO_ROOT, 'src', 'components'),
+];
 
 /**
  * The var-valued token families from tailwind.config.js. Each is a full
@@ -54,7 +57,7 @@ function collectTsx(absDir: string, out: string[]): void {
   for (const name of entries) {
     if (name === 'node_modules' || name === '.next') continue;
     const abs = join(absDir, name);
-    let st;
+    let st: any;
     try {
       st = statSync(abs);
     } catch {
@@ -108,9 +111,12 @@ describe('REG-238: no dead opacity-on-var utilities', () => {
 
   it('src/app + src/components are free of dead opacity-on-var classes', () => {
     const files: string[] = [];
-    for (const rel of SCAN_DIRS) collectTsx(join(REPO_ROOT, rel), files);
+    for (const rel of SCAN_DIRS) collectTsx(rel, files);
 
-    // Guard against a broken walk silently passing the test.
+    // Self-check — the walk must actually find files. If SCAN_DIRS is wrong
+    // (e.g. relative when it should be absolute) or a directory is missing,
+    // a zero/low count silently passes the test, which is exactly the defect
+    // this guard exists to catch. Fail loudly.
     expect(files.length).toBeGreaterThan(50);
 
     const violations: string[] = [];
