@@ -276,7 +276,7 @@ describe('/super-admin/support/tickets — list', () => {
     expect(lastUrl()).toContain('limit=25');
   });
 
-  it.each(['pending', 'resolved', 'all'])('clicking the "%s" tab sends status=%s and resets to page=1', async (s) => {
+  it.each(['pending', 'resolved', 'all'])('clicking the "%s" tab sends matching status and resets to page=1', async (s) => {
     await renderPage();
     await waitFor(() => expect(screen.getByText(TICKET_A.subject)).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${s}$`, 'i') }));

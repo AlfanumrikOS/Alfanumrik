@@ -65,6 +65,16 @@ const STATUS_LABELS: Record<StatusTab, { en: string; hi: string }> = {
   all: { en: 'All', hi: 'सभी' },
 };
 
+// Author roles a ticket reply can be attributed to (mirrors the `fromOperator`
+// membership check below). Falls back to the raw role string for anything
+// outside this set rather than rendering nothing.
+const AUTHOR_ROLE_LABELS: Record<string, { en: string; hi: string }> = {
+  student: { en: 'Student', hi: 'छात्र' },
+  parent: { en: 'Parent', hi: 'अभिभावक' },
+  teacher: { en: 'Teacher', hi: 'शिक्षक' },
+  guest: { en: 'Guest', hi: 'अतिथि' },
+};
+
 const PAGE_SIZE = 25;
 
 function statusVariant(status: string): StatusBadgeVariant {
@@ -72,6 +82,21 @@ function statusVariant(status: string): StatusBadgeVariant {
   if (status === 'pending') return 'warning';
   if (status === 'resolved') return 'success';
   return 'neutral';
+}
+
+// Same lookup the filter tabs already use (STATUS_LABELS), reused for badge
+// render sites so ticket status never leaks raw English under isHi. Falls
+// back to the raw value for any status outside the known set.
+function statusLabel(status: string, isHi: boolean): string {
+  const entry = (STATUS_LABELS as Record<string, { en: string; hi: string }>)[status];
+  if (!entry) return status;
+  return isHi ? entry.hi : entry.en;
+}
+
+function authorRoleLabel(role: string, isHi: boolean): string {
+  const entry = AUTHOR_ROLE_LABELS[role];
+  if (!entry) return role;
+  return isHi ? entry.hi : entry.en;
 }
 
 function fmtDate(iso: string, isHi: boolean): string {
@@ -299,7 +324,7 @@ function TicketsContent() {
       key: 'status',
       label: isHi ? 'स्थिति' : 'Status',
       sortable: false,
-      render: (t) => <StatusBadge label={t.status} variant={statusVariant(t.status)} />,
+      render: (t) => <StatusBadge label={statusLabel(t.status, isHi)} variant={statusVariant(t.status)} />,
     },
     {
       key: 'message',
@@ -451,7 +476,7 @@ function TicketsContent() {
         {selected && (
           <div>
             <div className="mb-3 flex items-center justify-between gap-2">
-              <StatusBadge label={selected.status} variant={statusVariant(selected.status)} />
+              <StatusBadge label={statusLabel(selected.status, isHi)} variant={statusVariant(selected.status)} />
               {selected.status !== 'resolved' && (
                 <button
                   type="button"
@@ -525,7 +550,7 @@ function TicketsContent() {
                               ? isHi
                                 ? 'सहायता'
                                 : 'Support'
-                              : `${isHi ? 'अनुरोधकर्ता' : 'Requester'} (${r.author_role})`
+                              : `${isHi ? 'अनुरोधकर्ता' : 'Requester'} (${authorRoleLabel(r.author_role, isHi)})`
                           }
                           variant={fromOperator ? 'info' : 'neutral'}
                         />
