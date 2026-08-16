@@ -306,14 +306,14 @@ function SupportContent() {
           Investigate user issues, monitor background jobs, and verify data integrity
         </p>
         {/* Known gap: this page shows user-activity/diagnostics lookups, not the actual support ticket queue.
-            The operator console for ticket content is at /internal/admin (SupportTab).
             Ref: .claude/CLAUDE.md line 88; F12 audit 2026-08-12.
-            CORRECTION 2026-08-16 (frontend, Phase 0 super-admin overhaul): the gap itself is
-            unchanged (still true — this page has no ticket content and never will until the
-            Phase-2 console merge), but it is now cross-linked from both directions: AdminShell's
-            nav carries a dedicated "Support Tickets" entry to /internal/admin (with a
-            "opens legacy console" hint), and the banner below is the reciprocal, bilingual,
-            prominent link back. Neither is a redirect — both are Phase-0 stopgaps. */}
+            CORRECTION 2026-08-16 (frontend, Phase 2 console merge): the gap itself is
+            unchanged (still true — this page has no ticket content), but the ticket console is
+            now IN-CONSOLE at /super-admin/support/tickets (full capability parity with the
+            legacy internal/admin SupportTab, same /api/internal/admin/support API — see
+            docs/superpowers/specs/2026-08-16-phase2-support-console-parity.md). This banner
+            repoints to that page instead of the legacy /internal/admin console. Not a redirect —
+            both pages stay live; this is a cross-link. */}
         <div
           role="status"
           className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-blue-400/40 bg-blue-500/10 p-3.5 text-sm text-blue-900"
@@ -325,7 +325,7 @@ function SupportContent() {
               : 'This page only shows diagnostics and relationship checks — threads, replies, and status history live in the ticket console.'}
           </span>
           <Link
-            href="/internal/admin"
+            href="/super-admin/support/tickets"
             className="shrink-0 rounded-md border border-blue-500 bg-white px-3 py-1.5 text-xs font-semibold text-blue-900 hover:bg-blue-50"
           >
             {isHi ? 'टिकट कंसोल खोलें' : 'Open the ticket console'} →
