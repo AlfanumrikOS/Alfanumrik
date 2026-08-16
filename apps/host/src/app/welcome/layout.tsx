@@ -8,14 +8,15 @@ import { buildMarketingMetadata } from '@/lib/marketing-metadata';
    Self-hosted Google Fonts via next/font/local.
    Inter is loaded from public/fonts/Inter-latin.woff2 (downloaded
    from Google Fonts at `fonts.googleapis.com`, which is already in the
-   CSP allowlist per next.config.js).
+   CSP allowlist per next.config.js). The path is relative to the
+   importing file (src/app/welcome/layout.tsx).
    `display: 'swap'` keeps text visible during load.
    ──────────────────────────────────────────────────────────────── */
 
 const inter = localInter({
   src: [
     {
-      path: './public/fonts/Inter-latin.woff2',
+      path: '../../../public/fonts/Inter-latin.woff2',
       weight: '400 600',
       style: 'normal',
     },
