@@ -37,6 +37,13 @@ export interface SidebarNavItem {
    * notification count.
    */
   badge?: number;
+  /**
+   * Optional small caption rendered under the label (e.g. "opens legacy
+   * console" for a cross-console link). Hidden when the sidebar is
+   * collapsed, same as the label itself.
+   */
+  hint?: string;
+  hintHi?: string;
 }
 
 /** Section divider for grouped nav. Rendered as a small uppercase label row. */
@@ -163,6 +170,7 @@ export default function DashboardSidebar({
         }
         const active = navItem.href === activeHref;
         const label = isHi ? navItem.labelHi : navItem.label;
+        const hint = isHi ? (navItem.hintHi ?? navItem.hint) : navItem.hint;
         const activeStyle = active
           ? {
               color: primaryColor,
@@ -187,7 +195,16 @@ export default function DashboardSidebar({
             style={activeStyle}
           >
             <span className="flex-shrink-0 text-[15px] leading-none">{navItem.icon}</span>
-            {!collapsed && <span className="truncate flex-1">{label}</span>}
+            {!collapsed && (
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate">{label}</span>
+                {hint && (
+                  <span className="truncate text-[9px] font-normal normal-case leading-tight text-muted-foreground/70">
+                    {hint}
+                  </span>
+                )}
+              </span>
+            )}
             {!collapsed && typeof navItem.badge === 'number' && navItem.badge > 0 && (
               <span
                 data-testid={`sidebar-badge-${navItem.href.replace(/^\//, '').replace(/\//g, '-')}`}

@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await fetchAll(table, select, filter || undefined);
-    await logAdminAction({ action: 'download_report', entity_type: 'report', details: { type, format, count: data?.length }, ip });
+    await logAdminAction({ action: 'download_report', entity_type: 'report', details: { type, format, count: data?.length }, ip, actorUserId: auth.userId });
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const filename = `alfanumrik-${type}-${timestamp}`;
 

@@ -4,14 +4,15 @@
  * Security model:
  *  - Server routes: check `x-admin-secret` request header ONLY (never URL params).
  *  - Client: stores the secret in sessionStorage (cleared on tab close), never in the URL.
- *  - All admin actions are logged to admin_audit_log via logAdminAction().
+ *  - All admin actions are logged via logAdminAction(), which (2026-08-16, Phase
+ *    G.5) dual-writes to BOTH admin_audit_log (legacy) AND the canonical
+ *    audit_logs table (actor_type='admin') — see logAdminAction()'s own JSDoc.
  *
  * Also exports original session-based admin auth (authorizeAdmin) used by /api/super-admin/* routes.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@alfanumrik/lib/logger';
-import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { secureEqual } from '@alfanumrik/lib/secure-compare';
 
 // ─── Types ────────────────────────────────────────────────────
@@ -454,7 +455,7 @@ export async function logAdminAuditByUserId(
   userId: string | null,
   action: string,
   entityType: string,
-  entityId: string,
+  entityId: string | null,
   details?: Record<string, unknown>,
   ipAddress?: string,
   opts?: { before?: Record<string, unknown>; after?: Record<string, unknown>; userAgent?: string; schoolId?: string | null; adminLevel?: string | null },
@@ -474,7 +475,7 @@ export async function logAdminAuditByUserId(
       admin_level: opts?.adminLevel ?? null,
       action,
       resource_type: entityType,
-      resource_id: entityId,
+      resource_id: entityId ?? null,
       details: details ?? {},
       before_state: opts?.before ?? null,
       after_state: opts?.after ?? null,
@@ -499,7 +500,7 @@ export async function logAdminAuditByUserId(
       admin_id: userId,
       action,
       entity_type: entityType,
-      entity_id: entityId,
+      entity_id: entityId ?? null,
       details: details ?? {},
       ip_address: ipAddress || null,
     }),
@@ -551,8 +552,46 @@ export function requireAdminSecret(request: NextRequest): NextResponse | null {
 }
 
 /**
- * Log an admin action to admin_audit_log (fire-and-forget).
+ * Log an admin action performed via the x-admin-secret gate (fire-and-forget).
  * Used by /api/internal/admin/* routes.
+ *
+ * Phase G.5 (2026-08-16, canonical audit-path fix — CEO-mandated Phase 0
+ * super-admin overhaul). Previously this function single-wrote to the
+ * LEGACY `admin_audit_log` table with `admin_id` hardcoded to `null` — no
+ * actor attribution, and events never reached the canonical `audit_logs`
+ * table at all. It now delegates to `logAdminAuditByUserId()`, which
+ * dual-writes to BOTH `admin_audit_log` (legacy, kept for `/super-admin/logs`
+ * back-compat) AND `audit_logs` (canonical, `actor_type: 'admin'`) — the
+ * same machinery `logAdminAudit()` already uses.
+ *
+ * Back-compat: the original 5 fields (`action`, `entity_type`, `entity_id`,
+ * `details`, `ip`) are unchanged, so every existing
+ * `/api/internal/admin/*​/route.ts` call site — currently 20 call sites
+ * across 9 files, all passing a plain object literal — keeps compiling
+ * with no changes required. Two NEW optional fields carry actor
+ * attribution when the caller has it:
+ *
+ *   - `actorUserId?: string | null` — the caller's Supabase auth user id
+ *     (e.g. `authorizeAdmin()`'s `AdminAuth.userId`, or the `userId`
+ *     returned by `authorizeRequest()`). Written as `admin_id` in the
+ *     legacy row and `auth_user_id` in the canonical row. Omitted (or
+ *     `null`/`undefined`) preserves today's unattributed behavior for rows
+ *     that use it — but even then, the write now ALSO reaches `audit_logs`,
+ *     which closes the "canonical table never written" half of the defect
+ *     ahead of callers being updated to pass real actor identity.
+ *   - `adminLevel?: AdminLevel | string | null` — the caller's
+ *     `admin_level` at the time of the action (e.g. `AdminAuth.adminLevel`
+ *     from a prior `authorizeAdmin()` call), stamped onto
+ *     `audit_logs.admin_level`. Omit when unknown or not applicable (e.g.
+ *     RBAC-only callers with no `admin_users` row) — never guess a level.
+ *
+ * P13: `details` must be metadata only — never email/phone/name or other
+ * PII. This function does not sanitize `details`; callers own that.
+ *
+ * Never throws: a failed audit write is caught and logged as a warning so
+ * it can never break the calling route (matches the existing
+ * fire-and-forget contract, and the per-destination `.catch()` handling
+ * already inside `logAdminAuditByUserId()`).
  */
 export async function logAdminAction(opts: {
   action: string;
@@ -560,19 +599,26 @@ export async function logAdminAction(opts: {
   entity_id?: string;
   details?: Record<string, unknown>;
   ip?: string;
+  actorUserId?: string | null;
+  adminLevel?: AdminLevel | string | null;
 }): Promise<void> {
   try {
-    const supabase = getSupabaseAdmin();
-    await supabase.from('admin_audit_log').insert({
-      admin_id: null, // set to admin_users.id when proper admin accounts are used
+    await logAdminAuditByUserId(
+      opts.actorUserId ?? null,
+      opts.action,
+      opts.entity_type,
+      opts.entity_id ?? null,
+      opts.details ?? {},
+      opts.ip,
+      { adminLevel: opts.adminLevel ?? null },
+    );
+  } catch (err) {
+    // Never let audit log failures break the main flow.
+    logger.warn('admin_audit_action_failed', {
+      error: err instanceof Error ? err : new Error(String(err)),
       action: opts.action,
-      entity_type: opts.entity_type,
-      entity_id: opts.entity_id ?? null,
-      details: opts.details ?? {},
-      ip_address: opts.ip ?? null,
+      entityType: opts.entity_type,
     });
-  } catch {
-    // Never let audit log failures break the main flow
   }
 }
 

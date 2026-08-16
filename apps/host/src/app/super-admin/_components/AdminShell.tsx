@@ -138,7 +138,23 @@ const NAV_ITEMS: SidebarItem[] = [
   // a param; the operator picks the 🎫 Support tab there.
   // Same session boundary: proxy.ts:1260 gates /internal/admin on the same
   // super_admin session as /super-admin.
-  { href: '/internal/admin', label: 'Support Tickets', labelHi: 'सहायता टिकट', icon: '🎫' },
+  // CORRECTION 2026-08-16 (frontend, Phase 0 super-admin overhaul): this entry
+  // and the Ops Diagnostics relabel above already shipped 2026-08-11 (they read
+  // as fixed on inspection — this note previously undersold that). What was
+  // still missing until today: (1) a visible hint marking this as a distinct,
+  // not-yet-merged console (added via SidebarNavItem.hint below), and (2) a
+  // matching bilingual cross-link banner on /super-admin/support itself
+  // (support/page.tsx) pointing back here. Both are Phase-0 stopgaps pending
+  // the Phase-2 console merge — remove the hint + banner once /super-admin
+  // hosts ticket content natively.
+  {
+    href: '/internal/admin',
+    label: 'Support Tickets',
+    labelHi: 'सहायता टिकट',
+    icon: '🎫',
+    hint: 'opens legacy console',
+    hintHi: 'पुराना कंसोल खुलता है',
+  },
   // Foxy North-Star Phase 1 — safeguarding disclosure review queue.
   // P10 fold-in (2026-08-05): the queue lives as the Safeguarding tab of the
   // grandfathered /super-admin/foxy-quality page (the standalone route
