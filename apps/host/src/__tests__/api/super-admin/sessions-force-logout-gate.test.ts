@@ -9,14 +9,21 @@
  * could kick any user off every device. The route now requires 'admin' or
  * higher (`apps/host/src/app/api/super-admin/sessions/route.ts` POST).
  *
- * Unlike the sibling `rbac-elevation.test.ts` / `mutation-gate-pins.test.ts`
- * gate-pin files, this test drives the REAL `authorizeAdmin()` (not mocked)
- * through its full tier ladder — GoTrue token verification + admin_users
- * lookup — for all 6 admin levels, so the assertion is "the production
- * hasMinimumLevel comparison denies/allows at the right rank", not merely
- * "the route passed the string 'admin' to a mock". Only the downstream
- * data seam (`getSupabaseAdmin()`) is mocked, since session revocation is
- * out of scope for an auth-gate test.
+ * UPDATED for Phase 1 (2026-08-16, Mission Control overhaul pilot
+ * migration): the route now calls `authorizeOperator()` instead of
+ * `authorizeAdmin()` — RBAC (user_roles/roles) is the authorization source
+ * instead of admin_users.admin_level directly. This file still drives the
+ * REAL `authorizeOperator()` (not mocked) through its full tier ladder —
+ * GoTrue token verification + RBAC permission lookup — for all 6 operator
+ * levels, so the assertion remains "the production hasMinimumLevel
+ * comparison denies/allows at the right rank", not merely "the route passed
+ * the string 'admin' to a mock". This IS this repo's parity proof that
+ * authorizeOperator() ranks/denies/allows identically to authorizeAdmin()
+ * on a real pilot route (see also apps/host/src/__tests__/lib/
+ * authorize-operator.test.ts for the function-level parity matrix). Only
+ * the downstream data seam (`getSupabaseAdmin()`) and the RBAC permission
+ * lookup (`getUserPermissions()`) are mocked; GoTrue verification and the
+ * hasMinimumLevel rank comparison run for real.
  *
  * GET (list sessions) is intentionally NOT touched here — it stays at
  * 'support' (read-only, metadata-only response) per the route's own
@@ -62,6 +69,18 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => supabaseAdminStub,
 }));
 
+// ─── RBAC permission lookup (the authorizeOperator() authorization source) ──
+// authorizeOperator() resolves the caller's operator tier from
+// getUserPermissions().roles — mocked per-test to the RBAC role matching the
+// tier under test (identity map: role name === AdminLevel string, per the
+// sync_admin_level_to_rbac_role() trigger in migration 20260816000008).
+
+const getUserPermissions = vi.fn();
+
+vi.mock('@alfanumrik/lib/rbac', () => ({
+  getUserPermissions: (...args: unknown[]) => getUserPermissions(...args),
+}));
+
 // ─── Fixtures ─────────────────────────────────────────────────────────
 
 const ADMIN_UID = '33333333-3333-4333-8333-333333333333';
@@ -76,13 +95,18 @@ function postReq(): NextRequest {
 }
 
 /**
- * Drives the REAL authorizeAdmin() code path: mocks only the two fetch
- * calls it makes (GoTrue /auth/v1/user, then the admin_users REST lookup),
- * returning `adminLevel` for the caller. Any other fetch (the fire-and-
- * forget logAdminAudit dual-write) is accepted silently — this test is not
- * about the audit write.
+ * Drives the REAL authorizeOperator() code path: mocks the GoTrue
+ * /auth/v1/user fetch, the best-effort admin_users enrichment fetch
+ * authorizeOperator() makes post-authorization, and sets getUserPermissions()
+ * to report the caller holding exactly the RBAC role matching `level`. Any
+ * other fetch (the fire-and-forget logAdminAudit dual-write) is accepted
+ * silently — this test is not about the audit write.
  */
-function mockFetchForLevel(adminLevel: AdminLevel) {
+function setupCallerTier(level: AdminLevel) {
+  getUserPermissions.mockReset().mockResolvedValue({
+    roles: [{ name: level, display_name: level, hierarchy_level: 0 }],
+    permissions: [],
+  });
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/auth/v1/user')) {
@@ -90,7 +114,7 @@ function mockFetchForLevel(adminLevel: AdminLevel) {
     }
     if (url.includes('/admin_users')) {
       return new Response(
-        JSON.stringify([{ id: 'admin-row-1', name: 'Admin', email: 'admin@x.com', admin_level: adminLevel }]),
+        JSON.stringify([{ id: 'admin-row-1', name: 'Admin', email: 'admin@x.com' }]),
         { status: 200 },
       );
     }
@@ -115,15 +139,15 @@ afterEach(() => {
 describe('POST /api/super-admin/sessions — force-logout requires admin tier or higher', () => {
   const belowFloor: AdminLevel[] = ['support', 'analyst', 'content_manager', 'finance'];
 
-  it.each(belowFloor)('returns 403 ADMIN_INSUFFICIENT_LEVEL for a %s-tier admin', async (level) => {
-    mockFetchForLevel(level);
+  it.each(belowFloor)('returns 403 OPERATOR_INSUFFICIENT_LEVEL for a %s-tier operator', async (level) => {
+    setupCallerTier(level);
     const { POST } = await import('@/app/api/super-admin/sessions/route');
 
     const res = await POST(postReq());
 
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body.code).toBe('ADMIN_INSUFFICIENT_LEVEL');
+    expect(body.code).toBe('OPERATOR_INSUFFICIENT_LEVEL');
     expect(body.required_level).toBe('admin');
 
     // Denial short-circuits before any session revocation / signOut.
@@ -133,8 +157,8 @@ describe('POST /api/super-admin/sessions — force-logout requires admin tier or
 
   const atOrAboveFloor: AdminLevel[] = ['admin', 'super_admin'];
 
-  it.each(atOrAboveFloor)('passes the auth gate and revokes sessions for a %s-tier admin', async (level) => {
-    mockFetchForLevel(level);
+  it.each(atOrAboveFloor)('passes the auth gate and revokes sessions for a %s-tier operator', async (level) => {
+    setupCallerTier(level);
     const { POST } = await import('@/app/api/super-admin/sessions/route');
 
     const res = await POST(postReq());
@@ -148,5 +172,28 @@ describe('POST /api/super-admin/sessions — force-logout requires admin tier or
 
     expect(revokeSelect).toHaveBeenCalledTimes(1);
     expect(signOut).toHaveBeenCalledWith(TARGET_UID, 'global');
+  });
+
+  it('denies a caller with NO operator-tier RBAC role at all (OPERATOR_NOT_FOUND)', async () => {
+    getUserPermissions.mockReset().mockResolvedValue({
+      roles: [{ name: 'teacher', display_name: 'Teacher', hierarchy_level: 50 }],
+      permissions: [],
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/v1/user')) {
+        return new Response(JSON.stringify({ id: ADMIN_UID, email: 'admin@x.com' }), { status: 200 });
+      }
+      return new Response('', { status: 201 });
+    });
+
+    const { POST } = await import('@/app/api/super-admin/sessions/route');
+    const res = await POST(postReq());
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.code).toBe('OPERATOR_NOT_FOUND');
+    expect(revokeSelect).not.toHaveBeenCalled();
+    expect(signOut).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@alfanumrik/lib/logger';
 import { secureEqual } from '@alfanumrik/lib/secure-compare';
+import { getUserPermissions, type UserPermissions } from '@alfanumrik/lib/rbac';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -362,6 +363,230 @@ export async function authorizeAdmin(
   } catch (err) {
     logger.error('admin_auth_exception', { error: err instanceof Error ? err : new Error(String(err)) });
     return { authorized: false, response: NextResponse.json({ error: 'Authorization failed.', code: 'ADMIN_AUTH_EXCEPTION' }, { status: 500 }) };
+  }
+}
+
+// ─── RBAC-backed operator auth (authorizeOperator) ─────────────
+//
+// Phase 1 of the CEO-authorized super-admin Mission Control overhaul
+// (2026-08-16). Architectural mandate: RBAC becomes the single authorization
+// SOURCE OF TRUTH. `admin_users.admin_level` is no longer read directly for
+// authorization here — it feeds RBAC via the `sync_admin_level_to_rbac_role()`
+// Postgres trigger (migration 20260816000008), and this function checks only
+// `user_roles` / `roles` (via getUserPermissions()).
+//
+// Call-site shape matches authorizeAdmin() exactly —
+// `authorizeOperator(request, requiredLevel)` — so migrating a route off
+// authorizeAdmin() is a mechanical one-line change (import + function
+// rename), enabling a mechanical follow-up pass across the remaining ~100
+// /api/super-admin/* routes. authorizeAdmin() itself is UNTOUCHED in this
+// pass — every route not yet migrated keeps enforcing purely off
+// admin_users.admin_level exactly as before (fail-closed: this pass can only
+// ever ADD an alternate, equally-strict gate to specific routes, never
+// weaken any route's existing floor).
+
+/**
+ * Fixed AdminLevel -> RBAC role-name ladder (mirrors ADMIN_LEVELS above).
+ * Deliberately NOT the DB `roles.hierarchy_level` column — that column is
+ * shared by all 11 RBAC roles, including non-operator roles whose values
+ * interleave with the operator-tier ladder by coincidence (e.g. reviewer=58,
+ * institution_admin=70 both fall inside the support(55)..super_admin(100)
+ * band). Comparing raw hierarchy_level would let a `reviewer` or
+ * `institution_admin` role — never meant to reach an operator floor at all —
+ * pass an authorizeOperator() check it was never granted. This map scopes
+ * the rank comparison to EXACTLY the 6 reserved tier role names.
+ */
+const OPERATOR_TIER_ROLE_NAMES: Record<AdminLevel, string> = {
+  support: 'support',
+  analyst: 'analyst',
+  content_manager: 'content_manager',
+  finance: 'finance',
+  admin: 'admin',
+  super_admin: 'super_admin',
+};
+
+/**
+ * From a caller's active RBAC role-name set, resolve the highest-ranking
+ * operator tier they hold (or null if they hold none of the 6 reserved tier
+ * roles). Highest first so a super_admin who also happens to hold e.g.
+ * 'teacher' resolves to 'super_admin', never falls through to a lower tier.
+ */
+function resolveOperatorTier(roleNames: Set<string>): AdminLevel | null {
+  for (let i = ADMIN_LEVELS.length - 1; i >= 0; i--) {
+    const level = ADMIN_LEVELS[i];
+    if (roleNames.has(OPERATOR_TIER_ROLE_NAMES[level])) return level;
+  }
+  return null;
+}
+
+/**
+ * Resolve the caller's Supabase auth identity from the SAME two candidate
+ * sources authorizeAdmin() accepts — Bearer header, then the httpOnly sb-*
+ * session cookie — verified against GoTrue in the same priority order.
+ *
+ * Deliberately DUPLICATED rather than factored out of authorizeAdmin():
+ * Phase 1 constraint is that authorizeAdmin() must not be modified in this
+ * pass (the ~100 not-yet-migrated routes must keep working byte-for-byte,
+ * zero risk). Denial codes are OPERATOR_-prefixed so operator-path denials
+ * are distinguishable in logs/monitoring from authorizeAdmin's ADMIN_-
+ * prefixed codes, even though the underlying failure modes are identical.
+ */
+async function resolveOperatorIdentity(
+  request: NextRequest,
+  url: string,
+  key: string,
+): Promise<{ userId: string; email: string } | AdminAuthFailure> {
+  const candidates: string[] = [];
+  const authHeader = request.headers.get('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    candidates.push(authHeader.slice(7));
+  }
+  const cookieToken = extractCookieAccessToken(request.headers.get('Cookie'));
+  if (cookieToken && !candidates.includes(cookieToken)) {
+    candidates.push(cookieToken);
+  }
+
+  if (candidates.length === 0) {
+    return { authorized: false, response: NextResponse.json({ error: 'Please log in.', code: 'OPERATOR_NO_TOKEN' }, { status: 401 }) };
+  }
+
+  let userData: { id?: string; email?: string } | null = null;
+  let denial: AdminAuthFailure | null = null;
+  for (const candidate of candidates) {
+    const userRes = await fetch(`${url}/auth/v1/user`, {
+      headers: { 'apikey': key, 'Authorization': `Bearer ${candidate}` },
+    });
+
+    if (!userRes.ok) {
+      denial = { authorized: false, response: NextResponse.json({ error: 'Session expired. Please log in again.', code: 'OPERATOR_SESSION_EXPIRED' }, { status: 401 }) };
+      continue;
+    }
+
+    const parsed = await userRes.json();
+    if (!parsed?.id) {
+      denial = { authorized: false, response: NextResponse.json({ error: 'Invalid session.', code: 'OPERATOR_INVALID_SESSION' }, { status: 401 }) };
+      continue;
+    }
+
+    userData = parsed;
+    break;
+  }
+
+  if (!userData) return denial as AdminAuthFailure;
+  return { userId: userData.id as string, email: userData.email || '' };
+}
+
+/**
+ * RBAC-backed operator authorization — the eventual replacement for
+ * authorizeAdmin(). See the section header above for the full architectural
+ * rationale. Returns an AdminAuthResult so call sites (including
+ * logAdminAudit()) work unchanged when a route migrates.
+ */
+export async function authorizeOperator(
+  request: NextRequest,
+  requiredLevel: AdminLevel,
+): Promise<AdminAuthResult> {
+  const { url, key } = getSupabaseConfig();
+
+  if (!url) {
+    logger.error('operator_auth_config_missing', { detail: 'SUPABASE_URL not configured' });
+    return { authorized: false, response: NextResponse.json({ error: 'Server configuration error' }, { status: 500 }) };
+  }
+  if (!key) {
+    logger.error('operator_auth_config_missing', { detail: 'SERVICE_ROLE_KEY not configured' });
+    return { authorized: false, response: NextResponse.json({ error: 'Server configuration error' }, { status: 500 }) };
+  }
+
+  try {
+    const identity = await resolveOperatorIdentity(request, url, key);
+    if ('authorized' in identity) return identity; // denial
+
+    const { userId, email: gotrueEmail } = identity;
+
+    // RBAC lookup — the ACTUAL authorization decision. getUserPermissions()
+    // (packages/lib/src/rbac.ts) already filters to active, non-expired
+    // user_roles rows via the get_user_permissions RPC.
+    let perms: UserPermissions;
+    try {
+      perms = await getUserPermissions(userId);
+    } catch (permErr) {
+      logger.error('operator_auth_rbac_lookup_failed', {
+        error: permErr instanceof Error ? permErr : new Error(String(permErr)),
+      });
+      return { authorized: false, response: NextResponse.json({ error: 'Authorization check failed.', code: 'OPERATOR_LOOKUP_FAILED' }, { status: 500 }) };
+    }
+
+    const roleNames = new Set(perms.roles.map((r) => r.name as string));
+    const operatorTier = resolveOperatorTier(roleNames);
+
+    if (!operatorTier) {
+      return {
+        authorized: false,
+        response: NextResponse.json({ error: 'You are not an authorized operator.', code: 'OPERATOR_NOT_FOUND' }, { status: 403 }),
+      };
+    }
+
+    // Same rank comparison authorizeAdmin() performs (hasMinimumLevel /
+    // LEVEL_RANK) — reused verbatim so a route's effective floor is
+    // unchanged by migrating from authorizeAdmin() to authorizeOperator().
+    if (!hasMinimumLevel(operatorTier, requiredLevel)) {
+      logger.warn('operator_auth_level_denied', {
+        userId,
+        haveLevel: operatorTier,
+        needLevel: requiredLevel,
+        route: new URL(request.url).pathname,
+      });
+      return {
+        authorized: false,
+        response: NextResponse.json(
+          {
+            error: `This action requires operator level "${requiredLevel}" or higher.`,
+            code: 'OPERATOR_INSUFFICIENT_LEVEL',
+            required_level: requiredLevel,
+          },
+          { status: 403 },
+        ),
+      };
+    }
+
+    // Best-effort admin_users enrichment for adminId/name — kept for
+    // backward-compat with logAdminAudit()'s AdminAuth shape and existing
+    // /super-admin/logs reads. NON-authoritative: absence of a matching
+    // admin_users row never denies. A purely RBAC-granted operator (tier
+    // role assigned directly in user_roles with no admin_users row at all)
+    // is a supported, intended case under the "RBAC is the sole authority"
+    // mandate — it just falls back to userId/GoTrue email for display.
+    let adminId = userId;
+    let name = '';
+    let email = gotrueEmail;
+    try {
+      const adminQuery = `${url}/rest/v1/admin_users?select=id,name,email&auth_user_id=eq.${userId}&is_active=eq.true&limit=1`;
+      const adminRes = await fetch(adminQuery, {
+        headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      });
+      if (adminRes.ok) {
+        const rows = await adminRes.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          adminId = rows[0].id || userId;
+          name = rows[0].name || '';
+          email = rows[0].email || email;
+        }
+      }
+    } catch {
+      // Best-effort only — enrichment failure never affects authorization.
+    }
+
+    return {
+      authorized: true,
+      userId,
+      adminId,
+      email,
+      name,
+      adminLevel: operatorTier,
+    };
+  } catch (err) {
+    logger.error('operator_auth_exception', { error: err instanceof Error ? err : new Error(String(err)) });
+    return { authorized: false, response: NextResponse.json({ error: 'Authorization failed.', code: 'OPERATOR_AUTH_EXCEPTION' }, { status: 500 }) };
   }
 }
 

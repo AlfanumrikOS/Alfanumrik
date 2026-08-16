@@ -1070,6 +1070,20 @@ export const PERMISSIONS = {
   // RBAC addition approved 2026-08-05 under A1.
   SAFEGUARDING_REVIEW: 'safeguarding.review',
 
+  // ── Support (ticket operator console) ─────────────────────
+  // support.view_tickets / support.manage_tickets — already DB-granted to
+  // the `support` role only (migration 20260612123200_rbac_matrix_conformance.sql
+  // lines ~294-299; admin/super_admin hold it via wildcard). These codes were
+  // live in production, enforced via authorizeRequest() in
+  // apps/host/src/app/api/internal/admin/support/route.ts, but were missing
+  // from this TS registry — pure TS/DB drift reconciliation, NO grant
+  // changed. Closed as part of the 2026-08-16 Mission Control Phase 1
+  // privilege-model reconciliation (see migration
+  // 20260816000008_analyst_role_and_admin_tier_rbac_sync.sql header for the
+  // list of remaining unreconciled DB-only codes left for a follow-up pass).
+  SUPPORT_VIEW_TICKETS: 'support.view_tickets',
+  SUPPORT_MANAGE_TICKETS: 'support.manage_tickets',
+
   // ── Student memory self-access (DPDP transparency, T2 screen) ──
   // Granted to: student. Self-scope codes like account.delete above — a
   // regulatory/transparency floor, not an authorization expansion; route-layer

@@ -8,11 +8,16 @@
  * school_admin demo login investigation. Promote to a tested route once it
  * stops being an emergency hotline.
  *
- * Auth: session-based `super_admin` auth (authorizeAdmin) works in ALL
- * environments, unchanged. A SECOND path — the `x-debug-secret` header
- * matching SUPER_ADMIN_SECRET — exists ONLY outside production, so ops can
- * hit a dev/preview/staging deploy from a curl session without first
- * solving a chicken-and-egg admin-login problem.
+ * Auth: session-based `super_admin` auth works in ALL environments,
+ * unchanged. Migrated to authorizeOperator() (Phase 1 pilot, 2026-08-16
+ * Mission Control overhaul) — RBAC-backed, same 'super_admin' floor, same
+ * session-resolution mechanics as the prior authorizeAdmin() call; only the
+ * authorization SOURCE (RBAC user_roles/roles instead of
+ * admin_users.admin_level directly) changed. A SECOND path — the
+ * `x-debug-secret` header matching SUPER_ADMIN_SECRET — exists ONLY outside
+ * production, so ops can hit a dev/preview/staging deploy from a curl
+ * session without first solving a chicken-and-egg admin-login problem. This
+ * secret-bypass path is UNTOUCHED by the Phase 1 migration.
  *
  * CEO decision #5 (2026-08-16, Phase 0 super-admin overhaul): the secret
  * bypass is now DEAD in production. `isDebugSecretBypassAllowed()` gates it
@@ -35,7 +40,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { authorizeAdmin, logAdminAudit } from '@alfanumrik/lib/admin-auth';
+import { authorizeOperator, logAdminAudit } from '@alfanumrik/lib/admin-auth';
 import { secureEqual } from '@alfanumrik/lib/secure-compare';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { getRoleDestination } from '@alfanumrik/lib/identity';
@@ -83,7 +88,7 @@ export async function POST(request: NextRequest) {
   // Dual auth: admin session (all environments) OR shared secret header
   // (development/preview/local-dev ONLY — see header comment, CEO decision
   // #5). In production, providedSecret/expectedSecret are never even read.
-  const auth = await authorizeAdmin(request, 'super_admin');
+  const auth = await authorizeOperator(request, 'super_admin');
   const debugBypassAllowed = isDebugSecretBypassAllowed();
   const providedSecret = debugBypassAllowed
     ? request.headers.get('x-debug-secret')

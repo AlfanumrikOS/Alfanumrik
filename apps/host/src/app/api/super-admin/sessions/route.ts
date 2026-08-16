@@ -13,11 +13,17 @@
  *        finance < admin < super_admin) — any active admin_users row could
  *        kick any user off every device.
  *
- * Requires admin authentication via authorizeAdmin().
+ * Requires operator authentication via authorizeOperator() — Phase 1 pilot
+ * migration off authorizeAdmin() (2026-08-16, Mission Control overhaul).
+ * authorizeOperator() enforces the SAME 6-tier floor (support < analyst <
+ * content_manager < finance < admin < super_admin), but resolved from RBAC
+ * (user_roles/roles, kept in sync with admin_users.admin_level by the
+ * sync_admin_level_to_rbac_role() trigger — migration 20260816000008)
+ * instead of reading admin_users.admin_level directly.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit } from '@alfanumrik/lib/admin-auth';
+import { authorizeOperator, logAdminAudit } from '@alfanumrik/lib/admin-auth';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 
 /**
@@ -31,7 +37,7 @@ import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
  * is_active) — no email/phone/name, no account or financial content.
  */
 export async function GET(request: NextRequest) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeOperator(request, 'support');
   if (!auth.authorized) return auth.response;
 
   const userId = request.nextUrl.searchParams.get('user_id');
@@ -72,7 +78,7 @@ export async function GET(request: NextRequest) {
  * (2026-08-16 floor raise; was 'support').
  */
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request, 'admin');
+  const auth = await authorizeOperator(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   let targetUserId: string;
