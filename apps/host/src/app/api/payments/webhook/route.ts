@@ -71,14 +71,18 @@ async function markEvent(
  */
 type WebhookOutcome = 'ack' | 'dedupe' | 'activated' | 'downgraded' | 'failed' | 'unresolved';
 
-async function emitWebhookTiming(args: {
+type WebhookTimingArgs = {
   eventType: string;
   outcome: WebhookOutcome;
   latencyMs: number;
   resolvedVia?: string;
   studentId?: string;
   rzSubId?: string;
-}): Promise<void> {
+  issuer_org_id?: string;
+  brand_id?: string;
+};
+
+async function emitWebhookTiming(args: WebhookTimingArgs): Promise<void> {
   try {
     await logOpsEvent({
       category: 'payment',
@@ -92,6 +96,8 @@ async function emitWebhookTiming(args: {
         resolved_via: args.resolvedVia ?? null,
         student_id: args.studentId ?? null,
         rz_sub_id: args.rzSubId ?? null,
+        issuer_org_id: args.issuer_org_id ?? null,
+        brand_id: args.brand_id ?? null,
       },
     });
   } catch (err) {

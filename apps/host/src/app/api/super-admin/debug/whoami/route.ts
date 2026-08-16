@@ -8,20 +8,56 @@
  * school_admin demo login investigation. Promote to a tested route once it
  * stops being an emergency hotline.
  *
- * Auth: EITHER super_admin admin auth OR the x-debug-secret header matching
- * SUPER_ADMIN_SECRET. The secret path exists so ops can hit prod from a curl
- * session without first solving a chicken-and-egg admin-login problem.
+ * Auth: session-based `super_admin` auth works in ALL environments,
+ * unchanged. Migrated to authorizeOperator() (Phase 1 pilot, 2026-08-16
+ * Mission Control overhaul) — RBAC-backed, same 'super_admin' floor, same
+ * session-resolution mechanics as the prior authorizeAdmin() call; only the
+ * authorization SOURCE (RBAC user_roles/roles instead of
+ * admin_users.admin_level directly) changed. A SECOND path — the
+ * `x-debug-secret` header matching SUPER_ADMIN_SECRET — exists ONLY outside
+ * production, so ops can hit a dev/preview/staging deploy from a curl
+ * session without first solving a chicken-and-egg admin-login problem. This
+ * secret-bypass path is UNTOUCHED by the Phase 1 migration.
+ *
+ * CEO decision #5 (2026-08-16, Phase 0 super-admin overhaul): the secret
+ * bypass is now DEAD in production. `isDebugSecretBypassAllowed()` gates it
+ * on environment — allowed when `VERCEL_ENV` is `'development'` or
+ * `'preview'`, or (local dev, no VERCEL_ENV set) when `NODE_ENV !==
+ * 'production'`. On Vercel production (`VERCEL_ENV === 'production'`) the
+ * `x-debug-secret` header is never even read: a request without a valid
+ * admin session falls through to the exact same 401/403 `authorizeAdmin`
+ * would return for a bad session — fail closed, with no observable
+ * difference that a bypass path exists at all.
+ *
+ * This is a stopgap. Access Studio's access-explanation tooling is planned
+ * to eventually replace this route's need for a raw-curl escape hatch;
+ * until then, the secret path remains available in non-production only.
  *
  * Privacy: response body is NEVER logged anywhere. Only the fact of the
  * lookup is audited (and only when admin-session auth was used — secret-path
- * usage is intentionally untracked for emergency ops access).
+ * usage is intentionally untracked for emergency ops access, and the
+ * secret path itself is unreachable in production).
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { authorizeAdmin, logAdminAudit } from '@alfanumrik/lib/admin-auth';
+import { authorizeOperator, logAdminAudit } from '@alfanumrik/lib/admin-auth';
 import { secureEqual } from '@alfanumrik/lib/secure-compare';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { getRoleDestination } from '@alfanumrik/lib/identity';
+
+/**
+ * True in Vercel development/preview deploys, and in local dev where
+ * VERCEL_ENV is unset and NODE_ENV isn't 'production'. False on Vercel
+ * production (VERCEL_ENV === 'production') and false for a local
+ * production-mode run (NODE_ENV === 'production' with no VERCEL_ENV).
+ * Gates the `x-debug-secret` bypass — CEO decision #5, 2026-08-16.
+ */
+function isDebugSecretBypassAllowed(): boolean {
+  const vercelEnv = process.env.VERCEL_ENV;
+  if (vercelEnv === 'development' || vercelEnv === 'preview') return true;
+  if (!vercelEnv && process.env.NODE_ENV !== 'production') return true;
+  return false;
+}
 
 type RoleName =
   | 'student'
@@ -49,11 +85,19 @@ type ProfileTable = (typeof PROFILE_TABLES)[number];
 // ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
-  // Dual auth: either admin session OR shared secret header.
-  const auth = await authorizeAdmin(request, 'super_admin');
-  const providedSecret = request.headers.get('x-debug-secret');
-  const expectedSecret = process.env.SUPER_ADMIN_SECRET;
+  // Dual auth: admin session (all environments) OR shared secret header
+  // (development/preview/local-dev ONLY — see header comment, CEO decision
+  // #5). In production, providedSecret/expectedSecret are never even read.
+  const auth = await authorizeOperator(request, 'super_admin');
+  const debugBypassAllowed = isDebugSecretBypassAllowed();
+  const providedSecret = debugBypassAllowed
+    ? request.headers.get('x-debug-secret')
+    : null;
+  const expectedSecret = debugBypassAllowed
+    ? process.env.SUPER_ADMIN_SECRET
+    : null;
   const secretOk =
+    debugBypassAllowed &&
     !!providedSecret &&
     !!expectedSecret &&
     secureEqual(providedSecret, expectedSecret);

@@ -223,6 +223,7 @@ export async function PATCH(request: NextRequest) {
         admin_note_length: typeof admin_note === 'string' ? admin_note.length : 0,
       },
       ip,
+      actorUserId: auth.userId,
     });
     return NextResponse.json({ success: true });
   } catch (err) {
@@ -325,6 +326,7 @@ export async function POST(request: NextRequest) {
       entity_id: ticketId,
       details: { reply_id: reply.id, is_internal: isInternal, body_length: rawBody.length },
       ip,
+      actorUserId: auth.userId,
     });
 
     return NextResponse.json({ success: true, reply, ticket_status: nextStatus });

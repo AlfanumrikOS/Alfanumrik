@@ -53,25 +53,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     // Named action shortcuts
     if (action === 'suspend') {
       await supabase.from('students').update({ is_active: false, account_status: 'suspended' }).eq('id', id);
-      await logAdminAction({ action: 'suspend_student', entity_type: 'student', entity_id: id, ip });
+      await logAdminAction({ action: 'suspend_student', entity_type: 'student', entity_id: id, ip, actorUserId: auth.userId });
       return NextResponse.json({ success: true, action: 'suspended' });
     }
 
     if (action === 'restore') {
       await supabase.from('students').update({ is_active: true, account_status: 'active' }).eq('id', id);
-      await logAdminAction({ action: 'restore_student', entity_type: 'student', entity_id: id, ip });
+      await logAdminAction({ action: 'restore_student', entity_type: 'student', entity_id: id, ip, actorUserId: auth.userId });
       return NextResponse.json({ success: true, action: 'restored' });
     }
 
     if (action === 'reset_streak') {
       await supabase.from('students').update({ streak_days: 0 }).eq('id', id);
-      await logAdminAction({ action: 'reset_streak', entity_type: 'student', entity_id: id, ip });
+      await logAdminAction({ action: 'reset_streak', entity_type: 'student', entity_id: id, ip, actorUserId: auth.userId });
       return NextResponse.json({ success: true, action: 'streak_reset' });
     }
 
     if (action === 'reset_xp') {
       await supabase.from('students').update({ xp_total: 0 }).eq('id', id);
-      await logAdminAction({ action: 'reset_xp', entity_type: 'student', entity_id: id, ip });
+      await logAdminAction({ action: 'reset_xp', entity_type: 'student', entity_id: id, ip, actorUserId: auth.userId });
       return NextResponse.json({ success: true, action: 'xp_reset' });
     }
 
@@ -104,7 +104,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           { status: 500 },
         );
       }
-      await logAdminAction({ action: 'upgrade_plan', entity_type: 'student', entity_id: id, details: { plan }, ip });
+      await logAdminAction({ action: 'upgrade_plan', entity_type: 'student', entity_id: id, details: { plan }, ip, actorUserId: auth.userId });
       return NextResponse.json({ success: true, action: 'plan_upgraded', plan });
     }
 
@@ -121,7 +121,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         status: 'approved',
       }, { onConflict: 'guardian_id,student_id' });
 
-      await logAdminAction({ action: 'force_link_guardian', entity_type: 'student', entity_id: id, details: { guardian_email }, ip });
+      await logAdminAction({ action: 'force_link_guardian', entity_type: 'student', entity_id: id, details: { guardian_email }, ip, actorUserId: auth.userId });
       return NextResponse.json({ success: true, action: 'guardian_linked' });
     }
 
@@ -158,7 +158,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { error } = await supabase.from('students').update(safe).eq('id', id);
     if (error) throw error;
 
-    await logAdminAction({ action: 'update_student', entity_type: 'student', entity_id: id, details: safe, ip });
+    await logAdminAction({ action: 'update_student', entity_type: 'student', entity_id: id, details: safe, ip, actorUserId: auth.userId });
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });

@@ -19,11 +19,19 @@
  * SCOPE (enumerated dynamically, never hard-coded)
  * ------------------------------------------------
  *   - src/app/api/super-admin/ (recursive route.ts)   Gate A: authorizeAdmin(level)
+ *                                                       or Gate A': authorizeOperator(level)
  *   - src/app/api/v1/admin/ (recursive route.ts)       Gate B: authorizeRequest('perm')
  *   - src/app/api/internal/admin/ (recursive route.ts) Gate C: requireAdminSecret(req)
  *
  * CANONICAL GATES (from src/lib/admin-auth.ts + 01-map.md)
  *   Gate A  `authorizeAdmin(request, level)`     — session + admin-level ladder
+ *   Gate A' `authorizeOperator(request, level)`  — RBAC-backed replacement for Gate A
+ *           (Phase 1 Mission Control overhaul, 2026-08-16, migration
+ *           20260816000008): same 6-tier floor semantics, resolved from
+ *           user_roles/roles instead of admin_users.admin_level directly.
+ *           Pilot-migrated routes: sessions/route.ts, debug/whoami/route.ts,
+ *           users/route.ts. Recognized as an equally-strict Gate A variant —
+ *           NOT a weaker gate — so it counts toward presence/ordering below.
  *   Gate B  `authorizeRequest(request, 'code')`  — RBAC permission check
  *   Gate C  `requireAdminSecret(request)`        — constant-time x-admin-secret
  *
@@ -95,8 +103,8 @@ const SESSION_BOUNDARY_ALLOWLIST = new Set<string>([
 // is a documented, reviewed exception, NOT a weakening of the assertion.
 const UNVERIFIED_ALLOWLIST = new Set<string>([]);
 
-const GATE_TOKEN = /authorizeAdmin\s*\(|authorizeRequest\s*\(|requireAdminSecret\s*\(/;
-const GATE_TOKEN_G = /authorizeAdmin\s*\(|authorizeRequest\s*\(|requireAdminSecret\s*\(/g;
+const GATE_TOKEN = /authorizeAdmin\s*\(|authorizeOperator\s*\(|authorizeRequest\s*\(|requireAdminSecret\s*\(/;
+const GATE_TOKEN_G = /authorizeAdmin\s*\(|authorizeOperator\s*\(|authorizeRequest\s*\(|requireAdminSecret\s*\(/g;
 const DB_MARKER_G =
   /\.from\s*\(|\.rpc\s*\(|supabaseAdminUrl\s*\(|getSupabaseAdmin\s*\(|createClient\s*\(|createServerClient\s*\(/g;
 const HANDLER_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;

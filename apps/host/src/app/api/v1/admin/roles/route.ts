@@ -1,15 +1,30 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest, logAudit, invalidateForSecurityEvent } from '@alfanumrik/lib/rbac';
+import { authorizeOperator } from '@alfanumrik/lib/admin-auth';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { isValidUUID } from '@alfanumrik/lib/sanitize';
 
 /**
  * GET /api/v1/admin/roles — List all roles with their permissions
- * Permission: role.manage
+ * Permission: role.manage (super_admin only — see PATCH's comment below for
+ * the full rationale)
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
+    // SECURITY (P9, 2026-08-16 — ops Gate 5 finding on the Phase 1 Mission
+    // Control overhaul): defense-in-depth on top of the RBAC permission
+    // check below. Role/permission management is reserved for super_admin
+    // exclusively — see PATCH's comment for the full incident writeup and
+    // migration 20260816000010_admin_role_scope_out_role_manage.sql, which
+    // makes 'role.manage' itself super_admin-only in the RBAC matrix. This
+    // second, independent check (exact RBAC role-name match, not permission-
+    // code membership) guards against a future regression re-widening the
+    // 'role.manage' grant without anyone noticing this route became
+    // over-reachable again.
+    const operatorAuth = await authorizeOperator(request, 'super_admin');
+    if (!operatorAuth.authorized) return operatorAuth.response;
+
     const auth = await authorizeRequest(request, 'role.manage');
     if (!auth.authorized) return auth.errorResponse!;
 
@@ -42,12 +57,16 @@ export async function GET(request: Request) {
 
 /**
  * POST /api/v1/admin/roles — Create a new role
- * Permission: role.manage
+ * Permission: role.manage (super_admin only — see PATCH's comment below)
  *
  * Body: { name: string, description?: string, permissions?: string[] }
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    // SECURITY (P9): see the identical comment on GET above.
+    const operatorAuth = await authorizeOperator(request, 'super_admin');
+    if (!operatorAuth.authorized) return operatorAuth.response;
+
     const auth = await authorizeRequest(request, 'role.manage');
     if (!auth.authorized) return auth.errorResponse!;
 
@@ -142,13 +161,44 @@ export async function POST(request: Request) {
 
 /**
  * PATCH /api/v1/admin/roles — Update a role's permissions
- * Permission: role.manage
+ * Permission: role.manage (super_admin only)
  *
  * Body: { role_id: string, permissions: string[] }
  * Replaces all permissions for the given role.
+ *
+ * SECURITY (P9, 2026-08-16 — ops Gate 5 finding on the Phase 1 Mission
+ * Control overhaul): this handler can replace the ENTIRE permission set of
+ * ANY role, including super_admin's own — a full privilege-escalation
+ * primitive. Two independent gates are required before any DB work:
+ *   1. authorizeOperator(request, 'super_admin') — exact RBAC role-name
+ *      match, resolved the same way /api/super-admin/roles's POST/DELETE
+ *      (the sibling role-management route) already requires super_admin for
+ *      symmetric operations (grant/revoke a role).
+ *   2. authorizeRequest(request, 'role.manage') — the RBAC permission
+ *      check. As of migration 20260816000010_admin_role_scope_out_role_manage.sql,
+ *      'role.manage' is granted ONLY to super_admin (the 'admin' role's
+ *      former wildcard grant of it was removed), so in steady state this is
+ *      redundant with (1) — that redundancy IS the point: a future
+ *      regression that re-widens the 'role.manage' grant (e.g. a careless
+ *      wildcard re-add) is still caught by (1), and a future regression
+ *      that weakens (1) is still caught by (2).
+ * Root cause this closes: 20260816000008's admin_users->RBAC tier sync
+ * trigger (all 6 tiers, CEO-mandated) started granting the RBAC `admin`
+ * role to every admin_level='admin' admin_users row for the first time.
+ * Because `admin` held role.manage via an unconditional wildcard
+ * (20260612123200), and this route previously had no additional
+ * super_admin-specific check, an admin-tier operator gained a self-service
+ * path to rewrite any role's permissions (including granting themselves
+ * super_admin-equivalent reach) via a raw HTTP call — this route has zero
+ * UI callers, so it was reachable but unreviewed. Not covered by
+ * src/proxy.ts's hardcoded super_admin-session gate (that only covers
+ * /internal/admin/* and /api/internal/admin/*, not /api/v1/admin/*).
  */
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   try {
+    const operatorAuth = await authorizeOperator(request, 'super_admin');
+    if (!operatorAuth.authorized) return operatorAuth.response;
+
     const auth = await authorizeRequest(request, 'role.manage');
     if (!auth.authorized) return auth.errorResponse!;
 
