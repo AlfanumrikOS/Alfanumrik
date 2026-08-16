@@ -102,7 +102,7 @@ These are commonly violated and cause bugs:
    ```bash
    grep -nE '^const CAP_' scripts/check-bundle-size.mjs
    ```
-   As of 2026-07-28: `CAP_SHARED_KB = 289`, `CAP_PAGE_KB = 260`, `CAP_MIDDLEWARE_KB = 120`. `CAP_SHARED_KB` is the authoritative layout-inclusive first-load total and has been ratcheted upward many times for framework/gzip baseline drift (the script header carries the full change log and per-raise rationale). P10's aspirational 160 kB baseline is a *goal*, not the gate — do not reject a change for exceeding 160 kB while `CAP_SHARED_KB` is higher.
+   As of 2026-07-28: `CAP_SHARED_KB = 297`, `CAP_PAGE_KB = 260`, `CAP_MIDDLEWARE_KB = 120`. `CAP_SHARED_KB` is the authoritative layout-inclusive first-load total and has been ratcheted upward many times for framework/gzip baseline drift (the script header carries the full change log and per-raise rationale). P10's aspirational 160 kB baseline is a *goal*, not the gate — do not reject a change for exceeding 160 kB while `CAP_SHARED_KB` is higher.
 
 8. **Payment integrity**: Razorpay webhook signature must be verified before processing. Subscription status changes written atomically with payment records.
 
