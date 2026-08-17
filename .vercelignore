@@ -1,0 +1,12 @@
+node_modules
+.pnp*
+.pnpm-store
+*.tsbuildinfo
+.next
+coverage
+*.log
+.env*
+!.env.local.example
+.DS_Store
+Thumbs.db
+*.local

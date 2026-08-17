@@ -37,12 +37,14 @@ import type {
   FoxyMermaidBlock,
   FoxyVerticalMathBlock,
   FoxyMapBlock,
+  FoxyFormulaSheetBlock,
 } from '@alfanumrik/lib/foxy/schema';
 import {
   isFoxyMcqBlock,
   isFoxyMermaidBlock,
   isFoxyVerticalMathBlock,
   isFoxyMapBlock,
+  isFoxyFormulaSheetBlock,
 } from '@alfanumrik/lib/foxy/schema';
 
 // Lazy-loaded block renderers (P10 bundle budget)
@@ -164,6 +166,7 @@ interface Chrome {
   definition: string;
   example: string;
   practice: string;
+  formula_sheet: string;
   formulaError: string;
   reportIssue: string;
   diagram: string;
@@ -194,7 +197,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     definition: 'Definition',
     example: 'Example',
     practice: 'Practice',
-    formulaError: 'Issue with formula',
+    formula_sheet: 'Formula Sheet',
     reportIssue: 'Report issue',
     diagram: 'Diagram',
     diagramLoading: 'Drawing diagram…',
@@ -210,6 +213,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     mcqAlready: 'You already answered this one.',
     mcqRetry: 'Try again',
     mcqRetryHint: "Couldn't submit just now.",
+    formulaError: 'LaTeX couldn\'t be rendered',
   },
   hi: {
     answer: 'उत्तर',
@@ -221,7 +225,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     definition: 'परिभाषा',
     example: 'उदाहरण',
     practice: 'अभ्यास',
-    formulaError: 'सूत्र में समस्या',
+    formula_sheet: 'सूत्र पुस्तिका',
     reportIssue: 'समस्या रिपोर्ट करें',
     diagram: 'चित्र',
     diagramLoading: 'डायग्राम बन रहा है…',
@@ -237,6 +241,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     mcqAlready: 'आप इसका उत्तर पहले ही दे चुके हैं।',
     mcqRetry: 'फिर कोशिश करें',
     mcqRetryHint: 'अभी उत्तर जमा नहीं हो पाया।',
+    formulaError: 'LaTeX रेंडर नहीं हो पाया',
   },
 };
 
@@ -418,6 +423,45 @@ function AnswerBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
       <p className="text-sm leading-relaxed">
         <InlineContent text={block.text} />
       </p>
+    </div>
+  );
+}
+
+function FormulaSheetBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
+  return (
+    <div className="my-3 px-4 py-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900">
+      <div className="font-bold text-sm mb-1">{chrome.formula_sheet}</div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b border-indigo-200">
+              <th className="text-left px-3 py-1 font-semibold text-indigo-700">Formula</th>
+              <th className="text-left px-3 py-1 font-semibold text-indigo-700">When to use</th>
+            </tr>
+          </thead>
+          <tbody>
+            {block.formulae && block.formulae.length > 0 ? (
+              block.formulae.map((f: { formula?: string; use?: string; label?: string }, idx: number) => (
+                <tr key={idx} className="border-b border-indigo-100">
+                  <td className="px-3 py-1.5 text-indigo-900 font-mono text-xs break-all">
+                    {f.label && <span className="font-semibold block">{f.label}</span>}
+                    <InlineContent text={f.formula ?? ''} />
+                  </td>
+                  <td className="px-3 py-1.5 text-indigo-800 text-xs">
+                    <InlineContent text={f.use ?? ''} />
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="px-3 py-1.5 text-indigo-800" colSpan={2}>
+                  <InlineContent text={block.text ?? ''} />
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1170,6 +1214,8 @@ function BlockRouter({
       return <MermaidBlock block={block} chrome={chrome} />;
     case 'code':
       return <CodeBlock block={block} />;
+    case 'formula_sheet':
+      return <FormulaSheetBlock block={block} chrome={chrome} />;
     case 'vertical_math':
       // One-math-pipeline rule (docs/math-rendering-spec.md): VerticalMathBlock
       // is a sanctioned SIBLING structured-block renderer (like mermaid) for
