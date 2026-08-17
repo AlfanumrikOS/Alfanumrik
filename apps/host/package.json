@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev --webpack -H ::",
-    "build": "node ../../scripts/auth-guard.js < /dev/null && next build --webpack",
+    "build": "node ../../scripts/auth-guard.js && next build --webpack",
     "vercel-build": "npm run build",
     "start": "next start",
     "lint": "eslint src/ --ext .ts,.tsx",
