@@ -2426,10 +2426,21 @@ export default function QuizPage() {
             onNextTask={(href) => router.push(href)}
           />
           {networkErrorBanner}
+          {results.xp_earned === 0 && !results.flagged && (
+            <div className="fixed bottom-4 left-4 right-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-center z-30 shadow-sm animate-slide-up max-w-md mx-auto"
+              style={{ margin: '0 auto' }}>
+              <p className="text-sm">
+                {isHi
+                  ? 'कोई XP नहीं मिला — शायद नेटवर्क की समस्या थी। तुम्हारा स्कोर सहेज लिया गया है। XP कमाने के लिए दोबारा प्रयास करो!'
+                  : 'No XP earned — there may have been a network issue. Your score is saved. Try again to earn XP!'}
+              </p>
+            </div>
+          )}
         </>
       );
     }
 
+    // Legacy QuizResults branch — also show networkErrorBanner + xp_earned=0 messaging
     return (
       <>
         <QuizResults
@@ -2494,18 +2505,26 @@ export default function QuizPage() {
             </p>
           </div>
         )}
+        {/* Provisional result note when network error occurred but results were
+            still returned (server may have committed atomically). Shows in BOTH
+            v2 and legacy branches. */}
         {networkError && (
-          <div className="fixed bottom-20 left-4 right-4 bg-amber-500 text-white rounded-xl p-4 text-center z-40 shadow-lg animate-slide-up">
-            <p className="text-sm font-medium mb-2">{networkError}</p>
-            <button
-              onClick={retrySubmit}
-              disabled={loading}
-              className="px-4 py-1.5 bg-white text-amber-700 rounded-lg text-sm font-medium disabled:opacity-50"
-            >
-              {loading
-                ? (isHi ? 'भेज रहे हैं...' : 'Submitting...')
-                : (isHi ? 'पुनः प्रयास करें' : 'Retry')}
-            </button>
+          <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-center z-30 shadow-sm animate-slide-up">
+            <p className="text-sm">
+              {isHi
+                ? 'संपर्क की समस्या के कारण XP सही नहीं दिख सकता। अगर तुम्हें शून्य XP दिख रहा है, तो दोबारा प्रयास करो।'
+                : 'XP may not display correctly due to a connection issue. If you see zero XP, please try again.'}
+            </p>
+          </div>
+        )}
+        {results.xp_earned === 0 && !results.flagged && (
+          <div className="fixed bottom-4 left-4 right-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-center z-30 shadow-sm animate-slide-up max-w-md mx-auto"
+            style={{ margin: '0 auto' }}>
+            <p className="text-sm">
+              {isHi
+                ? 'कोई XP नहीं मिला — शायद नेटवर्क की समस्या थी। तुम्हारा स्कोर सहेज लिया गया है। XP कमाने के लिए दोबारा प्रयास करो!'
+                : 'No XP earned — there may have been a network issue. Your score is saved. Try again to earn XP!'}
+            </p>
           </div>
         )}
       </>

@@ -113,7 +113,7 @@ export default function FoxyPanel({
       data-testid="foxy-panel"
       data-context={context}
     >
-      {/* Header — subject chip + optional close */}
+      {/* Header — subject chip + optional close + Stop button when loading */}
       <div
         className="flex items-center justify-between px-3 py-2 border-b"
         style={{ borderColor: 'var(--border)' }}
@@ -131,17 +131,31 @@ export default function FoxyPanel({
             {chapter ? <span className="opacity-70"> · {chapter}</span> : null}
           </span>
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            aria-label={isHi ? 'बंद करो' : 'Close'}
-            data-testid="foxy-panel-close"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-lg transition-all active:scale-95"
-            style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}
-          >
-            ×
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {chat.loading && (
+            <button
+              onClick={chat.stop}
+              aria-label={isHi ? 'ज़रूरी बात रुको' : 'Stop speaking'}
+              data-testid="foxy-panel-stop"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-lg transition-all active:scale-95 disabled:opacity-40"
+              style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}
+              title={isHi ? 'मदद रोकें' : 'Stop response'}
+            >
+              ⏹
+            </button>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              aria-label={isHi ? 'बंद करो' : 'Close'}
+              data-testid="foxy-panel-close"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-lg transition-all active:scale-95"
+              style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Message stream — slim: NO save-flashcard, NO report dialog. Those

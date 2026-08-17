@@ -151,34 +151,50 @@ export default defineConfig({
           // packages/lib + packages/ui canonical tests, collected DIRECTLY
           // (P2-3 Phase 3) — see the PACKAGE_SOURCE_TEST_GLOBS note above.
           ...PACKAGE_SOURCE_TEST_GLOBS,
-        ],
-    exclude: isIntegrationRun
-      ? [
-          'node_modules/**',
-          // pure knowledge-audit tests run in the normal lane only (see carve-out above)
-          PURE_SCRIPT_TEST_GLOB,
-        ]
-      : [
-          'node_modules/**',
-          ...NORMAL_LANE_INTEGRATION_EXCLUDES,
-          ...INTEGRATION_TEST_FILE_GLOBS,
-          // B1 RAG eval-harness (Task 8): belt-and-braces — explicitly drop ANY
-          // `*.integration.test.ts` from the normal lane. INTEGRATION_TEST_FILE_GLOBS
-          // already excludes the eval one by its exact glob, but this blanket
-          // pattern makes the "integration tests never run in the unit lane"
-          // contract self-documenting and future-proof against new
-          // `*.integration.test.ts` files landing elsewhere under src/.
-          'src/**/*.integration.{test,spec}.{ts,tsx}',
-          // TODO(reorder-baseline): vitest's rolldown transformer chokes
-          // on the `#!/usr/bin/env node` shebang in scripts/reorder-baseline.mjs
-          // when the test file imports it ("Invalid Character `!`"). The
-          // script has its own --self-test harness that the CI workflow
-          // runs independently, so coverage is preserved. Excluded here to
-          // stop the parse error from failing the unit-test job. Real fix:
-          // either move the script's logic into a non-shebang module and
-          // import that from the script + test, or update vitest's
-          // transformer config to strip shebangs.
-          'src/__tests__/reorder-baseline.test.ts',
+          // Newly-added pure migration tests that live under the integration-only
+          // directory prefix src/__tests__/migrations/** above but have no live
+          // DB dependency and belong in the normal PR lane. Guard: file-level
+          // globs only — never directory prefixes (those would drag in
+          // genuinely integration-only neighbors).
+          'src/__tests__/migrations/admin-role-scope-out-role-manage-migration.test.ts',
+          'src/__tests__/migrations/analyst-role-and-admin-tier-sync-migration.test.ts',
+         ],
+     exclude: isIntegrationRun
+       ? [
+         'node_modules/**',
+         // pure knowledge-audit tests run in the normal lane only (see carve-out above)
+         PURE_SCRIPT_TEST_GLOB,
+       ]
+       : [
+         'node_modules/**',
+         ...NORMAL_LANE_INTEGRATION_EXCLUDES,
+         ...INTEGRATION_TEST_FILE_GLOBS,
+         // B1 RAG eval-harness (Task 8): belt-and-braces — explicitly drop ANY
+         // `*.integration.test.ts` from the normal lane. INTEGRATION_TEST_FILE_GLOBS
+         // already excludes the eval one by its exact glob, but this blanket
+         // pattern makes the "integration tests never run in the unit lane"
+         // contract self-documenting and future-proof against new
+         // `*.integration.test.ts` files landing elsewhere under src/.
+         'src/**/*.integration.{test,spec}.{ts,tsx}',
+         // TODO(reorder-baseline): vitest's rolldown transformer chokes
+         // on the `#!/usr/bin/env node` shebang in scripts/reorder-baseline.mjs
+         // when the test file imports it ("Invalid Character `!`"). The
+         // script has its own --self-test harness that the CI workflow
+         // runs independently, so coverage is preserved. Excluded here to
+         // stop the parse error from failing the unit-test job. Real fix:
+         // either move the script's logic into a non-shebang module and
+         // import that from the script + test, or update vitest's
+         // transformer config to strip shebangs.
+         'src/__tests__/reorder-baseline.test.ts',
+         // Pure migration tests that need NO live DB (they only read the
+         // migration SQL file and assert on its text). They live under the
+         // integration-only directory prefix src/__tests__/migrations/** but
+         // belong in the normal PR lane. Carve them out with negation so the
+         // blanket directory exclude above doesn't swallow them.
+         '!src/__tests__/migrations/admin-role-scope-out-role-manage-migration.test.ts',
+         '!src/__tests__/migrations/analyst-role-and-admin-tier-sync-migration.test.ts',
+         '!src/__tests__/admin-role-scope-out-role-manage-migration.test.ts',
+         '!src/__tests__/analyst-role-and-admin-tier-sync-migration.test.ts',
         ],
     globals: true,
     // ── Test timeout (raised 2026-05-05 for CI green) ──

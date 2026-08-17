@@ -96,6 +96,7 @@
     "remark-math": "^6.0.0",
     "swr": "^2.4.1",
     "tailwind-merge": "^2.5.2",
+    "webpack": "^5.90.0",
     "zod": "^4.3.6"
   },
   "browserslist": [

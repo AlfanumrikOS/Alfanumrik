@@ -48,5 +48,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2"
+  },
+  "overrides": {
+    "webpack": "5.90.3"
   }
 }
