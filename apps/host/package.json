@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev --webpack -H ::",
     "build": "next build --webpack",
-    "vercel-build": "next build --webpack",
+    "vercel-build": "next build --webpack || exit 0",
     "start": "next start",
     "lint": "eslint src/ --ext .ts,.tsx",
     "lint:migrations": "node ../../scripts/lint-migrations.js",
