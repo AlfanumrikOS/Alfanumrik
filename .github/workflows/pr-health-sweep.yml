@@ -69,29 +69,48 @@ jobs:
         run: |
           set -euo pipefail
 
-          # ── 1. Resolve the REQUIRED contexts from the live ruleset ────────
-          # Read them at runtime rather than hardcoding, so this guard cannot
-          # drift from the branch protection it is checking against.
-          REQUIRED_JSON="$(gh api "repos/$REPO/rules/branches/$BASE_BRANCH" \
-            --jq '[ .[] | select(.type == "required_status_checks")
-                    | .parameters.required_status_checks[].context ]' \
-            2>/dev/null || echo '[]')"
-          REQUIRED_COUNT="$(printf '%s' "$REQUIRED_JSON" | jq 'length')"
+          # ── 1. Resolve REQUIRED contexts PER PULL REQUEST BASE ────────────
+          # Read at runtime rather than hardcoded, so this guard cannot drift
+          # from the branch protection it checks.
+          #
+          # Keyed on each PR's OWN base, not the default branch. Stacked PRs
+          # target a feature branch, which usually carries no ruleset and never
+          # runs `CI — Alfanumrik` at all (`pull_request: branches: [main,
+          # master]`). Comparing those against main's four required contexts
+          # reports every stacked PR as stalled — a false positive that would
+          # teach people to ignore this sweep. Verified against PR #1504
+          # (base `feat/ui-motion-island`) on 2026-08-18.
+          RULES_CACHE="$(mktemp -d)"
+          required_for() {
+            base="$1"
+            f="$RULES_CACHE/$(printf '%s' "$base" | tr '/' '_')"
+            if [ ! -f "$f" ]; then
+              gh api "repos/$REPO/rules/branches/$base" \
+                --jq '[ .[] | select(.type == "required_status_checks")
+                        | .parameters.required_status_checks[].context ]' \
+                2>/dev/null > "$f" || true
+              [ -s "$f" ] || echo '[]' > "$f"
+            fi
+            cat "$f"
+          }
 
-          # NEVER silently pass. If the ruleset is unreadable, say so loudly in
-          # the summary and fall back to conflict detection only.
-          if [ "$REQUIRED_COUNT" -eq 0 ]; then
+          # NEVER silently pass on the branch that actually matters. If the
+          # DEFAULT branch ruleset is unreadable, say so loudly — a base with
+          # genuinely no required checks (a feature branch) is normal and is
+          # reported per-row instead.
+          DEFAULT_REQ_COUNT="$(required_for "$BASE_BRANCH" | jq 'length')"
+          if [ "$DEFAULT_REQ_COUNT" -eq 0 ]; then
             echo "::warning::Could not read required status checks from the \
-          $BASE_BRANCH ruleset. Falling back to conflict detection only; the \
-          missing-required-check test is NOT running this sweep."
-            REQ_MODE="conflict-only (ruleset unreadable)"
+          $BASE_BRANCH ruleset. PRs targeting $BASE_BRANCH are checked for \
+          conflicts only this sweep."
+            REQ_MODE="conflict-only for $BASE_BRANCH (ruleset unreadable)"
           else
-            REQ_MODE="$REQUIRED_COUNT required context(s) read from the $BASE_BRANCH ruleset"
+            REQ_MODE="$DEFAULT_REQ_COUNT required context(s) on $BASE_BRANCH; other bases read individually"
           fi
 
           # ── 2. Enumerate open, non-draft PRs ──────────────────────────────
           PRS="$(gh pr list --repo "$REPO" --state open --limit 200 \
-            --json number,title,isDraft,headRefOid,mergeable,updatedAt,url,author)"
+            --json number,title,isDraft,headRefOid,mergeable,updatedAt,url,baseRefName)"
 
           NOW_EPOCH="$(date -u +%s)"
           STALLED_FILE="$(mktemp)"
@@ -103,8 +122,8 @@ jobs:
             echo
             echo "Scanned $(printf '%s' "$PRS" | jq 'length') open PR(s). Required-check source: ${REQ_MODE}."
             echo
-            echo "| PR | Age (d) | Mergeable | Missing required checks | Verdict |"
-            echo "|---|---|---|---|---|"
+            echo "| PR | Base | Age (d) | Mergeable | Missing required checks | Verdict |"
+            echo "|---|---|---|---|---|---|"
           } > "$SUMMARY_FILE"
 
           for row in $(printf '%s' "$PRS" | jq -r '.[] | @base64'); do
@@ -117,6 +136,10 @@ jobs:
             MERGEABLE="$(_j '.mergeable')"
             UPDATED="$(_j '.updatedAt')"
             URL="$(_j '.url')"
+            BASE="$(_j '.baseRefName')"
+
+            REQUIRED_JSON="$(required_for "$BASE")"
+            REQUIRED_COUNT="$(printf '%s' "$REQUIRED_JSON" | jq 'length')"
 
             # GitHub computes mergeability lazily; UNKNOWN on the first read is
             # normal. Ask once more before believing it.
@@ -131,6 +154,7 @@ jobs:
             # Check runs AND legacy commit statuses — required contexts can be
             # either (e.g. Vercel reports a status, CI reports check runs).
             MISSING="-"
+            [ "$REQUIRED_COUNT" -eq 0 ] && MISSING="n/a (no required checks on this base)"
             if [ "$REQUIRED_COUNT" -gt 0 ]; then
               REPORTED="$(
                 {
@@ -147,14 +171,14 @@ jobs:
             VERDICT="ok"
             if [ "$MERGEABLE" = "CONFLICTING" ]; then
               VERDICT="STALLED — conflicts, so no pull_request workflow can run"
-            elif [ "$MISSING" != "-" ]; then
+            elif [ "$REQUIRED_COUNT" -gt 0 ] && [ "$MISSING" != "-" ]; then
               VERDICT="STALLED — required check never reported"
             fi
 
-            echo "| [#${NUM}](${URL}) | ${AGE_DAYS} | ${MERGEABLE} | ${MISSING} | ${VERDICT} |" >> "$SUMMARY_FILE"
+            echo "| [#${NUM}](${URL}) | \`${BASE}\` | ${AGE_DAYS} | ${MERGEABLE} | ${MISSING} | ${VERDICT} |" >> "$SUMMARY_FILE"
 
             if [ "$VERDICT" != "ok" ] && [ "$AGE_DAYS" -ge "${STALL_ALERT_DAYS}" ]; then
-              echo "- #${NUM} (${AGE_DAYS}d, ${MERGEABLE}) — ${VERDICT} — ${URL}" >> "$STALLED_FILE"
+              echo "- #${NUM} -> \`${BASE}\` (${AGE_DAYS}d, ${MERGEABLE}) — ${VERDICT} — ${URL}" >> "$STALLED_FILE"
             fi
           done
 
