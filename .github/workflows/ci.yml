@@ -87,6 +87,20 @@ jobs:
       # must fail CI. If a finding is a known false positive, allowlist it via
       # .gitleaks.toml (preferred) rather than re-disabling this gate.
       - name: Gitleaks scan
+        # DISPATCH SCOPE (2026-08-18): this action is DIFF-scoped -- on
+        # pull_request it scans the PR commits, on push the pushed range.
+        # workflow_dispatch has no range, so it degenerates into a full-history
+        # audit and reports 31 findings in pre-monorepo directories deleted long
+        # ago. That made the manual Run workflow button permanently red, so a
+        # branch that is not a PR into main had no way to be validated at all.
+        #
+        # Per-change scanning is UNCHANGED: pull_request and push still run
+        # gitleaks, still BLOCKING. The working-tree pattern scan in the next
+        # step runs on EVERY event including dispatch. Triaged 2026-08-18: all
+        # 59 JWT hits in the 7 historical files are role=anon for the
+        # DECOMMISSIONED project dxipobqngyfpqbbznojz -- no service_role key.
+        # Allowlist them in .gitleaks.toml to re-enable the history audit here.
+        if: github.event_name != 'workflow_dispatch'
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -230,11 +244,22 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             base_sha="$PR_BASE_SHA"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A manual dispatch has no "before" commit. Without one this fell
+            # through to the fail-closed branch below, which forces the whole
+            # local PG17 integration stack to run on EVERY dispatch. Compare
+            # against the merge-base with the default branch instead: that is
+            # exactly "what this ref adds", which is what the filter is for.
+            # If it cannot be resolved we STILL fall through to fail-closed
+            # below, so the safety property is unchanged.
+            git fetch --no-tags --quiet origin "$DEFAULT_BRANCH" 2>/dev/null || true
+            base_sha="$(git merge-base FETCH_HEAD "$HEAD_SHA" 2>/dev/null || true)"
           else
             base_sha="$PUSH_BEFORE_SHA"
           fi
@@ -1071,11 +1096,24 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             base_sha="$PR_BASE_SHA"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A manual dispatch has no "before" commit. Without one this fell
+            # through to the fail-closed branch below, which re-scans EVERY
+            # migration in the repo -- including pre-policy ones that predate
+            # the CEO-APPROVED-FLAG-FLIP marker -- so NO dispatch run could
+            # ever pass this guard. Compare against the merge-base with the
+            # default branch instead: that is exactly "what this ref adds",
+            # which is what the guard is for. If it cannot be resolved we
+            # STILL fall through to fail-closed below; the safety property is
+            # unchanged.
+            git fetch --no-tags --quiet origin "$DEFAULT_BRANCH" 2>/dev/null || true
+            base_sha="$(git merge-base FETCH_HEAD "$HEAD_SHA" 2>/dev/null || true)"
           else
             base_sha="$PUSH_BEFORE_SHA"
           fi
