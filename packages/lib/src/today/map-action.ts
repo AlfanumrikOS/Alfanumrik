@@ -80,6 +80,7 @@ const TYPE_PRESENTATION: Record<
   weekly_dive_due:        { estMinutes: 15, iconHint: 'telescope' },
   monthly_synthesis_due:  { estMinutes: 12, iconHint: 'scroll' },
   practice_weakest:       { estMinutes: 7,  iconHint: 'target' },
+  completed_lesson_check:  { estMinutes: 6,  iconHint: 'refresh-quiz' },
 };
 
 /**
@@ -103,6 +104,8 @@ function itemTypeFor(action: LearnerAction): TodayItemType {
       return action.reason === 'todays_zpd' ? 'weak_topic_zpd' : 'practice_weakest';
     case 'continue_lesson':
       return 'continue_lesson';
+    case 'check_what_you_learned':
+      return 'completed_lesson_check';
     case 'introduce_new_topic':
       return 'new_topic';
     case 'weekly_dive':
@@ -164,6 +167,13 @@ function metaFor(action: LearnerAction): Record<string, unknown> | undefined {
       };
 
     case 'continue_lesson':
+      return {
+        subjectCode: action.subjectCode,
+        chapterNumber: action.chapterNumber,
+        progressPct: action.progressPct,
+      };
+
+    case 'check_what_you_learned':
       return {
         subjectCode: action.subjectCode,
         chapterNumber: action.chapterNumber,

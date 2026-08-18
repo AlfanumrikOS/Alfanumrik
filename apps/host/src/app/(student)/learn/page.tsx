@@ -25,9 +25,10 @@ const CelebrationOverlay = dynamic(
   () => import('@alfanumrik/ui/quiz/CelebrationOverlay'),
   { ssr: false },
 );
-import { getChaptersForSubject, supabase } from '@alfanumrik/lib/supabase';
+import { supabase } from '@alfanumrik/lib/supabase';
+import { useAllowedChapters } from '@alfanumrik/lib/useAllowedChapters';
 import { logger } from '@alfanumrik/lib/logger';
-import {  LoadingFoxy, PremiumCard, GlowButton, LockedCard } from '@alfanumrik/ui/ui';
+import { LoadingFoxy, PremiumCard, GlowButton, LockedCard } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { getPlanConfig } from '@alfanumrik/lib/plans';
@@ -68,28 +69,6 @@ function LegacyLearnPage() {
   // the database this build is talking to, in which case they arrive
   // `undefined`. See the badge render below for how "unknown" is handled —
   // it is NOT the same as zero.
-  const [chapters, setChapters] = useState<Array<{
-    chapter_number: number;
-    title: string;
-    title_hi?: string | null;
-    // Readiness signal ("an agent proved this against NCERT"). NOT servable
-    // count — badging with this is what made the picker advertise questions
-    // the quiz could not deliver. Kept for back-compat only; do not render.
-    verified_question_count?: number;
-    // What the practice / daily-quiz path can actually serve today. This is
-    // the student-facing badge number.
-    practice_ready_count?: number;
-    // practice floor AND the human SME gate. Exam / mock surfaces only.
-    exam_ready_count?: number;
-  }>>([]);
-  const [chaptersLoading, setChaptersLoading] = useState(false);
-  // Separates "this subject genuinely has no chapters yet" from "the chapter
-  // read failed". Both used to render "No chapters available yet" — telling a
-  // student their whole syllabus was missing after a 401 or a 5xx.
-  const [chaptersFailed, setChaptersFailed] = useState(false);
-  // Bumped by the retry control so the chapter effect re-runs without having
-  // to unset/reset the selected subject (which would flash the subject grid).
-  const [chaptersReloadKey, setChaptersReloadKey] = useState(0);
   const [lastStudied, setLastStudied] = useState<{ subject: string; chapter: number; chapterTitle: string; concept: number; timestamp: number } | null>(null);
   const [progressRows, setProgressRows] = useState<Array<{ subject: string; chapter_number: number; is_completed: boolean }>>([]);
   const [subjectTotalChapters, setSubjectTotalChapters] = useState<Record<string, number>>({});
@@ -176,30 +155,7 @@ function LegacyLearnPage() {
       });
   }, [student?.grade]);
 
-  useEffect(() => {
-    if (!selectedSubject || !student?.grade) { setChapters([]); setChaptersFailed(false); return; }
-    setChaptersLoading(true);
-    setChaptersFailed(false);
-    getChaptersForSubject(selectedSubject, student.grade)
-      .then((res) => {
-        if (!res.ok) {
-          // P13: message only — no student id, no row payload.
-          logger.warn('learn: chapter list failed to load', { reason: res.error });
-          setChaptersFailed(true);
-          setChapters([]);
-          return;
-        }
-        setChapters(res.data);
-      })
-      .catch((e) => {
-        logger.warn('learn: chapter list threw', {
-          reason: e instanceof Error ? e.message : 'unknown error',
-        });
-        setChaptersFailed(true);
-        setChapters([]);
-      })
-      .finally(() => setChaptersLoading(false));
-  }, [selectedSubject, student?.grade, chaptersReloadKey]);
+  const { chapters: hookChapters, isLoading: hookChaptersLoading, error: hookChaptersError, refresh: refreshChapters } = useAllowedChapters(selectedSubject);
 
   // Guard: if selected subject is locked (plan downgrade, grade change, etc.),
   // reset selection. Calling setSelectedSubject() during render is a React
@@ -365,7 +321,7 @@ function LegacyLearnPage() {
               {/* Upgrade prompt strip — only shown when there are locked subjects */}
               {lockedSubjects.length > 0 && (
                 <button
-                  onClick={() => router.push('/pricing')}
+                  onClick={() => router.push('/today')}
                   className="w-full mt-4 py-3 px-4 rounded-2xl text-sm font-bold flex items-center justify-between transition-all active:scale-[0.98]"
                   style={{
                     background: 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.08), rgb(var(--accent-warm-rgb) / 0.04))',
@@ -441,14 +397,14 @@ function LegacyLearnPage() {
                 </button>
               )}
 
-              {chaptersLoading ? (
+              {hookChaptersLoading ? (
                 <div className="space-y-3">
                   {[...Array(5)].map((_, i) => (
                     <div key={i} className="h-16 bg-[var(--surface-2)] rounded-xl animate-pulse" />
                   ))}
                 </div>
 
-              ) : chaptersFailed ? (
+              ) : !!hookChaptersError ? (
                 /* HONEST FAILURE — distinct from the genuine empty below. The
                    empty state says the syllabus has nothing in it; saying that
                    after a failed read is a lie about the student's course. */
@@ -465,13 +421,13 @@ function LegacyLearnPage() {
                   <GlowButton
                     className="warm-cta min-h-[44px]"
                     icon="🔄"
-                    onClick={() => setChaptersReloadKey((k) => k + 1)}
+                    onClick={() => refreshChapters()}
                   >
                     {isHi ? 'फिर से कोशिश करो' : 'Try again'}
                   </GlowButton>
                 </div>
 
-              ) : chapters.length === 0 ? (
+              ) : hookChapters.length === 0 ? (
                 <div className="text-center py-10">
                   <div className="text-5xl mb-3">📚</div>
                   <p className="text-sm font-semibold text-[var(--text-2)] mb-1">
@@ -493,7 +449,7 @@ function LegacyLearnPage() {
 
               ) : (
                 <div className="space-y-3">
-                  {chapters.map((ch) => (
+                  {hookChapters.map((ch) => (
                     <div
                       key={ch.chapter_number}
                       className="rounded-xl overflow-hidden"

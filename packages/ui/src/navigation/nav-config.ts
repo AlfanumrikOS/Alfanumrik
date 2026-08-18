@@ -33,7 +33,6 @@ import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 // changed; the labels/icons did.
 export const CORE_TABS = [
   { href: '/today', icon: '☀️', activeIcon: '☀️', label: 'Today', labelHi: 'आज' },
-  { href: '/learn', icon: '📚', activeIcon: '📚', label: 'Learn', labelHi: 'सीखें' },
   // Slot 3 — see PRACTICE FLAG CONTRACT in resolveStudentPrimaryNav().
   { href: '/practice', icon: '⚡', activeIcon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
   { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
@@ -77,7 +76,6 @@ export const MORE_ITEMS = [
   { href: '/notifications', icon: '🔔', label: 'Reminders', labelHi: 'रिमाइंडर', group: 'utilities' },
   // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
   { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है', group: 'utilities' },
-  { href: '/library', icon: '📚', label: 'Library', labelHi: 'अध्ययन सामग्री', group: 'study' },
   { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', group: 'study' },
   { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब', group: 'study' },
   // /practice is NOT listed here — it is primary slot 3. See the PRACTICE FLAG
@@ -143,7 +141,7 @@ export const SIDEBAR_SECTIONS = [
     title: 'Main', titleHi: 'मुख्य',
     items: [
       { href: '/today', icon: '☀️', label: 'Today', labelHi: 'आज' },
-      { href: '/learn', icon: '📚', label: 'Learn', labelHi: 'सीखें' },
+      { href: '/today', icon: '📚', label: 'Learn', labelHi: 'सीखें' },
       { href: '/practice', icon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
       // Matches CORE_TABS exactly — same name, same icon, same route.
       { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
@@ -159,9 +157,6 @@ export const SIDEBAR_SECTIONS = [
     // /learn vs a future /learn/* entry has the same shape.
     title: 'Study', titleHi: 'पढ़ाई',
     items: [
-      { href: '/library',     icon: '📚', label: 'Library',     labelHi: 'अध्ययन सामग्री' },
-      // /leaderboard was in the More sheet but in NO sidebar section — an
-      // overflow destination that simply did not exist at 1024px+. Mirrored in.
       { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
       { href: '/stem-centre', icon: '🔬', label: 'STEM Lab',    labelHi: 'STEM लैब' },
     ],
@@ -248,12 +243,11 @@ export function isItemVisibleForFlags(
  * five slots, the same labels, the same destinations, the same order.
  * ─────────────────────────────────────────────────────────────────────────── */
 
-export type StudentNavSlotId = 'today' | 'learn' | 'practice' | 'progress' | 'more';
+export type StudentNavSlotId = 'today' | 'practice' | 'progress' | 'more';
 
 /** The order is a product contract, not a rendering detail. */
 export const STUDENT_PRIMARY_ORDER: readonly StudentNavSlotId[] = [
   'today',
-  'learn',
   'practice',
   'progress',
   'more',
@@ -352,7 +346,7 @@ export function resolveStudentPrimaryNav(
   const [today, learn, practice, progress] = CORE_TABS;
   return [
     { ...today, id: 'today', kind: 'destination', altHrefs: ['/dashboard'], badge: 'streak' },
-    { ...learn, id: 'learn', kind: 'destination', altHrefs: [] },
+    { ...learn, id: 'today', kind: 'destination', altHrefs: [] },
     { ...practice, id: 'practice', kind: 'destination', altHrefs: ['/quiz'] },
     { ...progress, id: 'progress', kind: 'destination', altHrefs: [] },
     MORE_SLOT,

@@ -218,6 +218,7 @@ export const GET = withRoute(async (request: Request) => {
         dueReviewCount: 0,
         attemptedQuizToday: false,
         inProgressLessons: [],
+        completedLessons: [],
         pendingTeacherRemediation: null,
       };
     }

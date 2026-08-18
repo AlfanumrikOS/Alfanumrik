@@ -133,7 +133,7 @@ export default function TodaysMission({
     // Only reachable from the empty/error card, where no chapter is known —
     // the resolver produced nothing for this student, so the subject picker is
     // the honest destination (the queue primary owns chapter-level routing).
-    router.push('/learn');
+    router.push('/today');
   };
 
   return (
