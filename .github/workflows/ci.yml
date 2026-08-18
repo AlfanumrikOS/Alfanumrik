@@ -1245,6 +1245,7 @@ jobs:
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       # ADR-006 #4: both Anthropic call paths (Node claude.ts, Deno
       # reliability.ts) must keep exponential-backoff retry on 429/5xx/529.
@@ -1600,6 +1601,7 @@ jobs:
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       # Vitest 4.1.8 enforces coverage thresholds on EVERY run that reports
       # coverage — including partial shard runs, where the global and per-file
@@ -1701,6 +1703,7 @@ jobs:
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Download shard blob reports
         uses: actions/download-artifact@v8
@@ -2519,6 +2522,7 @@ jobs:
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       # Secrets are bound through `env:` and tested as shell VARIABLES. Never
       # interpolate `${{ secrets.* }}` directly into a bash line: `${{ }}` is
@@ -2580,6 +2584,7 @@ jobs:
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       # Next.js incremental build cache (per Next.js CI-caching guidance:
       # https://nextjs.org/docs/app/guides/ci-build-caching#github-actions).
