@@ -213,7 +213,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     mcqAlready: 'You already answered this one.',
     mcqRetry: 'Try again',
     mcqRetryHint: "Couldn't submit just now.",
-    formulaError: 'LaTeX couldn\'t be rendered',
+    formulaError: 'Issue with formula',
   },
   hi: {
     answer: 'उत्तर',
@@ -241,7 +241,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     mcqAlready: 'आप इसका उत्तर पहले ही दे चुके हैं।',
     mcqRetry: 'फिर कोशिश करें',
     mcqRetryHint: 'अभी उत्तर जमा नहीं हो पाया।',
-    formulaError: 'LaTeX रेंडर नहीं हो पाया',
+    formulaError: 'सूत्र में समस्या',
   },
 };
 
