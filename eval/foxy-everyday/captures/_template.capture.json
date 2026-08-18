@@ -1,0 +1,23 @@
+{
+  "version": "capture-v1",
+  "arm": "on",
+  "case_set_version": "everyday-cases-v1",
+  "captured_at": "REPLACE-WITH-ISO-TIMESTAMP",
+  "flag": {
+    "name": "ff_foxy_everyday_examples_v1",
+    "observed_state": "unknown",
+    "observed_at": "REPLACE-WITH-ISO-TIMESTAMP",
+    "source": ""
+  },
+  "notes": "TEMPLATE — not a real capture. Copy this file, fill it in, and DO NOT commit a real capture with raw model text unless it has been re-checked for PII. `observed_state` ships as \"unknown\" and `source` ships empty ON PURPOSE: as-is, this template forces the verdict to INCONCLUSIVE, so a half-filled capture can never be mistaken for a measurement. Set observed_state to true for the ON arm / false for the OFF arm, and write how you observed it into `source`. `raw_response` must be the strict-JSON FoxyResponse string exactly as the pipeline returned it — do not pretty-print, repair or trim. Use `transport_error` instead of `raw_response` for a case whose response was never obtained; that makes the run INCONCLUSIVE, which is the correct outcome for a response nobody saw.",
+  "responses": [
+    {
+      "case_id": "g6-math-fractions-learn-001",
+      "raw_response": "{\"title\":\"REPLACE\",\"subject\":\"math\",\"blocks\":[{\"type\":\"definition\",\"text\":\"REPLACE\"},{\"type\":\"example\",\"text\":\"REPLACE\"}]}"
+    },
+    {
+      "case_id": "g6-math-ratio-explain-002",
+      "transport_error": "REPLACE — or delete this record and supply a raw_response"
+    }
+  ]
+}

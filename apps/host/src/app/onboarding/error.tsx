@@ -32,8 +32,8 @@ export default function OnboardingError({ error, reset }: { error: Error & { dig
         <div className="flex gap-3 justify-center">
           <button
             onClick={reset}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: 'var(--orange)' }}
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-on-accent"
+            style={{ background: 'var(--accent-warm-strong)' }}
           >
             {isHi ? 'फिर कोशिश करें' : 'Retry'}
           </button>

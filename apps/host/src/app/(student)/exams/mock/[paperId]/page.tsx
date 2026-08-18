@@ -198,7 +198,7 @@ function UpgradeCard({ isHi, upgradeUrl }: { isHi: boolean; upgradeUrl: string }
           <Link
             href={upgradeUrl}
             className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold"
-            style={{ background: 'linear-gradient(135deg, var(--purple, #7C3AED), var(--orange))', color: '#fff' }}
+            style={{ background: 'linear-gradient(135deg, var(--purple, #7C3AED), var(--accent-warm-strong))', color: 'var(--on-accent)' }}
           >
             {isHi ? 'अपग्रेड करें' : 'Upgrade'}
           </Link>
@@ -234,7 +234,7 @@ function NotReadyCard({ isHi }: { isHi: boolean }) {
         <Link
           href="/exams/mock"
           className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold"
-          style={{ background: 'linear-gradient(135deg, var(--orange), var(--orange-light, #FB923C))', color: '#fff' }}
+          style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent)' }}
         >
           {isHi ? 'वापस' : 'Back to catalog'}
         </Link>
@@ -264,7 +264,7 @@ function StartErrorCard({ isHi, onRetry }: { isHi: boolean; onRetry: () => void 
           type="button"
           onClick={onRetry}
           className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold"
-          style={{ background: 'linear-gradient(135deg, var(--orange), var(--orange-light, #FB923C))', color: '#fff' }}
+          style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent)' }}
         >
           {isHi ? 'पुनः प्रयास करें' : 'Retry'}
         </button>

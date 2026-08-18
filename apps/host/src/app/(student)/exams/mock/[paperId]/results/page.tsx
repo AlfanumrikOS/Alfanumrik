@@ -42,7 +42,7 @@ import {
 
 const CARD_STYLE = { background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' };
 const PRIMARY_CLS = 'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold';
-const PRIMARY_STYLE = { background: 'linear-gradient(135deg, var(--orange), var(--orange-light, #FB923C))', color: '#fff' };
+const PRIMARY_STYLE = { background: 'var(--surface-accent)', color: 'var(--on-surface-accent)' };
 const SECONDARY_CLS = 'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold';
 const SECONDARY_STYLE = { background: 'var(--surface-2)', color: 'var(--text-1)', border: '1px solid var(--border)' };
 

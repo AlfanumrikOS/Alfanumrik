@@ -270,7 +270,61 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // src/app/api/health/route.ts is now a PURE liveness endpoint (no downstream
 // probes, no service-role reads); its ledger entry is pruned in the same change
 // so the guard ratchets DOWN, not drifts.
-const EXPECTED_COUNT = 268;
+// learners repository module (2026-08-10): 268 -> 267.
+// src/app/api/v2/student/profile/route.ts now reads the caller's OWN students
+// row through the RLS-scoped request client (createSupabaseRouteClient) behind
+// the new learners repository port; the read is served by the
+// students_select_merged policy (auth_user_id = auth.uid()), so service-role is
+// no longer required. Ledger entry pruned in the same change so the guard
+// ratchets DOWN, not drifts.
+// leaderboard SEV1 Pattern-B repair (2026-08-11): 267 -> 269.
+// Two NEW routes legitimately require service-role:
+//   src/app/api/v1/leaderboard/titles/route.ts — student_titles has RLS enabled
+//     with exactly ONE policy (service_role only, baseline :20003) and no
+//     student SELECT policy, so an RLS-scoped read returns 0 rows for everyone;
+//     the route scopes the SELECT to the SESSION-derived auth.studentId.
+//   src/app/api/v1/leaderboard/streaks/route.ts — a peer streak board is
+//     structurally impossible under own-row-only RLS on challenge_streaks; the
+//     route reads via service-role and projects an explicit P13 whitelist.
+// The sibling src/app/api/v1/leaderboard/my-class/route.ts added in the same
+// change is deliberately NOT ledgered: it uses the RLS-scoped
+// createSupabaseRouteClient (class_students own-enrollment policy + the
+// already-SECURITY-DEFINER get_class_leaderboard RPC granted to authenticated).
+// support first-response SLA (2026-08-11): 269 -> 270.
+// ONE new route legitimately requires service-role:
+//   src/app/api/internal/admin/support/metrics/route.ts — the FRT metric behind
+//     the newly-published 2-business-day support SLA. NEITHER table it reads has
+//     an operator SELECT policy: support_tickets' only two SELECT policies are
+//     requester-anchored ('Users can read own tickets' :20262,
+//     support_tickets_self_select :22378) and support_ticket_replies
+//     (20260814000012) has only _owner_select/_owner_insert/_service_role_all —
+//     that migration states outright that the operator surface is service-role
+//     with authorization enforced in the route. Under an RLS-scoped client an
+//     operator would see only tickets they personally filed, so the metric would
+//     report breach_count 0 / meeting_promise true over a near-empty set — it
+//     would certify the SLA is met BECAUSE it cannot see the breaches. Failing
+//     toward "all clear" is the one failure mode this route exists to prevent,
+//     so RLS here is a silent-zero, not defense-in-depth. The sibling operator
+//     console src/app/api/internal/admin/support/route.ts is already ledgered,
+//     reads the same two tables and carries the same
+//     authorizeRequest('support.view_tickets') gate.
+//     Read-only and PII-free by construction: the ticket projection is pinned to
+//     'id, category, status, created_at, resolved_at' and the reply projection to
+//     'ticket_id, created_at, author_role' — email, user_name, subject, message,
+//     device_info and admin_notes are never selected. Ratchet-down path: a
+//     SECURITY DEFINER get_support_first_response_metrics() gated on the existing
+//     baseline helper check_permission(auth.uid(), 'support.view_tickets')
+//     (:1973), granted to authenticated; then move to the RLS-scoped client.
+// Learning-sources signed-URL route (2026-08-15, architect-reviewed): 270 -> 271
+// for the new route src/app/api/learning-sources/route.ts. Service-role is
+// REQUIRED, not convenience: the private `learning-sources` storage bucket
+// (migration 20260816000001) is service-role-only by design — it carries NO
+// per-user storage RLS policies, so an RLS-scoped client cannot mint the
+// signed URLs this route exists to serve. The route is authenticated
+// (authorizeRequest) BEFORE any minting; signed URLs carry a 300s TTL; the
+// object path shape is validated; no PII is logged. Ledger entry added in the
+// same change in scripts/admin-client-allowlist.json.
+const EXPECTED_COUNT = 271;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

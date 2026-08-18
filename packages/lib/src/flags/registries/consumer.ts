@@ -107,9 +107,12 @@ export const TUTOR_FLAGS = {
  *
  *    When ON:
  *      1. /dashboard renders <StudentOSDashboard> — a decision-first,
- *         mastery-centric layout (Today's Mission hero wrapping the existing
- *         DailyRhythmQueue, a Mastery Snapshot, a Revision Rail reusing
- *         ReviewsDueCard/useReviewCards, and per-subject Subject Roadmaps).
+ *         mastery-centric layout (a Today's Mission hero, a Mastery Snapshot,
+ *         a Revision Rail reusing ReviewsDueCard/useReviewCards, and
+ *         per-subject Subject Roadmaps). The hero was originally specified to
+ *         wrap DailyRhythmQueue; as built, TodaysMission reads /api/v2/today
+ *         directly, and DailyRhythmQueue was deleted in the 2026-08 orphan
+ *         consolidation.
  *      2. /foxy renders a 3-pane workspace (Conversations rail | Conversation |
  *         Context panel with mastery-aware nudges) — the chat column, renderer,
  *         and 7 modes are byte-identical to today; the redesign only adds an

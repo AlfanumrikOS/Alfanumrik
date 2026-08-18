@@ -210,12 +210,16 @@ describe('SLC-5: flagged result renders a gentle bilingual (P7) note', () => {
   });
 
   it('the flagged note is conditionally rendered on results.flagged', () => {
-    expect(SRC.replace(/\s+/g, ' ')).toMatch(/results\.flagged\s*&&/);
+    expect(SRC.replace(/\s+/g, ' ')).toMatch(/\{\s*results\.flagged\s*&&/);
   });
 
   it('the flagged note has BOTH an English and a Hindi (Devanagari) string gated by isHi (P7)', () => {
-    // Isolate the `results.flagged && ( ... )` JSX block.
-    const idx = SRC.indexOf('results.flagged');
+    // Isolate the SLC-5 flagged-note JSX block. Anchor on the OPENING BRACE
+    // (`{results.flagged &&`), not on the bare substring: the zero-XP banner
+    // added later renders under `{results.xp_earned === 0 && !results.flagged &&`,
+    // whose NEGATED guard contains `results.flagged` and appears EARLIER in the
+    // file, so a bare indexOf() sliced the wrong block.
+    const idx = SRC.indexOf('{results.flagged &&');
     expect(idx).toBeGreaterThanOrEqual(0);
     const block = SRC.slice(idx, idx + 900);
     // Bilingual gate.

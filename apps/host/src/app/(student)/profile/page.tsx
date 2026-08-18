@@ -174,8 +174,8 @@ function ConnectionsCard({ studentId, isHi }: { studentId: string; isHi: boolean
             <button
               onClick={handleJoinClass}
               disabled={joinLoading || !classCode.trim()}
-              className="px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.97] shadow-sm hover:opacity-95"
-              style={{ background: 'var(--orange)', opacity: joinLoading || !classCode.trim() ? 0.5 : 1 }}
+              className="px-4 py-2.5 rounded-xl text-sm font-bold text-on-accent transition-all active:scale-[0.97] shadow-sm hover:opacity-95"
+              style={{ background: 'var(--accent-warm-strong)', opacity: joinLoading || !classCode.trim() ? 0.5 : 1 }}
             >
               {joinLoading ? '...' : isHi ? 'जुड़ें' : 'Join'}
             </button>
@@ -810,7 +810,7 @@ export default function ProfilePage() {
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => setTab('edit')}
-                className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-white transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-foreground transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                 style={{ background: 'linear-gradient(135deg, var(--orange) 0%, #F5A623 100%)', boxShadow: '0 4px 16px rgba(232,88,28,0.2)' }}
               >
                 ✏️ {isHi ? 'प्रोफ़ाइल संपादित करो' : 'Edit Profile'}
@@ -901,7 +901,7 @@ export default function ProfilePage() {
                 { step: 4, label: isHi ? 'अभिभावक' : 'Parent', icon: '👨‍👩‍👧' }
               ].map((s, idx) => (
                 <div key={s.step} className="flex items-center gap-2 flex-shrink-0">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white bg-[var(--orange)] shadow-sm">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-on-accent bg-[var(--accent-warm-strong)] shadow-sm">
                     {s.step}
                   </div>
                   <span className="text-xs font-bold text-[var(--text-2)]">{s.label}</span>
@@ -1073,7 +1073,9 @@ export default function ProfilePage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.97]"
+                // DD-16: #fff is 3.30:1 on #16A34A and 2.03:1 at the --gold gradient
+                // stop — both sub-AA. Ink clears every stop (5.62:1 / 5.16:1 / 9.14:1).
+                className="flex-1 py-3.5 rounded-xl text-sm font-bold text-foreground transition-all active:scale-[0.97]"
                 style={{ background: saved ? '#16A34A' : 'linear-gradient(135deg, var(--orange) 0%, #F5A623 100%)', boxShadow: '0 4px 16px rgba(232,88,28,0.2)' }}
               >
                 {saving ? (isHi ? 'सेव हो रहा...' : 'Saving...') : saved ? '✓ Saved!' : (isHi ? 'सेव करो' : 'Save Changes')}
@@ -1210,7 +1212,11 @@ export default function ProfilePage() {
                 </div>
                 <div className="rounded-2xl p-4 text-center border bg-gray-50/40" style={{ borderColor: 'var(--border)' }}>
                   <div className="text-3xl font-black text-green-600">{quizStats.avgScore}%</div>
-                  <div className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'औसत स्कोर' : 'Avg Score'}</div>
+                  {/* Deliberately distinct label from the "Accuracy" tile above
+                      (snapshot.avg_score, server-weighted): this is a client-side
+                      unweighted mean of per-session score_percent — a related but
+                      different figure, so it must never read the same as Accuracy. */}
+                  <div className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'औसत क्विज़ स्कोर' : 'Avg Quiz Score'}</div>
                 </div>
                 <div className="rounded-2xl p-4 text-center border bg-gray-50/40" style={{ borderColor: 'var(--border)' }}>
                   <div className="text-3xl font-black text-orange-600">{quizStats.bestScore}%</div>

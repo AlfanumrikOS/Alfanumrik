@@ -15,10 +15,13 @@
 // We MERGE by subject_code. v1 is the source of truth for the list; v2 just
 // adds counts. If v2 fails or is empty, we still return v1 with count=0.
 //
-// Fallback: if v1 itself returns nothing (e.g. student row missing or grade
-// unmapped), we fall back to GRADE_SUBJECTS + SUBJECT_META for the student's
-// grade, treating every subject as unlocked. This keeps the page rendering
-// during edge-case drift; ops_events is logged so it's visible.
+// Fallback: if v1 errors or returns nothing (e.g. student row missing or grade
+// unmapped), we rebuild the list from the SAME database truth the RPC reads —
+// grade_subject_map ⋈ subjects WHERE subjects.is_active — minus only the plan
+// join, which we cannot evaluate without the RPC. Every fallback row is
+// therefore returned isLocked=true (fail CLOSED on plan), and if that query
+// yields nothing we return an EMPTY list rather than a hardcoded catalogue.
+// ops_events is logged either way so the drift is visible.
 //
 // Phase 4 hotfix (2026-04-18) drain-window fallback for empty cbse_syllabus
 // still applies to v2 specifically; v1 is independent of cbse_syllabus.
@@ -28,14 +31,6 @@ import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import type { Subject } from '@alfanumrik/lib/subjects.types';
-// HOTFIX 2026-04-18 (Phase 4 drain window fallback): the subjects-governance
-// rule (alfanumrik/no-raw-subject-imports) normally redirects callers to
-// useAllowedSubjects/getAllowedSubjectsForStudent so they don't bypass
-// plan/grade governance. Here we INTENTIONALLY reach for the legacy constants
-// ONLY when both v1 and v2 RPCs return zero rows. This matches the
-// pre-Task-3.7 soft-fail behavior exactly.
-// eslint-disable-next-line alfanumrik/no-raw-subject-imports
-import { getSubjectsForGrade, SUBJECT_META } from '@alfanumrik/lib/constants';
 
 export const runtime = 'nodejs';
 
@@ -74,59 +69,139 @@ function rowToSubject(r: SubjectV1Row): Subject {
   };
 }
 
+interface GradeSubjectMapRow {
+  subject_code: string;
+  is_core: boolean | null;
+  board: string | null;
+  stream: string | null;
+}
+
+/** Board values the RPC treats as the generic/default curriculum. */
+const GENERIC_BOARDS = new Set(['CBSE', 'Other']);
+
 /**
- * Fallback: build a subjects list from GRADE_SUBJECTS + SUBJECT_META for the
- * student's grade. Used only when v1 returns zero rows AND the student record
- * exists. Returns isLocked=false (we don't have plan context here) and
- * readyChapterCount=0 — client can still render the picker; AI surfaces
- * below (grounded-answer, quiz) enforce their own gates.
+ * Apply the RPC's grade_valid predicate to a grade's raw grade_subject_map
+ * rows. Mirrors get_available_subjects (migration 20260621000400) exactly:
+ *
+ *   (gsm.stream IS NULL OR gsm.stream = s.stream OR s.stream IS NULL)
+ *   AND ( gsm.board = s.board
+ *         OR (gsm.board IN ('CBSE','Other') OR gsm.board IS NULL)
+ *            AND NOT EXISTS (any row for this grade/stream at s.board) )
+ *
+ * i.e. a board-specific mapping wins outright; the generic CBSE/Other/NULL
+ * mapping is used ONLY when the student's board has no mapping at all. That
+ * is the "board fallback" the previous implementation approximated with an
+ * exact-match query plus a hardcoded catalogue — same semantics, no catalogue.
+ */
+function applyGradeValidPredicate(
+  rows: GradeSubjectMapRow[],
+  board: string | null | undefined,
+  stream: string | null | undefined,
+): GradeSubjectMapRow[] {
+  const streamMatched = rows.filter(
+    (r) => !stream || !r.stream || r.stream === stream,
+  );
+
+  if (board) {
+    const boardSpecific = streamMatched.filter((r) => r.board === board);
+    if (boardSpecific.length > 0) return boardSpecific;
+  }
+
+  return streamMatched.filter(
+    (r) => r.board === null || GENERIC_BOARDS.has(r.board),
+  );
+}
+
+/**
+ * Fallback used when the canonical get_available_subjects RPC errors or
+ * returns zero rows.
+ *
+ * It reads the SAME database truth the RPC reads — grade_subject_map joined to
+ * `subjects` on is_active = true — minus only the plan_subject_access join,
+ * which cannot be evaluated here. Consequences, both deliberate:
+ *
+ *   • every row is returned isLocked=true. Without plan context we fail CLOSED:
+ *     showing a locked subject the student can unlock by upgrading is safe;
+ *     granting access we cannot prove is not. (Was isLocked=false — that plus
+ *     the hardcoded catalogue is the leak this function was rewritten to
+ *     close.)
+ *   • readyChapterCount=0, because v2 is unavailable on this path too.
+ *
+ * If the join yields nothing, the result is an EMPTY list. An empty picker with
+ * a support message is strictly better than a picker full of subjects the
+ * platform does not serve — never substitute a hardcoded catalogue here.
  */
 async function fallbackSubjectsForGradeAndBoard(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   grade: string,
-  board: string | null | undefined
+  board: string | null | undefined,
+  stream?: string | null,
 ): Promise<SubjectResponse[]> {
-  if (board) {
-    try {
-      const { data: mappings } = await supabase
-        .from('grade_subject_map')
-        .select('subject_code, is_core')
-        .eq('grade', grade)
-        .eq('board', board);
+  try {
+    const { data: mapRows, error: mapError } = await supabase
+      .from('grade_subject_map')
+      .select('subject_code, is_core, board, stream')
+      .eq('grade', grade);
 
-      if (mappings && mappings.length > 0) {
-        return mappings.map((m) => {
-          const meta = SUBJECT_META.find((s) => s.code === m.subject_code);
-          return {
-            code: m.subject_code,
-            name: meta?.name ?? m.subject_code,
-            nameHi: meta?.name ?? m.subject_code,
-            icon: meta?.icon ?? '📚',
-            color: meta?.color ?? '#6C5CE7',
-            subjectKind: 'cbse_core',
-            isCore: m.is_core ?? true,
-            isLocked: false,
-            readyChapterCount: 0,
-          };
-        });
-      }
-    } catch (e) {
-      logger.error('subjects.fallback_board_query_failed', { err: String(e) });
+    if (mapError) {
+      logger.error('subjects.fallback_grade_map_query_failed', {
+        rpcError: mapError.message,
+      });
+      return [];
     }
-  }
 
-  const meta = getSubjectsForGrade(grade);
-  return meta.map((s) => ({
-    code: s.code,
-    name: s.name,
-    nameHi: s.name,
-    icon: s.icon,
-    color: s.color,
-    subjectKind: 'cbse_core',
-    isCore: true,
-    isLocked: false,
-    readyChapterCount: 0,
-  }));
+    const valid = applyGradeValidPredicate(
+      (mapRows ?? []) as GradeSubjectMapRow[],
+      board,
+      stream,
+    );
+    if (valid.length === 0) return [];
+
+    // BOOL_OR(is_core) per subject_code, as the RPC's GROUP BY does.
+    const coreByCode = new Map<string, boolean>();
+    for (const r of valid) {
+      const prev = coreByCode.get(r.subject_code) ?? false;
+      coreByCode.set(r.subject_code, prev || (r.is_core ?? false));
+    }
+    const codes = [...coreByCode.keys()];
+
+    // The is_active join. `is_active` is nullable, so `.eq(true)` also drops
+    // NULL rows — fail closed, exactly like the RPC's `WHERE sub.is_active`.
+    const { data: activeRows, error: subjectsError } = await supabase
+      .from('subjects')
+      .select('code, name, name_hi, icon, color, subject_kind')
+      .in('code', codes)
+      .eq('is_active', true);
+
+    if (subjectsError) {
+      logger.error('subjects.fallback_active_subjects_query_failed', {
+        rpcError: subjectsError.message,
+      });
+      return [];
+    }
+
+    return ((activeRows ?? []) as Array<{
+      code: string;
+      name: string | null;
+      name_hi: string | null;
+      icon: string | null;
+      color: string | null;
+      subject_kind: string | null;
+    }>).map((s) => ({
+      code: s.code,
+      name: s.name ?? s.code,
+      nameHi: s.name_hi ?? s.name ?? s.code,
+      icon: s.icon ?? '📚',
+      color: s.color ?? '#6C5CE7',
+      subjectKind: (s.subject_kind ?? 'cbse_core') as Subject['subjectKind'],
+      isCore: coreByCode.get(s.code) ?? true,
+      isLocked: true,
+      readyChapterCount: 0,
+    }));
+  } catch (e) {
+    logger.error('subjects.fallback_query_failed', { err: String(e) });
+    return [];
+  }
 }
 
 async function logFallback(studentId: string, reason: string, subjectCount: number) {
@@ -185,18 +260,22 @@ export async function GET(request: NextRequest) {
         userId,
         rpcError: v1Result.error.message,
       });
-      // v1 is the source of truth for isLocked. Without it the client cannot
-      // safely render subjects (it would treat everything as unlocked). Try
-      // to fall back via grade so the page still renders something.
+      // v1 is the source of truth for isLocked. Without it we rebuild the list
+      // from grade_subject_map ⋈ active subjects and lock every row.
       const { data: student } = await supabase
         .from('students')
-        .select('grade, board')
+        .select('grade, board, stream')
         .or(`id.eq.${userId},auth_user_id.eq.${userId}`)
         .limit(1)
         .maybeSingle();
 
       if (student?.grade) {
-        const subjects = await fallbackSubjectsForGradeAndBoard(supabase, String(student.grade), student.board);
+        const subjects = await fallbackSubjectsForGradeAndBoard(
+          supabase,
+          String(student.grade),
+          student.board,
+          student.stream,
+        );
         await logFallback(userId, 'v1_rpc_error', subjects.length);
         return NextResponse.json({ subjects });
       }
@@ -232,17 +311,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ subjects });
     }
 
-    // v1 also empty — drift case. Fall back to GRADE_SUBJECTS for the
-    // student's grade so the study path always renders something.
+    // v1 also empty — drift case. Rebuild from grade_subject_map ⋈ active
+    // subjects. This can legitimately return [] (e.g. the student's grade has
+    // no mapping to any active subject); an empty picker is the correct answer
+    // there, and logFallback makes it visible in ops_events.
     const { data: student } = await supabase
       .from('students')
-      .select('grade, board')
+      .select('grade, board, stream')
       .or(`id.eq.${userId},auth_user_id.eq.${userId}`)
       .limit(1)
       .maybeSingle();
 
     if (student?.grade) {
-      const subjects = await fallbackSubjectsForGradeAndBoard(supabase, String(student.grade), student.board);
+      const subjects = await fallbackSubjectsForGradeAndBoard(
+        supabase,
+        String(student.grade),
+        student.board,
+        student.stream,
+      );
       await logFallback(userId, 'v1_empty_rows', subjects.length);
       return NextResponse.json({ subjects });
     }

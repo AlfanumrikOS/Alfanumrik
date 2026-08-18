@@ -185,8 +185,8 @@ export default function ParentMobileNav({
                     <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
                     {badgeCount > 0 && (
                       <span
-                        className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
-                        style={{ background: '#E8581C' }}
+                        className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-on-accent px-1"
+                        style={{ background: 'var(--accent-warm-strong)' }}
                       >
                         {badgeCount > 99 ? '99+' : badgeCount}
                       </span>

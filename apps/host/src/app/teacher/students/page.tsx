@@ -252,7 +252,7 @@ function StudentCard({
           alignItems: 'center',
           gap: 6,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#D97706', color: '#fff', textTransform: 'uppercase' }}>{tt(isHi, 'At risk', 'जोखिम में')}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#D97706', color: 'var(--text-1)', textTransform: 'uppercase' }}>{tt(isHi, 'At risk', 'जोखिम में')}</span>
           <span style={{ fontSize: 11, color: '#9A5B16' }}>{tt(isHi, 'Below average — monitor closely', 'औसत से नीचे — ध्यान से देखें')}</span>
         </div>
       )}
@@ -598,8 +598,9 @@ function StudentCard({
               marginTop: 12,
               width: '100%',
               padding: '10px 0',
-              backgroundColor: saved ? '#059669' : 'var(--orange)',
-              color: '#fff',
+              backgroundColor: saved ? '#059669' : 'var(--accent-warm-strong)',
+              // DD-16: #fff is 3.43:1 on #059669 and 3.59:1 on --orange — both sub-AA.
+              color: saved ? 'var(--text-1)' : 'var(--on-accent)',
               border: 'none',
               borderRadius: 8,
               fontSize: 13,
@@ -1000,8 +1001,8 @@ function LegacyTeacherStudentsPage() {
             style={{
               marginTop: 20,
               padding: '10px 24px',
-              backgroundColor: 'var(--orange)',
-              color: '#fff',
+              backgroundColor: 'var(--accent-warm-strong)',
+              color: 'var(--on-accent)',
               border: 'none',
               borderRadius: 8,
               fontSize: 14,

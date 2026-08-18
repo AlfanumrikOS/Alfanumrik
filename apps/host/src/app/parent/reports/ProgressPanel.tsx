@@ -159,7 +159,7 @@ export default function ProgressPanel() {
           type="button"
           onClick={retry}
           className="mt-2 min-h-[44px] py-2 px-4 rounded-lg text-sm font-semibold border-none cursor-pointer"
-          style={{ background: 'var(--orange)', color: 'white' }}
+          style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}
         >
           {t(isHi, 'Retry', 'पुनः प्रयास')}
         </button>

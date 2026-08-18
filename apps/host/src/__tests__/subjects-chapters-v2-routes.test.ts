@@ -21,6 +21,14 @@
  *   This is the bounded, observable version of the pre-Task-3.7 soft-fail.
  *   Tracked for removal alongside TODO-1 once cbse_syllabus reliably
  *   populates post-rollout.
+ *
+ *   Phase 3 P0 (2026-08-10): the SUBJECTS fallback no longer derives from
+ *   GRADE_SUBJECTS. That path ignored `subjects.is_active` and returned every
+ *   hardcoded subject with isLocked=false — a leak once the platform was
+ *   restricted to the KEEP-SET. It now reads grade_subject_map ⋈ `subjects`
+ *   WHERE is_active, marks every row isLocked=true (no plan context ⇒ fail
+ *   closed), and returns [] when that yields nothing. The CHAPTERS fallback
+ *   (the `chapters` catalog) is unchanged.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -34,10 +42,32 @@ const _authGetUserMock = vi.fn();
 // Student row returned by admin.from('students').select('grade')…
 // Tests override this per-case to simulate "student found with grade" vs
 // "no student record found" (drives the fallback branch).
-let _studentLookup: { data: { grade: string } | null; error: null } = {
+let _studentLookup: {
+  data: { grade: string; board?: string | null; stream?: string | null } | null;
+  error: null;
+} = {
   data: null,
   error: null,
 };
+
+// Phase 3 P0 (2026-08-10): the subjects fallback no longer reads
+// GRADE_SUBJECTS/SUBJECT_META. It reads grade_subject_map and joins `subjects`
+// on is_active, so the scaffold needs both tables.
+let _gradeSubjectMap: {
+  data: Array<{
+    subject_code: string; is_core: boolean;
+    board: string | null; stream: string | null;
+  }> | null;
+  error: null;
+} = { data: [], error: null };
+
+let _activeSubjects: {
+  data: Array<{
+    code: string; name: string; name_hi: string | null;
+    icon: string; color: string; subject_kind: string;
+  }> | null;
+  error: null;
+} = { data: [], error: null };
 
 // Chapters catalog fallback (admin.from('chapters').select(...)…)
 let _chaptersCatalog: {
@@ -80,6 +110,21 @@ function makeFromChain(table: string) {
         }),
       }),
     };
+  }
+  if (table === 'grade_subject_map') {
+    // .select('subject_code, is_core, board, stream').eq('grade', g)
+    const link: Record<string, unknown> = {};
+    link.eq = () => link;
+    link.then = (ok?: any, err?: any) => Promise.resolve(_gradeSubjectMap).then(ok, err);
+    return { select: () => link };
+  }
+  if (table === 'subjects') {
+    // .select(...).in('code', codes).eq('is_active', true)
+    const link: Record<string, unknown> = {};
+    link.in = () => link;
+    link.eq = () => link;
+    link.then = (ok?: any, err?: any) => Promise.resolve(_activeSubjects).then(ok, err);
+    return { select: () => link };
   }
   if (table === 'ops_events') {
     return {
@@ -144,6 +189,8 @@ beforeEach(() => {
   _rpcImpl = () => Promise.resolve({ data: [], error: null });
   _studentLookup = { data: null, error: null };
   _chaptersCatalog = { data: null, error: null };
+  _gradeSubjectMap = { data: [], error: null };
+  _activeSubjects = { data: [], error: null };
   _opsEventsInserts.length = 0;
 });
 
@@ -200,10 +247,26 @@ describe('GET /api/student/subjects', () => {
     expect(body.subjects).toEqual([]);
   });
 
-  it('FALLBACK: 200 with GRADE_SUBJECTS-derived list when v1 empty AND student has grade', async () => {
+  it('FALLBACK: 200 with grade_subject_map ⋈ active-subjects list when v1 empty AND student has grade', async () => {
+    // Phase 3 P0: was "GRADE_SUBJECTS-derived list". The fallback now reads the
+    // same DB truth as the RPC (minus the plan join) and locks every row.
     authOk();
     _rpcImpl = rpcRouter({ v1: { data: [], error: null }, v2: { data: [], error: null } });
-    _studentLookup = { data: { grade: '10' }, error: null };
+    _studentLookup = { data: { grade: '10', board: 'CBSE', stream: null }, error: null };
+    _gradeSubjectMap = {
+      data: [
+        { subject_code: 'math', is_core: true, board: 'CBSE', stream: null },
+        { subject_code: 'science', is_core: true, board: 'CBSE', stream: null },
+      ],
+      error: null,
+    };
+    _activeSubjects = {
+      data: [
+        { code: 'math', name: 'Mathematics', name_hi: 'गणित', icon: '∑', color: '#6C5CE7', subject_kind: 'cbse_core' },
+        { code: 'science', name: 'Science', name_hi: 'विज्ञान', icon: '🔬', color: '#00B894', subject_kind: 'cbse_core' },
+      ],
+      error: null,
+    };
     const { GET } = await import('@/app/api/student/subjects/route');
     const res = await GET(reqWithBearer('http://localhost/api/student/subjects'));
     expect(res.status).toBe(200);
@@ -214,6 +277,8 @@ describe('GET /api/student/subjects', () => {
       expect(s).toHaveProperty('code');
       expect(s).toHaveProperty('name');
       expect(s.readyChapterCount).toBe(0);
+      // No plan context on this path ⇒ fail closed.
+      expect(s.isLocked).toBe(true);
     }
     expect(_opsEventsInserts.length).toBeGreaterThan(0);
     expect(_opsEventsInserts[0]).toMatchObject({
@@ -221,6 +286,27 @@ describe('GET /api/student/subjects', () => {
       source: 'api.student.subjects',
       severity: 'warning',
     });
+    expect(String(_opsEventsInserts[0].message)).toContain('v1_empty_rows');
+  });
+
+  it('FALLBACK: 200 with an EMPTY list when the grade maps to no ACTIVE subject', async () => {
+    // Phase 3 P0 leak closure: grade_subject_map still carries the row, but the
+    // subject is is_active=false, so the is_active join drops it and nothing is
+    // substituted from a hardcoded catalogue.
+    authOk();
+    _rpcImpl = rpcRouter({ v1: { data: [], error: null }, v2: { data: [], error: null } });
+    _studentLookup = { data: { grade: '10', board: 'CBSE', stream: null }, error: null };
+    _gradeSubjectMap = {
+      data: [{ subject_code: 'sanskrit', is_core: false, board: 'CBSE', stream: null }],
+      error: null,
+    };
+    _activeSubjects = { data: [], error: null };   // sanskrit is not active
+
+    const { GET } = await import('@/app/api/student/subjects/route');
+    const res = await GET(reqWithBearer('http://localhost/api/student/subjects'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.subjects).toEqual([]);
     expect(String(_opsEventsInserts[0].message)).toContain('v1_empty_rows');
   });
 
@@ -310,18 +396,27 @@ describe('GET /api/student/subjects', () => {
     expect(body.subjects).toBeUndefined();
   });
 
-  it('FALLBACK: 200 with GRADE_SUBJECTS list on v1 error if student has grade', async () => {
+  it('FALLBACK: 200 with the active-subjects list on v1 error if student has grade', async () => {
     authOk();
     _rpcImpl = rpcRouter({
       v1: { data: null, error: { message: 'rpc down' } },
       v2: { data: [], error: null },
     });
-    _studentLookup = { data: { grade: '9' }, error: null };
+    _studentLookup = { data: { grade: '9', board: 'CBSE', stream: null }, error: null };
+    _gradeSubjectMap = {
+      data: [{ subject_code: 'math', is_core: true, board: 'CBSE', stream: null }],
+      error: null,
+    };
+    _activeSubjects = {
+      data: [{ code: 'math', name: 'Mathematics', name_hi: 'गणित', icon: '∑', color: '#6C5CE7', subject_kind: 'cbse_core' }],
+      error: null,
+    };
     const { GET } = await import('@/app/api/student/subjects/route');
     const res = await GET(reqWithBearer('http://localhost/api/student/subjects'));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.subjects.length).toBeGreaterThan(0);
+    expect(body.subjects.every((s: { isLocked: boolean }) => s.isLocked === true)).toBe(true);
     expect(_opsEventsInserts[0]).toMatchObject({
       category: 'grounding.study_path',
       severity: 'warning',

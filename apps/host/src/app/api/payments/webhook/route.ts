@@ -71,14 +71,18 @@ async function markEvent(
  */
 type WebhookOutcome = 'ack' | 'dedupe' | 'activated' | 'downgraded' | 'failed' | 'unresolved';
 
-async function emitWebhookTiming(args: {
+type WebhookTimingArgs = {
   eventType: string;
   outcome: WebhookOutcome;
   latencyMs: number;
   resolvedVia?: string;
   studentId?: string;
   rzSubId?: string;
-}): Promise<void> {
+  issuer_org_id?: string;
+  brand_id?: string;
+};
+
+async function emitWebhookTiming(args: WebhookTimingArgs): Promise<void> {
   try {
     await logOpsEvent({
       category: 'payment',
@@ -92,6 +96,8 @@ async function emitWebhookTiming(args: {
         resolved_via: args.resolvedVia ?? null,
         student_id: args.studentId ?? null,
         rz_sub_id: args.rzSubId ?? null,
+        issuer_org_id: args.issuer_org_id ?? null,
+        brand_id: args.brand_id ?? null,
       },
     });
   } catch (err) {
@@ -545,9 +551,12 @@ export async function POST(request: NextRequest) {
 
     // ── Event-level dedupe (Task 3 of payment-webhook-hardening plan) ──
     // Razorpay can re-fire any event. We record (account_id, event_id) in
-    // payment_webhook_events with a unique constraint. ON CONFLICT means
-    // duplicate delivery → ACK and skip. This dedupes events that have no
-    // payment entity (e.g. re-fired subscription.cancelled).
+    // payment_webhook_events with a unique constraint, which gives every event a
+    // durable receipt row and a stable id to stamp a terminal outcome onto.
+    //
+    // The SHORT-CIRCUIT is keyed on `already_processed` (successful processing),
+    // NOT on `is_new === false` (row existence) — see the comment on the branch
+    // below and migration 20260814000006.
     const accountId: string | undefined = event.account_id;
     const razorpayEventId: string | undefined = event.id;
     let webhookEventRowId: string | null = null;
@@ -580,10 +589,38 @@ export async function POST(request: NextRequest) {
         });
       } else {
         const row = Array.isArray(dedupeRows) ? dedupeRows[0] : dedupeRows;
-        if (row && row.is_new === false) {
+
+        // DEDUPE ON SUCCESSFUL PROCESSING, NOT ON ROW EXISTENCE (migration
+        // 20260814000006). `record_webhook_event` commits the receipt row in its
+        // own transaction BEFORE any activation runs, so `is_new === false` only
+        // proves the event was SEEN — never that the work FINISHED. Keying the
+        // short-circuit on existence consumed every retry this route asks for: a
+        // delivery that returned 503 "so Razorpay retries" was answered 200
+        // {note:'dedupe'} on redelivery and activation was never re-attempted,
+        // and a crash between the receipt commit and the activation lost the
+        // event permanently (row present, processed_at NULL, deduped forever).
+        //
+        // DEFENSIVE READ — `already_processed` counts as processed ONLY when it
+        // is explicitly `true`. If the field is `undefined` (the migration has
+        // not been applied in this environment yet, or a caller/mock omits it)
+        // we treat it as NOT processed and fall through to RE-ATTEMPT. Failing
+        // toward re-attempt is the correct direction: activation is idempotent
+        // (ON CONFLICT (student_id) upserts under pg_advisory_xact_lock, plus
+        // payment_history unique on razorpay_payment_id), so a redundant
+        // re-attempt is cheap — whereas failing toward skip is precisely what
+        // loses a paid customer's activation.
+        if (row && row.already_processed === true) {
+          // Deliberately NOT markEvent(..., 'dedupe') here. mark_webhook_event_processed
+          // does a blind UPDATE of `outcome`, so stamping 'dedupe' over the row's
+          // terminal 'ack'/'activated'/'downgraded' would flip already_processed
+          // back to false and re-open this defect on the NEXT delivery.
           await emitWebhookTiming({ eventType, outcome: 'dedupe', latencyMs: Date.now() - startedAt });
           return NextResponse.json({ received: true, note: 'dedupe' });
         }
+        // Capture the row id for BOTH the brand-new and the existing-but-unprocessed
+        // case: a retry that re-runs the work still needs somewhere to stamp its
+        // terminal outcome, otherwise it can never become already_processed and
+        // would retry forever.
         webhookEventRowId = row?.id ?? null;
       }
     } else {

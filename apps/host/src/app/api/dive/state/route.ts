@@ -8,9 +8,11 @@
  * the data each picker needs (curated phenomena + the student's weakest
  * topics).
  *
- * Backend glue for the /dive surface (`src/app/dive/page.tsx`) and the
- * dashboard rhythm queue lite consumer
- * (`src/components/dashboard/sections/DailyRhythmQueue.tsx`).
+ * Backend glue for the /dive surface (`apps/host/src/app/dive/page.tsx`). The
+ * planned second consumer — a "this week's dive" CTA on the dashboard rhythm
+ * queue (`packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx`) — never
+ * shipped; that component was deleted in the 2026-08 orphan consolidation
+ * (zero importers). This route currently has exactly one caller, /dive.
  *
  * Server-gated by ff_pedagogy_v2_weekly_dive — when off, returns 404 so the
  * surface is fully hidden (mirrors /api/dive/history + /api/synthesis/state).
@@ -27,7 +29,7 @@
  * Plan: docs/superpowers/plans/2026-05-09-pedagogy-v2-wave-2-weekly-dive.md
  */
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@alfanumrik/lib/feature-flags';
 import {
@@ -92,10 +94,16 @@ function gradeInBand(studentGrade: string, band: string): boolean {
   return grade >= min && grade <= max;
 }
 
-export async function GET(_request: Request) {
-  const supabase = await createSupabaseServerClient();
+export async function GET(request: Request) {
+  // Bearer-AWARE, RLS-respecting client. The cookie-only
+  // createSupabaseServerClient() NULLed auth.uid() for `Authorization: Bearer`
+  // callers (the entire Flutter app), so the `students` lookup silently returned
+  // no row and this route degraded to an empty picker (studentDbId null → no
+  // dive history, no weak topics) rather than the student's real state. Never
+  // service-role; RLS enforced on both transports.
+  const supabase = await createSupabaseRouteClient(request);
 
-  const auth = await authorizeRequest(_request, 'study_plan.view', { requireStudentId: true });
+  const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
   if (!auth.authorized || !auth.userId) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
@@ -137,7 +145,7 @@ export async function GET(_request: Request) {
  * so the result is safe to memoize in the per-student server cache above.
  */
 async function buildDiveState(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
   userId: string,
   currentIsoWeek: string,
 ): Promise<DiveStateResponse> {

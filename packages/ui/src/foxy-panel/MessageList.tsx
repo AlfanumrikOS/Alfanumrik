@@ -53,6 +53,17 @@ export interface MessageListProps {
   /** Subject brand color (used by collapsing buttons). */
   cfgColor: string;
 
+  /**
+   * Student's enrolled grade ("6".."12", P5) and the active chapter number,
+   * when known. Threaded down to `FoxyStructuredRenderer`'s `diagram` block
+   * so it can look up `topic_diagrams` scoped to the exact chapter being
+   * discussed instead of a corpus-wide free-text guess. Either may be
+   * omitted (e.g. before a chapter is picked) — the diagram block falls
+   * back to its prior unscoped search in that case.
+   */
+  grade?: string;
+  chapterNumber?: number;
+
   studentName?: string;
   /** isHi === language === 'hi' — passed in from AuthContext via the page. */
   isHi: boolean;
@@ -98,6 +109,8 @@ export function MessageList({
   onSetCollapsedAbove,
   activeSubject,
   cfgColor,
+  grade,
+  chapterNumber,
   studentName,
   isHi,
   ttsSupported,
@@ -237,6 +250,8 @@ export function MessageList({
             <FoxyStructuredRenderer
               response={effectiveStructured!}
               subjectKey={activeSubject}
+              grade={grade}
+              chapterNumber={chapterNumber}
               quizMe={quizMeBinding}
             />
           </StructuredRenderBoundary>

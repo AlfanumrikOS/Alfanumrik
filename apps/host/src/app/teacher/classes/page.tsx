@@ -379,8 +379,8 @@ export default function TeacherClassesPage() {
             onClick={() => setShowModal(true)}
             style={{
               padding: '12px 28px',
-              background: 'linear-gradient(135deg, #E8581C, #C2410C)',
-              color: '#fff',
+              background: 'var(--surface-accent)',
+              color: 'var(--on-surface-accent)',
               border: 'none',
               borderRadius: 10,
               fontSize: 15,
@@ -531,8 +531,10 @@ export default function TeacherClassesPage() {
                       onClick={() => copyClassCode(cls.class_code, cls.id)}
                       style={{
                         padding: '6px 12px',
-                        backgroundColor: isCopied ? '#059669' : 'var(--orange)',
-                        color: '#fff',
+                        backgroundColor: isCopied ? '#059669' : 'var(--accent-warm-strong)',
+                        // DD-16: #fff is 3.43:1 on #059669 and 3.59:1 on --orange —
+                        // both sub-AA. Ink clears on the green, --on-accent on the warm.
+                        color: isCopied ? 'var(--text-1)' : 'var(--on-accent)',
                         border: 'none',
                         borderRadius: 6,
                         fontSize: 12,
@@ -750,8 +752,8 @@ export default function TeacherClassesPage() {
                         onClick={() => copyClassCode(cls.class_code, cls.id)}
                         style={{
                           padding: '10px 24px',
-                          background: 'linear-gradient(135deg, #E8581C, #C2410C)',
-                          color: '#fff',
+                          background: 'var(--surface-accent)',
+                          color: 'var(--on-surface-accent)',
                           border: 'none',
                           borderRadius: 8,
                           fontSize: 13,
@@ -781,8 +783,8 @@ export default function TeacherClassesPage() {
           width: 56,
           height: 56,
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #E8581C, #C2410C)',
-          color: '#fff',
+          background: 'var(--surface-accent)',
+          color: 'var(--on-surface-accent)',
           border: 'none',
           fontSize: 28,
           fontWeight: 300,

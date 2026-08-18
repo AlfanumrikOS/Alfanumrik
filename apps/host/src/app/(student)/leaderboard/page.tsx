@@ -4,22 +4,41 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { getLeaderboard, getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame, supabase } from '@alfanumrik/lib/supabase';
-import { Card, Button, SectionHeader, LoadingFoxy, Avatar, EmptyState, PremiumCard, GlowButton } from '@alfanumrik/ui/ui';
+import { authedFetch } from '@alfanumrik/lib/authed-fetch';
+import { getCompetitions, joinCompetition, getCompetitionLeaderboard, getHallOfFame } from '@alfanumrik/lib/supabase';
+import { Card, Button, SectionHeader, LoadingFoxy, Avatar, EmptyState, PremiumCard } from '@alfanumrik/ui/ui';
 import { BarChart } from '@alfanumrik/ui/admin-ui';
 import { logger } from '@alfanumrik/lib/logger';
-import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import { getScoreColor } from '@alfanumrik/lib/score-colors';
-import type { LeaderboardEntry } from '@alfanumrik/lib/types';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import StreakBadge from '@alfanumrik/ui/challenge/StreakBadge';
-import { STREAK_VISIBILITY_THRESHOLD } from '@alfanumrik/lib/challenge-config';
-import { useFeatureFlags } from '@alfanumrik/lib/swr';
+import { useFeatureFlags, useLeaderboard } from '@alfanumrik/lib/swr';
 import { toast } from '@alfanumrik/ui/ui/toast';
 import {
   PercentileBandCard,
   type PercentileBand,
 } from '@alfanumrik/ui/leaderboard/PercentileBandCard';
+
+/**
+ * ── WHY THIS PAGE READS EVERYTHING FROM /api/v1/leaderboard/* ─────────────────
+ * Four of these tabs used to query cross-student tables (`performance_scores`,
+ * `score_history`, `challenge_streaks`, `student_titles`) DIRECTLY FROM THE
+ * BROWSER with the anon key. Every one of those tables is own-row-only (or
+ * service-role-only) under RLS, so each read returned at most ONE row — the
+ * caller's — and the page rendered that as a peer board: the student was always
+ * rank #1 with a gold medal, "My Titles" was permanently empty, and "Streaks"
+ * was a board of one. "My Class" resolved its class from `students.class_id`,
+ * a column that does not exist, so every enrolled student was told they were
+ * not in a class.
+ *
+ * The fix is server-side routes with service-role reads + explicit P13 field
+ * whitelists — NOT looser RLS. All client-side cross-student reads are gone.
+ *
+ * ── THE CROSS-CUTTING RULE ──────────────────────────────────────────────────
+ * Every tab distinguishes LOADING / EMPTY / ERROR as three separate states.
+ * "No X yet" is a claim about the world; a non-2xx response cannot establish
+ * it, so no reassuring empty state is ever rendered on a failed read.
+ */
 
 /** Row shape returned by /api/v1/leaderboard/mastery. Phase 5 follow-on. */
 interface MasteryLeaderEntry {
@@ -38,37 +57,122 @@ type RPCRecord = Record<string, any>; // eslint-disable-line
 
 type Tab = 'ranks' | 'compete' | 'fame' | 'titles' | 'streaks' | 'mastery' | 'class';
 
-/** Entry returned by /api/v1/leaderboard/class/[classId] */
+/** Entry returned by /api/v1/leaderboard/my-class (P13 whitelist — exactly this). */
 interface ClassLeaderEntry {
   rank: number;
   student_id: string;
-  name: string;
-  grade: string;
+  name: string | null;
+  grade: string | null;
+  avatar_url: string | null;
+  xp_total: number;
   xp_this_period: number;
+  quizzes: number;
 }
 
-/** Entry for the streaks leaderboard tab */
-interface StreakLeaderEntry {
+/** `data` block of GET /api/v1/leaderboard/my-class. */
+interface MyClassData {
+  schemaVersion: number;
+  period: string;
+  enrolled: boolean;
+  class_id: string | null;
+  resolvedAt: string;
+  items: ClassLeaderEntry[];
+}
+
+/**
+ * The class board has FOUR outcomes, and they are deliberately not collapsible:
+ *   'off'        — 404 while `ff_class_leaderboard_v1` is off. Not an error.
+ *   enrolled:false — genuinely not in a class.
+ *   enrolled:true + items:[] — in a class, nobody has XP for the period yet.
+ *   thrown error — the read failed; NEVER render an empty state.
+ */
+type MyClassResult = { kind: 'off' } | { kind: 'ok'; data: MyClassData };
+
+/**
+ * Wire shape of GET /api/v1/leaderboard/me. The route returns the v1 envelope
+ * `{ success, data }` — NOT a flat band object. `band` is typed loosely because
+ * it can come straight from the RPC's `band` column (free-form text) as well as
+ * from the route's own `bandFromPercentile()`; PercentileBandCard narrows it.
+ */
+interface LeaderboardMeData {
+  period: string;
+  rank: number | null;
+  percentile: number | null;
+  xp: number;
+  band: PercentileBand | string | null;
+  neighbours: Array<{ rank: number; name: string; xp: number; delta: number }>;
+  /** The CALLER'S OWN Performance Score. `null` = no scored subjects yet —
+   *  it is NEVER rendered as 0. Peer scores are not served anywhere. */
+  performance_score: number | null;
+  level_name: string | null;
+}
+
+interface LeaderboardMeEnvelope {
+  success: boolean;
+  data: LeaderboardMeData | null;
+  error?: string;
+}
+
+/** Peer row from /api/v1/leaderboard/streaks. `best_streak` is deliberately
+ *  NOT here — a peer's historical maximum is outside the peer-visible norm and
+ *  the server does not send it. It exists only on `me`. */
+interface StreakPeerItem {
+  rank: number;
+  student_id: string;
+  name: string | null;
+  grade: string | null;
+  current_streak: number;
+  badges: string[];
+}
+
+/** The caller's own streak row — full fidelity, own data. */
+interface StreakMe {
   student_id: string;
   current_streak: number;
   best_streak: number;
   badges: string[];
-  student_name: string;
-  student_avatar?: string;
+  rank: number | null;
+  on_board: boolean;
 }
 
-/** Extended entry with Performance Score fields when available */
-interface PerformanceRankEntry extends LeaderboardEntry {
-  performance_score?: number;  // 0-100 overall average
-  level_name?: string;
-  foxy_coins?: number;
+interface StreaksData {
+  schemaVersion: number;
+  resolvedAt: string;
+  threshold: number;
+  items: StreakPeerItem[];
+  me: StreakMe | null;
 }
 
+/** Own title from /api/v1/leaderboard/titles. */
+interface TitleItem {
+  id: string;
+  title: string;
+  title_hi: string | null;
+  icon: string | null;
+  tier: string | null;
+  source: string | null;
+  earned_at: string | null;
+}
+
+interface TitlesData {
+  schemaVersion: number;
+  resolvedAt: string;
+  titles: TitleItem[];
+}
+
+/* Period ids are the SERVER's vocabulary ('all_time', not 'all') so the label
+   the student taps and the window the server aggregates can never diverge. */
 const PERIODS = [
   { id: 'weekly', label: 'This Week', labelHi: 'इस हफ़्ते' },
   { id: 'monthly', label: 'This Month', labelHi: 'इस महीने' },
-  { id: 'all', label: 'All Time', labelHi: 'कुल' },
+  { id: 'all_time', label: 'All Time', labelHi: 'कुल' },
 ] as const;
+
+/* The class board aggregates daily/weekly/monthly only — "All Time" is not a
+   window it can answer, so it is not offered there rather than silently
+   served as "weekly" under an "All Time" label. */
+const CLASS_PERIODS = PERIODS.filter((p) => p.id !== 'all_time');
+type ClassPeriod = 'weekly' | 'monthly';
 
 /* getScoreColor now lives in the shared `@alfanumrik/lib/score-colors` module
    (Alfa Momentum Wave 4b de-dup) — band thresholds 90/75/50/35 unchanged. */
@@ -117,23 +221,80 @@ function TabLoader({ label }: { label: string }) {
   );
 }
 
+/* One honest failure card for every tab. Rendered INSTEAD of (never alongside)
+   any reassuring empty state. The primary control is Retry — a bare Dismiss
+   left the student with no way back. min-h/min-w pin it to the 44px touch
+   floor (WCAG 2.5.8), which the old bare text buttons did not meet. */
+function LoadFailure({
+  isHi,
+  onRetry,
+  onDismiss,
+}: {
+  isHi: boolean;
+  onRetry: () => void;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div role="alert" className="mx-4 mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 flex items-center gap-2">
+      <span aria-hidden="true">⚠️</span>
+      <span className="flex-1">{isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'}</span>
+      <button
+        onClick={onRetry}
+        className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] px-3 text-red-700 font-semibold underline"
+      >
+        🔄 {isHi ? 'फिर से कोशिश करो' : 'Retry'}
+      </button>
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] text-red-700 font-bold"
+          aria-label={isHi ? 'बंद करें' : 'Dismiss'}
+        >✕</button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Shared fetcher for the v1 `{ success, data }` envelope routes.
+ * Anything that is not a 2xx envelope with `success: true` THROWS, so it lands
+ * on SWR's `error` channel. It must never resolve to an empty payload — that is
+ * exactly how a failed read becomes "No X yet" on screen.
+ */
+async function fetchEnvelope<T>(url: string): Promise<T> {
+  // authedFetch forwards `Authorization: Bearer <token>` from the live
+  // Supabase session (session lives in localStorage, not a cookie) — every
+  // route behind this fetcher is authorizeRequest()-gated and a bare fetch()
+  // 401s for every student. See @alfanumrik/lib/authed-fetch header comment.
+  const res = await authedFetch(url, { credentials: 'same-origin' });
+  if (!res.ok) {
+    const err = new Error(`${url}: HTTP ${res.status}`) as Error & { status: number };
+    err.status = res.status;
+    throw err;
+  }
+  const json = (await res.json().catch(() => null)) as
+    | { success?: boolean; data?: T }
+    | null;
+  if (!json || json.success !== true || json.data == null) {
+    throw new Error(`${url}: malformed response`);
+  }
+  return json.data;
+}
+
 export default function LeaderboardPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
   const isInsideRoleShellMain = false;
 
   const [tab, setTab] = useState<Tab>('ranks');
-  const [period, setPeriod] = useState('weekly');
-  const [entries, setEntries] = useState<PerformanceRankEntry[]>([]);
-  const [usePerformanceScores, setUsePerformanceScores] = useState(false);
+  const [period, setPeriod] = useState<(typeof PERIODS)[number]['id']>('weekly');
+  const [classPeriod, setClassPeriod] = useState<ClassPeriod>('weekly');
   const [competitions, setCompetitions] = useState<RPCRecord[]>([]);
   const [fame, setFame] = useState<RPCRecord[]>([]);
-  const [titles, setTitles] = useState<RPCRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState<string | null>(null);
   const [selectedComp, setSelectedComp] = useState<RPCRecord | null>(null);
   const [compLeaderboard, setCompLeaderboard] = useState<RPCRecord[]>([]);
-  const [streakEntries, setStreakEntries] = useState<StreakLeaderEntry[]>([]);
   // Phase 5 follow-on — mastery-percentile tab. Renders only when
   // ff_personalised_compete_v1 is on (server's /api/v1/leaderboard/mastery
   // also 404s when off). Falls through to legacy tabs when flag is off.
@@ -142,29 +303,91 @@ export default function LeaderboardPage() {
   const { data: lbFlags } = useFeatureFlags();
   const masteryTabOn = lbFlags?.ff_personalised_compete_v1 === true;
 
-  const classId = (student as any)?.class_id ?? null;
-  const isClassTabActive = tab === 'class';
-  const { data: classData, isLoading: classLoading, error: classError } = useSWR<{ items: ClassLeaderEntry[] } | null>(
-    classId && isClassTabActive ? `/api/v1/leaderboard/class/${classId}?period=${period}` : null,
-    async (url: string) => {
-      const res = await fetch(url, { credentials: 'same-origin' });
-      // 404 = this class has no board yet (genuine nothing). Every other
-      // non-2xx is a failure and must reach SWR's `error` channel — returning
-      // null for all of them rendered "No class rankings yet" after a 500.
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`class leaderboard: HTTP ${res.status}`);
-      return res.json() as Promise<{ items: ClassLeaderEntry[] }>;
+  /* ── RANKINGS ─────────────────────────────────────────────────────────────
+     Server-computed ranks, straight from the CDN-cached route via the shared
+     hook. There is deliberately NO client-side enrichment or re-sort: the old
+     `performance_scores` / `score_history` browser reads returned only the
+     caller's row, so every peer sorted to -1 and the caller took rank #1. */
+  const {
+    data: board,
+    error: ranksError,
+    isLoading: ranksLoading,
+    mutate: reloadRanks,
+  } = useLeaderboard(period, 50);
+  const entries = board?.entries ?? [];
+  // The board's ranking basis is the SERVER's to declare, never the client's.
+  const rankedBy = board?.rankedBy ?? 'xp';
+
+  /* ── MY TITLES ── own-data; service-role read scoped server-side. */
+  const {
+    data: titlesData,
+    error: titlesError,
+    isLoading: titlesLoading,
+    mutate: reloadTitles,
+  } = useSWR<TitlesData>(
+    isLoggedIn && tab === 'titles' ? '/api/v1/leaderboard/titles' : null,
+    fetchEnvelope<TitlesData>,
+    { revalidateOnFocus: false },
+  );
+  const titles = titlesData?.titles ?? [];
+
+  /* ── STREAKS ── peer board + the caller's own row (`me`). */
+  const {
+    data: streaksData,
+    error: streaksError,
+    isLoading: streaksLoading,
+    mutate: reloadStreaks,
+  } = useSWR<StreaksData>(
+    isLoggedIn && tab === 'streaks' ? '/api/v1/leaderboard/streaks?limit=50' : null,
+    fetchEnvelope<StreaksData>,
+    { refreshInterval: 60_000 },
+  );
+  const streakItems = streaksData?.items ?? [];
+  const myStreak = streaksData?.me ?? null;
+
+  /* ── MY CLASS ── one fetch, no class-id plumbing: membership is resolved
+     server-side from `class_students`. `students.class_id` never existed. */
+  const {
+    data: classResult,
+    isLoading: classLoading,
+    error: classError,
+    mutate: reloadClass,
+  } = useSWR<MyClassResult>(
+    isLoggedIn && tab === 'class'
+      ? `/api/v1/leaderboard/my-class?period=${classPeriod}&limit=20`
+      : null,
+    async (url: string): Promise<MyClassResult> => {
+      const res = await authedFetch(url, { credentials: 'same-origin' });
+      // 404 = `ff_class_leaderboard_v1` is off. That is a deliberate product
+      // state, not a failure — it must not raise an error banner.
+      if (res.status === 404) return { kind: 'off' };
+      if (!res.ok) throw new Error(`my-class leaderboard: HTTP ${res.status}`);
+      const json = (await res.json().catch(() => null)) as
+        | { success?: boolean; data?: MyClassData }
+        | null;
+      if (!json || json.success !== true || !json.data) {
+        throw new Error('my-class leaderboard: malformed response');
+      }
+      return { kind: 'ok', data: json.data };
     },
-    { refreshInterval: 60000 },
+    { refreshInterval: 60_000 },
   );
 
   // U10 — personal percentile band (never expose absolute numeric rank).
-  const { data: bandData } = useSWR<{ percentile: number; band: PercentileBand } | null>(
-    isLoggedIn ? '/api/v1/leaderboard/me' : null,
+  // The route replies with the v1 ENVELOPE `{ success, data }` — this fetcher
+  // used to `return res.json()` and read `.band` off the envelope, which is
+  // always `undefined` and crashed PercentileBandCard, taking every tab on the
+  // page down with it via <SectionErrorBoundary>. Unwrap `data` here; the API
+  // shape is unchanged (other consumers depend on it).
+  const { data: bandData } = useSWR<LeaderboardMeData | null>(
+    isLoggedIn ? `/api/v1/leaderboard/me?period=${period}` : null,
     async (url: string) => {
-      const res = await fetch(url, { credentials: 'same-origin' });
+      const res = await authedFetch(url, { credentials: 'same-origin' });
       if (!res.ok) return null;
-      return res.json() as Promise<{ percentile: number; band: PercentileBand }>;
+      const json = (await res.json().catch(() => null)) as LeaderboardMeEnvelope | null;
+      // success:false, data:null, or a malformed body → no card, no throw.
+      if (!json || json.success !== true || !json.data) return null;
+      return json.data;
     },
     { refreshInterval: 300_000 },
   );
@@ -173,113 +396,22 @@ export default function LeaderboardPage() {
     if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
-  // Load rankings — tries Performance Score system first, falls back to XP
-  const loadRanks = useCallback(async () => {
-    setLoading(true);
-    setFetchError(null);
-    try {
-      // Step 1: Load XP-based rankings (existing system, always works)
-      // A failed read must NOT arrive here as []; "No rankings yet" is an
-      // assertion about the cohort, and rendering it after a 500 is the same
-      // lie /progress told with "No knowledge gaps detected!". getLeaderboard
-      // returns ServiceResult, so a failure is thrown into the catch below,
-      // which sets fetchError — the condition every empty state on this page
-      // is now gated on.
-      const xpResult = await getLeaderboard(period, 50);
-      if (!xpResult.ok) throw new Error(xpResult.error);
-      const xpEntries: PerformanceRankEntry[] = Array.isArray(xpResult.data) ? xpResult.data : [];
-
-      // Step 2: Try to enrich with Performance Scores from performance_scores table
-      // For "All Time" use current performance_scores; for weekly/monthly use score_history
-      let perfMap: Map<string, { avgScore: number; levelName: string }> | null = null;
-
-      try {
-        if (period === 'all') {
-          // Current snapshot from performance_scores
-          const { data: perfData } = await supabase
-            .from('performance_scores')
-            .select('student_id, overall_score, level_name');
-          if (perfData && perfData.length > 0) {
-            // Average all subjects per student
-            const studentScores: Record<string, { total: number; count: number; levels: string[] }> = {};
-            for (const row of perfData) {
-              if (!studentScores[row.student_id]) {
-                studentScores[row.student_id] = { total: 0, count: 0, levels: [] };
-              }
-              studentScores[row.student_id].total += Number(row.overall_score);
-              studentScores[row.student_id].count += 1;
-              studentScores[row.student_id].levels.push(row.level_name);
-            }
-            perfMap = new Map();
-            for (const [sid, agg] of Object.entries(studentScores)) {
-              const avg = Math.round(agg.total / agg.count);
-              perfMap.set(sid, { avgScore: avg, levelName: getLevelFromScore(avg) });
-            }
-          }
-        } else {
-          // For weekly/monthly, use score_history
-          const since = new Date();
-          since.setDate(since.getDate() - (period === 'monthly' ? 30 : 7));
-          const { data: histData } = await supabase
-            .from('score_history')
-            .select('student_id, score, recorded_at')
-            .gte('recorded_at', since.toISOString().split('T')[0]);
-          if (histData && histData.length > 0) {
-            // For each student, collect all scores then average
-            const latestPerStudent: Record<string, { scores: number[] }> = {};
-            for (const row of histData) {
-              const key = `${row.student_id}`;
-              if (!latestPerStudent[key]) latestPerStudent[key] = { scores: [] };
-              latestPerStudent[key].scores.push(Number(row.score));
-            }
-            perfMap = new Map();
-            for (const [sid, agg] of Object.entries(latestPerStudent)) {
-              if (agg.scores.length > 0) {
-                const avg = Math.round(agg.scores.reduce((a, b) => a + b, 0) / agg.scores.length);
-                perfMap.set(sid, { avgScore: avg, levelName: getLevelFromScore(avg) });
-              }
-            }
-          }
-        }
-      } catch {
-        // Performance score fetch failed — gracefully fall back to XP-only
-        perfMap = null;
-      }
-
-      // Step 3: Merge and rank
-      if (perfMap && perfMap.size > 0) {
-        // Enrich XP entries with performance scores
-        const enriched: PerformanceRankEntry[] = xpEntries.map((e) => {
-          const perf = perfMap!.get(e.student_id);
-          return {
-            ...e,
-            performance_score: perf?.avgScore,
-            level_name: perf?.levelName,
-            foxy_coins: e.total_xp, // XP becomes "Foxy Coins" label
-          };
-        });
-        // Re-sort by performance_score DESC (students with scores first, then by XP)
-        enriched.sort((a, b) => {
-          const aScore = a.performance_score ?? -1;
-          const bScore = b.performance_score ?? -1;
-          if (aScore !== bScore) return bScore - aScore;
-          return (b.total_xp ?? 0) - (a.total_xp ?? 0);
-        });
-        setEntries(enriched);
-        setUsePerformanceScores(true);
-      } else {
-        setEntries(xpEntries);
-        setUsePerformanceScores(false);
-      }
-    } catch (e) {
-      // P13: reason only — no student id, no row payload.
-      logger.warn('leaderboard: rankings load failed', {
-        reason: e instanceof Error ? e.message : 'unknown error',
+  /* Observability for every server-backed tab. P13: reason only — never a
+     student id, never a row payload. */
+  useEffect(() => {
+    const failures: Array<[string, unknown]> = [
+      ['rankings', ranksError],
+      ['titles', titlesError],
+      ['streaks', streaksError],
+      ['my-class', classError],
+    ];
+    for (const [scope, err] of failures) {
+      if (!err) continue;
+      logger.warn(`leaderboard: ${scope} load failed`, {
+        reason: err instanceof Error ? err.message : 'unknown error',
       });
-      setEntries([]); setUsePerformanceScores(false); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data');
     }
-    setLoading(false);
-  }, [period, isHi]);
+  }, [ranksError, titlesError, streaksError, classError]);
 
   // Load competitions
   const loadCompetitions = useCallback(async () => {
@@ -306,55 +438,12 @@ export default function LeaderboardPage() {
     setLoading(false);
   }, [isHi]);
 
-  // Load my titles
-  // The `error` field is destructured deliberately: the postgrest builder
-  // RESOLVES with { data, error }, so without this the catch was dead code and
-  // a failed read rendered "No titles yet" — the same defect the ServiceResult
-  // helpers above fix, just with the query inlined here instead.
-  const loadTitles = useCallback(async () => {
-    if (!student) return;
-    setLoading(true);
-    setFetchError(null);
-    try {
-      const { data, error } = await supabase.from('student_titles').select('*').eq('student_id', student.id).eq('is_active', true).order('earned_at', { ascending: false }).limit(50);
-      if (error) throw new Error(error.message);
-      setTitles(data ?? []);
-    } catch { setTitles([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
-    setLoading(false);
-  }, [student, isHi]);
-
-  // Load streaks leaderboard
-  const loadStreaks = useCallback(async () => {
-    if (!student) return;
-    setLoading(true);
-    setFetchError(null);
-    try {
-      const { data, error } = await supabase
-        .from('challenge_streaks')
-        .select('student_id, current_streak, best_streak, badges, students!inner(name, avatar_url)')
-        .gte('current_streak', STREAK_VISIBILITY_THRESHOLD)
-        .order('current_streak', { ascending: false })
-        .limit(50);
-      // Same reason as loadTitles: without this check a failed read renders
-      // "No active streaks yet", which is a claim, not an omission.
-      if (error) throw new Error(error.message);
-
-      if (data && data.length > 0) {
-        const mapped: StreakLeaderEntry[] = data.map((row: any) => ({
-          student_id: row.student_id,
-          current_streak: row.current_streak,
-          best_streak: row.best_streak,
-          badges: Array.isArray(row.badges) ? row.badges : [],
-          student_name: (row.students as any)?.name ?? '?',
-          student_avatar: (row.students as any)?.avatar_url,
-        }));
-        setStreakEntries(mapped);
-      } else {
-        setStreakEntries([]);
-      }
-    } catch { setStreakEntries([]); setFetchError(isHi ? 'डेटा लोड नहीं हो सका' : 'Failed to load data'); }
-    setLoading(false);
-  }, [student, isHi]);
+  /* The "My Titles" and "Streaks" client reads are GONE.
+     `student_titles` is service-role-only under RLS (one policy, no student
+     SELECT) so the browser read returned zero rows for everyone, forever;
+     `challenge_streaks` + `students` are own-row-only, so the "Top Streaks"
+     board could contain at most the caller. Both now come from
+     /api/v1/leaderboard/{titles,streaks} through the SWR hooks above. */
 
   // Phase 5 follow-on — mastery leaderboard fetcher. 404 = flag off
   // or no profile; treat as empty (UI renders the empty state).
@@ -362,7 +451,7 @@ export default function LeaderboardPage() {
     setLoading(true);
     setFetchError(null);
     try {
-      const res = await fetch('/api/v1/leaderboard/mastery?limit=50', {
+      const res = await authedFetch('/api/v1/leaderboard/mastery?limit=50', {
         credentials: 'same-origin',
       });
       if (res.status === 404) {
@@ -384,33 +473,24 @@ export default function LeaderboardPage() {
     setLoading(false);
   }, [isHi]);
 
+  /* Rankings / titles / streaks / my-class are SWR-owned (keyed on tab +
+     period), so only the three legacy RPC-backed tabs still load imperatively. */
   useEffect(() => {
     if (!student) return;
-    if (tab === 'ranks') loadRanks();
-    else if (tab === 'compete') loadCompetitions();
+    if (tab === 'compete') loadCompetitions();
     else if (tab === 'fame') loadFame();
-    else if (tab === 'titles') loadTitles();
-    else if (tab === 'streaks') loadStreaks();
     else if (tab === 'mastery') loadMastery();
     // Intentionally key on student?.id, not the student object, to avoid re-firing on every AuthContext refresh — see render-loop fix.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, student?.id, loadRanks, loadCompetitions, loadFame, loadTitles, loadStreaks, loadMastery]);
+  }, [tab, student?.id, loadCompetitions, loadFame, loadMastery]);
 
-  // Intentionally key on student?.id, not the student object, to avoid re-firing on every AuthContext refresh — see render-loop fix.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (student && tab === 'ranks') loadRanks(); }, [period, student?.id, tab, loadRanks]);
-
-  // Retry for the error card: re-runs whichever loader owns the visible tab, so
-  // one control recovers all six without the student switching tabs.
+  // Retry for the shared error card, which now serves only the imperative tabs.
   const reloadActiveTab = useCallback(() => {
-    if (tab === 'ranks') loadRanks();
-    else if (tab === 'compete') loadCompetitions();
+    if (tab === 'compete') loadCompetitions();
     else if (tab === 'fame') loadFame();
-    else if (tab === 'titles') loadTitles();
-    else if (tab === 'streaks') loadStreaks();
     else if (tab === 'mastery') loadMastery();
     else setFetchError(null);
-  }, [tab, loadRanks, loadCompetitions, loadFame, loadTitles, loadStreaks, loadMastery]);
+  }, [tab, loadCompetitions, loadFame, loadMastery]);
 
   const handleJoin = async (compId: string) => {
     if (!student) return;
@@ -446,7 +526,14 @@ export default function LeaderboardPage() {
 
   if (isLoading || !student) return <LoadingFoxy />;
 
-  const myRank = entries.findIndex(e => e.student_id === student.id);
+  /* P7: grade is a STRING (P5) and is never rendered as a bare "Gr 8". */
+  const gradeLabel = (grade: string | null | undefined) =>
+    grade == null || grade === '' ? null : isHi ? `कक्षा ${grade}` : `Grade ${grade}`;
+
+  /* The board is labelled from the SERVER's declared basis. 'xp' is the only
+     basis this route produces today; anything else is echoed rather than
+     silently mislabelled. */
+  const rankedByLabel = rankedBy === 'xp' ? 'XP' : rankedBy;
 
   const TABS: { id: Tab; label: string; labelHi: string; icon: string }[] = [
     { id: 'ranks', label: 'Rankings', labelHi: 'रैंकिंग', icon: '🏆' },
@@ -496,28 +583,12 @@ export default function LeaderboardPage() {
       <ContentElement className="app-container py-4 space-y-3">
         <SectionErrorBoundary section="Leaderboard">
 
-        {/* Failure state. Rendered INSTEAD of (never alongside) any of this
-            page's reassuring empty states — each of those is gated on
-            `!fetchError` below. Dismiss alone left the student with no way
-            back, so the primary control is now a Retry that re-runs the active
-            tab's loader; min-h/min-w pin it to the 44px touch floor (WCAG
-            2.5.8), which the bare text buttons did not meet. */}
+        {/* Failure state for the imperative tabs (Compete / Hall of Fame /
+            Mastery). Rendered INSTEAD of (never alongside) their reassuring
+            empty states — each of those is gated on `!fetchError` below.
+            The SWR-backed tabs carry their own failure branch inline. */}
         {fetchError && (
-          <div role="alert" className="mx-4 mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 flex items-center gap-2">
-            <span aria-hidden="true">⚠️</span>
-            <span className="flex-1">{fetchError}</span>
-            <button
-              onClick={reloadActiveTab}
-              className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] px-3 text-red-700 font-semibold underline"
-            >
-              🔄 {isHi ? 'फिर से कोशिश करो' : 'Retry'}
-            </button>
-            <button
-              onClick={() => setFetchError(null)}
-              className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] text-red-700 font-bold"
-              aria-label={isHi ? 'बंद करें' : 'Dismiss'}
-            >✕</button>
-          </div>
+          <LoadFailure isHi={isHi} onRetry={reloadActiveTab} onDismiss={() => setFetchError(null)} />
         )}
 
         {/* ═══ RANKINGS TAB ═══ */}
@@ -531,8 +602,8 @@ export default function LeaderboardPage() {
                   style={
                     period === p.id
                       ? {
-                          background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
-                          color: '#fff',
+                          background: 'var(--surface-accent)',
+                          color: 'var(--on-surface-accent)',
                           boxShadow: '0 3px 12px rgb(var(--accent-warm-rgb) / 0.28)',
                         }
                       : { background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }
@@ -542,10 +613,41 @@ export default function LeaderboardPage() {
               ))}
             </div>
 
-            {/* U10 — personal percentile band (no absolute rank ever). */}
-            {bandData && <PercentileBandCard band={bandData.band} isHi={isHi} />}
+            {/* U10 — personal percentile band (no absolute rank ever). A
+                partial payload (no band yet — e.g. a student with no ranking)
+                skips the card rather than passing `undefined` down. */}
+            {bandData?.band ? <PercentileBandCard band={bandData.band} isHi={isHi} /> : null}
 
-            {/* Top 3 Podium */}
+            {/* The caller's OWN Performance Score — own data, served privately by
+                /api/v1/leaderboard/me. `null` means "no scored subjects yet" and
+                is rendered as an ABSENCE, never as a 0. Peer Performance Scores
+                are not served anywhere and are not shown on this board. */}
+            {bandData?.performance_score != null && (
+              <PremiumCard className="!p-4 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-[var(--text-3)]">
+                    {isHi ? 'तुम्हारा परफ़ॉर्मेंस स्कोर' : 'Your Performance Score'}
+                  </div>
+                  {bandData.level_name && (
+                    <div className="text-sm font-semibold mt-0.5" style={{ color: getScoreColor(bandData.performance_score) }}>
+                      {bandData.level_name}
+                    </div>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <span className="text-2xl font-bold" style={{ color: getScoreColor(bandData.performance_score) }}>
+                    {bandData.performance_score}
+                  </span>
+                  <span className="text-xs text-[var(--text-3)]">
+                    {isHi ? ' / 100 अंक' : ' out of 100'}
+                  </span>
+                </div>
+              </PremiumCard>
+            )}
+
+            {/* Top 3 Podium — medal position is the SERVER's rank, not the array
+                index, so nothing on this page can promote the caller. Renders
+                only on a successful, non-empty read (entries is [] otherwise). */}
             {entries.length >= 3 && (
               <div className="flex items-end justify-center gap-3 py-4">
                 {[1, 0, 2].map(idx => {
@@ -553,33 +655,26 @@ export default function LeaderboardPage() {
                   if (!e) return null;
                   const isMe = e.student_id === student.id;
                   const height = idx === 0 ? 'h-28' : idx === 1 ? 'h-20' : 'h-16';
-                  const hasPerf = usePerformanceScores && e.performance_score != null;
+                  const medalIdx = Math.min(Math.max(e.rank, 1), 3) - 1;
                   return (
-                    <div key={idx} className="flex flex-col items-center" style={{ width: idx === 0 ? '40%' : '30%' }}>
-                      <div className={`text-${idx === 0 ? '3xl' : '2xl'} mb-1`}>{MEDALS[idx]}</div>
-                      <Avatar name={e.name || e.student_name || ''} size={idx === 0 ? 48 : 36} />
+                    <div key={e.student_id} className="flex flex-col items-center" style={{ width: idx === 0 ? '40%' : '30%' }}>
+                      <div className={`text-${idx === 0 ? '3xl' : '2xl'} mb-1`}>{MEDALS[medalIdx]}</div>
+                      <Avatar name={e.name ?? ''} size={idx === 0 ? 48 : 36} />
                       <div className="text-xs font-bold mt-1 truncate max-w-full text-center" style={isMe ? { color: 'var(--accent-warm)' } : undefined}>
-                        {e.name}{isMe ? (isHi ? ' (तुम)' : ' (You)') : ''}
+                        {e.name ?? (isHi ? 'छात्र' : 'Student')}{isMe ? (isHi ? ' (तुम)' : ' (You)') : ''}
                       </div>
-                      <div className="text-xs text-[var(--text-3)]">Gr {e.grade}</div>
+                      {gradeLabel(e.grade) && (
+                        <div className="text-xs text-[var(--text-3)]">{gradeLabel(e.grade)}</div>
+                      )}
                       <div className={`w-full ${height} rounded-t-xl mt-2 flex flex-col items-center justify-end pb-2`}
                         style={{
-                          background: `color-mix(in srgb, ${RANK_COLORS[idx]} 16%, var(--surface-1))`,
-                          border: `1.5px solid color-mix(in srgb, ${RANK_COLORS[idx]} 40%, transparent)`,
-                          boxShadow: idx === 0 ? '0 6px 18px color-mix(in srgb, var(--gold) 22%, transparent)' : undefined,
+                          background: `color-mix(in srgb, ${RANK_COLORS[medalIdx]} 16%, var(--surface-1))`,
+                          border: `1.5px solid color-mix(in srgb, ${RANK_COLORS[medalIdx]} 40%, transparent)`,
+                          boxShadow: medalIdx === 0 ? '0 6px 18px color-mix(in srgb, var(--gold) 22%, transparent)' : undefined,
                         }}>
-                        {hasPerf ? (
-                          <>
-                            <span className="text-lg font-bold" style={{ color: getScoreColor(e.performance_score!) }}>
-                              {e.performance_score}
-                            </span>
-                            <span className="text-[10px] text-[var(--text-3)]">/100</span>
-                          </>
-                        ) : (
-                          <span className="text-sm font-bold" style={{ color: RANK_COLORS[idx] }}>
-                            {e.total_xp?.toLocaleString()} XP
-                          </span>
-                        )}
+                        <span className="text-sm font-bold" style={{ color: RANK_COLORS[medalIdx] }}>
+                          {e.total_xp.toLocaleString()} XP
+                        </span>
                       </div>
                     </div>
                   );
@@ -587,23 +682,21 @@ export default function LeaderboardPage() {
               </div>
             )}
 
-            {/* Top 10 chart — XP or Performance Score depending on available data */}
-            {!loading && entries.length > 0 && (
+            {/* Top 10 chart — labelled from the SERVER's `ranked_by`. The old
+                "Top 10 by Performance Score" header was false: the board was
+                (and is) ranked by XP. */}
+            {!ranksLoading && !ranksError && entries.length > 0 && (
               <section className="mb-2">
                 <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--text-3)]">
-                  {usePerformanceScores
-                    ? (isHi ? 'शीर्ष 10 प्रदर्शन स्कोर' : 'Top 10 by Performance Score')
-                    : (isHi ? 'शीर्ष 10 XP' : 'Top 10 by XP')}
+                  {isHi ? `शीर्ष 10 — ${rankedByLabel}` : `Top 10 by ${rankedByLabel}`}
                 </h2>
                 <BarChart
                   series={[
                     {
-                      name: usePerformanceScores ? (isHi ? 'प्रदर्शन स्कोर' : 'Performance Score') : 'XP',
+                      name: rankedByLabel,
                       data: entries.slice(0, 10).map((e) => ({
                         x: e.name ?? '?',
-                        y: usePerformanceScores && e.performance_score != null
-                          ? e.performance_score
-                          : (e.total_xp ?? 0),
+                        y: e.total_xp,
                       })),
                     },
                   ]}
@@ -612,17 +705,17 @@ export default function LeaderboardPage() {
               </section>
             )}
 
-            {/* Full List */}
-            {loading ? (
+            {/* Full list — LOADING / ERROR / EMPTY / DATA, four distinct states.
+                The empty state is reachable ONLY from a successful read. */}
+            {ranksLoading ? (
               <TabLoader label={isHi ? 'लोड हो रहा है...' : 'Loading rankings...'} />
+            ) : ranksError ? (
+              <LoadFailure isHi={isHi} onRetry={() => { void reloadRanks(); }} />
             ) : entries.length === 0 ? (
-              // Gated on !fetchError: after a failed read there is no basis for
-              // "No rankings yet", so the error card above is the whole answer.
-              fetchError ? null :
               <EmptyState
                 icon="🏆"
                 title={isHi ? 'अभी कोई रैंकिंग नहीं' : 'No rankings yet'}
-                description={isHi ? 'क्विज़ खेलो और अपना Performance Score बढ़ाओ — रैंकिंग में ऊपर चढ़ो!' : 'Take quizzes to boost your Performance Score and climb the ranks!'}
+                description={isHi ? 'क्विज़ खेलो, XP कमाओ — और रैंकिंग में ऊपर चढ़ो!' : 'Take quizzes to earn XP and climb the ranks!'}
                 action={
                   <Button onClick={() => router.push('/quiz')}>
                     {isHi ? 'क्विज़ शुरू करो' : 'Start a Quiz'}
@@ -635,60 +728,43 @@ export default function LeaderboardPage() {
                   {isHi ? `टॉप ${entries.length} छात्र` : `Top ${entries.length} Students`}
                 </SectionHeader>
                 <div className="space-y-3">
-                  {entries.map((entry, idx) => {
+                  {entries.map((entry) => {
                     const isMe = entry.student_id === student.id;
-                    const hasPerf = usePerformanceScores && entry.performance_score != null;
+                    // Rank comes from the SERVER. Nothing here renumbers it, so
+                    // the caller can no longer be handed #1 by a client re-sort.
+                    const medal = entry.rank >= 1 && entry.rank <= 3 ? MEDALS[entry.rank - 1] : null;
                     return (
                       <PremiumCard key={entry.student_id}
                         glow={isMe}
                         className={`!p-4 flex items-center gap-3${isMe ? ' warm-cta' : ''}`}>
                         <div className="w-8 text-center flex-shrink-0">
-                          {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
-                            : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
+                          {medal
+                            ? <span className="text-xl">{medal}</span>
+                            : <span className="text-sm font-bold text-[var(--text-3)]">#{entry.rank}</span>}
                         </div>
                         <Avatar name={entry.name ?? '?'} size={36} />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold truncate">
-                            {entry.name}
+                            {entry.name ?? (isHi ? 'छात्र' : 'Student')}
                             {isMe && <span className="text-xs ml-1" style={{ color: 'var(--accent-warm)' }}>({isHi ? 'तुम' : 'You'})</span>}
                           </div>
-                          <div className="text-xs text-[var(--text-3)]">
-                            Gr {entry.grade}
-                            {entry.school && ` · ${entry.school}`}
-                            {entry.city && ` · ${entry.city}`}
-                          </div>
-                          {hasPerf && entry.level_name && (
-                            <div className="text-xs font-semibold mt-0.5" style={{ color: getScoreColor(entry.performance_score!) }}>
-                              {entry.level_name}
-                            </div>
-                          )}
-                          {entry.top_title && (
-                            <div className="text-xs font-semibold mt-0.5" style={{ color: 'var(--purple)' }}>
-                              {entry.top_title}
-                            </div>
+                          {/* P13: name + grade are the WHOLE peer whitelist here.
+                              `school` / `city` are no longer served by the route
+                              (and were rendering as `undefined` even before). */}
+                          {gradeLabel(entry.grade) && (
+                            <div className="text-xs text-[var(--text-3)]">{gradeLabel(entry.grade)}</div>
                           )}
                         </div>
                         <div className="text-right flex-shrink-0">
-                          {hasPerf ? (
-                            <>
-                              <div className="text-lg font-bold" style={{ color: getScoreColor(entry.performance_score!) }}>
-                                {entry.performance_score}
-                              </div>
-                              <div className="text-[10px] text-[var(--text-3)]">/100</div>
-                              {entry.foxy_coins != null && (
-                                <div className="text-[10px] text-[var(--text-3)] mt-0.5">
-                                  {entry.foxy_coins.toLocaleString()} Foxy Coins
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              <div className="text-sm font-bold gradient-text">{entry.total_xp?.toLocaleString()}</div>
-                              <div className="text-xs text-[var(--text-3)]">
-                                {entry.accuracy}% {'\u00B7'} {entry.streak}
-                              </div>
-                            </>
-                          )}
+                          {/* This number is XP and is now labelled XP. It used to
+                              read "Foxy Coins" — an unrelated currency
+                              (`coin_balances`, spent in the /profile Shop). */}
+                          <div className="text-sm font-bold gradient-text">{entry.total_xp.toLocaleString()}</div>
+                          <div className="text-xs text-[var(--text-3)]">XP</div>
+                          <div className="text-[10px] text-[var(--text-3)] mt-0.5">
+                            🔥 {entry.streak} {'\u00B7'}{' '}
+                            {isHi ? `${entry.sessions} क्विज़` : `${entry.sessions} quizzes`}
+                          </div>
                         </div>
                       </PremiumCard>
                     );
@@ -949,10 +1025,14 @@ export default function LeaderboardPage() {
         {/* ═══ MY TITLES TAB ═══ */}
         {tab === 'titles' && (
           <>
-            {loading ? (
+            {/* LOADING / ERROR / EMPTY / DATA. A titles read failure is a 500,
+                never `[]` — "No Titles Yet" is a claim about what the student
+                has earned and a failed read cannot establish it. */}
+            {titlesLoading ? (
               <TabLoader label={isHi ? 'लोड हो रहा है...' : 'Loading...'} />
+            ) : titlesError ? (
+              <LoadFailure isHi={isHi} onRetry={() => { void reloadTitles(); }} />
             ) : titles.length === 0 ? (
-              fetchError ? null :
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">🎖️</div>
                 <h3 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -984,6 +1064,9 @@ export default function LeaderboardPage() {
                       : t.tier === 'silver' ? RANK_COLORS[1]
                       : t.tier === 'bronze' ? RANK_COLORS[2]
                       : 'var(--purple)';
+                    // tier/source are nullable on the contract — a missing one
+                    // must not render as "null · null".
+                    const meta = [t.tier, t.source].filter(Boolean).join(' · ');
                     return (
                     <div key={t.id} className="rounded-2xl p-4 text-center"
                       style={{
@@ -991,11 +1074,16 @@ export default function LeaderboardPage() {
                         border: `1.5px solid color-mix(in srgb, ${tierColor} 30%, transparent)`,
                       }}>
                       <div className="text-3xl mb-2">{t.icon || '🏆'}</div>
+                      {/* P7: the server ships `title_hi`; use it under isHi. */}
                       <div className="text-xs font-bold">{isHi && t.title_hi ? t.title_hi : t.title}</div>
-                      <div className="text-xs text-[var(--text-3)] mt-1 capitalize">{t.tier} · {t.source}</div>
-                      <div className="text-xs text-[var(--text-3)]">
-                        {new Date(t.earned_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
-                      </div>
+                      {meta && (
+                        <div className="text-xs text-[var(--text-3)] mt-1 capitalize">{meta}</div>
+                      )}
+                      {t.earned_at && (
+                        <div className="text-xs text-[var(--text-3)]">
+                          {new Date(t.earned_at).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', { month: 'short', year: 'numeric' })}
+                        </div>
+                      )}
                     </div>
                     );
                   })}
@@ -1008,10 +1096,14 @@ export default function LeaderboardPage() {
         {/* ═══ STREAKS TAB ═══ */}
         {tab === 'streaks' && (
           <>
-            {loading ? (
+            {/* LOADING / ERROR / EMPTY / DATA. The board used to be a board of
+                ONE (own-row-only RLS on `challenge_streaks` + `students`); it is
+                now the server's peer board. */}
+            {streaksLoading ? (
               <TabLoader label={isHi ? 'स्ट्रीक लोड हो रही हैं...' : 'Loading streaks...'} />
-            ) : streakEntries.length === 0 ? (
-              fetchError ? null :
+            ) : streaksError ? (
+              <LoadFailure isHi={isHi} onRetry={() => { void reloadStreaks(); }} />
+            ) : streakItems.length === 0 ? (
               <EmptyState
                 icon="🔥"
                 title={isHi ? 'अभी कोई सक्रिय स्ट्रीक नहीं' : 'No active streaks yet'}
@@ -1024,26 +1116,55 @@ export default function LeaderboardPage() {
               />
             ) : (
               <>
+                {/* Own streak, shown when the caller is below the board's
+                    visibility threshold — otherwise they simply vanish from a
+                    page that is partly about their own streak. */}
+                {myStreak && !myStreak.on_board && myStreak.current_streak > 0 && (
+                  <PremiumCard className="!p-4 flex items-center gap-3 warm-cta">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold">{isHi ? 'तुम्हारी स्ट्रीक' : 'Your streak'}</div>
+                      <div className="mt-1">
+                        <StreakBadge streak={myStreak.current_streak} badges={myStreak.badges} isHi={isHi} size="sm" />
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-lg font-bold" style={{ color: 'var(--accent-warm)' }}>
+                        {isHi ? `${myStreak.current_streak} दिन` : `Day ${myStreak.current_streak}`}
+                      </div>
+                      {myStreak.best_streak > myStreak.current_streak && (
+                        <div className="text-[10px] text-[var(--text-3)]">
+                          {isHi ? `सर्वश्रेष्ठ: ${myStreak.best_streak}` : `Best: ${myStreak.best_streak}`}
+                        </div>
+                      )}
+                    </div>
+                  </PremiumCard>
+                )}
+
                 <SectionHeader icon="🔥">
-                  {isHi ? `टॉप स्ट्रीक (${streakEntries.length})` : `Top Streaks (${streakEntries.length})`}
+                  {isHi ? `टॉप स्ट्रीक (${streakItems.length})` : `Top Streaks (${streakItems.length})`}
                 </SectionHeader>
                 <div className="space-y-3">
-                  {streakEntries.map((entry, idx) => {
+                  {streakItems.map((entry) => {
                     const isMe = entry.student_id === student.id;
+                    const medal = entry.rank >= 1 && entry.rank <= 3 ? MEDALS[entry.rank - 1] : null;
                     return (
                       <PremiumCard key={entry.student_id}
                         glow={isMe}
                         className={`!p-4 flex items-center gap-3${isMe ? ' warm-cta' : ''}`}>
                         <div className="w-8 text-center flex-shrink-0">
-                          {idx < 3 ? <span className="text-xl">{MEDALS[idx]}</span>
-                            : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
+                          {medal
+                            ? <span className="text-xl">{medal}</span>
+                            : <span className="text-sm font-bold text-[var(--text-3)]">#{entry.rank}</span>}
                         </div>
-                        <Avatar name={entry.student_name} size={36} />
+                        <Avatar name={entry.name ?? '?'} size={36} />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold truncate">
-                            {entry.student_name}
+                            {entry.name ?? (isHi ? 'छात्र' : 'Student')}
                             {isMe && <span className="text-xs ml-1" style={{ color: 'var(--accent-warm)' }}>({isHi ? 'तुम' : 'You'})</span>}
                           </div>
+                          {gradeLabel(entry.grade) && (
+                            <div className="text-xs text-[var(--text-3)]">{gradeLabel(entry.grade)}</div>
+                          )}
                           <div className="mt-1">
                             <StreakBadge streak={entry.current_streak} badges={entry.badges} isHi={isHi} size="sm" />
                           </div>
@@ -1052,9 +1173,12 @@ export default function LeaderboardPage() {
                           <div className="text-lg font-bold" style={{ color: 'var(--accent-warm)' }}>
                             {isHi ? `${entry.current_streak} दिन` : `Day ${entry.current_streak}`}
                           </div>
-                          {entry.best_streak > entry.current_streak && (
+                          {/* `best_streak` exists ONLY on `me` — a peer's
+                              historical maximum is outside the peer whitelist
+                              and the server never sends it. */}
+                          {isMe && myStreak && myStreak.best_streak > entry.current_streak && (
                             <div className="text-[10px] text-[var(--text-3)]">
-                              {isHi ? `सर्वश्रेष्ठ: ${entry.best_streak}` : `Best: ${entry.best_streak}`}
+                              {isHi ? `सर्वश्रेष्ठ: ${myStreak.best_streak}` : `Best: ${myStreak.best_streak}`}
                             </div>
                           )}
                         </div>
@@ -1152,16 +1276,17 @@ export default function LeaderboardPage() {
         {/* ═══ MY CLASS TAB ═══ */}
         {tab === 'class' && (
           <>
-            {/* Period filter — reuse same period state */}
+            {/* The class board answers daily/weekly/monthly only — "All Time"
+                is not offered here rather than silently served as weekly. */}
             <div className="flex gap-1.5">
-              {PERIODS.map(p => (
-                <button key={p.id} onClick={() => setPeriod(p.id)}
+              {CLASS_PERIODS.map(p => (
+                <button key={p.id} onClick={() => setClassPeriod(p.id as ClassPeriod)}
                   className="flex-1 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
                   style={
-                    period === p.id
+                    classPeriod === p.id
                       ? {
-                          background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
-                          color: '#fff',
+                          background: 'var(--surface-accent)',
+                          color: 'var(--on-surface-accent)',
                           boxShadow: '0 3px 12px rgb(var(--accent-warm-rgb) / 0.28)',
                         }
                       : { background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }
@@ -1171,7 +1296,33 @@ export default function LeaderboardPage() {
               ))}
             </div>
 
-            {!classId ? (
+            {/* FIVE distinct outcomes, none of them collapsed into another:
+                loading / failed / feature-off / not-enrolled / enrolled-but-empty.
+                Class membership is resolved SERVER-SIDE from `class_students`;
+                the page no longer reads a `students.class_id` that never
+                existed and always resolved to null. */}
+            {classLoading ? (
+              <div className="space-y-3" role="status" aria-label={isHi ? 'लोड हो रहा है' : 'Loading class rankings'}>
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: 'var(--surface-2)' }} />
+                ))}
+              </div>
+            ) : classError ? (
+              // An error REPLACES the reassuring empty, it never sits next to it.
+              <LoadFailure isHi={isHi} onRetry={() => { void reloadClass(); }} />
+            ) : classResult?.kind === 'off' ? (
+              // 404 while `ff_class_leaderboard_v1` is off. A deliberate product
+              // state — not a failure, so no error banner.
+              <div className="text-center py-12">
+                <div className="text-5xl mb-4">🏫</div>
+                <p className="text-sm font-semibold text-[var(--text-2)] mb-1">
+                  {isHi ? 'कक्षा रैंकिंग जल्द आ रही है' : 'Class rankings are coming soon'}
+                </p>
+                <p className="text-xs text-[var(--text-3)]">
+                  {isHi ? 'तब तक बाकी रैंकिंग देखो।' : 'Check the other rankings in the meantime.'}
+                </p>
+              </div>
+            ) : classResult?.kind === 'ok' && !classResult.data.enrolled ? (
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">🏫</div>
                 <p className="text-sm font-semibold text-[var(--text-2)] mb-1">
@@ -1183,26 +1334,7 @@ export default function LeaderboardPage() {
                   {isHi ? 'अपने शिक्षक से कहें।' : 'Ask your teacher to add you.'}
                 </p>
               </div>
-            ) : classLoading ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: 'var(--surface-2)' }} />
-                ))}
-              </div>
-            ) : classError ? (
-              // This tab reads through SWR, not the shared fetchError, so it
-              // carries its own failure branch — same rule: an error replaces
-              // the reassuring empty, it never sits next to it.
-              <div role="alert" className="text-center py-12">
-                <div className="text-5xl mb-4">📡</div>
-                <p className="text-base font-semibold text-[var(--text-2)] mb-2">
-                  {isHi ? 'कक्षा रैंकिंग लोड नहीं हो सकी' : "Couldn't load class rankings"}
-                </p>
-                <p className="text-sm text-[var(--text-3)]">
-                  {isHi ? 'थोड़ी देर में फिर से देखो।' : 'Please check back in a moment.'}
-                </p>
-              </div>
-            ) : !classData?.items || classData.items.length === 0 ? (
+            ) : classResult?.kind === 'ok' && classResult.data.items.length === 0 ? (
               <EmptyState
                 icon="🏫"
                 title={isHi ? 'अभी कोई रैंकिंग नहीं' : 'No class rankings yet'}
@@ -1213,43 +1345,47 @@ export default function LeaderboardPage() {
                   </Button>
                 }
               />
-            ) : (
+            ) : classResult?.kind === 'ok' ? (
               <>
                 <SectionHeader icon="🏫">
-                  {isHi ? `कक्षा रैंकिंग (${classData.items.length})` : `Class Rankings (${classData.items.length})`}
+                  {isHi ? `कक्षा रैंकिंग (${classResult.data.items.length})` : `Class Rankings (${classResult.data.items.length})`}
                 </SectionHeader>
                 <div className="space-y-3">
-                  {classData.items.map((entry, idx) => {
+                  {classResult.data.items.map((entry) => {
                     const isMe = entry.student_id === student.id;
+                    const medal = entry.rank >= 1 && entry.rank <= 3 ? MEDALS[entry.rank - 1] : null;
                     return (
                       <PremiumCard key={entry.student_id}
                         glow={isMe}
                         className={`!p-4 flex items-center gap-3${isMe ? ' warm-cta' : ''}`}>
                         <div className="w-8 text-center flex-shrink-0">
-                          {idx < 3
-                            ? <span className="text-xl">{MEDALS[idx]}</span>
-                            : <span className="text-sm font-bold text-[var(--text-3)]">#{idx + 1}</span>}
+                          {medal
+                            ? <span className="text-xl">{medal}</span>
+                            : <span className="text-sm font-bold text-[var(--text-3)]">#{entry.rank}</span>}
                         </div>
                         <Avatar name={entry.name ?? '?'} size={36} />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold truncate">
-                            {entry.name}
+                            {entry.name ?? (isHi ? 'छात्र' : 'Student')}
                             {isMe && <span className="text-xs ml-1" style={{ color: 'var(--accent-warm)' }}>({isHi ? 'तुम' : 'You'})</span>}
                           </div>
-                          <div className="text-xs text-[var(--text-3)]">
-                            {isHi ? `कक्षा ${entry.grade}` : `Grade ${entry.grade}`}
-                          </div>
+                          {gradeLabel(entry.grade) && (
+                            <div className="text-xs text-[var(--text-3)]">{gradeLabel(entry.grade)}</div>
+                          )}
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <div className="text-sm font-bold gradient-text">{entry.xp_this_period?.toLocaleString()}</div>
+                          <div className="text-sm font-bold gradient-text">{entry.xp_this_period.toLocaleString()}</div>
                           <div className="text-xs text-[var(--text-3)]">XP</div>
+                          <div className="text-[10px] text-[var(--text-3)] mt-0.5">
+                            {isHi ? `${entry.quizzes} क्विज़` : `${entry.quizzes} quizzes`}
+                          </div>
                         </div>
                       </PremiumCard>
                     );
                   })}
                 </div>
               </>
-            )}
+            ) : null}
           </>
         )}
 

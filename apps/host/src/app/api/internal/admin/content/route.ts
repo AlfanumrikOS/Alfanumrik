@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
       }).select().single();
 
       if (error) throw error;
-      await logAdminAction({ action: 'create_topic', entity_type: 'curriculum_topic', entity_id: data.id, ip });
+      await logAdminAction({ action: 'create_topic', entity_type: 'curriculum_topic', entity_id: data.id, ip, actorUserId: auth.userId });
       // Taxonomy changed — invalidate the shared syllabus cache immediately
       // (Hard Rule 2: stale syllabus must never outlive a content edit).
       revalidateTag(SYLLABUS_CACHE_TAG, 'max');
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       }).select().single();
 
       if (error) throw error;
-      await logAdminAction({ action: 'create_question', entity_type: 'question_bank', entity_id: data.id, ip });
+      await logAdminAction({ action: 'create_question', entity_type: 'question_bank', entity_id: data.id, ip, actorUserId: auth.userId });
       return NextResponse.json({ success: true, data });
     }
 
@@ -170,7 +170,7 @@ export async function PATCH(request: NextRequest) {
     const { error } = await supabase.from(table).update(safe).eq('id', id);
     if (error) throw error;
 
-    await logAdminAction({ action: `update_${resource}`, entity_type: table, entity_id: id, ip });
+    await logAdminAction({ action: `update_${resource}`, entity_type: table, entity_id: id, ip, actorUserId: auth.userId });
     if (table === 'curriculum_topics') revalidateTag(SYLLABUS_CACHE_TAG, 'max');
     return NextResponse.json({ success: true });
   } catch (err) {
@@ -204,7 +204,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid resource' }, { status: 400 });
     }
 
-    await logAdminAction({ action: `delete_${resource}`, entity_type: resource, entity_id: id, ip });
+    await logAdminAction({ action: `delete_${resource}`, entity_type: resource, entity_id: id, ip, actorUserId: auth.userId });
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });

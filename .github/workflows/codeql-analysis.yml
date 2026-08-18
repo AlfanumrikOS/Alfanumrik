@@ -11,21 +11,32 @@ permissions:
   security-events: write
   contents: read
 
+# Same rationale as ci.yml's concurrency block: "CodeQL Analysis" is a
+# REQUIRED status check in the `main-protection` ruleset, so never cancel an
+# in-flight run on main (a cancelled run leaves the required context missing /
+# stale for that SHA and can strand merge + deploy gating). On PR branches,
+# supersede the older run — rapid pushes otherwise queue redundant multi-minute
+# analyses and let the required context lag behind HEAD.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   analyze:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
           build-mode: none
           config-file: ./.github/codeql/codeql-config.yml
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: "/language:javascript-typescript"

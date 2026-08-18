@@ -102,7 +102,7 @@ Legend — **Recommended launch state:** `GA-ON` = flip on at launch · `STAGED`
 |---|---|---|---|---|---|---|---|
 | `ff_productive_failure_v1` | Student | ZPD problem BEFORE tutorial on `/learn/[subject]/[chapter]` | Legacy tutorial-first path | SEEDED (`20260509120000`) | STAGED | ops | instant |
 | `ff_distractor_micro_explainer_v1` | Student | Curated remediation + "Ask Foxy" CTA after wrong MCQ | No micro-explainer | SEEDED (`20260509120000`) | STAGED | ops | instant |
-| `ff_pedagogy_v2_daily_rhythm` | Student | `<DailyRhythmQueue/>` on dashboard + `/api/rhythm/today` | Dashboard unchanged | SEEDED (`20260509120000`) | STAGED | ops | instant |
+| `ff_pedagogy_v2_daily_rhythm` | Student | `/api/rhythm/today` (route only — the `<DailyRhythmQueue/>` dashboard renderer was never mounted and was deleted in the 2026-08 orphan consolidation) | `/api/rhythm/today` 404s; dashboard unchanged either way | SEEDED (`20260509120000`) | STAGED | ops | instant |
 | `ff_pedagogy_v2_weekly_dive` | Student | `/dive` surface + `/api/dive/*` + weekly-dive CTA | `/dive` 404s; CTA suppressed (additive) | SEEDED (`20260510000000`) | STAGED | ops | instant |
 | `ff_pedagogy_v2_monthly_synthesis` | Student | `/synthesis` + `/api/synthesis/*` + cron synthesis builder + WhatsApp parent-share | `/synthesis` 404s; parent-share + cron skip flagged-out | SEEDED (`20260511000000`) | HOLD | ops | instant |
 

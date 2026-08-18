@@ -103,18 +103,27 @@ module.exports = {
         'mastery-mid': 'var(--mastery-mid)',
         'mastery-high': 'var(--mastery-high)',
         'level-up': 'var(--level-up)',
-        // ── AA-safe status foreground (Wave C) ───────────────────────────────
-        // `--green` (:root) is #16A34A, which is 3.30:1 on --surface-1 (#FFFFFF)
-        // — it FAILS WCAG AA 4.5:1 as normal-size text. The dashboard components
-        // were already *documenting* #15803D (5.01:1) as their intended mastered
-        // colour, but that value is only declared inside the
-        // `html[data-design="cosmic"][data-theme="light"]` scope, which the
-        // student dashboard never enters (useCosmicLightSurface REMOVES
-        // data-design). So the shipped pixels were the failing #16A34A.
-        // `--green-strong` is the AA-safe text/icon green; it is not yet
-        // declared in globals.css (owner: whoever owns the :root token block),
-        // so the fallback carries it. Registered here so the value has one home.
-        'success-strong': 'var(--green-strong, #15803D)',
+        // ── AA-safe status foregrounds ───────────────────────────────────────
+        // WCAG-AA *text* tokens, declared in packages/ui/src/globals.css :root
+        // (contrast table there; consumed by admin-ui StatusBadge/StatCard's
+        // contrast contract). Foreground colours for status text on the
+        // matching 10% tints — and bare on white:
+        //   --success-strong #166534   --warning-strong #B45309
+        //   --info-strong    #0E7490   --danger-strong  #B91C1C
+        // History (Wave C): `success-strong` originally bound to
+        // `var(--green-strong, #15803D)` before either var was declared in
+        // globals.css. Both now exist there and are DIFFERENT tokens:
+        // --green-strong #15803D is a FILL/ring colour (mastery-high), reached
+        // only via direct var() reads (dashboard/os/palette.ts MASTERY_STRONG)
+        // — never through a Tailwind utility. --success-strong #166534 is the
+        // text-safe green. This utility family is text-facing, so it binds to
+        // the text vars. Audit 2026-08-15: zero class-position consumers
+        // depended on the old fill value (the only `*-strong` utility usages
+        // are text-{success,danger,warning,info}-strong in admin-ui).
+        'success-strong': 'var(--success-strong, #166534)',
+        'warning-strong': 'var(--warning-strong, #B45309)',
+        'info-strong': 'var(--info-strong, #0E7490)',
+        'danger-strong': 'var(--danger-strong, #B91C1C)',
       },
       boxShadow: {
         'sm': 'var(--shadow-sm)',

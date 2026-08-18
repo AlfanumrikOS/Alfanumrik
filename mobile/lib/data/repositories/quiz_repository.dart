@@ -446,15 +446,20 @@ class QuizRepository {
         ..totalTimeSeconds = timeTakenSeconds
         ..responses.replace(buildV2SubmitItems(responses)));
 
-      // Idempotency-Key (UUID) header — required by the route contract.
-      final headers = <String, dynamic>{
-        if (idempotencyKey != null && idempotencyKey.isNotEmpty)
-          'Idempotency-Key': idempotencyKey,
-      };
-
+      // Idempotency-Key (UUID) — REQUIRED by the route contract and, since the
+      // spec declares it as a required header parameter, a required argument of
+      // the generated client. The generated method stamps this argument on the
+      // `Idempotency-Key` header itself — do NOT also pass it via `headers:`
+      // (the manual map spreads AFTER the parameter and would shadow it).
+      // The key is the attempt's stored key, generated ONCE by
+      // `QuizNotifier.startQuiz` and reused VERBATIM on every retry — never
+      // regenerated here (double-scoring guard, P2). A null/empty key is
+      // forwarded as '' so the SERVER stays the authority for the
+      // 400 IDEMPOTENCY_KEY_REQUIRED rejection — the same terminal outcome the
+      // previously-omitted header produced.
       final resp = await _v2!.quizApi.postQuizSubmit(
+        idempotencyKey: idempotencyKey ?? '',
         quizSubmitRequest: req,
-        headers: headers.isEmpty ? null : headers,
       );
       final body = resp.data;
       if (body == null) {
@@ -520,6 +525,8 @@ class QuizRepository {
   /// discard-vs-retain matrix using the HTTP status the server returned:
   ///   * 200 / idempotent replay        → success (store result, remove)
   ///   * 4xx (409/422/400/...)          → discard (un-replayable)
+  ///   * 5xx + `retryable: false`       → failedPermanent (terminal, kept
+  ///                                      on-device, never re-sent)
   ///   * 5xx / network / timeout        → retain (retry, key unchanged)
   Future<DrainOutcome> submitOfflineReplay(QueuedQuizAttempt attempt) async {
     final v2Client = _v2;
@@ -533,13 +540,15 @@ class QuizRepository {
     try {
       final req = buildOfflineSubmitRequest(attempt);
 
-      final headers = <String, dynamic>{
-        'Idempotency-Key': attempt.idempotencyKey,
-      };
-
+      // The generated client stamps this required argument on the
+      // `Idempotency-Key` header (same header name as before; sent exactly
+      // once). [attempt.idempotencyKey] flows through VERBATIM — never
+      // regenerated (see the method doc above). Do NOT also pass the key via
+      // `headers:` — the manual map spreads AFTER the parameter inside the
+      // generated method and would silently shadow it.
       final resp = await v2Client.quizApi.postQuizSubmit(
+        idempotencyKey: attempt.idempotencyKey,
         quizSubmitRequest: req,
-        headers: headers,
       );
       final body = resp.data;
       if (body == null) {
@@ -561,10 +570,17 @@ class QuizRepository {
       // Surface the server's structured error code (e.g. SHUFFLE_MAP_MISMATCH)
       // as the reason — NEVER any answer text / PII (P13).
       final reason = _errorCode(e) ?? 'http_${status ?? 'unknown'}';
+      // The server's EXPLICIT permanence signal (`retryable: false` on a 5xx
+      // whose SQLSTATE can never succeed — 42501/42883/23514). Absent on older
+      // servers → null → the classifier keeps the historical status-only
+      // behaviour. Parsing never throws and never changes the outcome on its
+      // own.
+      final retryable = OfflineDrainService.parseRetryable(e.response?.data);
       return OfflineDrainService.classify(
         ApiFailure('offline replay failed: $reason', status),
         statusCode: status,
         reasonCode: reason,
+        retryable: retryable,
       );
     } catch (e) {
       // Non-Dio error (serialization, etc.) — no HTTP status → retain.

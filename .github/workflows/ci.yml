@@ -16,13 +16,19 @@ on:
     # `e2e-full` — re-triggers this whole workflow. Mitigation: the
     # ci-${{ github.ref }} concurrency group below cancels the in-flight
     # run, and warm node_modules/.next caches keep the re-run at ~5-7 min.
-    # SAFE for the merge gate: every ruleset-required context ("CI Gate",
-    # "Lint, Type-check & Test") is re-produced on labeled-event runs
-    # because no required job is gated on the event *type* — labeled IS a
-    # pull_request event, so their `if:` guards (event_name/base_ref/
-    # same-repo) all still pass, and ci-gate/unit-tests-merge run under
-    # `if: always()`. Only the advisory label-gated `e2e` job reads the
-    # label list.
+    # SAFE for the merge gate: every ruleset-required context is re-produced
+    # on labeled-event runs because no required job is gated on the event
+    # *type* — labeled IS a pull_request event, so their `if:` guards
+    # (event_name/base_ref/same-repo) all still pass, and
+    # ci-gate/unit-tests-merge run under `if: always()`. Only the advisory
+    # label-gated `e2e` job reads the label list.
+    #
+    # (The live `main-protection` ruleset requires exactly four contexts:
+    # "Secret Scanning", "Lint, Type-check & Test", "Production Build" and
+    # "CodeQL Analysis". "CI Gate" is NOT ruleset-required — it is the
+    # aggregate gate that deploy-production.yml / deploy-staging.yml poll
+    # before deploying, so it must stay green for a different reason. Keep
+    # this list in sync with the note above the `ci-gate` job.)
     types: [opened, synchronize, reopened, labeled]
 
 permissions:
@@ -66,11 +72,12 @@ jobs:
   secret-scan:
     name: Secret Scanning
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read       # gitleaks needs to read repo history
       pull-requests: read  # gitleaks needs the PR commit list (fixes 403)
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # Full history required by gitleaks to scan diffs
 
@@ -80,6 +87,20 @@ jobs:
       # must fail CI. If a finding is a known false positive, allowlist it via
       # .gitleaks.toml (preferred) rather than re-disabling this gate.
       - name: Gitleaks scan
+        # DISPATCH SCOPE (2026-08-18): this action is DIFF-scoped -- on
+        # pull_request it scans the PR commits, on push the pushed range.
+        # workflow_dispatch has no range, so it degenerates into a full-history
+        # audit and reports 31 findings in pre-monorepo directories deleted long
+        # ago. That made the manual Run workflow button permanently red, so a
+        # branch that is not a PR into main had no way to be validated at all.
+        #
+        # Per-change scanning is UNCHANGED: pull_request and push still run
+        # gitleaks, still BLOCKING. The working-tree pattern scan in the next
+        # step runs on EVERY event including dispatch. Triaged 2026-08-18: all
+        # 59 JWT hits in the 7 historical files are role=anon for the
+        # DECOMMISSIONED project dxipobqngyfpqbbznojz -- no service_role key.
+        # Allowlist them in .gitleaks.toml to re-enable the history audit here.
+        if: github.event_name != 'workflow_dispatch'
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -182,11 +203,25 @@ jobs:
   # ── Step 0b: Exact selected-school migration integration ──
   # Apply only the V3 selected-school RPC migration to an explicit current-
   # schema fixture on local PG17. Historical migrations are out of scope.
+  #
+  # RUNS ON PRs TOO (restored 2026-08-11). 409123b5 added
+  # `if: github.event_name != 'pull_request'` "to reduce runner pressure";
+  # the cost was that a PR could be 100% green and still turn main red the
+  # moment it merged, because this job had never run against the change.
+  # Runner pressure is not a reason to make a green PR meaningless.
+  #
+  # It is also NOT expensive on PRs: the `Detect selected-school migration
+  # inputs` step below is a step-level paths filter over exactly 4 files, and
+  # every heavy step (Supabase CLI, local PG17 stack, psql assertions) is
+  # gated on `steps.selected_rpc_changes.outputs.changed == 'true'`. On the
+  # overwhelming majority of PRs this job is a checkout + one `git diff`
+  # (~30s) and reports SUCCESS. The 30-minute path only engages when the
+  # fixture / migration / config it validates actually changed — which is
+  # exactly when it must run BEFORE merge, not after.
   selected-school-rpc-integration:
     name: Selected-School RPC Migration Integration (local PG17)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: ${{ github.event_name != 'pull_request' }}
     permissions:
       contents: read
     env:
@@ -196,7 +231,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ''
       SUPABASE_DB_PASSWORD: ''
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -209,11 +244,22 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             base_sha="$PR_BASE_SHA"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A manual dispatch has no "before" commit. Without one this fell
+            # through to the fail-closed branch below, which forces the whole
+            # local PG17 integration stack to run on EVERY dispatch. Compare
+            # against the merge-base with the default branch instead: that is
+            # exactly "what this ref adds", which is what the filter is for.
+            # If it cannot be resolved we STILL fall through to fail-closed
+            # below, so the safety property is unchanged.
+            git fetch --no-tags --quiet origin "$DEFAULT_BRANCH" 2>/dev/null || true
+            base_sha="$(git merge-base FETCH_HEAD "$HEAD_SHA" 2>/dev/null || true)"
           else
             base_sha="$PUSH_BEFORE_SHA"
           fi
@@ -1023,15 +1069,21 @@ jobs:
   # assignment mentioning a name from packages/lib/src/flags/protected-flags.ts
   # and fails unless the same file carries a
   # `-- CEO-APPROVED-FLAG-FLIP: <flag_name>` marker comment.
+  #
+  # RUNS ON PRs TOO (restored 2026-08-11 — 409123b5 had made it main-only).
+  # A protected-flag flip must be caught BEFORE it merges; catching it on
+  # main means the flag is already flipped in a merged commit. Cheap on PRs:
+  # the `Detect changed migration files` step below is a step-level diff
+  # filter and every subsequent step is gated on
+  # `steps.changes.outputs.changed == 'true'`.
   protected-flag-migration-guard:
     name: Protected Flag Migration Guard
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: ${{ github.event_name != 'pull_request' }}
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -1044,11 +1096,24 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             base_sha="$PR_BASE_SHA"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A manual dispatch has no "before" commit. Without one this fell
+            # through to the fail-closed branch below, which re-scans EVERY
+            # migration in the repo -- including pre-policy ones that predate
+            # the CEO-APPROVED-FLAG-FLIP marker -- so NO dispatch run could
+            # ever pass this guard. Compare against the merge-base with the
+            # default branch instead: that is exactly "what this ref adds",
+            # which is what the guard is for. If it cannot be resolved we
+            # STILL fall through to fail-closed below; the safety property is
+            # unchanged.
+            git fetch --no-tags --quiet origin "$DEFAULT_BRANCH" 2>/dev/null || true
+            base_sha="$(git merge-base FETCH_HEAD "$HEAD_SHA" 2>/dev/null || true)"
           else
             base_sha="$PUSH_BEFORE_SHA"
           fi
@@ -1072,10 +1137,10 @@ jobs:
           fi
           printf '%s\n' "$files" > "$RUNNER_TEMP/changed-migrations.txt"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.changes.outputs.changed == 'true'
         with:
-          node-version: '22'
+          node-version: ${{ env.NODE_VERSION }}
           check-latest: true
 
       - name: Run protected-flag migration guard
@@ -1099,17 +1164,23 @@ jobs:
   # writerless watch, staleness (warn). Read-only; zero npm dependencies
   # (node:fs/node:path only), so no `npm ci` is needed — the job runs in
   # seconds at t=0 in parallel with the other fast jobs.
+  #
+  # RUNS ON PRs TOO (restored 2026-08-11). This is the job that proved the
+  # cost of the asymmetry: PR #1514 was 100% green, merged, and turned main
+  # red on the very next push because this analyzer had never run against
+  # it (#1517 was the repair). It costs a checkout + `node` with zero npm
+  # dependencies — single-digit seconds — so there was never a runner-cost
+  # case for skipping it on PRs.
   foxy-alignment:
     name: Foxy North-Star Alignment
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: ${{ github.event_name != 'pull_request' }}
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -1124,17 +1195,21 @@ jobs:
   # scripts/gen-mol-matrix.mjs. This gate re-runs the generator with
   # --check and fails if the on-disk copy differs — same pattern as
   # foxy:analyze (zero npm deps, node-only, no `npm ci` needed).
+  #
+  # RUNS ON PRs TOO (restored 2026-08-11 — 409123b5 had made it main-only).
+  # Generated-file drift is introduced BY a PR; detecting it only after the
+  # merge means main is already carrying the drift. Zero npm deps, node-only,
+  # single-digit seconds.
   gen-mol-matrix:
     name: MOL Matrix Drift Check
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    if: ${{ github.event_name != 'pull_request' }}
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -1158,29 +1233,19 @@ jobs:
   quality:
     name: Lint & Type-check
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # apps/host/vercel.json is the single deploy config (Vercel project root dir = apps/host); a root copy is dead config that silently drifts.
       - name: Root vercel.json drift guard
         run: |
           if [ -f vercel.json ]; then echo "::error::root vercel.json must not exist (apps/host/vercel.json is authoritative)"; exit 1; fi
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
-
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
 
       # ADR-006 #4: both Anthropic call paths (Node claude.ts, Deno
       # reliability.ts) must keep exponential-backoff retry on 429/5xx/529.
@@ -1525,28 +1590,18 @@ jobs:
   unit-tests:
     name: Unit Tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
-
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
 
       # Vitest 4.1.8 enforces coverage thresholds on EVERY run that reports
       # coverage — including partial shard runs, where the global and per-file
@@ -1578,8 +1633,26 @@ jobs:
       # none). cwd is apps/host, so the blob lands in apps/host/.vitest-reports/
       # (verified empirically with vitest 4.1.8). --coverage puts the raw V8
       # coverage into the blob for the merge job.
+      # `--reporter` is repeatable in vitest 4; BOTH reporters run.
+      #
+      # WHY THE SECOND REPORTER EXISTS (2026-08-11): with `--reporter=blob`
+      # ALONE, a failing shard's entire log was the single line
+      #   blob report written to .../apps/host/.vitest-reports/blob.json
+      # The blob is a binary-ish artifact for the merge job, not human output,
+      # so a red shard said WHICH shard failed and nothing else — one failing
+      # assertion cost a full local re-run of 5,465 tests to locate. Adding
+      # `--reporter=default` prints the failing file, test name, diff and
+      # stack directly in the shard log.
+      #
+      # The blob is STILL produced (verified empirically on vitest 4.1.10:
+      # with both flags, `.vitest-reports/blob.json` is written exactly as
+      # before AND the default reporter's failure output is printed), so the
+      # `unit-tests-merge` fan-in below keeps working via --merge-reports.
+      # Do not replace blob with default — remove blob and the merge job,
+      # and with it the merged-coverage threshold gate, silently loses its
+      # input.
       - name: Run test shard with blob report + coverage
-        run: npm test -w apps/host -- --config ../../vitest.ci-shard.config.mts --reporter=blob --coverage --shard=${{ matrix.shard }}/4
+        run: npm test -w apps/host -- --config ../../vitest.ci-shard.config.mts --reporter=blob --reporter=default --coverage --shard=${{ matrix.shard }}/4
 
       - name: Upload blob report
         if: ${{ !cancelled() }}
@@ -1603,6 +1676,7 @@ jobs:
   unit-tests-merge:
     name: Lint, Type-check & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # `if: always()` so this job is never SKIPPED when a shard or quality
     # fails — a skipped job would otherwise satisfy the required status check.
     # The first step re-asserts success explicitly instead (same node-script
@@ -1624,23 +1698,12 @@ jobs:
           console.log('Lint/type-check and all 4 unit-test shards succeeded.');
           NODE
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
-
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
 
       - name: Download shard blob reports
         uses: actions/download-artifact@v8
@@ -1778,8 +1841,8 @@ jobs:
   #                           Deno.serve() in those index.ts files is never
   #                           reached. No fetch, no Deno.env, no filesystem.
   #
-  #   - grounded-answer/__tests__/  — 20 files ENUMERATED INDIVIDUALLY in
-  #                           DENO_TEST_TARGETS, NOT the whole directory (25 Deno
+  #   - grounded-answer/__tests__/  — 21 files ENUMERATED INDIVIDUALLY in
+  #                           DENO_TEST_TARGETS, NOT the whole directory (26 Deno
   #                           test files live there). Pure helpers only.
   #
   # ── 2026-07-28: the seven-file TODO below was CLOSED BY EXPERIMENT ──────────
@@ -1819,7 +1882,15 @@ jobs:
   #
   # EXCLUDED ON PURPOSE — the remaining exclusions are now exactly the
   # Deno.serve set (plus the Vitest files):
-  #   - grounded-answer/__tests__/ — 5 of its 25 Deno test files are absent from
+  #   2026-08-13: +everyday-examples-directive.test.ts (ff_foxy_everyday_examples_v1).
+  #   Same static verification as the ten above, over its full relative-import
+  #   closure (../structured-prompt.ts and ../_everyday-flag.ts have ZERO imports;
+  #   ../gen-ctx.ts → ./config.ts + type-only ./types.ts — the identical closure
+  #   gen-ctx.test.ts already exercises in this job). No index.ts, no Deno.serve,
+  #   no fetch, no top-level await, no module-scope env read. The DB-failure cases
+  #   use an in-process object stub, not a socket.
+  #
+  #   - grounded-answer/__tests__/ — 5 of its 26 Deno test files are absent from
   #     DENO_TEST_TARGETS: e2e, pipeline, cache-durable-l3,
   #     foxy-answer-continuation and model-order-cache-fix. All five import
   #     ../index.ts, which calls Deno.serve() (binds a socket → requires
@@ -1846,6 +1917,7 @@ jobs:
   edge-function-tests:
     name: Edge Function Deno Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       # ════════════════════════════════════════════════════════════════════════
       #  SINGLE SOURCE OF TRUTH for the Deno test target set.
@@ -1914,6 +1986,7 @@ jobs:
         supabase/functions/grounded-answer/__tests__/confidence.test.ts
         supabase/functions/grounded-answer/__tests__/coverage.test.ts
         supabase/functions/grounded-answer/__tests__/embedding.test.ts
+        supabase/functions/grounded-answer/__tests__/everyday-examples-directive.test.ts
         supabase/functions/grounded-answer/__tests__/foxy-python-generation.test.ts
         supabase/functions/grounded-answer/__tests__/gen-ctx.test.ts
         supabase/functions/grounded-answer/__tests__/grounding-check.test.ts
@@ -1926,7 +1999,7 @@ jobs:
         supabase/functions/grounded-answer/__tests__/validation.test.ts
         supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -2364,41 +2437,107 @@ jobs:
 
   # ── Step 1b: Integration Tests (live Supabase) ──
   # Runs migration/trigger/view/CHECK-constraint tests that require a real
-  # Postgres backend. Gated on the presence of repository secrets, so PRs from
-  # forks (which don't get secrets) skip cleanly instead of failing.
-  # Non-blocking for now; flip `continue-on-error` to false once the staging
-  # Supabase instance is reliably reachable from GH-hosted runners.
+  # Postgres backend.
+  #
+  # BEHAVIOUR (corrected 2026-08-12 — the previous comment here described a
+  # posture this job has not had since 2026-05-05):
+  #   - BLOCKING wherever it runs. The test step carries an explicit
+  #     `continue-on-error: false` (see the note on that step), and the job is
+  #     in the ci-gate `required` list on push and same-repo PRs.
+  #   - It does NOT "skip cleanly" on a missing secret. Where the job runs, a
+  #     missing STAGING_SUPABASE_URL / STAGING_SUPABASE_SERVICE_ROLE_KEY is a
+  #     hard `::error::` + exit 1 (fail-closed) — a silently-degraded run would
+  #     be indistinguishable from a passing one.
+  #   - The only "skip" is at the JOB level, via the `if:` below: fork PRs get
+  #     no secrets, so the job is never scheduled there. ci-gate then asserts
+  #     the job is EXACTLY skipped rather than dropping the check.
   integration-tests:
     name: Integration Tests (live DB)
     runs-on: ubuntu-latest
-    # Skip on PRs from forked repos: secrets are not available there and the
-    # job would always fail boot. Trusted PRs (same-repo) and pushes still run.
+    timeout-minutes: 20
+    # Runs on same-repo PRs and pushes only. Fork PRs and workflow_dispatch get
+    # no secrets / do not populate github.event.pull_request, so the job would
+    # always fail at boot; it is skipped there and ci-gate expects that skip.
     # (Previously also `needs: secret-scan` — removed for the same masking
     # reason documented on the `quality` job above.)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+    # Dependabot-authored PRs are same-repo, but GitHub withholds regular
+    # Actions secrets from Dependabot-triggered events (they read the separate
+    # Dependabot secret store), so STAGING_SUPABASE_URL / _SERVICE_ROLE_KEY are
+    # empty and the preflight below hard-fails. Excluded here and RELOCATED to
+    # ci-gate's expectedSkips for the same event -- not dropped.
+    if: github.actor != 'dependabot[bot]' && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push')
+    # ── JOB-LEVEL concurrency: serialize live-DB runs across ALL refs ──
+    # (added 2026-08-12)
+    #
+    # THE CONTENDED RESOURCE IS THE SHARED STAGING SUPABASE PROJECT, NOT THE REF.
+    # This job is the only one in this workflow that talks to a real, single,
+    # shared live database (STAGING_SUPABASE_URL). The workflow-level group is
+    # `ci-${{ github.ref }}` — deliberately PER-REF — so runs on different refs
+    # execute simultaneously. Every other job is ref-isolated (hermetic runners,
+    # placeholder env) and correctly stays parallel; this one is not, because two
+    # runners on two refs mutate the SAME rows in the SAME project. Hence a group
+    # name with no `github.ref` in it: the lock must be global to the database.
+    #
+    # OBSERVED COLLISION (2026-08-12): run 31599688759 (push to `main`, started
+    # 13:05:50) and run 31599712987 (PR, started 13:07) overlapped in this job and
+    # corrupted each other's fixtures. Both failed with state-dependent assertions:
+    #   AssertionError: a scope that never had content must read 0: expected 1786540072 to be +0
+    #   AssertionError: expected +0 to be 1
+    # across curriculum-version-monotonicity.test.ts, error-type-remediate-e2e.test.ts,
+    # and state-runtime/{dispatcher.replay,offsets,retry-state}.test.ts. PROOF this
+    # is contention and not a code defect: re-running 31599712987's failed jobs with
+    # ZERO code changes went fully green, and the same tests passed on `main` at
+    # 12:18 (run 31595779888).
+    #
+    # WHY THIS MATTERS BEYOND A RED CHECK: a failure here turns `CI Gate` red, and
+    # deploy-production.yml's "Quality Gate" fail-closed polls `CI Gate` for the
+    # exact SHA — so a transient cross-run collision blocks production deploys
+    # outright. That is exactly what happened to run 31599688759.
+    #
+    # WHY `cancel-in-progress: false` IS LOAD-BEARING: a queued run must WAIT, not
+    # be cancelled. A cancelled job reports `cancelled` to `ci-gate`, which
+    # correctly treats anything other than `success`/expected-skip as a failure.
+    # Cancelling would therefore just trade one red gate for another — and on
+    # `main` it would re-create the stranded-deploy failure mode the workflow-level
+    # `cancel-in-progress` guard already exists to prevent.
+    #
+    # QUEUEING IS BOUNDED: `timeout-minutes: 20` above starts when the job BEGINS
+    # EXECUTING, not while it sits queued behind the lock, so waiting for the lock
+    # cannot itself trip the job timeout. (Queue wait is bounded by the workflow
+    # run's own overall limit, and each holder releases in ~1 min at current runtime.)
+    #
+    # THIS SERIALIZES, IT DOES NOT ISOLATE. The durable fix is per-run data
+    # isolation inside the tests themselves (unique per-run scope/tenant keys and
+    # teardown) — owned by the testing agent. This concurrency guard is the
+    # stop-the-bleeding measure and MUST stay until that lands; removing it before
+    # then re-opens the deploy-blocking flake. Nothing here weakens a test: the job
+    # is still BLOCKING, still in ci-gate's `required` list, and a REAL failure
+    # still fails the gate.
+    concurrency:
+      group: integration-tests-live-staging-db
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
 
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
-
+      # Secrets are bound through `env:` and tested as shell VARIABLES. Never
+      # interpolate `${{ secrets.* }}` directly into a bash line: `${{ }}` is
+      # substituted textually BEFORE bash parses the script, so a secret value
+      # containing a quote, backtick or $(...) would be spliced into the script
+      # itself (command injection / parse break). The steps below already use
+      # this convention; this step now matches it. Fail-closed behaviour on a
+      # missing secret is unchanged: ::error:: + exit 1.
       - name: Verify integration secrets are present
         id: check-secrets
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -z "${{ secrets.STAGING_SUPABASE_URL }}" ] || [ -z "${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+          if [ -z "$STAGING_SUPABASE_URL" ] || [ -z "$STAGING_SUPABASE_SERVICE_ROLE_KEY" ]; then
             echo "::error::Trusted integration job requires STAGING_SUPABASE_URL and STAGING_SUPABASE_SERVICE_ROLE_KEY."
             exit 1
           fi
@@ -2438,24 +2577,14 @@ jobs:
   build:
     name: Production Build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
-
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
 
       # Next.js incremental build cache (per Next.js CI-caching guidance:
       # https://nextjs.org/docs/app/guides/ci-build-caching#github-actions).
@@ -2466,7 +2595,7 @@ jobs:
       # support {ts,tsx} brace expansion (patterns use @actions/glob), so the
       # ts/tsx globs are listed separately.
       - name: Cache Next.js build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/host/.next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/host/src/**/*.ts', 'apps/host/src/**/*.tsx', 'packages/**/*.ts', 'packages/**/*.tsx') }}
@@ -2723,6 +2852,7 @@ jobs:
   e2e-critical-paths:
     name: E2E Critical Paths (blocking)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Only run on PRs targeting main/staging branches. Don't slow down feature
     # branches that haven't proposed a merge yet. Skip on forked PRs (no
     # secrets) — when staging fixtures are wired in, this `if` should also
@@ -2732,20 +2862,10 @@ jobs:
       (github.base_ref == 'main' || github.base_ref == 'master' || github.base_ref == 'staging') &&
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
-          check-latest: true
-      - name: Cache node_modules
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - name: Install dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: npm ci
       - run: npx playwright install --with-deps chromium
 
       - name: Run critical-path E2E specs
@@ -2812,12 +2932,29 @@ jobs:
   # and a skipped need would poison the gate's required/success accounting.
   # The sharded unit-test jobs (unit-tests + unit-tests-merge) are required
   # in its place.
+  #
+  # 2026-08-11 asymmetry repair: 409123b5 had made this gate main-only
+  # (`github.event_name != 'pull_request'`) AND dropped the four governance
+  # jobs from its needs/required list. Both halves are restored. The gate now
+  # aggregates the SAME job set on a PR and on the push that merges it, which
+  # is the only way a green PR is evidence that main will stay green.
+  #
+  # NOTE FOR THE REPO OWNER: running here makes the failure VISIBLE on the PR;
+  # it does not by itself make it BLOCKING. The `main-protection` ruleset
+  # currently requires only: "Secret Scanning", "Lint, Type-check & Test",
+  # "Production Build", "CodeQL Analysis". Add "CI Gate" to that list to make
+  # this aggregate gate merge-blocking (repo setting, not a workflow change).
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    if: ${{ always() && github.event_name != 'pull_request' }}
+    timeout-minutes: 5
+    if: ${{ always() }}
     needs:
       - secret-scan
+      - selected-school-rpc-integration
+      - protected-flag-migration-guard
+      - foxy-alignment
+      - gen-mol-matrix
       - quality
       - unit-tests
       - unit-tests-merge
@@ -2830,22 +2967,72 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           SAME_REPOSITORY_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+          DEPENDABOT_ACTOR: ${{ github.actor == 'dependabot[bot]' }}
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           node <<'NODE'
           const needs = JSON.parse(process.env.NEEDS_JSON || '{}');
-           const required = ['secret-scan','quality','unit-tests','unit-tests-merge','edge-function-tests','integration-tests','build'];
-          const forkSkips = [];
-          if (process.env.EVENT_NAME === 'pull_request') {
-            if (process.env.SAME_REPOSITORY_PR === 'true') {
-              required.push('e2e-critical-paths');
-            } else {
-              required.splice(required.indexOf('integration-tests'), 1);
-              forkSkips.push('integration-tests', 'e2e-critical-paths');
-            }
+          const eventName = process.env.EVENT_NAME;
+          const sameRepoPr = process.env.SAME_REPOSITORY_PR === 'true';
+          const isDependabot = process.env.DEPENDABOT_ACTOR === 'true';
+
+          // ── EVENT MATRIX ──────────────────────────────────────────────────
+          // Two upstream jobs are conditionally scheduled, so the gate must
+          // classify them PER EVENT. Every job in `needs` lands in exactly one
+          // of two lists — `required` (must be 'success') or `expectedSkips`
+          // (must be EXACTLY 'skipped'). Nothing is ever silently unchecked,
+          // and nothing is ever forgiven for failing: a job that RAN and
+          // FAILED is never 'skipped', so it fails the gate on every event.
+          //
+          //   integration-tests  if: same-repo PR || push
+          //   e2e-critical-paths if: PR && base main/master/staging && same-repo
+          //
+          //                     | integration-tests | e2e-critical-paths
+          //   push              | required          | expected skip
+          //   PR (same repo)    | required          | required
+          //   PR (fork)         | expected skip     | expected skip
+          //   workflow_dispatch | expected skip     | expected skip
+          //
+          // WHY workflow_dispatch IS CALLED OUT: this gate used to be
+          // unpassable there. integration-tests stayed in `required` on every
+          // event, but its own `if:` is false outside push/same-repo-PR, so on
+          // a manual dispatch the job was SKIPPED, the gate read
+          // skipped !== 'success', and it exited 1 — with every other job
+          // green. Both workflow_dispatch runs ever attempted (31258602448,
+          // 31128820645) failed the gate with `integration-tests=skipped` in
+          // the failure list. Both ALSO had genuine failures (secret-scan, and
+          // in 31128820645 quality/unit-tests too), so they are not clean
+          // proof on their own — the proof is structural: with integration-
+          // tests in `required` and its `if:` false, no dispatch run could
+          // pass no matter how green everything else was.
+          // The job is moved into expectedSkips on those events rather than
+          // dropped, so the check is RELOCATED, not deleted: if it ever runs
+          // on a dispatch (an `if:` drift), 'success' !== 'skipped' and the
+          // gate still fails, loudly.
+          const required = ['secret-scan','selected-school-rpc-integration','protected-flag-migration-guard','foxy-alignment','gen-mol-matrix','quality','unit-tests','unit-tests-merge','edge-function-tests','build'];
+          // Formerly `forkSkips` — same mechanism, now covering every event on
+          // which a conditional job is legitimately not scheduled.
+          const expectedSkips = [];
+
+          // Dependabot PRs are same-repo but secret-less, so integration-tests
+          // is not scheduled there (see its `if:`). It is RELOCATED to
+          // expectedSkips, not dropped: if an `if:` drift ever lets it run on a
+          // Dependabot event, its result will not be 'skipped' and the gate
+          // fails loudly.
+          if (!isDependabot && (eventName === 'push' || (eventName === 'pull_request' && sameRepoPr))) {
+            required.push('integration-tests');
+          } else {
+            expectedSkips.push('integration-tests');
           }
+
+          if (eventName === 'pull_request' && sameRepoPr) {
+            required.push('e2e-critical-paths');
+          } else {
+            expectedSkips.push('e2e-critical-paths');
+          }
+
           const failures = required.filter((job) => needs[job]?.result !== 'success');
-          failures.push(...forkSkips.filter((job) => needs[job]?.result !== 'skipped'));
+          failures.push(...expectedSkips.filter((job) => needs[job]?.result !== 'skipped'));
           if (failures.length) {
             // DIAGNOSTIC PARTITION ONLY — the gate still exits 1 in every
             // non-success case. A cancelled upstream is NEVER forgiven: a

@@ -10,6 +10,14 @@
  * grade (403 otherwise) — mirrors the /api/quiz grade-match guard so a student
  * can't read out-of-grade content.
  *
+ * Subject-code validation (P2-7c sibling): `subject` must be one of the
+ * student's subject CODES (get_available_subjects — same source as
+ * /v2/learn/curriculum). An unknown value (display name "Mathematics",
+ * garbage) is a 400 UNKNOWN_SUBJECT with the allowed codes — previously it
+ * fell through to a 404 NO_CONTENT, indistinguishable from a genuine content
+ * gap. Locked subjects still resolve: this is param validation, not plan
+ * gating. Fails CLOSED (503) if the subjects RPC is unavailable.
+ *
  * The student's preferred language is honored (en/hi) with the helper's built-in
  * English fallback when Hindi chunks are missing.
  *
@@ -30,7 +38,7 @@ export const GET = withRoute(async (request: NextRequest) => {
     const auth = await authorizeRequest(request, 'study_plan.view', {
       requireStudentId: true,
     });
-    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
+    if (!auth.authorized || !auth.userId) return auth.errorResponse as unknown as NextResponse;
 
     const url = new URL(request.url);
     const subject = url.searchParams.get('subject');
@@ -62,6 +70,37 @@ export const GET = withRoute(async (request: NextRequest) => {
       return v2Error('Requested grade does not match your profile grade', 403, 'GRADE_MISMATCH');
     }
     const language: 'en' | 'hi' = student.preferred_language === 'hi' ? 'hi' : 'en';
+
+    // Subject-code validation (P2-7c sibling) — same source as /v2/learn/
+    // curriculum (get_available_subjects, keyed by auth user). Unknown value →
+    // 400 with the valid codes, so a bad param can never masquerade as the
+    // 404 NO_CONTENT content-gap signal. Fails CLOSED on RPC outage.
+    const { data: subjData, error: subjErr } = await admin.rpc('get_available_subjects', {
+      p_student_id: auth.userId,
+    });
+    if (subjErr) {
+      logger.error('v2_learn_concept_subject_governance_unavailable', {
+        error: new Error(subjErr.message),
+        route: '/api/v2/learn/concept',
+        subject,
+      });
+      return v2Error(
+        'Subject eligibility could not be verified — please retry',
+        503,
+        'SUBJECT_GOVERNANCE_UNAVAILABLE',
+        true,
+      );
+    }
+    const allowedCodes = ((subjData ?? []) as Array<{ code: string }>).map((s) => s.code);
+    if (!allowedCodes.includes(subject)) {
+      return v2Error(
+        `Unknown subject '${subject}' — subject must be one of this student's subject codes: ${allowedCodes.join(', ')}`,
+        400,
+        'UNKNOWN_SUBJECT',
+        undefined,
+        { subject, reason: 'unknown_subject', allowed: allowedCodes },
+      );
+    }
 
     // Reuse the existing sanctioned chapter-content reader.
     const content = await fetchChapterContent({

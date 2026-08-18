@@ -31,15 +31,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
-// ── Mock supabase-admin (logAdminAction uses it) ─────────────
-
-const mockInsert = vi.fn();
-const mockFrom = vi.fn(() => ({ insert: mockInsert }));
-
-vi.mock('@alfanumrik/lib/supabase-admin', () => ({
-  getSupabaseAdmin: vi.fn(() => ({ from: mockFrom })),
-}));
-
 // ── Mock logger so error paths don't pollute output ──────────
 
 vi.mock('@alfanumrik/lib/logger', () => ({
@@ -189,10 +180,20 @@ describe('requireAdminSecret', () => {
 });
 
 // ─── logAdminAction ──────────────────────────────────────────
+//
+// Phase G.5 (2026-08-16, canonical audit-path fix): logAdminAction() no
+// longer single-writes to admin_audit_log via getSupabaseAdmin().from(...) —
+// it delegates to logAdminAuditByUserId(), which dual-writes over fetch()
+// exactly like logAdminAudit() above. These tests use the SAME fetch-mock
+// pattern as the `logAdminAudit` describe block.
 
 describe('logAdminAction', () => {
-  it('inserts an audit row with normalized null defaults', async () => {
-    mockInsert.mockResolvedValueOnce({ data: null, error: null });
+  it('dual-writes to admin_audit_log AND audit_logs when actorUserId is provided', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', { status: 201 }),
+    );
 
     await logAdminAction({
       action: 'flag.toggle',
@@ -200,25 +201,69 @@ describe('logAdminAction', () => {
       entity_id: 'ff-123',
       details: { from: false, to: true },
       ip: '127.0.0.1',
+      actorUserId: 'user-42',
+      adminLevel: 'admin',
     });
 
-    expect(mockFrom).toHaveBeenCalledWith('admin_audit_log');
-    expect(mockInsert).toHaveBeenCalledWith({
-      admin_id: null,
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    const legacyCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).endsWith('/rest/v1/admin_audit_log'),
+    );
+    const canonicalCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).endsWith('/rest/v1/audit_logs'),
+    );
+    expect(legacyCall).toBeDefined();
+    expect(canonicalCall).toBeDefined();
+
+    const legacyBody = JSON.parse(((legacyCall![1] as RequestInit).body as string) ?? '{}');
+    expect(legacyBody).toMatchObject({
+      admin_id: 'user-42',
       action: 'flag.toggle',
       entity_type: 'feature_flag',
       entity_id: 'ff-123',
       details: { from: false, to: true },
       ip_address: '127.0.0.1',
     });
+
+    const canonicalBody = JSON.parse(((canonicalCall![1] as RequestInit).body as string) ?? '{}');
+    expect(canonicalBody).toMatchObject({
+      auth_user_id: 'user-42',
+      actor_type: 'admin',
+      admin_level: 'admin',
+      action: 'flag.toggle',
+      resource_type: 'feature_flag',
+      resource_id: 'ff-123',
+      details: { from: false, to: true },
+      ip_address: '127.0.0.1',
+      status: 'success',
+    });
+
+    fetchSpy.mockRestore();
   });
 
-  it('uses null for entity_id, empty {} for details, null for ip when omitted', async () => {
-    mockInsert.mockResolvedValueOnce({ data: null, error: null });
+  it('still writes without throwing when actorUserId is omitted (back-compat path)', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', { status: 201 }),
+    );
 
-    await logAdminAction({ action: 'a', entity_type: 't' });
+    await expect(
+      logAdminAction({ action: 'a', entity_type: 't' }),
+    ).resolves.toBeUndefined();
 
-    expect(mockInsert).toHaveBeenCalledWith({
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    const legacyCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).endsWith('/rest/v1/admin_audit_log'),
+    );
+    const canonicalCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).endsWith('/rest/v1/audit_logs'),
+    );
+
+    const legacyBody = JSON.parse(((legacyCall![1] as RequestInit).body as string) ?? '{}');
+    expect(legacyBody).toMatchObject({
       admin_id: null,
       action: 'a',
       entity_type: 't',
@@ -226,10 +271,23 @@ describe('logAdminAction', () => {
       details: {},
       ip_address: null,
     });
+
+    const canonicalBody = JSON.parse(((canonicalCall![1] as RequestInit).body as string) ?? '{}');
+    expect(canonicalBody).toMatchObject({
+      auth_user_id: null,
+      admin_level: null,
+      resource_id: null,
+      details: {},
+    });
+
+    fetchSpy.mockRestore();
   });
 
-  it('never throws even when the Supabase insert blows up', async () => {
-    mockInsert.mockRejectedValueOnce(new Error('db down'));
+  it('never throws even when both underlying fetch writes reject', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+
     await expect(
       logAdminAction({ action: 'a', entity_type: 't' }),
     ).resolves.toBeUndefined();

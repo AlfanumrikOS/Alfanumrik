@@ -110,6 +110,46 @@
   --mastery-mid: var(--gold);       /* 40–69% — developing */
   --mastery-high: var(--green);     /* >= 70% — strong */
 
+  /* ─── AA-safe "strong" status stops for TEXT on a tinted chip (2026-08-15) ──
+     The base status hues above (--success/--warning/--info/--danger) are FILL
+     colours. Rendered as TEXT they fail WCAG AA badly — measured on the 10%
+     tint each one sits on:
+       --warning #F5A623 → 1.89:1   --success #16A34A → 2.95:1
+       --info    #0891B2 → 3.27:1   --danger  #DC2626 → 4.14:1
+     admin-ui/StatusBadge was doing exactly that on every admin surface, which
+     also contradicted the rule primitives/Badge.tsx states in a comment
+     ("Warning never renders gold-as-text", design-system.md §2/§8).
+
+     These are the darkened companions to use whenever a status hue carries
+     TEXT rather than a fill. Each is verified >= 4.5:1 against its own 10%
+     tint mixed into an OPAQUE --surface-1, and against every flat surface
+     token (--bg / --surface-1/2/3):
+       --success-strong #166534 on its tint 6.38:1   (bare on white 7.13:1)
+       --warning-strong #B45309 on its tint 4.68:1   (bare on white 5.02:1)
+       --info-strong    #0E7490 on its tint 4.76:1   (bare on white 5.36:1)
+       --danger-strong  #B91C1C on its tint 5.54:1   (bare on white 6.47:1)
+     Brand already has its strong stop: --accent-warm-strong #C2440F (4.51:1).
+
+     IMPORTANT: the tint a strong stop is verified against must be mixed into an
+     OPAQUE surface, never `transparent` — a transparent mix composites over
+     whatever happens to paint behind, so the contrast is undefined (on
+     --surface-3 it drops to 3.67:1). See primitives/Badge.tsx for the recipe. */
+  --success-strong: #166534;   /* green-800  — success text on a success tint */
+  --warning-strong: #B45309;   /* amber-700  — warning text on a warning tint */
+  --info-strong:    #0E7490;   /* cyan-700   — info text on an info tint */
+  --danger-strong:  #B91C1C;   /* red-700    — danger text on a danger tint */
+
+  /* --green-strong was REFERENCED but never DECLARED: both
+     tailwind.config.js (`success-strong`) and dashboard/os/palette.ts
+     (`MASTERY_STRONG`) read `var(--green-strong, #15803D)` and had been riding
+     the literal fallback since they were written — three homes for one value,
+     none of them authoritative. Declared here at exactly that fallback value so
+     the token now resolves on purpose with ZERO visual change, and a future
+     re-theme of the mastery green has a single place to happen.
+     Distinct from --success-strong above: this one is a FILL/ring colour
+     (mastery-high), not a text colour. */
+  --green-strong: #15803D;
+
   /* ─── Light-surface fallbacks for tokens previously cosmic-only (Phase 1) ──
      --secondary / --xp-color / --streak-color / --level-up (and the
      Tailwind-referenced --danger-light) were declared ONLY inside the cosmic
@@ -3395,6 +3435,69 @@ body.foxy-body-lock {
 }
 .app-shell-v2 > .app-shell-header[data-compact="true"] .dashboard-header-greeting { display: none; }
 
+/* ── /learn/[subject]/[chapter] sticky header (phone-first) ────────────────
+   Measured at 360px in Chromium on 2026-08-10, BEFORE this block existed:
+
+     .learn-header-identity title span   x=108.7  w=420.8  right=529.5
+     "📋 Index" button                   x=529.5  w= 54.5  right=583.9
+     "📖 Read"  button                   x=591.9  w= 47.9  right=639.8
+     concept counter "1/5"               x=647.8  w= 17.5  right=665.3
+     .app-shell-onehand-toggle           x=299.8  w= 48    right=347.8
+
+   In a 360px viewport that is all three right-hand controls entirely
+   off-screen, and 960px² of the title painted underneath the one-handed
+   toggle. The Index button is the ONLY concept-to-concept navigation a phone
+   has (the sidebar is `hidden md:flex`), so the page shipped with its primary
+   in-chapter navigation unreachable on the target device.
+
+   Root cause was NOT the toggle: the identity column had no `min-w-0`, so its
+   `truncate` span could not shrink below its 421px content width and simply
+   pushed its siblings out of the box. `min-w-0` / `shrink-0` (in the page's
+   JSX) restore shrinking; the rules below add the two layout guarantees CSS
+   has to own.
+
+   1. padding-inline-end reserves the slot occupied by
+      .app-shell-onehand-toggle — position:absolute at
+      `right: var(--space-fluid-4)`, --tap-min square, phone-only. Identical
+      formula and rationale to .dashboard-header-row above. The reservation
+      lives on the ROW so it holds in every header state, including compact.
+   2. On phones the row WRAPS: identity owns line 1, the actions own line 2.
+      A single row cannot hold both at 360px — after the toggle reservation
+      the flexible title would be left ~47px ("Sci…"), and an ellipsis there
+      costs the one thing the header exists to say. */
+.learn-header-row { min-width: 0; }
+.learn-header-main { min-width: 0; }
+
+@media (max-width: 767px) {
+  .learn-header-row {
+    padding-inline-end: calc(var(--space-fluid-4) + var(--tap-min) + 8px);
+    /* Two rows cost height, so buy some back from the block padding. */
+    padding-block: var(--space-fluid-2);
+  }
+  .learn-header-main { flex-wrap: wrap; margin-bottom: 6px; }
+  /* Actions take a full line of their own and sit under the title, right
+     aligned so the thumb finds them in the same place the toggle is. */
+  .learn-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* Compact-on-scroll. AppShell hard-sets the compacted header to
+   --shell-header-h-compact (44px) and does NOT clip (`contain: layout` is not
+   `contain: paint`), so a header taller than 44px spills its content over the
+   page beneath — measured here as the back arrow, chapter title and the green
+   progress bar painting on top of the concept card's tab strip. `height: auto`
+   is scoped to this shell only (AppShell className="learn-shell"), so every
+   other AppShell surface keeps the 44px compaction unchanged. The padding
+   still tightens, which is what compaction is actually for. */
+.app-shell-v2.learn-shell > .app-shell-header[data-compact="true"] {
+  height: auto;
+}
+.app-shell-v2 > .app-shell-header[data-compact="true"] .learn-header-row {
+  padding-block: var(--space-fluid-2);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    COSMIC REDESIGN — Phase 0 foundation (2026-06-05)
 
@@ -4270,8 +4373,8 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
 /* ─── Alfa OS flagship redesign (ff_student_os_v1) ──────────────────────────
    CSS-only motion for the OS dashboard + Foxy workspace. Uses the existing
    --ease-atlas curve and a per-node --stagger-i index (set inline by SkillTree
-   / RoadmapNode) — no animation library, no framer-motion (protects P10).
-   prefers-reduced-motion fully disables the reveal. */
+   / RoadmapNode). CSS-only is the DEFAULT (protects P10); framer-motion is
+   permitted since 2026-08-09, never shared-graph. Reduced-motion kills reveal. */
 @keyframes osReveal {
   0%   { opacity: 0; transform: translateY(10px); }
   100% { opacity: 1; transform: translateY(0); }
@@ -4307,7 +4410,7 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
 
 /* Wave 2 (Alfa Momentum): tasteful staggered reveal for the secondary dashboard
    cards (mastery snapshot, board score). Each card sets --reveal-i inline; the
-   hero (--os-mission) leads, these follow. CSS-only, no library (protects P10). */
+   hero (--os-mission) leads, these follow. CSS-only by default (protects P10). */
 .os-reveal-card {
   animation: osReveal 0.44s var(--ease-atlas, cubic-bezier(.22,1,.36,1)) both;
   animation-delay: calc(0.06s + min(var(--reveal-i, 0), 6) * 0.07s);

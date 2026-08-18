@@ -23707,6 +23707,10 @@ export type Database = {
           chapter_title: string
           chapter_title_hi: string
           verified_question_count: number
+          // Added by migration 20260814000014 (tiered verification). Optional
+          // so this type also describes a pre-migration database.
+          practice_ready_count?: number
+          exam_ready_count?: number
         }[]
       }
       award_coins: {
@@ -25757,6 +25761,7 @@ export type Database = {
           p_raw_payload?: Json
         }
         Returns: {
+          already_processed: boolean
           id: string
           is_new: boolean
         }[]

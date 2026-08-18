@@ -291,8 +291,8 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
       {/* ZPD Distribution */}
       {(session.questions_in_zpd ?? 0) + (session.questions_too_easy ?? 0) + (session.questions_too_hard ?? 0) > 0 && (
         <div className="flex gap-0.5">
-          {session.questions_in_zpd ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--green)', minWidth: 16 }} title={`In ZPD: ${session.questions_in_zpd}`}>{session.questions_in_zpd}</div> : null}
-          {session.questions_too_easy ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--teal)', minWidth: 16 }} title={`Too Easy: ${session.questions_too_easy}`}>{session.questions_too_easy}</div> : null}
+          {session.questions_in_zpd ? <div className="rounded-sm text-center text-[9px] font-bold text-foreground px-1" style={{ background: 'var(--green)', minWidth: 16 }} title={`In ZPD: ${session.questions_in_zpd}`}>{session.questions_in_zpd}</div> : null}
+          {session.questions_too_easy ? <div className="rounded-sm text-center text-[9px] font-bold text-foreground px-1" style={{ background: 'var(--teal)', minWidth: 16 }} title={`Too Easy: ${session.questions_too_easy}`}>{session.questions_too_easy}</div> : null}
           {session.questions_too_hard ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--red)', minWidth: 16 }} title={`Too Hard: ${session.questions_too_hard}`}>{session.questions_too_hard}</div> : null}
         </div>
       )}
@@ -840,8 +840,8 @@ function LegacyProgressPage() {
             style={
               activeTab === 'overview'
                 ? {
-                    background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
-                    color: '#fff',
+                    background: 'var(--surface-accent)',
+                    color: 'var(--on-surface-accent)',
                     boxShadow: '0 4px 14px rgb(var(--accent-warm-rgb) / 0.30)',
                   }
                 : {
@@ -1015,9 +1015,9 @@ function LegacyProgressPage() {
                         </p>
                         <a
                           href="/quiz"
-                          className="inline-block mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+                          className="inline-block mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-on-accent transition-colors"
                           style={{
-                            background: 'var(--accent-warm)',
+                            background: 'var(--accent-warm-strong)',
                             boxShadow: '0 2px 8px rgb(var(--accent-warm-rgb) / 0.28)',
                           }}
                         >

@@ -140,10 +140,10 @@ jobs:
       # ── Path B: staging-branch push / manual dispatch → inline checks ──
       # (No ci.yml run exists for these SHAs; the original steps run
       # unchanged, fail-closed.)
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -197,7 +197,7 @@ jobs:
       group: staging-db-push
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: supabase/setup-cli@v2
         with:
@@ -231,9 +231,9 @@ jobs:
     outputs:
       preview-url: ${{ steps.deploy.outputs.preview_url }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -332,7 +332,7 @@ jobs:
     needs: [deploy, migrations]
     environment: staging
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 

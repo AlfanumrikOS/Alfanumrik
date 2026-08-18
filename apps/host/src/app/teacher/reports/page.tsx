@@ -212,7 +212,7 @@ function ClassOverviewTab({ data, isHi }: { data: OverviewData | null; isHi: boo
               {topPerformers.slice(0, 5).map((s: PerformerEntry, i: number) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: 'var(--surface-2)', borderRadius: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: 'var(--orange)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
+                    <span style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: 'var(--accent-warm-strong)', color: 'var(--on-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
                     <span style={{ fontSize: 14, fontWeight: 500, color: '#1A1207' }}>{s.name || s.student_name}</span>
                   </div>
                   <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--orange)' }}>{s.xp ?? s.total_xp ?? 0} XP</span>

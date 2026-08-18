@@ -58,6 +58,83 @@ describe('sanitizeText', () => {
   });
 });
 
+describe('sanitizeText — linear tag-strip equivalence (js/polynomial-redos fix)', () => {
+  // The quadratic /<[^>]*>/g tag-strip was replaced by a linear indexOf scan.
+  // These tests pin that the scan preserves the regex's exact semantics on the
+  // tricky shapes, and that the pathological input class is now fast.
+
+  /** The ORIGINAL (quadratic) pipeline, kept here as a reference oracle for
+   *  SHORT fixtures only — never call it on adversarial-length input. */
+  const legacySanitizeText = (input: string, maxLength = 1000): string =>
+    input
+      .replace(/<[^>]*>/g, '')
+      .replace(/[<>"'`;(){}]/g, '')
+      .replace(/\\/g, '')
+      .trim()
+      .slice(0, maxLength);
+
+  const trickyFixtures = [
+    '<a<b>',            // inner '<' inside a closed span: removed whole
+    'x<a<b>y',
+    '<abc',             // unclosed tail: kept by tag-strip, '<' stripped after
+    'hello <world',
+    '<<x>>',            // nested-looking: '<<x>' removed, trailing '>' stripped after
+    'a<<x>>b',
+    '<>',               // empty tag
+    'a<>b',
+    'a<b>c<d',          // closed span then unclosed tail
+    'a>b<c>d',          // stray '>' before any '<'
+    '<b>hi</b>',
+    '<script>alert(1)</script>x',
+    '>x<',
+    '',
+  ];
+
+  it('matches the original regex pipeline on every tricky shape', () => {
+    for (const fixture of trickyFixtures) {
+      expect(sanitizeText(fixture)).toBe(legacySanitizeText(fixture));
+    }
+  });
+
+  it('removes everything from a "<" to the NEXT ">", including inner "<"', () => {
+    expect(sanitizeText('<a<b>')).toBe('');
+    expect(sanitizeText('x<a<b>y')).toBe('xy');
+  });
+
+  it('keeps an unclosed "<..." tail through the tag-strip; char-strip drops the "<"', () => {
+    expect(sanitizeText('<abc')).toBe('abc');
+    expect(sanitizeText('hello <world')).toBe('hello world');
+    expect(sanitizeText('a<b>c<d')).toBe('acd');
+  });
+
+  it('handles nested-looking "<<x>>" like the regex (drop "<<x>", strip leftover ">")', () => {
+    expect(sanitizeText('<<x>>')).toBe('');
+    expect(sanitizeText('a<<x>>b')).toBe('ab');
+  });
+
+  it('removes empty tags "<>"', () => {
+    expect(sanitizeText('<>')).toBe('');
+    expect(sanitizeText('a<>b')).toBe('ab');
+  });
+
+  it('completes the pathological "<"-flood input in linear time (ReDoS canary)', () => {
+    const input = '<'.repeat(100_000);
+    const start = performance.now();
+    const result = sanitizeText(input);
+    const elapsedMs = performance.now() - start;
+    expect(result).toBe('');
+    expect(elapsedMs).toBeLessThan(200); // quadratic version took minutes here
+  });
+
+  it('stays fast on many closed empty tags and on long unclosed tails', () => {
+    const start = performance.now();
+    expect(sanitizeText('<>'.repeat(50_000))).toBe('');
+    expect(sanitizeText('a<'.repeat(50_000))).toBe('a'.repeat(1000)); // maxLength slice
+    const elapsedMs = performance.now() - start;
+    expect(elapsedMs).toBeLessThan(200);
+  });
+});
+
 describe('sanitizeFilename', () => {
   it('replaces unsafe characters with underscores', () => {
     expect(sanitizeFilename('my file (1).pdf')).toBe('my_file__1_.pdf');

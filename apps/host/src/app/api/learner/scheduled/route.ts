@@ -41,7 +41,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import {
@@ -85,7 +85,13 @@ export interface ScheduledResponse {
 }
 
 export async function GET(request: Request) {
-  const supabase = await createSupabaseServerClient();
+  // Bearer-AWARE, RLS-respecting client. The cookie-only
+  // createSupabaseServerClient() NULLed auth.uid() for `Authorization: Bearer`
+  // callers (the entire Flutter app), so the `students` lookup below returned no
+  // row and this route answered a spurious 404 no_student_profile — and the
+  // scheduled_actions read would have been RLS-denied too. Never service-role;
+  // RLS enforced on both transports.
+  const supabase = await createSupabaseRouteClient(request);
 
   const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
   if (!auth.authorized || !auth.userId) {

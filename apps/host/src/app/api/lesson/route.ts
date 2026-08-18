@@ -36,7 +36,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@alfanumrik/lib/rbac';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
@@ -198,11 +198,15 @@ export const GET = withRoute(async (request: NextRequest) => {
     const language = languageRaw as LessonLanguage;
 
     // ── 3. Resolve the caller's OWN enrolled grade (P5 STRING) via RLS ──
-    // The RLS-scoped server client fences this SELECT to the caller's own student
-    // row, so no service role is needed for a self-only read.
+    // The RLS-scoped route client fences this SELECT to the caller's own student
+    // row, so no service role is needed for a self-only read. Bearer-AWARE: the
+    // cookie-only createSupabaseServerClient() NULLed auth.uid() for
+    // `Authorization: Bearer` callers (the entire Flutter app), so this SELECT
+    // was RLS-denied, grade stayed null, and every mobile request 404'd NO_GRADE
+    // even though the student's row was fine. Never service-role.
     let grade: string | null = null;
     try {
-      const db = await createSupabaseServerClient();
+      const db = await createSupabaseRouteClient(request);
       const { data: studentRow } = await db
         .from('students')
         .select('grade')

@@ -38,8 +38,8 @@ export function ReselectBanner({ isHi, onReselect }: ReselectBannerProps) {
         <button
           type="button"
           onClick={onReselect}
-          className="mt-3 text-xs font-bold px-4 py-2 rounded-xl text-white transition-all active:scale-[0.97]"
-          style={{ background: 'var(--orange)' }}
+          className="mt-3 text-xs font-bold px-4 py-2 rounded-xl text-on-accent transition-all active:scale-[0.97]"
+          style={{ background: 'var(--accent-warm-strong)' }}
         >
           {isHi ? 'अपने विषय चुनें' : 'Choose your subjects'}
         </button>

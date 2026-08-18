@@ -87,7 +87,13 @@ import {
   hashPrompt,
   type PromptSegment,
 } from './prompts/index.ts';
-import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
+import { buildStructuredOutputPrompt } from './structured-prompt.ts';
+// Everyday-Indian-life example directive (ff_foxy_everyday_examples_v1).
+// Default-OFF, fail-CLOSED flag. When OFF the composed addendum is
+// byte-identical to FOXY_STRUCTURED_OUTPUT_PROMPT, so the pipeline is a strict
+// no-op. Resolved ONCE below (before the Step-2 cache lookup) and threaded into
+// BOTH buildGenCtx and buildStructuredOutputPrompt.
+import { isEverydayExamplesEnabled } from './_everyday-flag.ts';
 import { repairIllegalJsonEscapes } from './json-escape-repair.ts';
 import {
   rescueFromTruncatedJson,
@@ -897,6 +903,25 @@ export async function runPipeline(
     }
   }
 
+  // Step 1b. Everyday-Indian-life example directive
+  // (ff_foxy_everyday_examples_v1, default OFF + fail-CLOSED).
+  //
+  // Resolved ONCE per run and STRICTLY BEFORE the Step-2 cache lookup below —
+  // the same ordering, and for the same reason, as modelOrder (see the
+  // cacheEligible block): the resolved value is folded into gen_ctx, so it must
+  // exist before any cache key is built. The identical boolean is reused at the
+  // prompt-assembly step (buildStructuredOutputPrompt, Step 9) so the prompt an
+  // answer is generated under and the key it is cached under can never drift.
+  //
+  // Foxy-only: the directive is appended only to the Foxy structured-output
+  // addendum, so non-Foxy callers (ncert-solver, quiz-generator,
+  // concept-engine, diagnostic, lesson, content) short-circuit to `false` with
+  // ZERO new I/O and an unchanged gen_ctx hash. For Foxy this is at most one
+  // extra flag read per 60s per instance (the reader memoizes), not per request.
+  const everydayExamples = request.caller === 'foxy'
+    ? await isEverydayExamplesEnabled(sb)
+    : false;
+
   // Step 2. Cache lookup (spec §6.9, response-cache v2). Only grounded:true
   // responses live in any cache tier; miss on retrieve_only (concept-engine
   // wants fresh data). Cache hits do not write a new trace row — see
@@ -982,7 +1007,14 @@ export async function runPipeline(
     modelOrder = (await shouldUseClaudePrimary(request.student_id))
       ? 'claude_primary'
       : 'openai_primary';
-    genCtxHash = await hashGenCtx(buildGenCtx(request, contentVersion, modelOrder));
+    // `everydayExamples` (resolved in Step 1b) rides the same fold-in as
+    // modelOrder: without it a flagged-ON student could be served a cached
+    // answer generated under the flagged-OFF prompt — every OTHER gen_ctx field
+    // is byte-identical between the two states. See gen-ctx.ts's
+    // `everyday_examples` doc (and why it is omitted, not `false`, when OFF).
+    genCtxHash = await hashGenCtx(
+      buildGenCtx(request, contentVersion, modelOrder, everydayExamples),
+    );
     cacheKey = await buildCacheKey(
       request.query,
       request.scope,
@@ -1417,9 +1449,16 @@ export async function runPipeline(
   // src/lib/foxy/schema.ts:FOXY_STRUCTURED_OUTPUT_PROMPT (Deno copy in
   // structured-prompt.ts; parity-tested from the Node side). Appended to the
   // LAST segment too so segments stay byte-identical to systemPrompt.
+  //
+  // buildStructuredOutputPrompt appends EVERYDAY_EXAMPLE_DIRECTIVE when
+  // ff_foxy_everyday_examples_v1 resolved ON for this request (Step 1b); when
+  // OFF it returns FOXY_STRUCTURED_OUTPUT_PROMPT byte-for-byte, so this line is
+  // unchanged from today on the flag-OFF path. pipeline-stream.ts composes the
+  // addendum through the SAME helper with the SAME flag so the streaming and
+  // non-streaming system prompts stay byte-identical.
   const isFoxyStructured = request.caller === 'foxy';
   if (isFoxyStructured) {
-    const addendum = `\n\n${FOXY_STRUCTURED_OUTPUT_PROMPT}`;
+    const addendum = `\n\n${buildStructuredOutputPrompt({ everydayExamples })}`;
     systemPrompt = `${systemPrompt}${addendum}`;
     if (promptSegments.length > 0) {
       const last = promptSegments[promptSegments.length - 1];

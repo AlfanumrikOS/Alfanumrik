@@ -1462,7 +1462,7 @@ SM-2 math (no-duplicate rule; the endpoint owns ease/interval updates).
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-345 | `srs_grade_loop_closure` | **(1) Quality mapping (RE-PINNED 2026-08-05, assessment mandate)** — `srsQualityForResponse` emits ONLY from the endpoint's zod-accepted set {0,3,4,5} (the same four ratings QuickRecallSection exposes): correct <10s → 5, correct ≥10s → 4, **wrong → ALWAYS 0, regardless of speed — NEVER 3**. SM-2 defines quality >= 3 as SUCCESSFUL recall, so emitting 3 for a wrong answer would count as a correct review and advance the interval (1→6), corrupting the schedule for failed cards; 0 is the only failure value in the accepted set. Quality 3 stays in the `SrsQuality` union solely because the flashcard UI (QuickRecallSection's "Hard" button) legitimately sends it — the auto-mapper must never emit it. A sweep pins the closed emitted set {0,4,5} across speeds (the original entry's "wrong <5s→0 else ≥5s→3" mapping is the pinned-ABSENT defect shape). **(2) No double-grading** — `gradeSrsCardsFireAndForget` grades each card AT MOST ONCE per invocation (two question ids mapping to the same card → one POST), POSTs QuickRecallSection's EXACT request contract (`{ cardId, quality }`, JSON, same-origin), and NEVER throws on fetch failure (fire-and-forget; the card simply stays due). **(3) Count/content agreement (F3)** — `fetchSrsDueQuizCards` + `selectSrsReviewSet` are THE shared due-query/selection used by BOTH the quiz deep-link content and the dashboard DailyRhythmQueue SRS lane count (single-subject selection, `source_id` dedupe, cap; explicit subject filter wins, else earliest-due card's subject; the exact filter set `source='quiz_wrong_answer'`, `is_active=true`, `source_id NOT NULL`, `next_review_date <= today`, limit 50 is pinned). **(4) End-to-end** — the REAL quiz page rendered with `/quiz?mode=srs` POSTs exactly ONE grade per card after submit using SERVER-truth `is_correct` from the submit response (quality 5 for a fast correct). **(5) F4 rider** — `classifyError` receives the REAL per-topic mastery (0.62 from a `concept_mastery` row) and the explicit 0.5 fallback ONLY when no row exists; `fetchTopicMasteryByQuestionId` degrades to `{}` on any client failure (never blocks quiz start). | `apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` (14 tests, updated 2026-08-05 for the wrong→always-0 re-pin); `apps/host/src/__tests__/app/quiz-foxy-phase0.test.tsx` (F2 + F4 describe blocks, real quiz page render); `apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx` (lane count from the shared query) | E | P1-adjacent (server-truth correctness), learner-state rules |
+| REG-345 | `srs_grade_loop_closure` | **(1) Quality mapping (RE-PINNED 2026-08-05, assessment mandate)** — `srsQualityForResponse` emits ONLY from the endpoint's zod-accepted set {0,3,4,5} (the same four ratings QuickRecallSection exposes): correct <10s → 5, correct ≥10s → 4, **wrong → ALWAYS 0, regardless of speed — NEVER 3**. SM-2 defines quality >= 3 as SUCCESSFUL recall, so emitting 3 for a wrong answer would count as a correct review and advance the interval (1→6), corrupting the schedule for failed cards; 0 is the only failure value in the accepted set. Quality 3 stays in the `SrsQuality` union solely because the flashcard UI (QuickRecallSection's "Hard" button) legitimately sends it — the auto-mapper must never emit it. A sweep pins the closed emitted set {0,4,5} across speeds (the original entry's "wrong <5s→0 else ≥5s→3" mapping is the pinned-ABSENT defect shape). **(2) No double-grading** — `gradeSrsCardsFireAndForget` grades each card AT MOST ONCE per invocation (two question ids mapping to the same card → one POST), POSTs QuickRecallSection's EXACT request contract (`{ cardId, quality }`, JSON, same-origin), and NEVER throws on fetch failure (fire-and-forget; the card simply stays due). **(3) Count/content agreement (F3)** — `fetchSrsDueQuizCards` + `selectSrsReviewSet` are THE shared due-query/selection used by ~~BOTH the quiz deep-link content and the dashboard DailyRhythmQueue SRS lane count~~ — **CORRECTED 2026-08-10 (second pass): the dashboard lane consumer is GONE (`DailyRhythmQueue` deleted in the Phase 2 orphan-consolidation pass), so "BOTH" is now the quiz deep-link content ALONE and this clause is VACUOUS in the same way REG-358's is — see the REG-358 evidence correction + vacuity finding below.** The selection mechanics below remain fully enforced by `srs-quiz-review.test.ts` — (single-subject selection, `source_id` dedupe, cap; explicit subject filter wins, else earliest-due card's subject; the exact filter set `source='quiz_wrong_answer'`, `is_active=true`, `source_id NOT NULL`, `next_review_date <= today`, limit 50 is pinned). **(4) End-to-end** — the REAL quiz page rendered with `/quiz?mode=srs` POSTs exactly ONE grade per card after submit using SERVER-truth `is_correct` from the submit response (quality 5 for a fast correct). **(5) F4 rider** — `classifyError` receives the REAL per-topic mastery (0.62 from a `concept_mastery` row) and the explicit 0.5 fallback ONLY when no row exists; `fetchTopicMasteryByQuestionId` degrades to `{}` on any client failure (never blocks quiz start). | `apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` (14 tests, updated 2026-08-05 for the wrong→always-0 re-pin); `apps/host/src/__tests__/app/quiz-foxy-phase0.test.tsx` (F2 + F4 describe blocks, real quiz page render); ~~`apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx` (lane count from the shared query)~~ — **REMOVED 2026-08-10 with its subject; see the SRS lane-count reconciliation note below** | E | P1-adjacent (server-truth correctness), learner-state rules |
 
 Known gaps: no live-DB test of `/api/learner/review/grade` itself (pre-existing
 endpoint, unchanged this phase); the fire-and-forget POST is not retried, by
@@ -1622,7 +1622,171 @@ Added 2026-08-05 (testing agent, Phase 3 batch).
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-358 | `srs_single_predicate` | `packages/lib/src/learn/srs-predicate.ts` is the ONLY helper that shapes the "due quiz-wrong-answer cards" query: `SRS_DUE_PREDICATE_DESCRIPTOR` freezes the predicate (`is_active=true`, `source='quiz_wrong_answer'`, `source_id IS NOT NULL`, `next_review_date <= today`, `ORDER BY next_review_date ASC`, `defaultLimit=50`, `hardLimit=100`); `buildSrsDueQuery(client, studentId, opts)` is called by BOTH the client-side deep-link consumer (`packages/lib/src/learn/srs-quiz-review.ts` → `fetchSrsDueQuizCards` → `selectSrsReviewSet`) AND the server-side `/api/learner/srs/due` route AND the `DailyRhythmQueue` count. The dashboard SRS lane COUNT and the quiz `/quiz?mode=srs` CONTENT cannot disagree because they resolve through the same predicate object — the drift that REG-345 pinned at the fetcher level is now closed at the predicate level. Limit clamping (1 ≤ limit ≤ 100), today-yyyy-mm-dd date rendering, and optional-subject narrowing are all owned by the helper (call sites never assemble query strings). | `apps/host/src/__tests__/lib/learn/srs-source.test.ts`; `apps/host/src/__tests__/api/learner/srs-due.test.ts`; `apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx` | E | E4, drift-prevention |
+| REG-358 | `srs_single_predicate` | `packages/lib/src/learn/srs-predicate.ts` is the ONLY helper that shapes the "due quiz-wrong-answer cards" query: `SRS_DUE_PREDICATE_DESCRIPTOR` freezes the predicate (`is_active=true`, `source='quiz_wrong_answer'`, `source_id IS NOT NULL`, `next_review_date <= today`, `ORDER BY next_review_date ASC`, `defaultLimit=50`, `hardLimit=100`); `buildSrsDueQuery(client, studentId, opts)` is called by ~~BOTH the client-side deep-link consumer (`packages/lib/src/learn/srs-quiz-review.ts` → `fetchSrsDueQuizCards` → `selectSrsReviewSet`) AND the server-side `/api/learner/srs/due` route AND the `DailyRhythmQueue` count. The dashboard SRS lane COUNT and the quiz `/quiz?mode=srs` CONTENT cannot disagree because they resolve through the same predicate object~~ — **CORRECTED 2026-08-10 (second pass): exactly ONE production consumer remains** — the client-side deep-link path `packages/lib/src/learn/srs-quiz-review.ts` → `fetchSrsDueQuizCards` → `selectSrsReviewSet` → `/quiz?mode=srs`. The `DailyRhythmQueue` count was deleted in the Phase 2 orphan-consolidation pass and `GET /api/learner/srs/due` was retired once it lost that last caller. **The predicate is frozen and behaviourally tested, but the count-vs-content agreement clause is now VACUOUS — there is no second consumer left to disagree with.** See the reconciliation note below. — the drift that REG-345 pinned at the fetcher level is closed at the predicate level. Limit clamping (1 ≤ limit ≤ 100), today-yyyy-mm-dd date rendering, and optional-subject narrowing are all owned by the helper (call sites never assemble query strings). | ~~`apps/host/src/__tests__/lib/learn/srs-source.test.ts`~~ — **MIS-CITED, corrected 2026-08-10: that file never references `SRS_DUE_PREDICATE_DESCRIPTOR` or `buildSrsDueQuery`; it pins an unrelated `get_review_cards` RPC ⇄ adapter parity**; ~~`apps/host/src/__tests__/api/learner/srs-due.test.ts`~~ — **DELETED 2026-08-10 with the route it pinned**; ~~`apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx`~~ — **REMOVED 2026-08-10 with its subject**. **Surviving carriers (verified 2026-08-10):** `apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` → `describe('fetchSrsDueQuizCards (shared due query)')` (BEHAVIOURAL — exercises the real, unmocked `buildSrsDueQuery` and asserts the applied `.eq/.not/.lte/.limit` filter set); `apps/host/src/__tests__/adaptive-differential.test.ts:797-844` (STATIC — asserts `srs-predicate.ts` carries the `.eq/.not/.lte` chain and that `srs-quiz-review.ts` delegates to it). See the SRS lane-count reconciliation note below | E | E4, drift-prevention |
+
+---
+
+#### SRS lane-count reconciliation — REG-345 + REG-358 (2026-08-10)
+
+Both entries cited
+`apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx`
+(4 tests) as one of their asserting files. That file was deleted in the
+2026-08-10 orphan-consolidation pass together with the component it rendered
+(`packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx`). **Neither entry is
+deleted** — removing a catalog entry requires explicit user approval. Both stay
+`E`, on the surviving server-side pins.
+
+**What that file uniquely pinned:** the dashboard SRS lane's *displayed count* —
+that it reads `/api/learner/srs/due` rather than the rhythm queue, dedupes,
+caps the rendered number at 5, fails soft back to the rhythm-queue item count
+on API error, and skips the call entirely with no student in context.
+
+**REG-345 (`srs_grade_loop_closure`) — still `E`.** Its load-bearing claims are
+the quality mapping ({0,3,4,5}, wrong → ALWAYS 0) and the shared
+`fetchSrsDueQuizCards` + `selectSrsReviewSet` pair, both pinned by
+`apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` (14 tests) with the
+real quiz-page render in
+`apps/host/src/__tests__/app/quiz-foxy-phase0.test.tsx`. Neither depends on the
+deleted component. Verified passing 2026-08-10.
+
+~~**REG-358 (`srs_single_predicate`) — still `E`, and this is the entry that
+matters.** Its whole point is that the lane COUNT and the `/quiz?mode=srs`
+CONTENT cannot disagree *because both resolve through one frozen predicate
+object*. That guarantee lives at the predicate layer, not the render layer:
+`apps/host/src/__tests__/lib/learn/srs-source.test.ts` pins
+`SRS_DUE_PREDICATE_DESCRIPTOR` and `buildSrsDueQuery`, and
+`apps/host/src/__tests__/api/learner/srs-due.test.ts` pins the server route
+consuming it. The deleted file only ever demonstrated one *consumer* honouring
+the predicate; it never held the predicate itself. Verified passing 2026-08-10.~~
+
+**^ THE PARAGRAPH ABOVE IS FACTUALLY WRONG. Superseded by the correction
+immediately below (2026-08-10, second pass — same day, later reconciliation).**
+
+---
+
+#### REG-358 evidence correction + vacuity finding (2026-08-10, second pass)
+
+Written during the `refactor/student-phase-2-consolidation` retirement of
+`GET /api/learner/srs/due`. The backend agent challenged REG-358's cited
+evidence; testing re-derived it from source rather than accepting either the
+prior note or the challenge on report. **The challenge is upheld.**
+
+**Finding 1 — the `srs-source.test.ts` citation was never true.** Not "went
+stale": that file has never referenced either symbol. Direct grep:
+
+```
+$ grep -n "SRS_DUE_PREDICATE_DESCRIPTOR\|buildSrsDueQuery" \
+    apps/host/src/__tests__/lib/learn/srs-source.test.ts
+exit=1                      # zero matches
+```
+
+What it actually pins (its own `describe` names):
+
+```
+56:describe('srs-source predicate parity (RPC ⇄ adapter)', () => {
+71:  it('the get_review_cards RPC filters on is_active AND next_review_date <= CURRENT_DATE'
+79:  it('listDueCards carries the SAME predicate (is_active + next_review_date + student_id)'
+89:  it('countDueByStudent carries the SAME predicate (E4 fix pin — is_active was missing)'
+99:  it('the adapter itself defines NO predicate — it delegates to domains/practice'
+112:  it('resolve-next-action reads the due count through the adapter, not inline'
+123:describe('srs-source delegation', () => {
+```
+
+That is the `get_review_cards` RPC ⇄ `srs-source` adapter lane — a *different*
+predicate on a *different* code path. Real coverage, wrong entry.
+
+**Finding 2 — `SRS_DUE_PREDICATE_DESCRIPTOR` has ZERO enforcing tests
+repo-wide.** Pre-existing gap; NOT created by this change. Repo-wide grep over
+`apps/`, `packages/`, `supabase/`, `scripts/`, `e2e/` (node_modules excluded):
+
+```
+packages/lib/src/learn/srs-predicate.ts:45:export const SRS_DUE_PREDICATE_DESCRIPTOR = {
+packages/lib/src/learn/srs-predicate.ts:79:    Math.max(1, opts.limit ?? SRS_DUE_PREDICATE_DESCRIPTOR.defaultLimit),
+packages/lib/src/learn/srs-predicate.ts:80:    SRS_DUE_PREDICATE_DESCRIPTOR.hardLimit,
+packages/lib/src/learn/srs-predicate.ts:85:    .from(SRS_DUE_PREDICATE_DESCRIPTOR.table)
+```
+
+Four hits, all inside the descriptor's own source file. No test imports it, no
+test asserts its shape. Its *values* leak into one behavioural assertion by
+accident — `srs-quiz-review.test.ts` pins `['limit', 50]`, which is
+`defaultLimit` — but `hardLimit`, `order`, `dateFilter` and the `table` name are
+enforced nowhere as a descriptor. Changing `hardLimit: 100 → 5` breaks no test.
+The descriptor is documentation that happens to be executable, not a pin.
+
+**Finding 3 — REG-358's thesis is now VACUOUS, not unenforced.** The
+distinction matters and the entry should not be allowed to read as if it still
+guarantees what it originally claimed. `buildSrsDueQuery` now has exactly ONE
+production consumer:
+
+```
+$ grep -rn "srs-predicate" --include=*.ts --include=*.tsx apps packages supabase scripts e2e
+apps/host/src/__tests__/adaptive-differential.test.ts:809   (comment)
+apps/host/src/__tests__/adaptive-differential.test.ts:827   (regex literal)
+apps/host/src/__tests__/adaptive-differential.test.ts:838   (readSource path)
+packages/lib/src/learn/srs-quiz-review.ts:35:import { buildSrsDueQuery, type SrsQueryClient } from './srs-predicate';
+packages/lib/src/learn/srs-quiz-review.ts:53   (comment)
+```
+
+One non-test importer. The other two consumers named in the original entry are
+gone — `DailyRhythmQueue` (Phase 2 orphan-consolidation) and
+`GET /api/learner/srs/due` (retired here once caller-less). So the predicate is
+frozen and it is tested, but **"the COUNT and the CONTENT cannot disagree" is
+now a statement about a single consumer agreeing with itself.** It is true, and
+it is empty. The entry's residual value is forward-looking only: the multi-client
+`SrsQueryClient` indirection is deliberately retained so a future server or cron
+consumer *must* route through the same helper rather than reintroducing the
+drift. That is a design guard, not a currently-enforced invariant.
+
+**Surviving carriers — verified, not asserted.** Both re-run this session:
+
+```
+$ npx vitest run src/__tests__/lib/learn/srs-quiz-review.test.ts \
+                src/__tests__/lib/learn/srs-source.test.ts
+ Test Files  2 passed (2)
+      Tests  21 passed (21)
+
+$ npx vitest run src/__tests__/adaptive-differential.test.ts
+ Test Files  1 passed (1)
+      Tests  44 passed (44)
+```
+
+- `apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` →
+  `describe('fetchSrsDueQuizCards (shared due query)')`. **Behavioural.** The
+  file carries no `vi.mock` of `srs-predicate` (grep for `vi.mock` in it returns
+  nothing), so calling `fetchSrsDueQuizCards` runs the REAL `buildSrsDueQuery`
+  against a recording chain-client and asserts the applied filters:
+  `['eq','source','quiz_wrong_answer']`, `['eq','is_active',true]`,
+  `['not','source_id',…]`, `['lte','next_review_date',…]`, `['limit',50]`,
+  plus the `id, source_id, subject` projection. This is the strongest surviving
+  evidence and it is stronger than either deleted file.
+- `apps/host/src/__tests__/adaptive-differential.test.ts:797-844`. **Static.**
+  Asserts the quiz page goes through `fetchSrsDueQuizCards` +
+  `selectSrsReviewSet`, that `srs-quiz-review.ts` either inlines the chain OR
+  imports the builder, and that whichever module owns the predicate carries the
+  literal `.eq/.not/.lte` chain. Source-text pattern matching, not execution.
+
+**Status stays `E`** — the predicate shape genuinely is enforced by a passing
+behavioural test. It is the entry's *scope claim* that was overstated, and it is
+corrected above rather than the status being downgraded.
+
+**Open obligation (tracked):** if `SRS_DUE_PREDICATE_DESCRIPTOR` is intended to
+be a contract rather than a comment, it needs a direct shape pin
+(`hardLimit`, `order`, `dateFilter`, `table`). None exists today and none is
+added by this pass — recording the gap, not silently closing it.
+
+**Genuinely unenforced after this deletion:** the cap-at-5 display rule and the
+fail-soft-to-rhythm-count fallback — both pure render concerns of the deleted
+component.
+
+**Judgement — vacuous loss, not a coverage regression.** Verified by
+`git grep DailyRhythmQueue HEAD`: the component's only importers at HEAD were
+its own three test files — zero production importers — and no UI anywhere in
+`apps/host/src` or `packages/ui/src` still consumes `GET /api/rhythm/today`.
+The lane was already dark; the test was a false green.
+
+**Open obligation (tracked):** when a live surface re-renders an SRS lane
+count, the cap-at-5 and fail-soft-fallback rules must be re-pinned against it.
+The predicate they read is frozen and tested, so re-pinning is mechanical.
 
 ---
 
@@ -1633,5 +1797,400 @@ IRT shadow contract in `02-foxy-ai.md` (kept in that shard to sit next to
 the other IRT/AI observability pins — REG-311/316). REG-358 (SRS single
 predicate) is above. Continuous through REG-358.
 **Total catalog: 358 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-379 — canonical `parseOptions` / `OPTION_LETTERS`: `JSON.parse(null)` render-crash fix + P6 count/order invariance (2026-08-10)
+
+Added 2026-08-10 (testing agent, orphan + duplication consolidation pass).
+
+`parseOptions` had drifted into SEVEN copies and `OPTION_LETTERS` into SEVEN
+more across two packages. Six of the seven `parseOptions` copies carried a real
+latent defect. Their body was:
+
+```ts
+if (Array.isArray(opts)) return opts;
+try { return JSON.parse(opts); } catch { return []; }
+```
+
+**`JSON.parse(null)` does not throw.** It coerces its argument to the string
+`"null"`, parses it, and returns `null`. So the `catch` never fires and those
+six copies could return `null` from a function annotated `: string[]` — after
+which the caller's `opts.map(...)` throws a render-time
+`TypeError: Cannot read properties of null (reading 'map')`, blanking the quiz,
+learn, mock-exam, pyq, diagnostic and results screens rather than degrading.
+The seventh copy (`/tutor`) was the odd one out and the correct one: it took
+`unknown`, guarded with `typeof opts === 'string'`, and returned `[]`. The new
+canonical module `packages/lib/src/quiz/options.ts` unifies on `[]`.
+
+This sits directly on the **question-serving path**, so the entry also freezes
+the two marking-safety properties the parser must never break: option **COUNT**
+(what P6 pins at exactly four) and option **ORDER** (bound to the server-side
+shuffle snapshot and `selected_displayed_index` — reordering here would corrupt
+marking).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-379a | `parse_options_null_returns_empty_not_null` | The fixed defect. `parseOptions(null)` and `parseOptions(undefined)` return `[]`, never `null` — so no caller's `.map()` can throw at render. Also `[]` for other non-string non-array input (`42`, `{a:1}`, `true`). Malformed JSON strings (`'not json at all'`, `'["unterminated"'`, `''`) return `[]` via the `catch`, as all seven originals did. | `apps/host/src/__tests__/lib/quiz/options.test.ts` | E | P6, render-safety |
+| REG-379b | `parse_options_count_and_order_invariant` | **P6 / marking safety.** For both input shapes the parser NEVER changes count or order: no reorder (`parseOptions(ordered)[2] === 'third'` for array AND JSON-string input), no dedupe, no trim, no dropping of empty members (`['  padded  ','','dup','dup']` survives at length 4), no padding a short array to 4, no truncating a 6-option array to 4, and no mutation of the input array. Shape enforcement is deliberately left to the P6 gate in `question-validation.ts`; a filter here would silently change how many options render. | `apps/host/src/__tests__/lib/quiz/options.test.ts` | E | **P6**, P1 (marking) |
+| REG-379c | `parse_options_behavioural_union_of_seven` | Consolidation is behaviour-neutral. Array branch applies `.map(String)` (adopted from the `/tutor` copy, which carried the guard because its source column `chapter_concepts.practice_options` is nullable `unknown` jsonb; the call sites that actually run `opt.replace(...)` per member are `(student)/quiz/page.tsx:1972`, `(student)/learn/[subject]/[chapter]/page.tsx:2083` and `:2241`, and `packages/ui/src/quiz/v2/PracticeRunner.tsx:254` — `/tutor` renders `{opt}` directly as a React child at `tutor/page.tsx:342` and never calls `.replace()`) — proven 1:1 and index-preserving, and byte-identical for genuine `string[]`, which P6 guarantees. String branch returns `JSON.parse`'s result VERBATIM including valid-JSON non-arrays (`'"abc"'`→`'abc'`, `'5'`→`5`, `'null'`→`null`, `'{"a":1}'`→`{a:1}`) and does NOT coerce members — exactly as all seven originals did. Hindi (Devanagari) options round-trip intact (P7). | `apps/host/src/__tests__/lib/quiz/options.test.ts` | E | P6, P7 |
+| REG-379d | `option_letters_single_frozen_constant` | `OPTION_LETTERS` is exactly `['A','B','C','D']` in order, is `Object.isFrozen` (a shared constant must not be mutable by one consumer), and is `undefined` past index 3 so every call site's `OPTION_LETTERS[idx] \|\| String(idx + 1)` fallback still yields `'5'` at index 4. | `apps/host/src/__tests__/lib/quiz/options.test.ts` | E | P6 |
+
+**Call sites consolidated (8 files, 7 `parseOptions` + 7 `OPTION_LETTERS`
+declarations removed):** `apps/host/src/app/(student)/quiz/page.tsx`,
+`apps/host/src/app/(student)/learn/[subject]/[chapter]/page.tsx`,
+`apps/host/src/app/(student)/mock-exam/page.tsx`,
+`apps/host/src/app/(student)/pyq/page.tsx`,
+`apps/host/src/app/diagnostic/QuizScreen.tsx`,
+`apps/host/src/app/tutor/page.tsx`, `packages/ui/src/quiz/QuizResults.tsx`,
+`packages/ui/src/quiz/v2/PracticeRunner.tsx` (letters only).
+
+**Reference-identity check (independently verified, not taken on report).** The
+array branch now returns a NEW array (`.map(String)`) where six originals
+returned the input by reference. Every one of the seven `parseOptions` call
+sites was read directly: all consume the result inline during render or inside
+a `.map` body — none sits in a `useMemo`/`useEffect` dependency array and none
+does a reference comparison. The identity change is unobservable. The one place
+the result's length is load-bearing —
+`QuizResults.tsx:1090`'s legacy `origOpts.length === 4` shuffle gate — is
+unaffected because `.map(String)` is length-preserving.
+
+### Known gap (documented, not silently dropped)
+
+The string branch still returns `JSON.parse`'s result verbatim, so a DB value
+of the literal string `'null'` still yields `null` and would still crash a
+caller's `.map()`. This is **preserved, not introduced** — all seven originals
+behaved this way, and REG-379c pins it deliberately so the consolidation stays
+provably behaviour-neutral. Tightening it (e.g. an `Array.isArray` guard on the
+parse result) is a real follow-up, but it is a BEHAVIOUR CHANGE on the
+question-serving path and therefore needs assessment sign-off under P6 rather
+than being folded into a consolidation pass. The `null` (not `'null'`) case —
+the one that actually occurs, from nullable columns such as
+`concepts.practice_options` — is fully closed by REG-379a.
+
+**Total catalog: 359 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Quiz serving — the truthy-`[]` silent zero, and the Tier-0 floor it exposed — 2026-08-11
+
+`getQuizQuestions()` short-circuits an RPC ladder. Its top rung read:
+
+```ts
+const { data, error } = await supabase.rpc('get_quiz_questions', params);
+if (!error && data) return validateQuestions(data);   // ← the defect
+```
+
+`get_quiz_questions` returns `COALESCE(jsonb_agg(q), '[]'::JSONB)` and filters
+`is_verified = true` (migration `20260505155525`). **An empty array is truthy in
+JavaScript.** So a chapter whose forty questions were structurally valid but merely
+UNVERIFIED came back as `[]`, satisfied the `data` guard, and the student was served a
+quiz containing ZERO questions. The direct `question_bank` fallback below — which does
+NOT filter on `is_verified` and would have served them — never ran.
+
+The RPC applies a strictly NARROWER filter than the fallback, so "the RPC found none"
+does not imply "the bank has none". Only a NON-EMPTY result may short-circuit the ladder.
+(Contrast `getLeaderboard` / `getReviewCards`, where the RPC and its fallback query the
+same population and empty IS the final answer — which is why this is a per-call-site
+judgement and not a blanket rule.)
+
+Fixing it made the fallback rung genuinely reachable for the first time, which made its
+weaker filter a live risk: it filtered `is_active` only, so a soft-deleted, draft, or
+**verifier-DISPROVED** row was servable there. The fix added the same never-serve floor
+the RPC rung above it enforces.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-385 | `quiz_serving_truthy_empty_rpc_falls_through` | Ladder semantics, against the REAL `getQuizQuestions` with a recording query-builder double: an RPC result of `[]` runs the `question_bank` fallback and serves questions (the silent zero); a NON-empty RPC result short-circuits and issues NO second read; RPC rows that ALL fail the P6 gate also fall through rather than serving zero; a MISSING RPC (older env) and an RPC ERROR both reach the fallback; a genuinely empty bank still returns `[]` (emptiness stays representable); a FAILED fallback read THROWS rather than degrading to an empty quiz. The fallback re-runs the SAME P6 gate and is not a relaxation — a six-row pool containing a `[BLANK]` marker, duplicate options, an empty explanation, an out-of-range `correct_answer_index` and a 3-option row yields exactly the one valid question. Verified to FAIL against the pre-fix `if (!error && data) return validateQuestions(data)`. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P6 |
+| REG-386 | `quiz_fallback_tier0_never_serve_floor` | The now-reachable fallback query enforces the floor, asserted on the predicates the function actually issues (a double that honoured nothing would let the floor be deleted silently): EVERY verifier-disproved state is excluded — `failed`, `failed_fix_in_flight` AND `failed_unfixable`, not just the literal `failed` (the CHECK was widened to six states by migration `20260510064952`, and a row mid-repair on a disproved question is still disproved); `deleted_at IS NULL`; `content_status` matched as "NULL or published" rather than by strict equality, because the column is nullable with `DEFAULT 'published'` and a strict `eq` would drop every legacy row carrying an explicit NULL and re-empty the very quizzes this fix restores; subject/grade/`is_active` scoping retained with grade asserted as a STRING (P5); the optional chapter filter forwarded; and the serving projection asserted free of `student_id`, `created_by`, `verification_state`, `deleted_at`. DELIBERATE NON-ASSERTION, recorded so it is not "fixed" by accident: `is_verified` is NOT filtered on this rung. Neither this rung nor either RPC rung above it has ever gated serving on the human SME flag (migration `20260802100000` records it as ranking/administrative metadata only), and adding it would recreate the empty quiz REG-385 removes. Whether SME sign-off should gate serving at all is a CEO decision, not a test's. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P5, P6 |
+
+### Invariants covered by this section
+
+- **P6 (question quality)** — REG-385 pins that the quality gate is applied identically on
+  BOTH rungs. The fix widened which rows are REACHED, never which rows are ACCEPTABLE.
+- **P5 (grade format)** — the fallback is asserted to scope on the STRING `'8'`.
+
+### Known defect reported upstream, NOT pinned here
+
+`packages/lib/src/supabase.ts` documents that the Tier-0 predicate inside the
+`select_quiz_questions_rag` RPC excludes only the literal `'failed'`, so the two other
+disproved states (`failed_fix_in_flight`, `failed_unfixable`) still pass THAT rung's gate.
+REG-386 covers the TypeScript fallback rung only. Closing the RPC-side gap is a migration
+and is architect/DB-owned; it is deliberately not asserted here, because a test that
+claimed to cover it would be claiming coverage the fix does not have.
+
+### Catalog total
+
+Pre-REG-385: 384 entries (through REG-384, the support thread P13 batch — see
+`10-rbac-rls.md`). This section adds REG-385 and REG-386.
+**Total catalog: 386 entries (target: 35 — TARGET EXCEEDED). REG-387 is the next free id**
+(REG-371..REG-377 remain RESERVED).
+**Superseded 2026-08-11** by the tiered-verification section below, which takes
+REG-387..REG-389.
+
+---
+
+## Tiered verification: the exam SME gate, Tier-0 floor totality, and the truthful badge — 2026-08-11
+
+Added 2026-08-11 (testing agent), pinning the durable properties of the
+content-remediation batch (migration
+`20260814000014_tiered_verification_serving_and_truthful_picker.sql`, CEO-approved
+Decision A option 3). Quality raised this as finding #7, MAJOR: the batch shipped
+with **no regression coverage at all**, while the migration's own header documents
+a one-line path to undoing its central safety property.
+
+Two different "verified" columns were being read as if they were one:
+`is_verified` is the **human SME sign-off** (written only by
+`POST /api/super-admin/questions/verify`, `DEFAULT false`);
+`verification_state` / `verified_against_ncert` are **agent-written**. The
+AI-repair agent (`fix-failed-questions/tools/commit-fix.ts`) sets the agent pair
+and never `is_verified`, so a repaired question raised chapter readiness and the
+picker badge while `get_quiz_questions` — which filtered `is_verified` — could not
+serve it. We advertised a question count we could not deliver.
+
+Decision A resolves it by AUDIENCE rather than uniformly: **practice** serves
+AI-verified content (a wrong question costs one confusing minute and is
+recoverable); **mock tests / exams** keep the human-SME gate (a wrong question
+corrupts a permanent record a parent will screenshot). Option 1 (SME gate
+everywhere) was rejected as an availability killer, option 2 (drop it everywhere)
+as a scoring-integrity risk.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-387 | `mock_test_sme_gate_all_three_rungs` | **The exam gate.** `start_mock_test_attempt`'s three-step question-assembly fallback ladder keeps `is_verified = true` on ALL THREE rungs — exact target difficulty, the ±1 band, and the "any difficulty" last-resort top-up. The effective definition is RESOLVED AT TEST TIME (every migration that CREATE-OR-REPLACEs the function, last one wins, exactly as Postgres applies them) rather than read from a hardcoded path, so a future `..._relax_mock_test_gate.sql` is read and FAILS instead of leaving the pin passing against a superseded definition. Also: exactly three gates (none added, none lost); each paired with `is_active = true` so it is a real row filter; the three rungs are the documented widening ladder (`difficulty = v_target`, `BETWEEN v_target-1 AND v_target+1`, then no difficulty predicate at all); no migration DROPs the function; and migration `20260814000014` issues NO DDL against it. **Mutation-tested:** the contract routine is re-run against five corrupted copies of the real SQL — all three gates removed, EACH ONE removed individually, and a whole rung deleted — and every mutant is asserted to fail. Additionally spot-checked against the real file: removing ladder-step 3's predicate turns the suite red 8/13 with the diagnostic naming step 3. | `apps/host/src/__tests__/regressions/reg-387-mock-test-sme-gate.test.ts` (13 tests) | E | P1 (score integrity), P6 |
+| REG-388 | `tier0_floor_serving_rung_totality` | **Cross-rung totality.** A verifier-disproved row is never servable on ANY rewritten rung. The floor is THREE states, not one: the CHECK was widened four→six by `20260510064952_qb_fixer.sql`, and `failed_fix_in_flight` (proven wrong, claimed by the repair agent) and `failed_unfixable` (proven wrong AND unrepairable) are both disproved, not "in progress". Asserts the six-state CHECK really allows exactly the six states this test partitions and that the two halves are disjoint + exhaustive; that EVERY `question_bank` row-filter block in all four rewritten functions (`get_quiz_questions` BOTH overloads, `select_quiz_questions_rag`, `select_quiz_questions_v2`) excludes all three states and also `deleted_at IS NULL`; that no rung narrows back to the pre-fix `verification_state != 'failed'` dialect; that the four rungs agree LITERALLY (one set, not four coincidentally-equal ones — this is the assertion per-rung tests structurally cannot make); and SQL/TS literal parity with `DISPROVED_VERIFICATION_STATES` in `packages/lib/src/supabase.ts`, including that the constant is APPLIED (`.neq` per state) and not merely declared. One deliberate, documented allowance: a block may satisfy the floor IMPLICITLY by pinning `verification_state = 'verified'` (the RAG rung's `v_verified_pool` count query), since an equality to a non-disproved state is strictly narrower than the `NOT IN` — the equality target is itself asserted to be in the non-disproved half, so pinning to `= 'failed'` still fails. | `apps/host/src/__tests__/regressions/reg-388-tier0-floor-serving-rung-totality.test.ts` (24 tests) | E | P6 |
+| REG-389 | `chapter_badge_unknown_is_never_zero` | **Badge honesty, three-valued.** The `/learn` chapter badge renders `practice_ready_count` (what practice can actually serve), never `verified_question_count` (a readiness signal) and never `exam_ready_count`. The third state is the one that matters: against a database predating migration `20260814000014` the column is absent and arrives `undefined`, meaning UNKNOWN. `undefined` → NO badge; `0` → NO badge; `n > 0` → "n questions". A `?? 0` anywhere would paint "0 questions" onto chapters full of them — a fresh instance of the defect class (a failure rendered as a confident, reassuring, wrong empty state) this whole effort exists to eliminate; a student reading "0 questions" does not retry, they leave. Pinned BEHAVIOURALLY on the REAL page component in JSDOM, in both languages (P7, with Hindi numerals asserted to stay Arabic), with per-row independence so one unknown chapter cannot suppress a known sibling, and with the row asserted to stay rendered — unknown count is not a broken chapter. Companion seam test drives the REAL `getChaptersForSubject` over a mocked transport: `undefined`→`undefined`, `0`→`0`, `n`→`n`, plus the DELIBERATE ASYMMETRY that `verified_question_count` keeps its `?? 0` back-compat coercion (pinned so a future "harmonise these three fields" refactor cannot move the two honest fields onto the coercing branch). **Both spot-checked:** reverting the guard to `(x ?? verified_question_count) !== undefined` with a `?? 0` render turns the render suite red 5/6. | `apps/host/src/__tests__/regressions/reg-389-chapter-badge-honesty.test.tsx` (6 tests) + `apps/host/src/__tests__/regressions/reg-389-chapter-count-transport-seam.test.ts` (6 tests) | E | P7, P6 |
+
+### Stale-mirror repair (no new id — REG-386's neighbourhood)
+
+`apps/host/src/__tests__/regressions/select-quiz-questions-rag-tier0-floor.test.ts`
+was **stale while still passing** — the most dangerous state a mirror can be in,
+because a green suite reads as coverage. Its `VerificationState` union listed only
+four states and `isRowServable` tested `=== 'failed'`, so it modelled
+`failed_fix_in_flight` and `failed_unfixable` as SERVABLE — the exact opposite of
+the floor it exists to enforce. It agreed with a predicate the SQL no longer had,
+and therefore could not have caught the regression it was written to catch.
+
+Repaired: the union now carries all six CHECK states, the floor is expressed as a
+SET (`DISPROVED_VERIFICATION_STATES`) rather than an equality so a seventh state
+forces a visible edit instead of silently defaulting to servable, and a totality
+test asserts the disproved/non-disproved halves partition the CHECK behaviourally.
+A regression witness reconstructs the pre-repair predicate and pins that it would
+have leaked exactly `['failed_fix_in_flight','failed_unfixable']`. 10 tests → 15.
+
+### Upstream gap CLOSED by this batch
+
+REG-386's "Known defect reported upstream, NOT pinned here" — that
+`select_quiz_questions_rag` excluded only the literal `'failed'` — **is now closed**
+by migration `20260814000014` §3, and is pinned by REG-388. The parallel note in
+`packages/lib/src/supabase.ts` was rewritten by the same change.
+
+### Known gaps — recorded so these entries never read as full coverage
+
+1. **`quiz-generator` — the PRIMARY serving path — still has NO verification floor
+   at all.** It filters `is_active` only: no `verification_state`, no `deleted_at`,
+   no `content_status` (verified by direct read of
+   `supabase/functions/quiz-generator/index.ts`). It is the fifth of the five
+   dialects ai-engineer's audit found, and it was out of scope for migration
+   `20260814000014` (an Edge Function, not SQL). ai-engineer owns the follow-up.
+   REG-388 carries an explicit **defect witness** asserting the gap STILL EXISTS, so
+   a passing REG-388 can never be misread as "the floor is total"; the witness FAILS
+   the moment the floor is added, which is the trigger to delete it and fold
+   `quiz-generator` into the totality assertions. **Do not relax the witness — fix
+   the Edge Function.**
+2. **No live Postgres.** REG-387 and REG-388 are SOURCE-TEXT contract pins in the
+   style this repo already uses for SQL contracts
+   (`__tests__/contract/select-quiz-questions-rag-verification-gate.test.ts`) and for
+   SQL/TS literal parity (REG-48). They cannot execute the RPCs, so they prove the
+   predicate is PRESENT and identical across rungs, not that it behaves as an
+   unconditional floor at runtime. The behavioural mirror for that exists only for
+   the RAG rung (`select-quiz-questions-rag-tier0-floor.test.ts`). Neither proves the
+   deployed database matches these files — see
+   `docs/runbooks/edge-function-drift-report.md` for the precedent where on-disk and
+   deployed genuinely disagreed in production.
+3. **RECORDED DIVERGENCE, deliberately not unified:** `select_quiz_questions_rag`
+   uses a STRICT `content_status = 'published'` while the other three rungs are
+   null-tolerant (`IS NULL OR = 'published'`), because the column is nullable with
+   `DEFAULT 'published'` and legacy rows carry explicit NULLs. Relaxing the RAG
+   predicate would WIDEN what serves, and no widening ships during a SEV1 without a
+   census. Architect owns it. REG-388 pins the divergence so that changing it is a
+   deliberate, visible act rather than a drive-by consistency edit.
+4. **Migration `20260814000013` (cbse_syllabus corpus reconciliation) is NOT pinned
+   — OWED.** It was still being actively revised by architect at the time of writing
+   (rewritten mid-session, 61 kB → 103 kB, after a quality REJECT). Pinning internals
+   that are about to shift would produce a test that fails for the wrong reason.
+   A reconciliation entry is owed once that revision settles.
+
+### Catalog total
+
+Pre-REG-387: 386 entries (through REG-386, the truthy-`[]` serving batch above).
+This section adds REG-387, REG-388 and REG-389.
+**Total catalog: 389 entries (target: 35 — TARGET EXCEEDED). REG-390 is the next
+free id** (REG-371..REG-377 remain RESERVED).
+**Superseded 2026-08-12** by the live-P0 Bearer section below, which takes
+REG-390..REG-393.
+
+---
+
+## Bearer quiz submit: mobile has never scored — 2026-08-12
+
+Added 2026-08-12 (testing agent), pinning the two durable properties of the
+live-P0 fix on branch `Alfanumrik/e2e-p0-bearer-quiz-submit`.
+
+**The defect.** A production E2E run (411 requests) found that
+`POST /api/quiz/submit` and `POST /api/v2/quiz/submit` answered
+`503 RPC_FAILED` for **every** `Authorization: Bearer` caller. Both routes built
+their DB client with the cookie-only `createSupabaseServerClient()`. The Flutter
+app is Bearer-only and sends no Supabase auth cookie, so PostgREST saw no user,
+`auth.uid()` was NULL, the request executed as role `anon`, and
+`submit_quiz_results_v2` — granted only to `authenticated, service_role` —
+raised SQLSTATE **42501**. **No quiz submitted from the mobile app has ever
+scored.**
+
+The comment above that client had said "JWT-bound supabase client so SECURITY
+DEFINER's `auth.uid()` check sees the calling student" since the route was
+written. The intent was always right; the code never matched it. Nothing failed
+loudly — a `503` labelled "temporary" is exactly what a healthy system emits
+under load, so a total, permanent, 100% failure was indistinguishable from
+transient noise in the dashboards.
+
+**The second defect, downstream of the first.** Reporting 42501 as transient
+told the client to retry. The Flutter offline drain queue classifies
+`5xx → retain`, so it retried an attempt that could never succeed, forever —
+one request per app-foreground, on metered Indian 4G, for a missing GRANT.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-390 | `bearer_submit_reaches_rpc_as_authenticated` | **The P0, asserted at the MODULE BOUNDARY rather than by reading the route's source.** Both submit routes are driven twice through the SAME assertions. Bearer + no cookie: `submit_quiz_results_v2` runs on a client built by `@supabase/supabase-js` `createClient` with the **anon** key and the caller's JWT forwarded as `global.headers.Authorization` — and the cookie-only client is proven NOT to be the one `.rpc()` landed on (`createSupabaseServerClient` is never even called). The two doubles expose an IDENTICAL `rpc` surface, so the only thing that can distinguish them is which spy recorded the call; a route that silently reverted to the cookie client fails on the spy, not on a string match. P8 rider: the transported key is asserted `=== NEXT_PUBLIC_SUPABASE_ANON_KEY` and `!==` the service-role key, so the fix can never be "solved" by reaching for the admin client. Transport-neutrality of the PAYLOAD is pinned separately: the RPC args sent on the Bearer path `toEqual` those sent on the cookie path (transport changes who PostgREST thinks is calling, never what is written). A non-Bearer `Authorization: Basic` still takes the cookie path (no silent downgrade). **Behaviour-neutrality for web is pinned explicitly, not assumed:** a cookie-only caller still runs on the cookie client, never builds a Bearer client, and still gets the same 200 body (score/XP/`idempotent_replay`/`marking_authenticity_path`, and no stray `retryable` key on a success envelope), the same 409 on P0001, the same 503 on a transient, and the same cached idempotent replay on a 23505 race. | `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (48 tests, `describe.each` over both routes) | E | P4, P8, P9 |
+| REG-391 | `rpc_permanent_vs_transient_retryable_contract` | **A permanent failure must stop the client without eating the student's work.** Unit half (`packages/lib/src/quiz/rpc-error-classification.ts`): SQLSTATE `42501` / `42883` / `23514` and PostgREST `PGRST202` / `PGRST203` classify PERMANENT (the PostgREST codes matter because a missing function surfaces as `PGRST202`/404, never as a raw 42883, so a SQLSTATE-only check would misfile an undeployed RPC as transient); the exported set is asserted to be EXACTLY those three SQLSTATEs, so widening it is a visible, reviewed act. **FAIL-OPEN TOWARD TRANSIENT is pinned as a DIRECTION, not a list:** fourteen enumerated non-matches (deadlock, serialization failure, connection loss, statement timeout, 23505, P0001, unknown SQLSTATEs, empty object, null/undefined error, null fields) plus a noise sweep all assert `false`. That asymmetry is the safety property — a wrong "permanent" verdict stops a client retrying a recoverable failure and quarantines a real completed quiz; a wrong "transient" verdict costs one idempotent retry the RPC short-circuits anyway. Route half, on BOTH submit routes: permanent → HTTP **500** + `code:'RPC_PERMANENT'` + **top-level** `retryable:false`; transient → **503** + `RPC_FAILED` + `retryable:true`; `EMPTY_RESPONSE` stays 503/`retryable:true`; and a 409 `SESSION_NOT_STARTED` carries **no** `retryable` field at all (the field is emitted only in the 5xx band where the client's status-code matrix is ambiguous — a `retryable:true` on an already-refused 4xx would be an infinite loop by another name). `retryable` is asserted as a top-level BOOLEAN with `hasOwnProperty`, because the Flutter drain reads exactly `body['retryable']` at exactly that position: the field's NAME and POSITION are a cross-client contract. The permanent message is asserted NOT to carry the retry instruction and to positively say "do not retry"; P13 rider — neither client-facing body matches `42501|42883|23514|PGRST|submit_quiz_results_v2`. Ops separation pinned (`submit_quiz_results_v2_failed_permanent` + `failure_class:'permanent'`), and a cross-route parity pair asserts the two routes translate an identical error to an identical status/code/`retryable`/message so they cannot drift. | `apps/host/src/__tests__/lib/quiz/rpc-error-classification.test.ts` (29 tests) + `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (48 tests) | E | P4, P13 |
+
+### Mobile half — REVIEWED, not duplicated
+
+`mobile/test/data/repositories/offline_drain_service_test.dart` (29 tests, added
+by the mobile agent in the same change set) was re-run and audited against the
+four properties this batch requires. All four are genuinely covered:
+
+1. `retryable:false` → `failedPermanent`, which is **terminal-but-RETAINED** —
+   `store.queueLength == 0` (stops being re-sent) AND `store.failedLength == 1`
+   (still on the device). Never `discard`. A completed quiz is student work.
+2. A **MISSING** `retryable` preserves the historical `5xx → retain` byte for
+   byte, so an app talking to an older server behaves exactly as before.
+3. The LOCAL retry budget bounds the loop with **no server signal at all** —
+   an endlessly-503ing server is capped at `maxDrainAttempts` (12) sends, then
+   quarantined `MAX_DRAIN_ATTEMPTS`; the 168h age cap quarantines without
+   spending a request.
+4. The **Idempotency-Key survives quarantine unchanged** (asserted in the drain
+   suite, the store suite and the model suite), so a later re-queue replays with
+   the same key and cannot double-score (P2).
+
+Also verified: `retryable` can NEVER resurrect a 4xx the server already refused.
+
+Two mobile gaps found and REPORTED rather than pinned:
+
+- **A quarantined attempt has no recovery path.** `failed()` lists terminal
+  records and `offlineFailedCountProvider` surfaces the count, but the only
+  operations available on them are `remove()` and `clearFailed()` — both of
+  which DELETE. The retained-work property is therefore currently "kept, but
+  unrecoverable". Product decision, not a test's.
+- **`QuizRepository.submitOfflineReplay` — the seam that wires the server's
+  body into the classifier — is untested.** `parseRetryable` and `classify` are
+  each thoroughly covered, but nothing proves the repository composes them. If
+  the `retryable:` argument were dropped at that call site, all 29 drain tests
+  still pass while the fix does nothing end to end. Not closed here because
+  `V2ApiClient` has a private constructor and reads `Supabase.instance`, so a
+  Dio-adapter test needs a production-code seam — out of scope for a test-only
+  pass.
+
+### Honest limits of this batch
+
+- The Bearer path is proven to CONSTRUCT the right client and forward the right
+  header. **No test in this batch executes against real Postgres**, so "the RPC
+  now succeeds as `authenticated`" rests on the GRANT being what the fix's
+  analysis says it is. A live smoke against a real Bearer session is the
+  strictly stronger check and is not part of this pass.
+- The mobile and web halves of the `retryable` contract are pinned on each side
+  independently; there is no shared fixture tying the literal field name across
+  the two repos. A coordinated rename would pass both suites.
+
+### Catalog total
+
+Pre-REG-390: 389 entries (through REG-389, the tiered-verification batch above).
+This section adds REG-390 and REG-391. REG-392 and REG-393 are taken by the same
+batch in `10-rbac-rls.md` and `11-infrastructure.md`.
+**Total catalog: 393 entries (target: 35 — TARGET EXCEEDED). REG-394 is the next
+free id** (REG-371..REG-377 remain RESERVED).
+
+> Numbering note: the task brief for this batch stated "latest id is REG-369, so
+> start at REG-370". That is stale — REG-370 is the Foxy MasteryAwareness ring
+> no-shrink entry in `02-foxy-ai.md`, and `00-header.md` already declared REG-390
+> the next free id. Starting at 370 would have collided with four filed entries
+> and with the reserved 371..377 block, so this batch takes REG-390..REG-393.
+> No existing entry was renumbered.
+
+---
+
+## REG-394 — the P0001 collision: an ownership-guard denial answered as "session not started"
+
+**Filed 2026-08-12, same branch (`Alfanumrik/e2e-p0-bearer-quiz-submit`), as
+architect Condition B on the REG-390/391 fix.**
+
+**The defect.** Every quiz RPC opens with the same SECURITY DEFINER guard:
+
+```sql
+IF auth.uid() IS NOT NULL AND NOT EXISTS (
+  SELECT 1 FROM students WHERE id = p_student_id AND auth_user_id = auth.uid()
+) THEN
+  RAISE EXCEPTION 'Access denied: caller does not own student %', p_student_id;
+END IF;
+```
+
+A bare `RAISE EXCEPTION` in PL/pgSQL is SQLSTATE **P0001** — the *identical*
+SQLSTATE the RPC uses for its routine `session_not_started` refusal. Both submit
+routes branched on `rpcErr.code === 'P0001'` alone, so a genuine **cross-student
+submission attempt** was answered:
+
+```
+409 { error: 'session_not_started', hint: 'restart_quiz', code: 'SESSION_NOT_STARTED' }
+```
+
+The single most security-relevant outcome the RPC can produce was indistinguish-
+able on the wire from the most routine one, it bypassed the REG-391 classifier
+entirely, and it wrote **nothing** to `ops_events` — the 409 branch logs nothing
+at all. This is the only signal that the route-layer `STUDENT_ID_MISMATCH` 403
+was bypassed, or that the route layer and the database disagree about who owns a
+student row. It was invisible.
+
+**Why it surfaced now.** Before the REG-390 transport fix, Bearer callers reached
+PostgREST as `anon` with `auth.uid()` NULL, so the `auth.uid() IS NOT NULL`
+conjunct short-circuited the guard and mobile could never trigger it. Cookie/web
+callers always could. The fix makes the guard live on both transports, which
+makes swallowing it materially worse.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-394 | `ownership_guard_denial_is_403_not_409` | **The two P0001 meanings are separated by MESSAGE, and the split is pinned in both directions.** Unit half (`packages/lib/src/quiz/rpc-error-classification.ts` → `isOwnershipGuardDenial`): matches the guard's own server-generated wording including the `student auth %` variant (migration `20260814000000`), with no code at all (transports that drop the SQLSTATE), case-insensitively, and with extra whitespace. **Fail-CLOSED in the opposite direction to `isPermanentRpcFailure`** — `session_not_started` (bare and with a suffix), an unrelated P0001, a 42501, the bare `'Access denied'` template form, an empty message, `null` and `undefined` all assert `false`, so no other `RAISE EXCEPTION` can be mis-reported as a security event. The two classifiers are asserted **DISJOINT on their own inputs**: the denial is not "permanent" (must not become a 500 + `retryable:false`) and a permanent failure is not a denial (must not become a 403) — overlap either way would silently reroute a whole class. Route half, on BOTH submit routes via `describe.each`: 403 + `code:'STUDENT_OWNERSHIP_DENIED'` (asserted `!== 'SESSION_NOT_STARTED'`), **no `hint`**, and **no `retryable` field** (that field exists only for the ambiguous 5xx band; a 403 already means discard to the mobile drain). **Branch ORDER is pinned as its own property** — the denial is asserted `!== 500`/`RPC_PERMANENT`, and an unrecognised P0001 is asserted to still reach 409 — because ordering is the only thing separating the branches. P13 rider: the response body is stringified and asserted to contain neither the probed student id, nor the caller's own id, nor `caller does not own`, nor `P0001|submit_quiz_results_v2|students` — echoing the guard's raw message back would confirm to a prober that the id they supplied exists. Ops half: an `ops_events` row at severity **`error`**, category **`security`** (not `quiz` — it is an authorization event that merely originates in the quiz funnel, and must route to security triage without dragging in every scoring failure), message `submit_quiz_results_v2_ownership_denied`, carrying `guard`, `session_id`, `auth_user_id` and the **transport** — and asserted NOT to carry the raw SQL text, which would only duplicate the id already in `student_id`. The write is **`await`ed**, unlike the `void`ed sibling RPC-failure event: a serverless invocation can be torn down the moment the response returns, and a fire-and-forget write is acceptable for a scoring metric but not for the only record that a cross-student attempt happened (the path is rare and abnormal, so the latency is free; `logOpsEvent` never throws, so awaiting cannot turn the 403 into a 500). The `transport` label is computed by the shared `authTransportLabel()` — one copy, so the two routes cannot drift — and is pinned to **MIRROR** `createSupabaseRouteClient`'s own `startsWith('Bearer ')` test: `Authorization: Basic …`, `Bearertoken` and a lowercase `bearer ` all label **`cookie`**, because a truthiness check on the header (the obvious shortcut, and what the first cut of this code did) would label a Basic caller "bearer" and send a forensic investigation after the wrong client. Asserted on both the bearer and cookie paths so a web denial is attributable too. **The legitimate case is pinned unchanged:** a real `session_not_started` is still 409 + `SESSION_NOT_STARTED` on both routes and both transports, and emits no denial event. Cross-route parity pair asserts both routes translate the denial to an identical status/code/message. | `apps/host/src/__tests__/lib/quiz/rpc-error-classification.test.ts` (+18 tests) + `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (+17 tests) + `apps/host/src/__tests__/api/v2/contract-conformance.test.ts` (envelope conformance for the new code, plus `retryable` boolean-type drift guards) | E | P8, P9, P13 |
+
+### Honest limits
+
+- The denial branch is **unreachable in practice today**: the route-layer
+  `STUDENT_ID_MISMATCH` 403 (which cross-checks the JWT's resolved student
+  against `body.studentId` on the service-role client) fires first for the
+  ordinary attack. This branch is defense-in-depth — it fires only when the
+  route layer and the database disagree, which is exactly the state nobody would
+  otherwise find out about. It is pinned by driving the RPC double to raise the
+  guard's message; no test proves Postgres raises it, only that the routes
+  translate it correctly.
+- `/api/v2/quiz/start` calls `start_quiz_session`, whose identical guard is
+  still swallowed into `503 START_SESSION_FAILED` ("please retry"). Same defect
+  shape, deliberately NOT fixed in this pass — Condition B named the two submit
+  routes. **Owed follow-up.**
+
+### Catalog total
+
+Pre-REG-394: 393 entries (through REG-393, the LIVE-P0 Bearer batch above).
+This section adds REG-394; REG-395 is taken by the same follow-up batch in
+`10-rbac-rls.md`.
+**Total catalog: 395 entries (target: 35 — TARGET EXCEEDED). REG-396 is the next
+free id** (REG-371..REG-377 remain RESERVED).
 
 ---

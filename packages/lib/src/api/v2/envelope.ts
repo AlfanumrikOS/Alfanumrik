@@ -28,16 +28,53 @@ export function v2Success<T>(
   );
 }
 
-/** `{ success: false, error, code? }` at the given status. */
+/**
+ * `{ success: false, error, code?, retryable? }` at the given status.
+ *
+ * `retryable` (optional, boolean, TOP-LEVEL) is the machine-readable
+ * "is it worth sending this exact request again?" signal. It exists because the
+ * HTTP status code alone cannot express it for the Flutter offline drain queue
+ * (`mobile/lib/data/repositories/offline_drain_service.dart`), which classifies
+ * `5xx → retain` and `4xx → discard`:
+ *
+ *   - a PERMANENT server-side failure returned as 5xx is retried forever, and
+ *   - the same failure returned as 4xx makes mobile DISCARD the student's
+ *     captured quiz data, which is unacceptable.
+ *
+ * So a permanent failure stays a 500 (data is preserved) and carries
+ * `retryable: false`; a genuine transient stays a 503 and carries
+ * `retryable: true`. Omitted entirely when not applicable, so every existing
+ * `/v2` error response is byte-identical to before. Typed as a narrow boolean
+ * rather than a free-form extras bag so the envelope cannot drift from the Zod
+ * contract (`ErrorResponse` in contract.ts → openapi/v2.json → Dart client).
+ *
+ * `details` (optional, object, TOP-LEVEL) is the machine-readable, code-specific
+ * detail payload. Shipped for the subject-validation errors (2026-08-12 E2E
+ * batch): `subject_not_allowed` (403) and `UNKNOWN_SUBJECT` (400) carry
+ * `{ subject, reason, allowed }` (`SubjectNotAllowedDetails` in contract.ts) so
+ * clients can render the rejected value and the allowed subject-code list
+ * instead of string-parsing the message. Omitted entirely when not applicable,
+ * so every pre-existing `/v2` error response stays byte-identical.
+ */
 export function v2Error(
   error: string,
   status: number,
   code?: string,
+  retryable?: boolean,
+  details?: Record<string, unknown>,
 ): NextResponse {
-  const body: { success: false; error: string; code?: string } = {
+  const body: {
+    success: false;
+    error: string;
+    code?: string;
+    retryable?: boolean;
+    details?: Record<string, unknown>;
+  } = {
     success: false,
     error,
   };
   if (code) body.code = code;
+  if (retryable !== undefined) body.retryable = retryable;
+  if (details !== undefined) body.details = details;
   return NextResponse.json(body, { status });
 }

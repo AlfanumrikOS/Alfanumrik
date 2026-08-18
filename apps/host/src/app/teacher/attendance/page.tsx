@@ -679,8 +679,8 @@ export default function TeacherAttendancePage() {
             disabled={saving}
             style={{
               padding: '12px 28px',
-              backgroundColor: saving ? '#C2410C' : 'var(--orange)',
-              color: '#fff',
+              backgroundColor: saving ? '#C2410C' : 'var(--accent-warm-strong)',
+              color: 'var(--on-accent)',
               border: 'none',
               borderRadius: 10,
               fontSize: 14,

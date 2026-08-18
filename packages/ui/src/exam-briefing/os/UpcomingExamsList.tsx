@@ -103,7 +103,7 @@ export default function UpcomingExamsList({
           <a
             href="/exams"
             className="inline-flex items-center justify-center gap-1 mt-3 px-4 rounded-xl text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-            style={{ minHeight: 48, background: 'var(--orange, #E8581C)', color: '#fff' }}
+            style={{ minHeight: 48, background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}
           >
             {isHi ? 'परीक्षा जोड़ें' : 'Add an exam'}
             <span aria-hidden="true">→</span>

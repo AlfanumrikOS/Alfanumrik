@@ -26,8 +26,8 @@ export default function FoxyError({ error, reset }: { error: Error; reset: () =>
         </p>
         <button
           onClick={reset}
-          className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
-          style={{ background: 'var(--orange)' }}
+          className="px-6 py-2.5 rounded-xl text-sm font-semibold text-on-accent"
+          style={{ background: 'var(--accent-warm-strong)' }}
         >
           {isHi ? 'फॉक्सी को जगाएँ' : 'Wake Up Foxy'}
         </button>

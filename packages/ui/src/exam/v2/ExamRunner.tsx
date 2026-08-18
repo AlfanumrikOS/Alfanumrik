@@ -396,8 +396,8 @@ export default function ExamRunner({ paper, questions, isHi, attemptId }: Props)
               data-testid="exam-runner-v2-submit"
               className="rounded-xl px-5 py-2 text-sm font-bold"
               style={{
-                background: 'linear-gradient(135deg, var(--orange), var(--orange-light, #FB923C))',
-                color: '#fff',
+                background: 'var(--surface-accent)',
+                color: 'var(--on-surface-accent)',
                 opacity: s.submitting ? 0.7 : 1,
               }}
             >
@@ -408,7 +408,7 @@ export default function ExamRunner({ paper, questions, isHi, attemptId }: Props)
               type="button"
               onClick={() => s.navigateTo(s.cursor + 1)}
               className="rounded-xl px-5 py-2 text-sm font-bold"
-              style={{ background: 'linear-gradient(135deg, var(--orange), var(--orange-light, #FB923C))', color: '#fff' }}
+              style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent)' }}
             >
               {isHi ? 'अगला' : 'Next'} →
             </button>

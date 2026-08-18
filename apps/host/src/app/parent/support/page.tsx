@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
+import {
+  supportFirstResponseText,
+  supportCoverageText,
+  supportSlaFull,
+} from '@alfanumrik/lib/support/response-sla';
 
 // ============================================================
 // BILINGUAL HELPER (P7)
@@ -378,7 +383,9 @@ function Toast({ message, kind, onDone }: { message: string; kind: 'success' | '
         left: '50%',
         transform: 'translateX(-50%)',
         backgroundColor: kind === 'success' ? '#16A34A' : '#DC2626',
-        color: '#fff',
+        // DD-16: #fff on the success green is 3.30:1 (sub-AA); ink is 5.62:1.
+        // The error red keeps --on-accent (4.83:1 AA).
+        color: kind === 'success' ? 'var(--text-1)' : 'var(--on-accent)',
         padding: '12px 24px',
         borderRadius: 12,
         fontSize: 14,
@@ -660,11 +667,15 @@ export default function ParentSupportPage() {
 
       // Success — show a real confirmation with the ticket id.
       const shortId = json.ticket_id.slice(0, 8);
+      // SLA numbers are CEO-set and live ONLY in
+      // @alfanumrik/lib/support/response-sla. This toast used to promise "within
+      // 24 hours", which contradicted every other support surface. The promise
+      // is never shown without the coverage window beside it.
       setToast({
         message: t(
           isHi,
-          `Ticket #${shortId} created. We'll respond within 24 hours.`,
-          `टिकट #${shortId} बना दिया गया। हम 24 घंटे के भीतर जवाब देंगे।`
+          `Ticket #${shortId} created. First reply ${supportFirstResponseText(false)} (${supportCoverageText(false)}).`,
+          `टिकट #${shortId} बना दिया गया। पहला जवाब ${supportFirstResponseText(true)} (${supportCoverageText(true)})।`
         ),
         kind: 'success',
       });
@@ -877,8 +888,8 @@ export default function ParentSupportPage() {
           <p style={{ fontSize: 11, color: '#64748B', margin: '8px 0 0', lineHeight: 1.4 }}>
             {t(
               isHi,
-              'For urgent queries, use the form above. We typically respond within 24 hours.',
-              'तत्काल प्रश्नों के लिए ऊपर दिया फ़ॉर्म उपयोग करें। हम आमतौर पर 24 घंटे में जवाब देते हैं।'
+              `Use the form above. ${supportSlaFull(false)}`,
+              `ऊपर दिया फ़ॉर्म उपयोग करें। ${supportSlaFull(true)}`
             )}
           </p>
         </div>

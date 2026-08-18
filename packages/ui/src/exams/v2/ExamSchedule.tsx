@@ -248,7 +248,7 @@ export function ExamScheduleList({
             type="button"
             onClick={onAdd}
             className="rounded-xl text-sm font-bold px-5 mt-4"
-            style={{ background: 'var(--orange)', color: '#fff', minHeight: 48 }}
+            style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', minHeight: 48 }}
           >
             {isHi ? 'तारीख जोड़ें' : 'Add a date'}
           </button>

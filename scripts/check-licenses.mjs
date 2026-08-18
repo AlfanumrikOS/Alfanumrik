@@ -95,6 +95,10 @@ const EXCEPTIONS = new Map([
     'posthog-js',
     'Declares "SEE LICENSE IN LICENSE"; the bundled LICENSE file is MIT. Blocked only because the SPDX field is unparseable. NEEDS LEGAL SIGN-OFF to confirm the file contents.',
   ],
+  [
+    '@img/sharp-wasm32',
+    'Apache-2.0 AND LGPL-3.0-or-later AND MIT. WASM fallback binary shipped by `sharp` (Next.js\'s image-optimization dependency, transitive via `sharp` -> `next`) for cross-platform resilience. Never the binary actually executed on the supported linux-x64 Vercel deployment target -- that\'s `@img/sharp-linux-x64` (Apache-2.0, MIT, already allowed). Newly installed on disk starting with the sharp 0.34.5 -> 0.35.3 bump: on 0.34.5 this package declared `cpu:["wasm32"]` directly on itself and was a direct optionalDependency of `sharp`, so npm\'s platform matching skipped it cleanly on linux-x64/win32 runners; on 0.35.3 it was restructured into a shared runtime helper required by two new sibling packages (`@img/sharp-freebsd-wasm32`, os:freebsd; `@img/sharp-webcontainers-wasm32`, cpu:wasm32) and no longer carries any cpu/os restriction of its own, so npm installs it unconditionally even though both siblings that need it are themselves correctly skipped. NEEDS LEGAL SIGN-OFF to confirm the LGPL component poses no distribution risk given it ships in node_modules but is never loaded at runtime on the deployed platform.',
+  ],
 ]);
 
 const MIN_PACKAGES = 200;

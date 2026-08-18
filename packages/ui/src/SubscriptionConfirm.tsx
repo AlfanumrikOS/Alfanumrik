@@ -119,7 +119,7 @@ const summaryBox: React.CSSProperties = {
 const confirmBtn: React.CSSProperties = {
   flex: 1, padding: '13px 20px', borderRadius: 12, border: 'none',
   fontSize: 14, fontWeight: 700, cursor: 'pointer',
-  background: 'var(--orange, #E8581C)', color: '#fff',
+  background: 'var(--accent-warm-strong)', color: 'var(--on-accent)',
   fontFamily: 'var(--font-display)',
 };
 

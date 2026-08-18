@@ -1,6 +1,6 @@
 # Alfanumrik Production Deployment Runbook
 
-**Last updated:** 2026-07-11
+**Last updated:** 2026-08-11
 **Owner:** DevOps / Platform Engineering
 **Production domain:** `https://alfanumrik.com`
 **Production Supabase project:** `shktyoxqhundlvkiwguu`
@@ -38,6 +38,10 @@ The older CI-independent model is retired. If GitHub Actions, Vercel, or Supabas
 - The production deploy workflow is push-to-`main` only. Manual force redeploy is suspended until a protected break-glass environment exists.
 - The pre-mutation bypass probe accepts semantic app health JSON with a known status, timestamp, and non-empty version SHA; it does not require dependencies to be healthy during a repair.
 - Canonical production is polled for approximately ten minutes. Both health stages must prove `ok===true`, `status==='healthy'`, and `version.git_sha===GITHUB_SHA[:7]` before any release/tag.
+- **Two bounded exceptions to the literal `git_sha` match (liveness is never excepted).** Both health stages (`health-check` and `post-deploy-verify` in `.github/workflows/deploy-production.yml`) still require a 200 plus `ok===true` and `status==='healthy'` on the same probe before either exception is even consulted. Only the *exact-SHA* assertion is answered differently, and only when production reports a SHA that resolves to a real commit which is a true git ancestor of the release SHA. Any other condition — unresolved SHA, non-ancestor SHA, or a deployable file anywhere in the gap — reports false and the pre-existing fail-closed path stands.
+  1. **No-op deploy** (`.github/scripts/verify-noop-deploy.sh`): the release commit has a tree identical to an already-healthy ancestor, so the running build is byte-equivalent to the one being released. Emits `content_verified_noop=true` / `verified_noop_base_sha`.
+  2. **Intentionally skipped build** (`.github/scripts/verify-skipped-build.sh`, added 2026-08-11): `apps/host/vercel.json` sets `"ignoreCommand": "node scripts/ignore-build.cjs"`, so a commit touching only ignored prefixes (`docs/`, `.claude/`, `.github/`, `mobile/`, …) correctly produces **no new Vercel deployment** — the production alias keeps serving the previous one and the new SHA will never appear. Before this existed, every such commit polled the full ten minutes and then failed `Deploy Production` with "Exact healthy SHA was not observed"; commit `b5bcd8277` (docs-only) failed exactly this way. The script does **not** re-implement the ignore rules — it invokes the same `apps/host/scripts/ignore-build.cjs` Vercel runs, over the **whole** `<deployed>..<release>` range rather than the per-commit question Vercel asks, so a deployable file in *any* commit in the gap means production is genuinely behind and the red is correct. Emits `build_intentionally_skipped=true` / `verified_skip_base_sha`.
+- Both exceptions are recorded as `::notice::` audit lines on the release job, so a release verified through either path is identifiable after the fact rather than silently indistinguishable from a literal exact-SHA match. When the exact-SHA assertion fails for real, the error now also prints the skipped-build verdict; `has-deployable-change:<a>..<b>` means production is genuinely stale — go find the missing deploy.
 - Automatic web rollback requires `CURRENT_SHA_SEEN=1`, unhealthy exact-SHA evidence, and immediate canonical revalidation. Before any release mutation, the workflow must also have captured the same fresh, semantically healthy canonical deployment identity on both sides of the preflight probe. Missing or raced deployment metadata, a database migration, an Edge Function change, previous/newer/missing SHA, healthy state, network failure, timeout, and protection responses all suppress automatic rollback.
 - Rollback targets are immutable Vercel deployment IDs resolved through the JSON API, never row positions parsed from human `vercel list` output. A rollback is successful only after a bounded canonical poll proves both the captured deployment ID and its healthy exact Git SHA.
 - Keep `ENABLE_PRODUCTION_CRON_BREAK_GLASS` absent/false until `production-break-glass` has required reviewers. A dispatch requires one allowlisted route, reason, and exact `RUN_ONE_PRODUCTION_CRON` confirmation; `all` is forbidden.
@@ -60,8 +64,33 @@ The older CI-independent model is retired. If GitHub Actions, Vercel, or Supabas
   to re-enable. Vercel Git delivery and Vercel cron remain active.
 - Live `main` protection now enforces administrators, one approving review,
   stale-review dismissal, last-push approval, conversation resolution, and no
-  force-push/deletion. The strict, GitHub-Actions-app-bound aggregate `CI Gate`
-  is the required status check.
+  force-push/deletion.
+- **Required status checks — corrected 2026-08-11.** This runbook previously
+  stated that "the strict, GitHub-Actions-app-bound aggregate `CI Gate` is the
+  required status check". **That is not the live state**, and the same false
+  belief is repeated in `docs/runbooks/branch-protection-required-checks.md`.
+  Probed directly against ruleset `main-protection` (id `20528052`):
+
+  ```bash
+  gh api repos/AlfanumrikOS/Alfanumrik/rulesets/20528052 \
+    --jq '.rules[] | select(.type=="required_status_checks")'
+  ```
+
+  The required contexts are exactly four — `Secret Scanning`,
+  `Lint, Type-check & Test`, `Production Build`, `CodeQL Analysis` — and
+  `strict_required_status_checks_policy` is **false**. `CI Gate` is **not**
+  required, so the aggregate gate is currently *advisory*: it reports red on a
+  PR but does not block the merge. This mattered concretely — commit
+  `409123b5` skipped four governance jobs and `CI Gate` itself on pull
+  requests on the stated grounds that "the ruleset enforces the required
+  checks directly", which left those jobs enforced by nothing before merge
+  (PR #1514 merged green and turned `main` red; #1517 was the repair). The
+  jobs were restored to PR runs on 2026-08-11.
+- **Open action for the repo owner:** add `CI Gate` to the ruleset's required
+  contexts to make the aggregate gate merge-blocking. This is a repository
+  setting, not a workflow change, and it is the durable fix for the class of
+  defect above. Verify any change to that list with the probe command shown
+  here rather than trusting prose in this or any other document.
 - Do not set `git.deploymentEnabled.main=false` until the CLI deploy is mandatory and health directly depends on it; PR previews must remain enabled.
 
 ---
@@ -76,7 +105,7 @@ The older CI-independent model is retired. If GitHub Actions, Vercel, or Supabas
 - Do not broaden rollout if any required live evidence gate is missing, stale, or failed.
 - Do not bypass migrations, Edge Function deploys, tenant-isolation smoke, or feature-flag verification for convenience.
 - Protection challenges are verification failures, not rollback evidence.
-- Never create a release/tag without healthy exact-SHA proof from both canonical verification jobs.
+- Never create a release/tag without healthy exact-SHA proof from both canonical verification jobs, or — for a release carrying no deployable change — proof from both jobs via one of the two bounded exceptions documented under "Phase 0 Delivery Containment" (identical-tree no-op, or a Vercel-skipped build whose entire commit gap contains zero deployable files). Production liveness proof is required in every case and is never excepted.
 - Service-role/admin-client route count must never increase without a reviewed ledger entry and owner.
 
 ### Release Types

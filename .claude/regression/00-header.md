@@ -6,8 +6,430 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 371 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-378 (2026-08-09, Node.js toolchain version pin — every surface
+**Total catalog: 398 entries (target: 35 — TARGET EXCEEDED).**
+
+> Counting note (testing, 2026-08-12, E2E Batch 2 — the denial-contract batch,
+> branch `Alfanumrik/e2e-batch2-denial-contract`): 395 + 3 filed, body-backed
+> entries (**REG-396** — bootstrap role-echo + validate-before-dedup, in
+> `06-auth-onboarding.md`; **REG-397** — leadership auth-before-flag-gate, in
+> `10-rbac-rls.md`; **REG-398** — the /v2 subject denial contract, a–d as ONE
+> entry, in `01-subject-governance.md`) = **398**. This pass adds 3, deletes 0,
+> renumbers nothing. The batch brief said "should be REG-396 but VERIFY" — the
+> id was verified against the shard bodies before use (grep max body-backed id
+> = 395; 396 appeared only as "next free" prose), so no collision this time.
+> **REG-399 is now the next free id**; REG-371..REG-377 remain RESERVED. Every
+> carried-forward discrepancy in the notes below is untouched and still open.
+
+> Counting note (backend, 2026-08-12, the architect-conditions follow-up on the
+> same branch): 393 + 2 filed, body-backed entries (**REG-394** — the P0001
+> collision, in `03-quiz-integrity.md`; **REG-395** — the ownership-guard RPC
+> family, in `10-rbac-rls.md`) = **395**. This pass adds 2 and deletes 0, and
+> renumbers nothing. **REG-396 is now the next free id**; REG-371..REG-377
+> remain RESERVED. The counting note immediately below (and every discrepancy
+> it carries forward) is untouched.
+
+> Counting note (testing, 2026-08-12, the live-P0 Bearer batch): 389 + 4 filed,
+> body-backed entries (REG-390..REG-393 — each has a `| REG-N |` table row:
+> REG-390 + REG-391 in `03-quiz-integrity.md`, REG-392 in `10-rbac-rls.md`,
+> REG-393 in `11-infrastructure.md`) = **393**. This pass adds 4 and deletes 0.
+> Every carried-forward discrepancy below — the 7-entry shard-chain gap, the
+> REG-361..REG-365 upstream gap, and the independently derived 326 body-backed
+> figure — is UNTOUCHED and still open; none of them was reconciled here and
+> none of them shifts an id.
+>
+> **Numbering note, recorded because the instruction was wrong and following it
+> would have corrupted the catalog:** the task brief for this batch stated
+> "latest id is REG-369, so start at REG-370". REG-370 is the Foxy
+> MasteryAwareness ring no-shrink entry in `02-foxy-ai.md`; REG-371..REG-377 are
+> the RESERVED ops block; REG-378, REG-379 and REG-387..REG-389 are all filed.
+> Starting at 370 would have collided with four existing entries and consumed the
+> reserved block. This header already declared **REG-390** the next free id, so
+> this batch takes REG-390..REG-393 and renumbers nothing.
+
+> Counting note (testing, 2026-08-11): this header declared **372** immediately
+> before this batch while the shard-chain running counters had reached **379** —
+> a pre-existing 7-entry discrepancy of exactly the kind the header itself warns
+> about, and NOT introduced here. It is carried forward, not silently
+> reconciled: 379 (shard chain) + 7 (this batch) = **386**, which both this line
+> and the three shard totals now agree on. If a later reconciliation finds the
+> shard chain was the wrong side of the discrepancy, every total shifts down by
+> 7 in lock-step and the ids assigned below do not move.
+>
+> Addendum (testing, same day, tiered-verification batch): 386 + 3 filed,
+> body-backed entries (REG-387..REG-389, all with a `| REG-N |` table row in
+> `03-quiz-integrity.md`) = **389**. The carried-forward 7-entry discrepancy
+> above is untouched and still open; so is the separately-recorded 326
+> body-derived figure. This pass adds 3 and deletes 0. One test file was
+> REPAIRED rather than added (`select-quiz-questions-rag-tier0-floor.test.ts`),
+> which is count-neutral by design — it was already covered under REG-386's
+> neighbourhood and takes no new id.
+
+Latest: REG-396..REG-398 (2026-08-12, E2E Batch 2 — the DENIAL-CONTRACT batch,
+branch `Alfanumrik/e2e-batch2-denial-contract`. Three findings from the same
+2026-08-12 production E2E report, all variants of "a denial that lies about
+itself":
+
+- **REG-396** (`06-auth-onboarding.md`) — **bootstrap role-echo + validate-
+  before-dedup.** `POST /api/auth/bootstrap`'s two dedup short-circuits ran
+  BEFORE validation and echoed unvalidated state: an already-bootstrapped
+  student posting `{"role":"institution_admin"}` was mirrored back
+  `institution_admin` + `/school-admin` (the frontend routes on this echo), the
+  Redis branch answered `role:'unknown'`, an invalid role was 400 on a fresh
+  profile but 200 on an existing one, and a garbage first call burned the 30s
+  Redis TTL for the subsequent good call. Pinned: role validation above BOTH
+  short-circuits (400 with the lock provably never taken), DB-truth echo via
+  the `resolveIdentity` ladder on `already_completed` AND `deduplicated`,
+  `'unknown'` dead, P15 fail-soft totality (no-rows AND thrown identity read
+  both fall back to the VALIDATED request role, never 500), and the fresh
+  `success` hot path byte-identical with no profile-table re-read.
+- **REG-397** (`10-rbac-rls.md`) — **leadership auth-before-flag-gate.**
+  `GET /api/school-admin/leadership` ran its `ff_school_pulse_v1` gate before
+  auth, so with the flag OFF (seeded state) every anonymous caller got
+  `200 {gated:true}` — the only route of 240 in the unauth sweep to answer 200
+  with a role-gated shape; the 401/403 path was dead code. Pinned: resolver
+  first (its 401/403/400-multi-school pass through UNCHANGED, flag reader never
+  consulted on denial), the fail-soft `200 {gated:true}` + private cache header
+  reachable ONLY authorized, flag-ON read-model path, and flag-reader failure
+  failing soft for authorized callers.
+- **REG-398** (`01-subject-governance.md`, a–d as one entry) — **the /v2
+  subject denial contract.** (a) the quiz/questions governance 403 names the
+  SUBJECT with `details:{subject,reason,allowed}` — never the old
+  wrong-variable "Subject not allowed: grade" — and a denial never carries
+  `retryable:true`; (b) governance outage FAILS CLOSED: 503
+  `SUBJECT_GOVERNANCE_UNAVAILABLE` `retryable:true` with the questions RPC
+  provably never called, the direction pinned total over throw shapes
+  (Error AND bare-string rejection — REG-391 style); (c) learn
+  curriculum/concept unknown subject → 400 `UNKNOWN_SUBJECT` with `allowed[]`,
+  the empty-success 200 reserved for zero-subjects-no-filter (branch-order
+  pinned at the boundary: zero subjects + filter = 400 `allowed:[]`), locked
+  subjects stay valid read params, concept's 404 reserved for known-subject
+  content gaps; (d) `ErrorResponse.details` + `SubjectNotAllowedDetails`
+  (rejects missing `allowed[]`) + the REQUIRED `Idempotency-Key` header now in
+  the generated OpenAPI spec, `gen:openapi:check` run green.
+
+Reported, not fixed (defect found while pinning): `/v2/learn/curriculum` still
+answers **500 INTERNAL_ERROR** on a `get_available_subjects` outage while its
+siblings now answer 503 `retryable:true` for the same dependency — a retrying
+client treats the curriculum failure as permanent. Owed to backend.
+**REG-399 is now the next free id**; REG-371..REG-377 remain RESERVED.
+
+Prior: REG-394..REG-395 (2026-08-12, the ARCHITECT-CONDITIONS follow-up on the
+LIVE-P0 Bearer batch, same branch `Alfanumrik/e2e-p0-bearer-quiz-submit`.
+Architect returned APPROVE WITH CONDITIONS on REG-390/391; both conditions are
+closed here.
+
+- **REG-394** (`03-quiz-integrity.md`) — **the P0001 collision.** A bare
+  `RAISE EXCEPTION` in PL/pgSQL is SQLSTATE P0001, so the quiz RPCs' SECURITY
+  DEFINER ownership-guard denial (`Access denied: caller does not own student %`)
+  and their routine `session_not_started` refusal arrive with the SAME code.
+  Both submit routes branched on the code alone, so a genuine cross-student
+  submission was answered `409 session_not_started` + `hint: 'restart_quiz'`,
+  bypassed the REG-391 classifier, and wrote NOTHING to `ops_events`. The denial
+  now gets its own 403 + `STUDENT_OWNERSHIP_DENIED` + an `ops_events` row at
+  severity `error` under category `security`, carrying the transport
+  (bearer/cookie) so a denial is attributable. `session_not_started` is
+  byte-unchanged; branch ORDER is pinned as its own property, since ordering is
+  the only thing separating the two.
+- **REG-395** (`10-rbac-rls.md`) — **the ownership-guard RPC family.** Three
+  routes (`/api/v2/quiz/start` → `start_quiz_session`,
+  `/api/learner/lesson/progress` → `update_chapter_progress`,
+  `/api/v2/student/leaderboard` → `get_leaderboard`) called SECURITY DEFINER
+  RPCs whose guard is written `auth.uid() IS NOT NULL AND NOT EXISTS (…)` so
+  service-role/cron callers still work. Bearer callers arrived as `anon` with
+  `auth.uid()` NULL, so **the guard short-circuited for every mobile caller** —
+  never a live hole (the route-layer 403 still refused) but the database half of
+  a two-layer check silently switched off. They also worked only because of a
+  residual **PUBLIC** EXECUTE grant: the `REVOKE EXECUTE … FROM anon` in
+  migration `20260515000002` is a no-op while PUBLIC still grants it, and the
+  anon-revocation campaign removes it. Quiz START is the funnel predecessor to
+  submit, so REG-390 alone left the funnel one migration from the same outage.
+
+Owed follow-up recorded with these entries: `/api/v2/quiz/start` still swallows
+its own ownership-guard denial into `503 START_SESSION_FAILED` ("please retry") —
+the REG-394 defect shape, deliberately out of scope because Condition B named the
+two submit routes.
+
+Prior: REG-390..REG-393 (2026-08-12, the LIVE-P0 Bearer batch — branch
+`Alfanumrik/e2e-p0-bearer-quiz-submit`. A production E2E run of 411 requests
+found `POST /api/quiz/submit` and `POST /api/v2/quiz/submit` returning
+`503 RPC_FAILED` for **every** `Authorization: Bearer` caller: both routes built
+their DB client with the cookie-only `createSupabaseServerClient()`, the Flutter
+app is Bearer-only, so PostgREST ran the request as `anon` and
+`submit_quiz_results_v2` — granted only to `authenticated, service_role` —
+raised SQLSTATE 42501. **No quiz submitted from the mobile app had ever scored.**
+Twelve routes shared the defect; the other ten degraded to
+`404 no_student_profile`, an empty-history 200, or `NO_GRADE` instead. Four
+entries:
+
+- **REG-390** (`03-quiz-integrity.md`) — the transport P0, asserted at the MODULE
+  BOUNDARY: with a Bearer header and no cookie the RPC provably runs on the
+  anon-key client carrying the caller's forwarded JWT, and the cookie-only client
+  is provably NOT what `.rpc()` landed on. Both doubles expose an identical `rpc`
+  surface, so only the spy can distinguish them — a silent revert fails the spy,
+  not a string match. Includes the P8 rider (transported key is the anon key, not
+  service-role), payload transport-neutrality, and an explicit
+  behaviour-neutral-for-web sweep (200 / 409 / 503 / cached replay all unchanged
+  for a cookie caller).
+- **REG-391** (`03-quiz-integrity.md`) — PERMANENT vs TRANSIENT and the
+  `retryable` cross-client contract. 42501 / 42883 / 23514 / PGRST202 / PGRST203
+  → 500 `RPC_PERMANENT` `retryable:false` with a message that never says retry;
+  everything else → 503 `RPC_FAILED` `retryable:true`. **Fail-open toward
+  transient is pinned as a DIRECTION** (14 enumerated non-matches plus a noise
+  sweep), because a wrong "permanent" verdict stops a client retrying a
+  recoverable failure and quarantines a real completed quiz. `retryable` is
+  asserted as a TOP-LEVEL boolean via `hasOwnProperty` — the Flutter drain reads
+  exactly that field at exactly that position, so its name and position are a
+  cross-client contract, not an implementation detail.
+- **REG-392** (`10-rbac-rls.md`) — the identity-route family. Behavioural for
+  `/api/v2/today`, `/api/rhythm/today`, `/api/learner/next`; structural pattern
+  check across all twelve, with comments stripped before matching (every route
+  now names the old client in prose, and matching raw source would make the
+  documentation fail the test) and exactly ONE documented cookie holdout
+  (`POST /api/rhythm/today`, session-based `auth.getUser()`). **States its own
+  limit in the file header:** Part 2 proves the helper is wired in, not that each
+  route's RLS reads succeed.
+- **REG-393** (`11-infrastructure.md`) — the `__noProfile` cache sentinel. A
+  truthy failure marker is a cache HIT, so ONE Bearer miss pinned a 404 for that
+  student — web included — for the whole TTL. Pins that a failed build is not
+  retained as an answer, that recovery is immediate on the next request, that no
+  truthy sentinel is written, AND that a REAL result is still cached (the fix
+  must not degrade into "never cache anything"). The cache module is deliberately
+  REAL; mocking it to a pass-through would have made the suite vacuous.
+
+Reported, not fixed (product defects found while writing these): a quarantined
+mobile attempt has **no recovery path** — `failed()` surfaces it but the only
+operations are `remove()` / `clearFailed()`, both of which delete the student's
+completed quiz; and `QuizRepository.submitOfflineReplay`, the seam that wires the
+server's `retryable` into the classifier, is **untested** (both halves are
+covered independently, so dropping the argument at that call site keeps all 29
+drain tests green while the fix does nothing end to end) — unclosable without a
+production seam, since `V2ApiClient` has a private constructor.
+**REG-394 is now the next free id**; REG-371..REG-377 remain RESERVED.
+
+Prior: REG-387..REG-389 (2026-08-11, the TIERED-VERIFICATION batch — quality
+finding #7, MAJOR: the content-remediation change set shipped with NO regression
+coverage while migration `20260814000014`'s own header documented a one-line path
+to undoing its central safety property. Three entries, all in
+`03-quiz-integrity.md`:
+
+- **REG-387 — the exam SME gate.** `start_mock_test_attempt` keeps
+  `is_verified = true` on ALL THREE rungs of its fallback ladder. This is the
+  human-SME gate that stops AI-verified-but-not-human-approved questions reaching
+  a mock test whose score a parent will screenshot. Decision A (CEO-approved
+  option 3) deliberately split the audiences — practice serves AI-verified
+  content, exams keep the human gate — and migration 14's `TO REVERSE THIS
+  DECISION:` block names the exact one-line edit that removes it. The pin
+  resolves the EFFECTIVE definition at test time (last CREATE-OR-REPLACE wins,
+  as Postgres applies them) so a future relaxing migration is read and FAILS
+  rather than leaving the pin green against a superseded file. Mutation-tested
+  against five corrupted copies (all three gates, each one individually, and a
+  deleted rung), and spot-checked against the real migration: removing ladder
+  step 3 turns it red 8/13.
+- **REG-388 — Tier-0 floor totality.** A verifier-disproved row is never servable
+  on ANY rewritten rung. The floor is THREE states (`failed`,
+  `failed_fix_in_flight`, `failed_unfixable`), not the literal `'failed'` every
+  gate had been testing since the CHECK was widened four→six by
+  `20260510064952`. Pins that all four rewritten functions agree LITERALLY — the
+  assertion per-rung tests structurally cannot make, and the reason the floor had
+  drifted into five different dialects. **Carries a deliberate defect witness:
+  `quiz-generator`, the PRIMARY serving path, still has no floor at all and was
+  out of scope (ai-engineer's follow-up); the witness asserts the gap STILL
+  EXISTS so a passing REG-388 can never be misread as full coverage, and FAILS
+  the moment the floor is added.**
+- **REG-389 — the truthful badge.** The `/learn` chapter badge renders
+  `practice_ready_count`, and `undefined` (pre-migration DB) renders as UNKNOWN —
+  no badge — never as "0 questions". Rendering zero on a chapter full of
+  questions is a fresh instance of the same defect class as REG-380..REG-386:
+  a failure dressed as a confident, reassuring, wrong empty state. Pinned
+  behaviourally on the real page in both languages, plus a transport-seam
+  companion pinning `undefined`→`undefined` through the real
+  `getChaptersForSubject` mapper.
+
+Also repaired in this pass, no new id: the pre-existing
+`select-quiz-questions-rag-tier0-floor.test.ts` mirror was **stale while still
+passing** — it modelled two of the three disproved states as SERVABLE, so it
+could not have caught the regression it existed to catch. 10 tests → 15.
+~~**REG-390 is now the next free id**~~ **← superseded 2026-08-12: the live-P0
+Bearer batch above took REG-390..REG-393, so REG-394 is the next free id.**
+REG-371..REG-377 remain RESERVED.
+OWED: a reconciliation entry for migration `20260814000013` (cbse_syllabus corpus
+reconciliation), deliberately NOT pinned because architect was still actively
+revising it (rewritten mid-session, 61 kB → 103 kB) after a quality REJECT.
+
+Prior: REG-380..REG-386 (2026-08-11, the SEV1 fix batch for the platform's two
+dominant defect classes — **failures rendered as reassuring empty states**, and
+**structurally impossible features** (cross-student data read from the browser
+against own-row RLS, returning exactly one row and rendered as a peer board).
+Seven entries across three shards:
+
+- **REG-380..REG-382** (`15-cross-cutting.md`) — the leaderboard batch.
+  REG-380 pins the `/leaderboard` ↔ `/api/v1/leaderboard/me` ENVELOPE SEAM by
+  driving the REAL route handler and the REAL `PercentileBandCard` in one test,
+  with no fixture between them: the page read `.band` off the `{success, data}`
+  envelope instead of off `data`, got `undefined`, and the resulting TypeError
+  tripped the `SectionErrorBoundary` wrapping all seven tabs. Both sides had
+  green tests; nothing tested the pair. REG-381 pins band-union TOTALITY plus a
+  drift guard asserting the card's union is a superset of BOTH producers (the TS
+  `bandFromPercentile()` swept 0..100, and the SQL `CASE` in migration
+  `20260813000006`, which is the sole emitter of `top_50`). REG-382 pins that
+  the page never reads `performance_scores` / `score_history` /
+  `challenge_streaks` / `student_titles` from the browser, and pins the three
+  own-scoped replacement routes incl. the `/streaks` P13 peer-field whitelist.
+- **REG-383..REG-384** (`10-rbac-rls.md`) — the support batch. REG-383 pins the
+  P13 leak the lane existed to close: a student must 404 on a PARENT-authored
+  thread (parent tickets anchor to the child's `student_id` with
+  `user_role='parent'`; the detail route filtered on `student_id` alone), with a
+  FILTER-AWARE double so the assertion is behavioural rather than "an `.eq()`
+  was called". REG-384 pins `replies_unavailable` as a distinct retry state, the
+  operator composer's fail-safe internal default + post-send reset, the reply
+  rate limiter's machine-readable 429, and category-alias normalisation.
+- **REG-385..REG-386** (`03-quiz-integrity.md`) — the truthy-`[]` serving bug:
+  `if (!error && data)` accepted the RPC's `COALESCE(jsonb_agg(q),'[]')`, so a
+  chapter with 40 valid-but-unverified questions served ZERO and never reached
+  the fallback. REG-386 pins the Tier-0 never-serve floor that the fix made
+  reachable — all THREE verifier-disproved states, not just `'failed'`.
+
+**REG-387 was the next free id** at that point — superseded above; the
+2026-08-11 tiered-verification batch took REG-387..REG-389, so **REG-390 is now
+the next free id**. REG-371..REG-377 remain RESERVED.
+Two defects found while writing these and reported rather than pinned as
+correct: the `normalizeTicketCategory()` prototype-inheritance hole
+(`10-rbac-rls.md`) and the `select_quiz_questions_rag` RPC's single-state
+`verification_state` exclusion (`03-quiz-integrity.md`).
+
+Prior: REG-379 (2026-08-10, canonical `parseOptions` / `OPTION_LETTERS` —
+`JSON.parse(null)` returns `null` rather than throwing, so six of the seven
+duplicate `parseOptions` copies could return `null` from a function annotated
+`: string[]`, crashing the caller's `.map()` at render on the quiz, learn,
+mock-exam, pyq, diagnostic and results screens. The canonical module
+`packages/lib/src/quiz/options.ts` returns `[]`; the entry also freezes the two
+marking-safety properties of the question-serving path — option COUNT (P6's
+exactly-four) and option ORDER (bound to the server shuffle snapshot and
+`selected_displayed_index`) — as explicitly invariant. 4 sub-entries
+[REG-379a..d], 22 tests in `apps/host/src/__tests__/lib/quiz/options.test.ts`,
+all E. Documented known gap: the literal STRING `'null'` still parses to `null`
+verbatim, preserved-not-introduced from all seven originals and pinned
+deliberately; tightening it is a P6 behaviour change needing assessment
+sign-off. Full entry in `03-quiz-integrity.md`.)
+
+2026-08-10 reconciliation — 4 test files deleted in the orphan-consolidation
+pass, 3 catalog entries repaired, **0 entries deleted**. The deleted files were
+`DailyPlanCard.test.tsx` and `DailyRhythmQueue.{blockedPrerequisite,remediation,
+srs-count}.test.tsx`. Three entries cited them and were repaired IN PLACE with
+the citation struck through and a reconciliation note added — REG-129
+(`09-adaptive-program.md`, client half of the Loop A remediation lane;
+downgraded `U`→`P` because its six client-half clauses are now unenforced,
+server half fully intact via `api/rhythm/today-remediation-lane.test.ts`) and
+REG-345 + REG-358 (`03-quiz-integrity.md`, SRS lane count; both stay `E` — the
+~~predicate-level guarantee that makes REG-358 meaningful lives in
+`srs-source.test.ts` + `api/learner/srs-due.test.ts`, never in the deleted
+render test~~ **← THIS CLAUSE IS FACTUALLY WRONG. Corrected the SAME DAY by the
+second-pass reconciliation below: `srs-source.test.ts` never referenced either
+predicate symbol at any point, and `api/learner/srs-due.test.ts` has since been
+deleted with its route.**). `DailyPlanCard.test.tsx` was cited by NO entry; only REG-220's
+prose named the component, corrected in place in `10-rbac-rls.md`. The
+`blockedPrerequisite` test was cited by no entry either. **Judgement: all four
+were false greens, not lost coverage** — `git grep` at HEAD proves all three
+`DailyRhythmQueue` tests and the `DailyPlanCard` test were the ONLY importers
+of their subjects (zero production importers), and no UI in `apps/host/src` or
+`packages/ui/src` consumes `GET /api/rhythm/today` at all any more. Open
+obligations to re-pin the client-half clauses if either lane is ever re-lit are
+recorded in both shards.
+
+2026-08-10 reconciliation, SECOND PASS (branch
+`refactor/student-phase-2-consolidation`, base `855784bc6`) — 4 artifacts
+retired, **2 catalog entries corrected, 1 annotated, 0 entries added, 0 entries
+deleted. Declared total UNCHANGED at 372 upper bound / 367 honest.**
+
+Retired: `packages/ui/src/goals/StudentGoalBadge.tsx` (+ test);
+`packages/ui/src/xp/XPDailyStatus.tsx` (+ barrel line);
+`GET /api/learner/srs/due` (+ `api/learner/srs-due.test.ts`, route-access
+manifest 399 → 398); `dashboard_cta_clicked` / `trackDashboardCta`
+(`packages/lib/src/posthog/dashboard-cta.ts` + its test; type tombstoned in
+`posthog/types.ts`).
+
+**Catalog impact is narrower than the change set.** A grep of
+`.claude/regression/` for all six retired symbols found citations for exactly
+ONE of them:
+
+```
+$ grep -rn "srs-due.test.ts\|dashboard-cta.test\|StudentGoalBadge\|XPDailyStatus\|trackDashboardCta\|dashboard_cta_clicked" .claude/regression/
+.claude/regression/00-header.md:36:      … api/learner/srs-due.test.ts …
+.claude/regression/03-quiz-integrity.md:1625: (REG-358 Location column)
+.claude/regression/03-quiz-integrity.md:1658: (REG-358 reconciliation note)
+```
+
+`StudentGoalBadge`, `XPDailyStatus`, `trackDashboardCta` and
+`dashboard_cta_clicked` were cited by **zero** catalog entries — three of the
+four retirements cost the catalog nothing.
+
+**REG-358 (`srs_single_predicate`) — evidence CORRECTED, status stays `E`.**
+The backend agent challenged its cited evidence; testing re-derived it from
+source rather than accepting either side on report, and **upheld the
+challenge**. Three findings, all recorded in full in `03-quiz-integrity.md`:
+
+1. **The `srs-source.test.ts` citation was never true** — not stale, never
+   true. `grep -n "SRS_DUE_PREDICATE_DESCRIPTOR\|buildSrsDueQuery"` against
+   that file exits 1 (zero matches). It pins an unrelated `get_review_cards`
+   RPC ⇄ adapter parity. The same false claim had been repeated in this
+   header's first-pass note above; both are now struck through.
+2. **`SRS_DUE_PREDICATE_DESCRIPTOR` has ZERO enforcing tests repo-wide** —
+   a **pre-existing gap, NOT created by this change**. All four repo-wide
+   matches are inside its own source file. `hardLimit`, `order`, `dateFilter`
+   and `table` are enforced nowhere; changing `hardLimit: 100 → 5` breaks no
+   test. Open obligation recorded, deliberately NOT silently closed.
+3. **REG-358's thesis is now VACUOUS rather than unenforced** — the
+   distinction matters. After the Phase 2 deletion and this route retirement,
+   `buildSrsDueQuery` has exactly ONE production importer
+   (`packages/lib/src/learn/srs-quiz-review.ts` → `/quiz?mode=srs`). The
+   predicate is frozen and behaviourally tested, but "the COUNT and the CONTENT
+   cannot disagree" is now a statement about a single consumer agreeing with
+   itself. True, and empty. Residual value is forward-looking only: the
+   multi-client `SrsQueryClient` indirection is deliberately retained so a
+   future server/cron consumer must route through the same helper.
+
+Real surviving carriers, both re-run green this session (21/21 and 44/44):
+`apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` →
+`describe('fetchSrsDueQuizCards (shared due query)')` — BEHAVIOURAL, no
+`vi.mock` of `srs-predicate`, so it exercises the real `buildSrsDueQuery`; and
+`apps/host/src/__tests__/adaptive-differential.test.ts:797-844` — STATIC
+source-text pins. Status stays `E`: the predicate shape genuinely is enforced.
+It was the entry's SCOPE claim that was overstated, so the scope is corrected
+rather than the status downgraded.
+
+**REG-345 (`srs_grade_loop_closure`) — clause (3) annotated, status stays `E`.**
+Its "used by BOTH the quiz deep-link content and the dashboard DailyRhythmQueue
+SRS lane count" is vacuous for the same reason. Selection mechanics remain
+fully enforced by `srs-quiz-review.test.ts`.
+
+**REG-217 (`GET /api/student/daily-lab` RLS contract) — retention note added,
+status stays `E`.** The route is now caller-less (only its sibling `/claim` is
+invoked, from `apps/host/src/app/stem-centre/page.tsx:179`) but was
+**DELIBERATELY RETAINED**, blocked pending a user decision: (a) REG-217 is its
+only pin; (b) `claim/route.ts:32` imports `DAILY_LAB_BONUS_COINS` from it, so
+deleting the module breaks a LIVE route; (c) its test file also guards
+`BUILT_IN_SIMULATIONS_META` parity, which `/claim` depends on. Full rationale
+with command output in `10-rbac-rls.md`.
+
+Independently derived body count this pass (stated definition: distinct
+`REG-N` numerals appearing either as a `##`-level heading or as the leading
+cell of a table row, across the 15 non-header shards):
+
+```
+$ grep -rhoE '^#{2,4} +REG-[0-9]+' <15 shards> ; grep -rhoE '^\|[[:space:]]*\*{0,2}REG-[0-9]+' <15 shards> \
+    | grep -oE '[0-9]+' | sort -n -u | wc -l
+326      # max id: 379
+```
+
+**326 body-backed ids vs the 372/367 declared above.** That divergence is
+PRE-EXISTING and is NOT resolved here — it is the same class of gap the
+"Honesty note on the declared total" below already tracks (REG-361..REG-365
+narrated but never filed), and closing it needs a full shard-by-shard audit,
+not a drive-by edit. Recorded so the next reader has a measured number rather
+than only a carried-forward one. This pass itself is count-neutral: 0 added,
+0 deleted.
+
+Prior: REG-378 (2026-08-09, Node.js toolchain version pin — every surface
 that can choose a Node is pinned to 22.x and none may float; `engine-strict`
 makes the real floor 22.22.0, not 22.0.0. Full entry further down this file
 and in `11-infrastructure.md`. REG-371..REG-377 remain RESERVED.)
@@ -178,12 +600,17 @@ REG-358 SRS single predicate [E]: `packages/lib/src/learn/srs-predicate.ts`
 freezes `SRS_DUE_PREDICATE_DESCRIPTOR` (`is_active=true`,
 `source='quiz_wrong_answer'`, `source_id IS NOT NULL`, `next_review_date <=
 today`, `ORDER BY next_review_date ASC`, defaultLimit 50, hardLimit 100)
-and exposes `buildSrsDueQuery`, called by BOTH the client-side deep-link
+and exposes `buildSrsDueQuery`, ~~called by BOTH the client-side deep-link
 consumer (`srs-quiz-review.ts` → `fetchSrsDueQuizCards` →
 `selectSrsReviewSet`) AND the server-side `/api/learner/srs/due` route AND
 the `DailyRhythmQueue` count — the dashboard SRS lane COUNT and the
 `/quiz?mode=srs` CONTENT cannot disagree because they resolve through the
-same predicate object; closes the drift REG-345 pinned at the fetcher level
+same predicate object~~ **← superseded 2026-08-10 (second pass): TWO of those
+three consumers are gone (`DailyRhythmQueue` deleted in Phase 2;
+`/api/learner/srs/due` retired once caller-less), leaving the client-side
+deep-link path as the SOLE production consumer. The predicate is still frozen
+and behaviourally tested, but the count-vs-content clause is now VACUOUS.**;
+closes the drift REG-345 pinned at the fetcher level
 one layer deeper at the predicate level.)
 Prior: REG-351..REG-353 (2026-08-05, Foxy North-Star Phase 2 Canonical
 Learner Model batch — three pins in `03-quiz-integrity.md` covering the
@@ -358,8 +785,10 @@ REG-366 taken by the same-day K9 leadership standalone-route fold-in.) That
 made REG-367 the next free id, and the same-day Student-OS IA consolidation
 batch then took **REG-367..REG-370**, so REG-371 was the next free id at that
 point. That is superseded below — the 2026-08-09 Node.js version-pin batch took
-**REG-378**, so **REG-379 is now the next free id** and REG-371..REG-377 remain
-RESERVED (see the ID-collision note immediately below).
+**REG-378**, so REG-379 was the next free id and REG-371..REG-377 remain
+RESERVED (see the ID-collision note immediately below). That is in turn
+superseded above — the 2026-08-10 canonical-`parseOptions` consolidation took
+**REG-379**, so **REG-380 is now the next free id.**
 
 2026-08-09: **REG-378 — Node.js toolchain version pin** (deployment-config
 change; architect made it, P14 chain architect → ops, testing). Every surface
@@ -426,6 +855,19 @@ batch either way and must not be reissued.
 same bracket now reads **371 upper bound / 366 honest**. REG-378 itself is
 filed — `## REG-378` heading plus `| REG-378 |` table row in
 `11-infrastructure.md` — and is not part of the unresolved gap above.)
+(2026-08-10 addendum: REG-379 adds exactly one more filed, body-backed entry —
+`## REG-379` heading plus four `| REG-379a..d |` table rows in
+`03-quiz-integrity.md`, counted as ONE entry — so the bracket now reads
+**372 upper bound / 367 honest**. The REG-361..REG-365 upstream gap above is
+still unresolved and untouched by this pass. The same-day deletion
+reconciliation changed no count: 3 entries were repaired in place, 0 deleted.
+The same-day SECOND-PASS reconciliation — the four-artifact retirement on
+`refactor/student-phase-2-consolidation` — likewise changed no count: REG-358
+corrected, REG-345 annotated, REG-217 annotated, 0 added, 0 deleted, so the
+bracket still reads **372 upper bound / 367 honest**. That pass DID record an
+independently derived body-backed figure of **326** distinct `REG-N` ids across
+the 15 shards, which agrees with neither number above; the discrepancy is
+pre-existing, is flagged in that note, and remains open.)
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

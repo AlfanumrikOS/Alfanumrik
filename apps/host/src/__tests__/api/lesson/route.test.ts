@@ -15,10 +15,19 @@
  *   - Read-only: the route source contains no `.insert/.update/.upsert/.delete`
  *     and never imports the service-role/admin client or `canAccessStudent`.
  *
- * Only the route's collaborators (flag, rbac, supabase-server, generator, memory,
+ * Only the route's collaborators (flag, rbac, supabase-route, generator, memory,
  * logger) are stubbed; the v2 envelope, the flag REGISTRY constant, and the Bloom
  * validator run REAL. Mocking mirrors the sanctioned outcome-route pattern
  * (src/__tests__/api/predict/outcome-route.test.ts).
+ *
+ * NOTE (2026-08-12 Bearer P0): the DB collaborator mocked here is
+ * `@alfanumrik/lib/supabase-route`'s `createSupabaseRouteClient`, NOT the
+ * cookie-only `createSupabaseServerClient`. `req()` below sends
+ * `Authorization: Bearer …` — i.e. every case in this file simulates a MOBILE
+ * caller — and the cookie-only client NULLs `auth.uid()` on that transport, so
+ * the grade SELECT was RLS-denied and the route 404'd NO_GRADE for real mobile
+ * users. Keep this mock pointed at supabase-route; pointing it back at
+ * supabase-server would make the suite green against the wrong client again.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -29,7 +38,7 @@ const holders = vi.hoisted(() => ({
   mockIsFeatureEnabled: vi.fn(),
   mockAuthorize: vi.fn(),
   mockLogAudit: vi.fn(),
-  mockCreateServerClient: vi.fn(),
+  mockCreateRouteClient: vi.fn(),
   mockGetStudentMemory: vi.fn(),
   mockGenerateLessonNotes: vi.fn(),
   tables: {} as Record<string, unknown>,
@@ -48,8 +57,8 @@ vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('@alfanumrik/lib/supabase-server', () => ({
-  createSupabaseServerClient: (...a: unknown[]) => holders.mockCreateServerClient(...a),
+vi.mock('@alfanumrik/lib/supabase-route', () => ({
+  createSupabaseRouteClient: (...a: unknown[]) => holders.mockCreateRouteClient(...a),
 }));
 
 vi.mock('@alfanumrik/lib/lesson/generate-lesson', () => ({
@@ -154,7 +163,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   holders.tables = {};
   holders.mockIsFeatureEnabled.mockResolvedValue(true);
-  holders.mockCreateServerClient.mockResolvedValue(makeClient());
+  holders.mockCreateRouteClient.mockResolvedValue(makeClient());
   holders.mockGetStudentMemory.mockResolvedValue(memoryStub());
   holders.mockGenerateLessonNotes.mockResolvedValue(happyNotes());
 });
@@ -179,7 +188,7 @@ describe('GET /api/lesson — flag gate', () => {
     expect(body.data).toBeUndefined();
     // Short-circuits BEFORE any downstream work.
     expect(holders.mockAuthorize).not.toHaveBeenCalled();
-    expect(holders.mockCreateServerClient).not.toHaveBeenCalled();
+    expect(holders.mockCreateRouteClient).not.toHaveBeenCalled();
     expect(holders.mockGetStudentMemory).not.toHaveBeenCalled();
     expect(holders.mockGenerateLessonNotes).not.toHaveBeenCalled();
     // No lesson shape ever leaks.
@@ -228,7 +237,7 @@ describe('GET /api/lesson — student-self path', () => {
     expect(holders.mockGetStudentMemory).toHaveBeenCalledTimes(1);
     expect(holders.mockGetStudentMemory.mock.calls[0][0]).toBe(SELF_STUDENT);
     // RLS server client used for the grade read.
-    expect(holders.mockCreateServerClient).toHaveBeenCalledTimes(1);
+    expect(holders.mockCreateRouteClient).toHaveBeenCalledTimes(1);
     // Success audit recorded (metadata only).
     const successAudit = holders.mockLogAudit.mock.calls.find((c) => c[1]?.status === 'success');
     expect(successAudit).toBeTruthy();

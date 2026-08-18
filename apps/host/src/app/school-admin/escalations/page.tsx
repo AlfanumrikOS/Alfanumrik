@@ -289,7 +289,7 @@ export default function SchoolAdminEscalationsPage() {
           className="px-4 py-2 min-h-[44px] rounded-xl text-sm font-bold transition-all active:scale-[0.97]"
           style={
             tab === key
-              ? { background: 'var(--orange, #F97316)', color: '#fff' }
+              ? { background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }
               : { background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }
           }
         >

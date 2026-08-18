@@ -267,7 +267,7 @@ function ChildCard({
           style={{
             padding: '6px 14px',
             backgroundColor: '#16A34A',
-            color: '#fff',
+            color: 'var(--text-1)',
             border: 'none',
             borderRadius: 8,
             fontSize: 12,
@@ -704,7 +704,7 @@ function LinkChildSection({
             style={{
               padding: '12px 20px',
               backgroundColor: '#16A34A',
-              color: '#fff',
+              color: 'var(--text-1)',
               border: 'none',
               borderRadius: 10,
               fontSize: 15,
@@ -754,7 +754,7 @@ function LinkChildSection({
               style={{
                 padding: '12px 20px',
                 backgroundColor: '#16A34A',
-                color: '#fff',
+                color: 'var(--text-1)',
                 border: 'none',
                 borderRadius: 10,
                 fontSize: 15,
@@ -1216,7 +1216,7 @@ export default function ParentChildrenPage() {
               padding: '11px 24px',
               minHeight: 44,
               backgroundColor: '#16A34A',
-              color: '#fff',
+              color: 'var(--text-1)',
               border: 'none',
               borderRadius: 10,
               fontSize: 14,

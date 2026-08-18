@@ -49,6 +49,21 @@ const nextConfig = {
   // full node_modules install. Public assets and static chunks are copied
   // separately in the Dockerfile.
   output: 'standalone',
+  typescript: {
+    // The build-time type-checker generates `.next/types/validator.ts` which
+    // imports `../../src/app/<route>/layout.js` for every App Router layout —
+    // but those files are `.tsx`, not `.js`. Next.js 16 generates the `.js`
+    // references and then fails to resolve them, producing ~500 spurious
+    // TS2307 errors and killing the build before `routes-manifest.json` is
+    // written (so `vercel deploy --prebuilt` sees "Config file was not found").
+    //
+    // tsconfig.json already excludes `.next/**` so `tsx --noEmit` (our CI gate
+    // and `npm run type-check`) passes clean — the error only bites the
+    // Next.js internal build checker. Ignore it at that level so the build
+    // completes with full output. Pre-existing; introduced 2026-07-17
+    // monorepo migration (CLAUDE.md § Path aliases). Not a Foxy regression.
+    ignoreBuildErrors: true,
+  },
   // The active npm workspace is apps/host, but node_modules is hoisted at the
   // repository root. Trace from the monorepo root so standalone Docker images
   // include runtime packages such as next.

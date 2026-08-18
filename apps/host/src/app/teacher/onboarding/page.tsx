@@ -59,8 +59,8 @@ const labelStyle: React.CSSProperties = {
 const btnPrimary: React.CSSProperties = {
   width: '100%',
   padding: '14px 24px',
-  background: 'linear-gradient(135deg, var(--orange), var(--orange-dark, #EA580C))',
-  color: '#fff',
+  background: 'var(--surface-accent)',
+  color: 'var(--on-surface-accent)',
   border: 'none',
   borderRadius: 12,
   fontSize: 16,

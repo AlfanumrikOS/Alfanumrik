@@ -23,13 +23,23 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { NextRequest } from 'next/server';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared scaffolding
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The canonical 17 subjects (per spec §2 / §6 grade_subject_map rollout).
-// Using a literal list lets test #2 assert "strict subset".
+// The historical "canonical 17" list from spec §2 / §6. Used ONLY by test #2's
+// strict-subset assertion, which cares about the CEILING (never return the
+// whole master list), not about which codes are real.
+//
+// STALENESS NOTE (Phase 3, 2026-08-10): this list is not the catalogue. Two of
+// its entries — `history` and `environmental_science` — are not real subject
+// codes and never were. It is deliberately left as-is because test #2 only
+// compares LENGTHS and membership-of-returned-codes against it; correcting it
+// would not strengthen anything. The authoritative "which subjects may be
+// served" answer is `subjects.is_active` in the database, enforced by
+// get_available_subjects and, on the fallback path, by regression #8 below.
 const CANONICAL_17 = [
   'math','science','english','hindi','social_studies',
   'physics','chemistry','biology','computer_science',
@@ -37,6 +47,130 @@ const CANONICAL_17 = [
   'history','geography','political_science',
   'sanskrit','environmental_science',
 ];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression #8 scaffolding — GET /api/student/subjects fallback path.
+//
+// The fallback fires when get_available_subjects (v1) errors OR returns zero
+// rows. It used to hydrate from SUBJECT_META / getSubjectsForGrade with
+// isLocked=false, which bypassed `subjects.is_active` entirely. These fakes
+// model the real table semantics (`.in()` + `.eq('is_active', true)` actually
+// filter) so the test proves the join, not just the mock.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GRADES = ['6', '7', '8', '9', '10', '11', '12'] as const;
+
+/** Post-restriction KEEP-SET: the only subjects that stay is_active = true. */
+const KEEP_SET = ['math', 'science', 'physics', 'chemistry', 'biology'];
+
+/** Deactivated subjects that still have grade_subject_map rows. */
+const RETIRED = [
+  'english', 'hindi', 'social_studies', 'computer_science',
+  'accountancy', 'business_studies', 'economics',
+  'geography', 'political_science', 'sanskrit',
+];
+
+const SUBJECT_CATALOGUE = [
+  ...KEEP_SET.map((code) => ({
+    code, name: code, name_hi: `${code}-hi`, icon: '📘', color: '#000',
+    subject_kind: 'cbse_core', is_active: true,
+  })),
+  ...RETIRED.map((code) => ({
+    code, name: code, name_hi: `${code}-hi`, icon: '📘', color: '#000',
+    subject_kind: 'cbse_core', is_active: false,
+  })),
+];
+
+/**
+ * WORST CASE ON PURPOSE: grade_subject_map still maps EVERY subject at EVERY
+ * grade. The grade-map pruning migration is a separate workstream, so the
+ * route must be safe before it lands — `subjects.is_active` is the only gate
+ * doing work here.
+ */
+const GRADE_SUBJECT_MAP = GRADES.flatMap((grade) =>
+  [...KEEP_SET, ...RETIRED].map((subject_code) => ({
+    grade, subject_code, is_core: true, board: 'CBSE', stream: null as string | null,
+  })),
+);
+
+let _authUser: { data: { user: { id: string } | null }; error: any } = {
+  data: { user: { id: 'auth-user-1' } }, error: null,
+};
+let _v1Result: { data: any; error: any } = { data: [], error: null };
+let _studentRow: { data: any; error: any } = { data: null, error: null };
+let _gsmRows = GRADE_SUBJECT_MAP as Array<Record<string, any>>;
+let _opsEventInserts: any[] = [];
+
+function fakeFrom(table: string): any {
+  if (table === 'students') {
+    return {
+      select: () => ({
+        or: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve(_studentRow) }) }),
+      }),
+    };
+  }
+  if (table === 'grade_subject_map') {
+    let rows = _gsmRows.slice();
+    const link: any = {
+      eq: (col: string, val: any) => {
+        rows = rows.filter((r) => r[col] === val);
+        return link;
+      },
+      then: (ok?: any, err?: any) =>
+        Promise.resolve({ data: rows, error: null }).then(ok, err),
+    };
+    return { select: () => link };
+  }
+  if (table === 'subjects') {
+    let rows = SUBJECT_CATALOGUE.slice();
+    const link: any = {
+      in: (col: string, vals: any[]) => {
+        rows = rows.filter((r) => vals.includes((r as any)[col]));
+        return link;
+      },
+      eq: (col: string, val: any) => {
+        rows = rows.filter((r) => (r as any)[col] === val);
+        return link;
+      },
+      then: (ok?: any, err?: any) =>
+        Promise.resolve({
+          // The route selects display columns only; is_active never ships.
+          data: rows.map(({ is_active: _drop, ...rest }) => rest),
+          error: null,
+        }).then(ok, err),
+    };
+    return { select: () => link };
+  }
+  if (table === 'ops_events') {
+    return {
+      insert: (row: any) => {
+        _opsEventInserts.push(row);
+        return Promise.resolve({ data: null, error: null });
+      },
+    };
+  }
+  return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) };
+}
+
+vi.mock('@alfanumrik/lib/supabase-admin', () => {
+  const admin = {
+    auth: { getUser: () => Promise.resolve(_authUser) },
+    // v1 = get_available_subjects, v2 = get_available_subjects_v2 (counts).
+    rpc: (name: string) =>
+      Promise.resolve(name === 'get_available_subjects' ? _v1Result : { data: [], error: null }),
+    from: (table: string) => fakeFrom(table),
+  };
+  return { supabaseAdmin: admin, getSupabaseAdmin: () => admin };
+});
+
+vi.mock('@alfanumrik/lib/supabase-server', () => ({
+  createSupabaseServerClient: () =>
+    Promise.resolve({ auth: { getUser: () => Promise.resolve({ data: { user: null } }) } }),
+}));
+
+vi.mock('@alfanumrik/lib/logger', () => ({
+  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
 
 function rawRow(code: string, opts: { is_locked?: boolean; is_core?: boolean } = {}) {
   return {
@@ -440,5 +574,200 @@ describe('Regression #6: admin removing subject from plan_subject_access flags w
     const res = await validateSubjectWrite('stu-1', 'physics', ctx());
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.reason).toBe('plan');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #8 — GET /api/student/subjects fallback path never serves a non-active
+//      subject, for ANY grade, on EITHER trigger (v1 error / v1 empty rows).
+//
+// This is the Phase 3 P0 leak. `fallbackSubjectsForGradeAndBoard()` used to:
+//   (a) query grade_subject_map with no join to subjects.is_active, hydrating
+//       names from the deprecated SUBJECT_META, and
+//   (b) fall through to getSubjectsForGrade() — a hardcoded 16-subject shim —
+//   ...both marking every row isLocked:false.
+//
+// After the grade-map restriction, `v1_empty_rows` becomes MORE likely, so the
+// leak got more reachable, not less. The fallback now reads the same DB truth
+// as the RPC minus the plan join, and fails CLOSED (isLocked:true).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Regression #8: /api/student/subjects fallback never leaks a non-active subject', () => {
+  function req() {
+    return new NextRequest('http://localhost/api/student/subjects', {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+  }
+
+  async function callRoute() {
+    const { GET } = await import('@/app/api/student/subjects/route');
+    const res = await GET(req());
+    return { res, body: await res.json() };
+  }
+
+  beforeEach(() => {
+    _authUser = { data: { user: { id: 'auth-user-1' } }, error: null };
+    _v1Result = { data: [], error: null };
+    _studentRow = { data: null, error: null };
+    _gsmRows = GRADE_SUBJECT_MAP;
+    _opsEventInserts = [];
+  });
+
+  // ── The core assertion, across every grade AND both fallback triggers ──
+  const triggers = [
+    { label: 'v1_empty_rows', v1: { data: [], error: null } },
+    { label: 'v1_rpc_error', v1: { data: null, error: { message: 'rpc exploded' } } },
+  ];
+
+  for (const trigger of triggers) {
+    it.each(GRADES.map((g) => ({ grade: g })))(
+      `grade $grade / ${trigger.label}: returns only active subjects, all locked`,
+      async ({ grade }) => {
+        _v1Result = trigger.v1;
+        // P5: grade is a STRING.
+        expect(typeof grade).toBe('string');
+        _studentRow = { data: { grade, board: 'CBSE', stream: null }, error: null };
+
+        const { res, body } = await callRoute();
+        expect(res.status).toBe(200);
+
+        const codes = body.subjects.map((s: any) => s.code).sort();
+        expect(codes).toEqual([...KEEP_SET].sort());
+
+        // Not one retired code survives, even though grade_subject_map still
+        // maps all of them at this grade.
+        for (const retired of RETIRED) {
+          expect(codes).not.toContain(retired);
+        }
+
+        // Fail CLOSED on plan: no plan context ⇒ nothing is granted.
+        expect(body.subjects.every((s: any) => s.isLocked === true)).toBe(true);
+        expect(body.subjects.every((s: any) => s.readyChapterCount === 0)).toBe(true);
+      },
+    );
+  }
+
+  it('returns [] (never a hardcoded catalogue) when the grade maps to no active subject', async () => {
+    _studentRow = { data: { grade: '10', board: 'CBSE', stream: null }, error: null };
+    // Grade 10 maps only to retired (is_active=false) subjects.
+    _gsmRows = RETIRED.map((subject_code) => ({
+      grade: '10', subject_code, is_core: true, board: 'CBSE', stream: null,
+    }));
+
+    const { res, body } = await callRoute();
+    expect(res.status).toBe(200);
+    expect(body.subjects).toEqual([]);
+
+    // ...and the drift is logged so ops can see an empty picker happening.
+    expect(_opsEventInserts).toHaveLength(1);
+    expect(_opsEventInserts[0].context.fallback_subject_count).toBe(0);
+  });
+
+  it('returns [] when the grade has no grade_subject_map rows at all', async () => {
+    _studentRow = { data: { grade: '12', board: 'CBSE', stream: null }, error: null };
+    _gsmRows = [];
+
+    const { body } = await callRoute();
+    expect(body.subjects).toEqual([]);
+  });
+
+  it('P13: the ops_events fallback row carries no PII', async () => {
+    _studentRow = { data: { grade: '9', board: 'CBSE', stream: null }, error: null };
+    await callRoute();
+
+    expect(_opsEventInserts).toHaveLength(1);
+    const serialized = JSON.stringify(_opsEventInserts[0]);
+    expect(serialized).not.toMatch(/name|email|phone/i);
+    expect(Object.keys(_opsEventInserts[0].context).sort()).toEqual([
+      'fallback_subject_count', 'reason',
+    ]);
+  });
+
+  it('stream gating: a commerce student never picks up a science-stream mapping', async () => {
+    _studentRow = { data: { grade: '11', board: 'CBSE', stream: 'commerce' }, error: null };
+    _gsmRows = [
+      { grade: '11', subject_code: 'math', is_core: true, board: 'CBSE', stream: null },
+      { grade: '11', subject_code: 'physics', is_core: true, board: 'CBSE', stream: 'science' },
+      { grade: '11', subject_code: 'chemistry', is_core: true, board: 'CBSE', stream: 'science' },
+    ];
+
+    const { body } = await callRoute();
+    expect(body.subjects.map((s: any) => s.code)).toEqual(['math']);
+  });
+
+  it('MOBILE CONTRACT: response field names and types are unchanged', async () => {
+    // mobile/lib/data/models/subject.dart casts `code` and `name` with
+    // `as String` (throws on null) and reads nameHi/icon/color/subjectKind/
+    // isCore/isLocked. A field rename or type change here is a breaking
+    // mobile release, not a web-only change.
+    _studentRow = { data: { grade: '8', board: 'CBSE', stream: null }, error: null };
+    const { body } = await callRoute();
+
+    expect(Array.isArray(body.subjects)).toBe(true);
+    expect(body.subjects.length).toBeGreaterThan(0);
+    for (const s of body.subjects) {
+      expect(Object.keys(s).sort()).toEqual([
+        'code', 'color', 'icon', 'isCore', 'isLocked',
+        'name', 'nameHi', 'readyChapterCount', 'subjectKind',
+      ]);
+      expect(typeof s.code).toBe('string');
+      expect(typeof s.name).toBe('string');
+      expect(typeof s.nameHi).toBe('string');
+      expect(typeof s.icon).toBe('string');
+      expect(typeof s.color).toBe('string');
+      expect(typeof s.subjectKind).toBe('string');
+      expect(typeof s.isCore).toBe('boolean');
+      expect(typeof s.isLocked).toBe('boolean');
+      expect(typeof s.readyChapterCount).toBe('number');
+    }
+  });
+
+  it('still returns 401 when unauthenticated (auth is not weakened)', async () => {
+    _authUser = { data: { user: null }, error: null };
+    const { GET } = await import('@/app/api/student/subjects/route');
+    const res = await GET(new NextRequest('http://localhost/api/student/subjects'));
+    expect(res.status).toBe(401);
+  });
+
+  // ── Static source guards: the eslint-disable must stay deleted ──
+  it('the route imports neither SUBJECT_META nor getSubjectsForGrade', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src: string = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/app/api/student/subjects/route.ts'),
+      'utf8',
+    );
+    expect(src).not.toMatch(/SUBJECT_META/);
+    expect(src).not.toMatch(/getSubjectsForGrade/);
+    expect(src).not.toMatch(/GRADE_SUBJECTS/);
+    expect(src).not.toMatch(/from\s+['"]@alfanumrik\/lib\/constants['"]/);
+  });
+
+  it('the route carries no eslint-disable for no-raw-subject-imports', () => {
+    // That comment was the ONLY thing silencing the governance rule on this
+    // file. Deleting it restores enforcement permanently; re-adding it must
+    // fail here even if the rule itself would then pass.
+    const fs = require('fs');
+    const path = require('path');
+    const src: string = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/app/api/student/subjects/route.ts'),
+      'utf8',
+    );
+    expect(src).not.toMatch(/eslint-disable[^\n]*no-raw-subject-imports/);
+  });
+
+  it('the learn chapter page resolves subjects with an is_active filter', () => {
+    // LEAK 2: a deep link to a removed subject must not resolve to a
+    // subject_id. Siblings src/app/foxy/page.tsx and
+    // src/app/(student)/exams/page.tsx already filter; this one did not.
+    const fs = require('fs');
+    const path = require('path');
+    const src: string = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/app/(student)/learn/[subject]/[chapter]/page.tsx'),
+      'utf8',
+    );
+    const subjectRead = src.match(/\.from\('subjects'\)[\s\S]{0,200}?maybeSingle\(\)/);
+    expect(subjectRead).not.toBeNull();
+    expect(subjectRead![0]).toMatch(/\.eq\('is_active',\s*true\)/);
   });
 });

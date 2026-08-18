@@ -291,7 +291,7 @@ function TeacherMessagesContent() {
                         {t.student_name ? `→ ${t.student_name}` : ''}
                       </span>
                       {t.unread_count > 0 && (
-                        <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[var(--orange)] px-1.5 text-[10px] font-semibold text-white">
+                        <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[var(--accent-warm-strong)] px-1.5 text-[10px] font-semibold text-on-accent">
                           {t.unread_count > 99 ? '99+' : t.unread_count}
                         </span>
                       )}
@@ -346,7 +346,7 @@ function TeacherMessagesContent() {
                 <button
                   type="submit"
                   disabled={sending || draftBody.trim().length === 0}
-                  className="rounded-md bg-[var(--orange)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md bg-[var(--accent-warm-strong)] px-3 py-2 text-sm font-medium text-on-accent transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {sending ? tt(isHi, 'Sending…', 'भेज रहे…') : tt(isHi, 'Send', 'भेजें')}
                 </button>
@@ -419,7 +419,7 @@ function TeacherMessagesContent() {
                       <div
                         className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
                           mine
-                            ? 'rounded-br-md bg-[var(--orange)] text-white'
+                            ? 'rounded-br-md bg-[var(--accent-warm-strong)] text-on-accent'
                             : 'rounded-bl-md bg-[var(--surface-2)] text-[var(--text-1)]'
                         }`}
                       >
@@ -457,7 +457,7 @@ function TeacherMessagesContent() {
                 <button
                   type="submit"
                   disabled={sending || draftBody.trim().length === 0}
-                  className="rounded-md bg-[var(--orange)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md bg-[var(--accent-warm-strong)] px-3 py-2 text-sm font-medium text-on-accent transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {sending ? tt(isHi, 'Sending…', 'भेज रहे…') : tt(isHi, 'Send', 'भेजें')}
                 </button>

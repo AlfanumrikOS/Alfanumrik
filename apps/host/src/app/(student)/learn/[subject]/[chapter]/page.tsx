@@ -60,6 +60,7 @@ const ChapterReadinessCard = dynamic(
 // CTA button on first paint; FoxyPanel is dynamic-imported (ssr:false)
 // only when the student taps. First-load JS delta ≈ 0.
 import FoxyPanelLauncher from '@alfanumrik/ui/foxy-launcher/FoxyPanelLauncher';
+import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
 
 // Screen 06 "Topic" (Wave B, ff_learn_topic_v2). Additive presentation layer
 // — code-split so its bundle cost is zero for the (today: 100%) flag-off
@@ -69,8 +70,6 @@ const TopicPageV2 = dynamic(
   () => import('@alfanumrik/ui/learn/v2/TopicPage'),
   { loading: () => <LoadingFoxy /> },
 );
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 interface Question {
   id: string;
@@ -228,6 +227,11 @@ function ChapterConceptPageContent() {
   const language: 'en' | 'hi' = isHi ? 'hi' : 'en';
 
   const subMeta = allSubjects.find(s => s.code === subject);
+  // P7: the header read `subMeta?.name` unconditionally, so a Hindi student saw
+  // "Science · अध्याय 9" — half the line in the wrong language. The subjects
+  // service already carries `nameHi`; this is the same `isHi ? nameHi || name`
+  // fallback /library, /memory, /pyq and /mock-exam use.
+  const subjectLabel = (isHi ? subMeta?.nameHi || subMeta?.name : subMeta?.name) ?? '';
 
   // Telemetry context shared by every learn_* event for this page.
   const telemetryBase = useMemo(
@@ -293,10 +297,17 @@ function ChapterConceptPageContent() {
         .eq('chapter_number', chapterNum)
         .eq('is_active', true)
         .maybeSingle(),
+      // is_active is load-bearing, not cosmetic: a deep link to a retired
+      // subject must not resolve to a subject_id and render curriculum topics.
+      // Matches the sibling reads in src/app/foxy/page.tsx and
+      // src/app/(student)/exams/page.tsx. When it misses, subjectRow.data is
+      // null → curriculumTopics stays empty and the plan-gate effect above
+      // (which never finds the code in the allowed list) redirects to /learn.
       supabase
         .from('subjects')
         .select('id')
         .eq('code', subject)
+        .eq('is_active', true)
         .maybeSingle(),
     ]);
 
@@ -681,11 +692,6 @@ function ChapterConceptPageContent() {
       passed_threshold: scoreGood,
     });
   }, [showCompletion, student, conceptStates, subject, chapterNum, telemetryBase]);
-
-  const parseOptions = (opts: string | string[]): string[] => {
-    if (Array.isArray(opts)) return opts;
-    try { return JSON.parse(opts); } catch { return []; }
-  };
 
   const selectOption = (optIdx: number) => {
     if (conceptStates[currentIdx]?.submitted) return;
@@ -1154,10 +1160,10 @@ function ChapterConceptPageContent() {
           variant="mobile"
           contentAs={experienceV3 ? 'div' : 'main'}
           header={
-            <div className="page-header-inner flex items-center gap-3">
-              <button onClick={() => router.push(studentHome)} className="text-[var(--text-3)]">&larr;</button>
-              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
+            <div className="learn-header-row page-header-inner flex items-center gap-3 min-w-0">
+              <button onClick={() => router.push(studentHome)} className="shrink-0 text-[var(--text-3)]" aria-label={isHi ? 'वापस जाएँ' : 'Go back'}>&larr;</button>
+              <span className="text-lg font-bold truncate min-w-0" style={{ fontFamily: 'var(--font-display)' }}>
+                {subMeta?.icon} {subjectLabel} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
               </span>
             </div>
           }
@@ -1197,10 +1203,10 @@ function ChapterConceptPageContent() {
           contentAs={experienceV3 ? 'div' : 'main'}
 
           header={
-            <div className="page-header-inner flex items-center gap-3">
-              <button onClick={() => router.push(studentHome)} className="text-[var(--text-3)]">&larr;</button>
-              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-                {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
+            <div className="learn-header-row page-header-inner flex items-center gap-3 min-w-0">
+              <button onClick={() => router.push(studentHome)} className="shrink-0 text-[var(--text-3)]" aria-label={isHi ? 'वापस जाएँ' : 'Go back'}>&larr;</button>
+              <span className="text-lg font-bold truncate min-w-0" style={{ fontFamily: 'var(--font-display)' }}>
+                {subMeta?.icon} {subjectLabel} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
               </span>
             </div>
           }
@@ -1356,25 +1362,51 @@ function ChapterConceptPageContent() {
   // .app-shell-content already pads --shell-nav-h + safe-area on the
   // bottom — so the "next concept" CTA pins above the BottomNav without
   // needing extra clearance.
+  // PHONE LAYOUT (2026-08-10). Measured at 360px in Chromium before this
+  // change: the identity column had no `min-w-0`, so the chapter-title span —
+  // 420.8px of text in a 360px viewport — could not shrink and `truncate`
+  // never engaged. It pushed the whole right-hand action group past the
+  // viewport edge: `📋 Index` sat at x=529.5, `📖 Read` at x=591.9 and the
+  // concept counter at x=647.8, i.e. ALL THREE were 100% off-screen and
+  // unreachable — and on a phone the Index drawer is the ONLY way to move
+  // between concepts (the sidebar is `hidden md:flex`). The same overflowing
+  // title also ran under AppShell's position:absolute one-handed toggle,
+  // overlapping it by 960px².
+  //
+  // Three things fix it, none of which change what the header says:
+  //   1. `.learn-header-row` reserves `--space-fluid-4 + --tap-min + 8px` of
+  //      inline-end space on phones for the one-handed toggle — the same
+  //      reservation `.dashboard-header-row` uses, and for the same reason
+  //      (the toggle is absolutely positioned and reserves nothing itself).
+  //   2. `min-w-0` on the identity column + `shrink-0` on the action column
+  //      let `truncate` do its job instead of overflowing.
+  //   3. On phones the row wraps: identity owns line 1, the actions own
+  //      line 2, and neither has to shrink to nothing.
   const learnHeaderContent = (
-    <div className="w-full px-4 md:px-8 py-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <button onClick={() => router.push(studentHome)} className="text-[var(--text-3)] mr-1">&larr;</button>
-          <span className="text-lg">{subMeta?.icon}</span>
-          <span className="text-sm font-semibold truncate" style={{ color: subMeta?.color }}>
-            {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
+    <div className="learn-header-row w-full px-4 md:px-8 py-3">
+      <div className="learn-header-main flex items-center justify-between gap-2 mb-2">
+        <div className="learn-header-identity flex items-center gap-2 min-w-0 flex-1">
+          <button onClick={() => router.push(studentHome)} className="shrink-0 text-[var(--text-3)] mr-1" aria-label={isHi ? 'वापस जाएँ' : 'Go back'}>&larr;</button>
+          <span className="text-lg shrink-0" aria-hidden="true">{subMeta?.icon}</span>
+          <span className="text-sm font-semibold truncate min-w-0" style={{ color: subMeta?.color }}>
+            {subjectLabel} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
             {chapterMeta ? `: ${isHi && chapterMeta.title_hi ? chapterMeta.title_hi : chapterMeta.title}` : ''}
             {chapterMeta?.ncert_page_start ? (isHi ? ` (पृष्ठ ${chapterMeta.ncert_page_start}-${chapterMeta.ncert_page_end})` : ` (Pages ${chapterMeta.ncert_page_start}-${chapterMeta.ncert_page_end})`) : ''}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="learn-header-actions flex items-center gap-2 shrink-0">
           {phase === 'explaining' && (
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden text-[10px] font-bold px-2.5 py-1 rounded-full transition-all active:scale-95 flex items-center gap-1"
-              style={{ background: 'rgba(232,88,28,0.10)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.2)' }}
+              className="md:hidden text-[10px] font-bold px-3 py-1 rounded-full transition-all active:scale-95 flex items-center justify-center gap-1"
+              /* minHeight is inline because globals.css's coarse-pointer block
+                 exempts `.text-[10px]` from the 48px button floor and pins it to
+                 32px — measured 32px here, under the 44px minimum this surface
+                 must hold. Index is the ONLY concept-to-concept navigation a
+                 phone has, so it does not get to be a "tiny inline pill". */
+              style={{ background: 'rgba(232,88,28,0.10)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.2)', minHeight: 'var(--tap-min)' }}
+              aria-label={isHi ? 'अध्याय की अवधारणाओं की सूची खोलें' : 'Open chapter concept index'}
             >
               📋 {isHi ? 'सूची' : 'Index'}
             </button>
@@ -1383,8 +1415,9 @@ function ChapterConceptPageContent() {
             <button
               type="button"
               onClick={switchToReadMode}
-              className="text-[10px] font-bold px-2 py-1 rounded-full transition-all active:scale-95"
-              style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)' }}
+              className="text-[10px] font-bold px-3 py-1 rounded-full transition-all active:scale-95 flex items-center justify-center"
+              /* See the Index button above — same 32px `.text-[10px]` exemption. */
+              style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)', minHeight: 'var(--tap-min)' }}
               data-testid="learn-mode-read-toggle"
               aria-label={isHi ? 'पढ़ाई मोड पर जाएँ' : 'Switch to Read mode'}
             >
@@ -1392,12 +1425,12 @@ function ChapterConceptPageContent() {
             </button>
           )}
           {phase === 'explaining' && (
-            <span className="text-xs font-medium text-[var(--text-3)]">
+            <span className="text-xs font-medium text-[var(--text-3)] shrink-0 tabular-nums">
               {currentIdx + 1}/{topics.length}
             </span>
           )}
           {phase === 'quiz' && (
-            <span className="text-xs font-medium text-[var(--text-3)]">
+            <span className="text-xs font-medium text-[var(--text-3)] shrink-0 tabular-nums">
               {quizCurrentIdx + 1}/{questions.length}
             </span>
           )}
@@ -1412,7 +1445,14 @@ function ChapterConceptPageContent() {
       <AppShell
         variant="mobile"
         contentAs={experienceV3 ? 'div' : 'main'}
-
+        /* `learn-shell` scopes the compact-header height override in
+           globals.css. AppShell hard-sets the compacted header to
+           --shell-header-h-compact (44px); this header's two phone rows are
+           taller than that, and the header does not clip (contain:layout is
+           not contain:paint), so at 44px the title + progress bar painted
+           straight over the concept card beneath. Scoped `height: auto`
+           keeps the compaction (padding tightens) without the spill. */
+        className="learn-shell"
         header={learnHeaderContent}
         bleed={true}
       >
@@ -1753,7 +1793,7 @@ function ChapterConceptPageContent() {
                                           className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full"
                                           style={{ backgroundColor: theme.badgeBg, color: theme.badgeFg }}
                                         >
-                                          {theme.label}
+                                          {isHi ? theme.labelHi : theme.label}
                                         </span>
                                       </div>
                                       <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap text-[var(--text-2)]">
@@ -2969,14 +3009,18 @@ interface CbseStep {
   listItems?: string[];
 }
 
-const STEP_THEMES: Record<string, { icon: string; badge: string; bg: string; label: string; color: string; badgeBg: string; badgeFg: string }> = {
-  story: { icon: "📖", badge: "Context / कहानी", bg: "bg-white", label: "Real-world Hook", color: "#10B981", badgeBg: "rgba(16, 185, 129, 0.12)", badgeFg: "#059669" },
-  problem: { icon: "❓", badge: "Problem / समस्या", bg: "bg-white", label: "Core Problem", color: "#F59E0B", badgeBg: "rgba(245, 158, 11, 0.12)", badgeFg: "#D97706" },
-  math: { icon: "📐", badge: "Math / गणना", bg: "bg-white", label: "Calculation Step", color: "#3B82F6", badgeBg: "rgba(59, 130, 246, 0.12)", badgeFg: "#2563EB" },
-  fact: { icon: "💡", badge: "Concept / अवधारणा", bg: "bg-white", label: "Concept Breakdown", color: "#6366F1", badgeBg: "rgba(99, 102, 241, 0.12)", badgeFg: "#4F46E5" },
-  summary: { icon: "🎯", badge: "Summary / सारांश", bg: "bg-white", label: "CBSE Exam Focus", color: "#8B5CF6", badgeBg: "rgba(139, 92, 246, 0.12)", badgeFg: "#7C3AED" },
-  definition: { icon: "📝", badge: "Definition / परिभाषा", bg: "bg-white", label: "Key Definition", color: "#0891B2", badgeBg: "rgba(8, 145, 178, 0.12)", badgeFg: "#0891B2" },
-  list: { icon: "📋", badge: "Key Points / मुख्य बिंदु", bg: "bg-white", label: "Important Points", color: "#F43F5E", badgeBg: "rgba(244, 63, 94, 0.12)", badgeFg: "#E11D48" },
+// P7: `label` is rendered as the step badge on the AlfaTutor cards and was
+// English-only, so a Hindi student on /learn read "CONCEPT BREAKDOWN" beside
+// the Hindi step title — observed at 360px on 2026-08-10. `labelHi` is the
+// Hindi twin; CBSE stays untranslated per the constitution.
+const STEP_THEMES: Record<string, { icon: string; badge: string; bg: string; label: string; labelHi: string; color: string; badgeBg: string; badgeFg: string }> = {
+  story: { icon: "📖", badge: "Context / कहानी", bg: "bg-white", label: "Real-world Hook", labelHi: "असली दुनिया से जोड़", color: "#10B981", badgeBg: "rgba(16, 185, 129, 0.12)", badgeFg: "#059669" },
+  problem: { icon: "❓", badge: "Problem / समस्या", bg: "bg-white", label: "Core Problem", labelHi: "मुख्य समस्या", color: "#F59E0B", badgeBg: "rgba(245, 158, 11, 0.12)", badgeFg: "#D97706" },
+  math: { icon: "📐", badge: "Math / गणना", bg: "bg-white", label: "Calculation Step", labelHi: "गणना का चरण", color: "#3B82F6", badgeBg: "rgba(59, 130, 246, 0.12)", badgeFg: "#2563EB" },
+  fact: { icon: "💡", badge: "Concept / अवधारणा", bg: "bg-white", label: "Concept Breakdown", labelHi: "अवधारणा विश्लेषण", color: "#6366F1", badgeBg: "rgba(99, 102, 241, 0.12)", badgeFg: "#4F46E5" },
+  summary: { icon: "🎯", badge: "Summary / सारांश", bg: "bg-white", label: "CBSE Exam Focus", labelHi: "CBSE परीक्षा फोकस", color: "#8B5CF6", badgeBg: "rgba(139, 92, 246, 0.12)", badgeFg: "#7C3AED" },
+  definition: { icon: "📝", badge: "Definition / परिभाषा", bg: "bg-white", label: "Key Definition", labelHi: "मुख्य परिभाषा", color: "#0891B2", badgeBg: "rgba(8, 145, 178, 0.12)", badgeFg: "#0891B2" },
+  list: { icon: "📋", badge: "Key Points / मुख्य बिंदु", bg: "bg-white", label: "Important Points", labelHi: "ज़रूरी बिंदु", color: "#F43F5E", badgeBg: "rgba(244, 63, 94, 0.12)", badgeFg: "#E11D48" },
 };
 
 const getCbseCustomTutorCard = (text: string, title: string, isHi: boolean): CbseStep[] | null => {

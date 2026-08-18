@@ -7,8 +7,7 @@ import { supabase } from '@alfanumrik/lib/supabase';
 import { Card, Button } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { useSubjectLookup } from '@alfanumrik/lib/useSubjectLookup';
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
+import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
 
 /*
   CBSE 80-mark paper structure:
@@ -55,11 +54,6 @@ interface Question {
 }
 
 type Screen = 'select' | 'exam' | 'confirm-submit' | 'submitted';
-
-function parseOptions(raw: string | string[]): string[] {
-  if (Array.isArray(raw)) return raw;
-  try { return JSON.parse(raw); } catch { return []; }
-}
 
 export default function MockExamPage() {
   const { student, isLoggedIn, isLoading, isHi, activeRole } = useAuth();
@@ -376,7 +370,7 @@ export default function MockExamPage() {
                     {idx + 1}
                     {isFlag && (
                       <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full text-[8px] flex items-center justify-center"
-                        style={{ background: '#E8581C', color: '#fff' }}>🚩</span>
+                        style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}>🚩</span>
                     )}
                   </button>
                 );
@@ -463,7 +457,7 @@ export default function MockExamPage() {
                 <Button
                   size="sm"
                   onClick={() => setScreen('confirm-submit')}
-                  style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '0.75rem' }}
+                  style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', borderRadius: '0.75rem' }}
                 >
                   {isHi ? 'जमा करें' : 'Submit'}
                 </Button>
@@ -477,7 +471,7 @@ export default function MockExamPage() {
           <button
             onClick={() => setScreen('confirm-submit')}
             className="px-6 py-3 rounded-2xl font-semibold text-sm shadow-xl"
-            style={{ background: 'var(--orange, #E8581C)', color: '#fff' }}
+            style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}
           >
             {isHi ? `जमा करें (${answeredCount}/${questions.length})` : `Submit Exam (${answeredCount}/${questions.length})`}
           </button>
@@ -510,7 +504,7 @@ export default function MockExamPage() {
             <Button fullWidth variant="ghost" onClick={() => setScreen('exam')}>
               {isHi ? 'वापस' : 'Back'}
             </Button>
-            <Button fullWidth onClick={submitExam} style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '0.75rem' }}>
+            <Button fullWidth onClick={submitExam} style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)', borderRadius: '0.75rem' }}>
               {isHi ? 'हाँ, जमा करें' : 'Yes, Submit'}
             </Button>
           </div>

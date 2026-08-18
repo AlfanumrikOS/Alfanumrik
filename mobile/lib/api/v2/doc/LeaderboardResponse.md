@@ -9,6 +9,7 @@ import 'package:alfanumrik_api_v2/api.dart';
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **entries** | [**BuiltList&lt;LeaderboardEntry&gt;**](LeaderboardEntry.md) |  | 
+**me** | [**LeaderboardSelf**](LeaderboardSelf.md) |  | [optional] 
 **period** | **String** |  | 
 **schemaVersion** | **num** |  | 
 **scope** | **String** |  | 

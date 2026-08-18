@@ -4,7 +4,8 @@
  * THIN reuse of the existing /api/quiz GET `questions` path:
  *   - same RBAC permission (quiz.attempt, requireStudentId),
  *   - same student-grade resolution,
- *   - same subject-governance gate (validateSubjectWrite, soft-fail),
+ *   - same subject-governance gate (validateSubjectWrite; unlike /api/quiz this
+ *     route FAILS CLOSED — 503 SUBJECT_GOVERNANCE_UNAVAILABLE on RPC outage),
  *   - same academic-scope gate (validate_academic_scope RPC, soft-fail),
  *   - same questions RPC (select_quiz_questions_rag),
  *   - same strict in-scope chapter filter + insufficient_questions_in_scope 422.
@@ -115,22 +116,46 @@ export const GET = withRoute(async (request: NextRequest) => {
     }
     const studentId = student.id;
 
-    // 3. Subject governance — soft-fail when RPCs unavailable (mirrors /api/quiz).
+    // 3. Subject governance — FAIL CLOSED (P2-7b). The old soft-fail
+    // ("migrations may not be applied") was a fossil: get_available_subjects
+    // ships in the baseline migration (00000000000000_baseline_from_prod.sql),
+    // so a throw here means a real RPC outage — and proceeding would silently
+    // disable subject gating. 503 + retryable:true (same idiom as quiz/submit's
+    // transient RPC_FAILED) so clients retry instead of discarding.
+    let subjectValidation: Awaited<ReturnType<typeof validateSubjectWrite>>;
     try {
-      const subjectValidation = await validateSubjectWrite(studentId, subject, { supabase: admin });
-      if (!subjectValidation.ok) {
-        return v2Error(
-          `Subject not allowed: ${subjectValidation.error.reason}`,
-          403,
-          subjectValidation.error.code,
-        );
-      }
+      subjectValidation = await validateSubjectWrite(studentId, subject, { supabase: admin });
     } catch (govErr) {
-      logger.warn('v2_quiz_questions_subject_governance_unavailable', {
-        error: govErr instanceof Error ? govErr.message : String(govErr),
+      logger.error('v2_quiz_questions_subject_governance_unavailable', {
+        error: govErr instanceof Error ? govErr : new Error(String(govErr)),
+        route: '/api/v2/quiz/questions',
         subject,
-        note: 'Proceeding without subject governance — migrations may not be applied',
       });
+      return v2Error(
+        'Subject eligibility could not be verified — please retry',
+        503,
+        'SUBJECT_GOVERNANCE_UNAVAILABLE',
+        true,
+      );
+    }
+    if (!subjectValidation.ok) {
+      // P2-7a: name the SUBJECT, not the cause enum. `error.reason` is
+      // 'grade' | 'plan' (a CAUSE discriminator) — interpolating it alone
+      // produced "Subject not allowed: grade", which reads as if the `grade`
+      // query param were the problem. Surface the structured shape the same
+      // validator already gets on PATCH /api/student/profile.
+      const { subject: rejectedSubject, reason, allowed } = subjectValidation.error;
+      const reasonText =
+        reason === 'plan'
+          ? 'locked by your current plan'
+          : 'not available for your grade';
+      return v2Error(
+        `Subject '${rejectedSubject}' is not allowed (${reasonText}). Allowed subject codes: ${allowed.join(', ')}`,
+        403,
+        subjectValidation.error.code,
+        undefined,
+        { subject: rejectedSubject, reason, allowed },
+      );
     }
 
     // 4. Academic-scope gate (only when a chapter is specified) — soft-fail.

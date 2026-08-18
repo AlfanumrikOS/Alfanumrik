@@ -10,6 +10,12 @@ import {
   categoryRequiresReference,
   referenceEntityTypeForCategory,
 } from '@alfanumrik/lib/support/ticket-categories';
+import {
+  supportSlaLine,
+  supportSlaFull,
+  supportFirstResponseText,
+  supportCoverageText,
+} from '@alfanumrik/lib/support/response-sla';
 
 /* ══════════════════════════════════════════════════════════════
    HELP & SUPPORT — Alfanumrik Support Center
@@ -114,6 +120,34 @@ const TICKET_CATEGORIES = [
   { value: 'synthesis_content_concern', label: 'Monthly Synthesis content concern', labelHi: 'मासिक सारांश सामग्री पर चिंता' },
   { value: 'other', label: 'Feature request / Other', labelHi: 'फीचर अनुरोध / अन्य' },
 ];
+
+// Same 5-state status vocabulary as the canonical thread view
+// (apps/host/src/app/support/page.tsx's statusLabel/statusColor) so a ticket
+// never reads as "open" here and something more specific there. Duplicated
+// rather than imported to keep this an edit-only, minimal-diff fix — a
+// shared module would be a new file. Keep both in sync if either changes.
+function helpTicketStatusLabel(status: string, isHi: boolean): string {
+  const map: Record<string, [string, string]> = {
+    open: ['Open', 'खुला'],
+    pending: ['Pending', 'लंबित'],
+    in_progress: ['In Progress', 'चल रहा है'],
+    resolved: ['Resolved', 'हल'],
+    closed: ['Closed', 'बंद'],
+  };
+  const pair = map[status];
+  return pair ? (isHi ? pair[1] : pair[0]) : status;
+}
+
+function helpTicketStatusColor(status: string): string {
+  switch (status) {
+    case 'open': return '#DC2626';
+    case 'pending': return '#D97706';
+    case 'in_progress': return '#7C3AED';
+    case 'resolved': return '#16A34A';
+    case 'closed': return 'var(--text-3)';
+    default: return 'var(--text-3)';
+  }
+}
 
 /* ── AI Support Bot via Foxy API route ── */
 async function askSupportBot(message: string, history: Array<{role: string; content: string}>, userContext: string, studentGrade?: string): Promise<string> {
@@ -379,10 +413,13 @@ export default function HelpPage() {
           <button onClick={() => setView('chat')} className="w-full rounded-2xl p-5 flex items-center gap-4 transition-all active:scale-[0.98]" style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)', boxShadow: '0 4px 20px rgba(232,88,28,0.25)' }}>
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }}>🦊</div>
             <div className="text-left flex-1">
-              <div className="text-base font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'Foxy सपोर्ट से बात करें' : 'Chat with Foxy Support'}</div>
-              <div className="text-xs text-white" style={{ opacity: 0.8 }}>{isHi ? 'AI बॉट तुरंत आपकी मदद करेगा' : 'Get instant help from our AI support bot'}</div>
+              {/* DD-16: the card fill is an --orange -> #F5A623 gradient; #fff is
+                  3.59:1 at the warm stop and 2.03:1 at the gold stop (both sub-AA).
+                  Ink clears both (5.16:1 / 9.14:1). */}
+              <div className="text-base font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'Foxy सपोर्ट से बात करें' : 'Chat with Foxy Support'}</div>
+              <div className="text-xs text-foreground" style={{ opacity: 0.8 }}>{isHi ? 'AI बॉट तुरंत आपकी मदद करेगा' : 'Get instant help from our AI support bot'}</div>
             </div>
-            <span className="text-white text-xl">→</span>
+            <span className="text-foreground text-xl">→</span>
           </button>
 
           {/* Quick Fixes */}
@@ -420,7 +457,11 @@ export default function HelpPage() {
             <span className="text-xl">📝</span>
             <div className="text-left flex-1">
               <div className="text-sm font-bold">{isHi ? 'सपोर्ट टिकट भेजें' : 'Submit a Support Ticket'}</div>
-              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण दें, हम 24 घंटे में जवाब देंगे' : 'Describe your issue, we\'ll respond within 24 hours'}</div>
+              {/* SLA copy comes from @alfanumrik/lib/support/response-sla — the
+                  ONLY place the numbers live (CEO-set). Never inline them here;
+                  never show the promise without the coverage window beside it. */}
+              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण दें' : 'Describe your issue'}</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{supportSlaLine(isHi)}</div>
             </div>
           </button>
 
@@ -586,7 +627,8 @@ export default function HelpPage() {
               <div className="text-center mb-4">
                 <span className="text-3xl">📝</span>
                 <h3 className="text-base font-bold mt-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'सपोर्ट टिकट' : 'Support Ticket'}</h3>
-                <p className="text-xs" style={{ color: 'var(--text-3)' }}>{isHi ? 'हम 24 घंटे में जवाब देंगे' : 'We\'ll respond within 24 hours'}</p>
+                {/* Promise + coverage window, both from response-sla.ts. */}
+                <p className="text-xs" style={{ color: 'var(--text-3)' }}>{supportSlaFull(isHi)}</p>
               </div>
 
               <div className="space-y-3">
@@ -663,7 +705,7 @@ export default function HelpPage() {
                 <p className="text-xs mb-5" style={{ color: 'var(--text-3)' }}>
                   {isHi ? 'मदद चाहिए? सपोर्ट टिकट भेजें।' : 'Need help? Submit a support request.'}
                 </p>
-                <button onClick={() => setView('ticket')} className="text-xs font-bold px-4 py-2 rounded-xl" style={{ background: 'var(--orange)', color: '#fff' }}>
+                <button onClick={() => setView('ticket')} className="text-xs font-bold px-4 py-2 rounded-xl" style={{ background: 'var(--accent-warm-strong)', color: 'var(--on-accent)' }}>
                   {isHi ? '📝 टिकट भेजें' : '📝 Submit a Ticket'}
                 </button>
               </div>
@@ -673,9 +715,15 @@ export default function HelpPage() {
                 {myTickets.map(ticket => {
                   const catObj = TICKET_CATEGORIES.find(c => c.value === ticket.category);
                   const catLabel = catObj ? (isHi ? catObj.labelHi : catObj.label) : ticket.category;
-                  const isResolved = ticket.status === 'resolved';
+                  const statusColor = helpTicketStatusColor(ticket.status);
                   return (
-                    <div key={ticket.id} className="rounded-xl p-4 space-y-2" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+                    <button
+                      key={ticket.id}
+                      onClick={() => router.push(`/support/${ticket.id}`)}
+                      className="w-full rounded-xl p-4 space-y-2 text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
+                      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+                      data-testid="help-ticket-row"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-bold truncate">{ticket.subject}</div>
@@ -684,17 +732,17 @@ export default function HelpPage() {
                         <span
                           className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full"
                           style={{
-                            background: isResolved ? '#D1FAE5' : '#FEF3C7',
-                            color: isResolved ? '#065F46' : '#92400E',
+                            background: `color-mix(in srgb, ${statusColor} 16%, transparent)`,
+                            color: statusColor,
                           }}
                         >
-                          {isResolved ? (isHi ? 'हल हुआ' : 'Resolved') : (isHi ? 'खुला' : 'Open')}
+                          {helpTicketStatusLabel(ticket.status, isHi)}
                         </span>
                       </div>
                       <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>
                         {isHi ? 'भेजा:' : 'Submitted:'} {new Date(ticket.created_at).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -708,7 +756,11 @@ export default function HelpPage() {
             <div className="text-5xl mb-4">✅</div>
             <h3 className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'टिकट भेज दिया गया!' : 'Ticket Submitted!'}</h3>
             <p className="text-sm mb-6" style={{ color: 'var(--text-3)', maxWidth: 320, margin: '0 auto' }}>
-              {isHi ? 'हमने आपकी समस्या दर्ज कर ली है। हम 24 घंटे में ईमेल द्वारा जवाब देंगे।' : 'We\'ve received your issue. Our team will respond to your email within 24 hours.'}
+              {/* Promise + window from response-sla.ts, then a pointer at the
+                  in-product thread, which is where replies actually land. */}
+              {isHi
+                ? `हमने आपकी समस्या दर्ज कर ली है। हमारी टीम पहला जवाब ${supportFirstResponseText(true)} भेजेगी (${supportCoverageText(true)}) — जवाब आपको "मेरे टिकट" में दिखेगा।`
+                : `We've received your issue. Our team will send the first reply ${supportFirstResponseText(false)} (${supportCoverageText(false)}) — you'll see it under "My Tickets".`}
             </p>
             <div className="flex flex-col gap-2 items-center">
               <Button onClick={() => { setView('home'); setTicketCategory(''); setTicketSubject(''); setTicketMessage(''); }}>
