@@ -1,0 +1,233 @@
+# PR Health Sweep — make a silently-stalled pull request impossible to miss.
+#
+# Why this exists (incident, 2026-08-18):
+#   PRs #1502, #1503 and #1504 sat open for 9 days with FOUR required checks
+#   stuck in "Expected — Waiting for status to be reported". `CI — Alfanumrik`
+#   had never run on any of them. Nothing was red, nothing was alerted, and the
+#   merge box said only "Checks awaiting conflict resolution".
+#
+#   That is the failure mode this file exists for: a red PR shouts, but a PR
+#   whose checks NEVER START is silent. Once a PR conflicts with its base,
+#   GitHub cannot build the merge ref, so no `pull_request` workflow can run —
+#   and a required context that is never reported blocks the merge forever
+#   without ever producing a failure anyone can see.
+#
+# Relationship to pipeline-alert.yml (READ BEFORE ADDING A THIRD WATCHER):
+#   pipeline-alert.yml is REACTIVE — `workflow_run`, fires when a watched
+#   workflow COMPLETES red on main. It cannot see this class of problem,
+#   because here no run ever completes; no run ever starts.
+#   This file is PROACTIVE — a poll over open PRs looking for runs that are
+#   MISSING. Complementary, not duplicate.
+#   It deliberately reuses pipeline-alert's escalation idiom (one deduped
+#   GitHub issue, auto-closed when the condition clears) so there is ONE
+#   escalation channel in this repo, not two competing ones.
+#
+# Why this job stays GREEN even when it finds stalled PRs:
+#   The ISSUE is the signal, exactly as in pipeline-alert.yml. A scheduled
+#   workflow that goes permanently red because an abandoned PR exists is the
+#   same disease this repo just cured on workflow_dispatch — a gate that can
+#   never pass teaches people to ignore it. An open `pr-stalled` issue ALWAYS
+#   means "at least one PR is stuck right now"; it auto-closes when none are.
+
+name: PR Health Sweep — stalled pull requests
+
+on:
+  schedule:
+    # 07:00 UTC daily = 12:30 IST, before the working day in Asia/Calcutta.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  statuses: read
+  issues: write     # open/comment/close the pr-stalled issue
+
+concurrency:
+  group: pr-health-sweep
+  cancel-in-progress: false
+
+env:
+  # A PR must look stuck for this many days before it escalates to an issue.
+  # Below the threshold it still appears in the run summary. This grace period
+  # stops a conflict that someone is actively fixing from crying wolf.
+  STALL_ALERT_DAYS: '3'
+
+jobs:
+  sweep:
+    name: Sweep open PRs for unreportable checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sweep
+        id: sweep
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          # ── 1. Resolve the REQUIRED contexts from the live ruleset ────────
+          # Read them at runtime rather than hardcoding, so this guard cannot
+          # drift from the branch protection it is checking against.
+          REQUIRED_JSON="$(gh api "repos/$REPO/rules/branches/$BASE_BRANCH" \
+            --jq '[ .[] | select(.type == "required_status_checks")
+                    | .parameters.required_status_checks[].context ]' \
+            2>/dev/null || echo '[]')"
+          REQUIRED_COUNT="$(printf '%s' "$REQUIRED_JSON" | jq 'length')"
+
+          # NEVER silently pass. If the ruleset is unreadable, say so loudly in
+          # the summary and fall back to conflict detection only.
+          if [ "$REQUIRED_COUNT" -eq 0 ]; then
+            echo "::warning::Could not read required status checks from the \
+          $BASE_BRANCH ruleset. Falling back to conflict detection only; the \
+          missing-required-check test is NOT running this sweep."
+            REQ_MODE="conflict-only (ruleset unreadable)"
+          else
+            REQ_MODE="$REQUIRED_COUNT required context(s) read from the $BASE_BRANCH ruleset"
+          fi
+
+          # ── 2. Enumerate open, non-draft PRs ──────────────────────────────
+          PRS="$(gh pr list --repo "$REPO" --state open --limit 200 \
+            --json number,title,isDraft,headRefOid,mergeable,updatedAt,url,author)"
+
+          NOW_EPOCH="$(date -u +%s)"
+          STALLED_FILE="$(mktemp)"
+          SUMMARY_FILE="$(mktemp)"
+          : > "$STALLED_FILE"
+
+          {
+            echo "## PR Health Sweep"
+            echo
+            echo "Scanned $(printf '%s' "$PRS" | jq 'length') open PR(s). Required-check source: ${REQ_MODE}."
+            echo
+            echo "| PR | Age (d) | Mergeable | Missing required checks | Verdict |"
+            echo "|---|---|---|---|---|"
+          } > "$SUMMARY_FILE"
+
+          for row in $(printf '%s' "$PRS" | jq -r '.[] | @base64'); do
+            _j() { printf '%s' "$row" | base64 -d | jq -r "$1"; }
+            NUM="$(_j '.number')"
+            DRAFT="$(_j '.isDraft')"
+            [ "$DRAFT" = "true" ] && continue
+
+            SHA="$(_j '.headRefOid')"
+            MERGEABLE="$(_j '.mergeable')"
+            UPDATED="$(_j '.updatedAt')"
+            URL="$(_j '.url')"
+
+            # GitHub computes mergeability lazily; UNKNOWN on the first read is
+            # normal. Ask once more before believing it.
+            if [ "$MERGEABLE" = "UNKNOWN" ]; then
+              sleep 3
+              MERGEABLE="$(gh pr view "$NUM" --repo "$REPO" --json mergeable --jq '.mergeable' 2>/dev/null || echo UNKNOWN)"
+            fi
+
+            AGE_DAYS=$(( ( NOW_EPOCH - $(date -u -d "$UPDATED" +%s) ) / 86400 ))
+
+            # Which required contexts have actually reported on this head SHA?
+            # Check runs AND legacy commit statuses — required contexts can be
+            # either (e.g. Vercel reports a status, CI reports check runs).
+            MISSING="-"
+            if [ "$REQUIRED_COUNT" -gt 0 ]; then
+              REPORTED="$(
+                {
+                  gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --jq '.check_runs[].name' 2>/dev/null || true
+                  gh api "repos/$REPO/commits/$SHA/status" --jq '.statuses[].context' 2>/dev/null || true
+                } | sort -u
+              )"
+              MISSING="$(printf '%s' "$REQUIRED_JSON" | jq -r '.[]' | while read -r ctx; do
+                printf '%s\n' "$REPORTED" | grep -Fxq "$ctx" || printf '%s; ' "$ctx"
+              done | sed 's/; $//')"
+              [ -z "$MISSING" ] && MISSING="-"
+            fi
+
+            VERDICT="ok"
+            if [ "$MERGEABLE" = "CONFLICTING" ]; then
+              VERDICT="STALLED — conflicts, so no pull_request workflow can run"
+            elif [ "$MISSING" != "-" ]; then
+              VERDICT="STALLED — required check never reported"
+            fi
+
+            echo "| [#${NUM}](${URL}) | ${AGE_DAYS} | ${MERGEABLE} | ${MISSING} | ${VERDICT} |" >> "$SUMMARY_FILE"
+
+            if [ "$VERDICT" != "ok" ] && [ "$AGE_DAYS" -ge "${STALL_ALERT_DAYS}" ]; then
+              echo "- #${NUM} (${AGE_DAYS}d, ${MERGEABLE}) — ${VERDICT} — ${URL}" >> "$STALLED_FILE"
+            fi
+          done
+
+          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+
+          STALLED_COUNT="$(wc -l < "$STALLED_FILE" | tr -d ' ')"
+          {
+            echo "stalled_count=$STALLED_COUNT"
+            echo "stalled_file=$STALLED_FILE"
+            echo "req_mode=$REQ_MODE"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Stalled beyond ${STALL_ALERT_DAYS}d: $STALLED_COUNT"
+
+      - name: Open, update or close the pr-stalled issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          STALLED_COUNT: ${{ steps.sweep.outputs.stalled_count }}
+          STALLED_FILE: ${{ steps.sweep.outputs.stalled_file }}
+          REQ_MODE: ${{ steps.sweep.outputs.req_mode }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          gh label create pr-stalled \
+            --repo "$REPO" \
+            --color D93F0B \
+            --description "An open PR's required checks can never report — it is blocked, not failing" \
+            2>/dev/null || true
+
+          TITLE="[pr-stalled] Open PR(s) whose required checks can never report"
+
+          EXISTING="$(gh issue list --repo "$REPO" \
+            --label pr-stalled --state open --json number,title \
+            | jq -r --arg t "$TITLE" '.[] | select(.title == $t) | .number' | head -1)"
+
+          if [ "$STALLED_COUNT" -eq 0 ]; then
+            if [ -n "$EXISTING" ]; then
+              gh issue comment "$EXISTING" --repo "$REPO" \
+                --body "All previously-stalled PRs are unblocked as of $(date -u '+%Y-%m-%d %H:%M:%S UTC'). Closing — an open \`pr-stalled\` issue always means at least one PR is stuck right now."
+              gh issue close "$EXISTING" --repo "$REPO"
+            fi
+            echo "No stalled PRs. Nothing to escalate."
+            exit 0
+          fi
+
+          BODY_FILE="$(mktemp)"
+          {
+            echo "## Pull requests that cannot get a verdict"
+            echo
+            echo "These PRs are **blocked, not failing**. Their required checks are not red —"
+            echo "they have never reported, so nothing will ever turn them green and no"
+            echo "alert fires. Almost always the cause is a conflict with the base branch:"
+            echo "GitHub cannot build the merge ref, so no \`pull_request\` workflow runs."
+            echo
+            echo "**Fix:** rebase the branch (which fires \`synchronize\` and starts CI), or close it."
+            echo
+            cat "$STALLED_FILE"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Detected** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |"
+            echo "| **Sweep run** | ${RUN_URL} |"
+            echo "| **Required-check source** | ${REQ_MODE} |"
+            echo
+            echo "---"
+            echo "_Opened automatically by \`pr-health-sweep.yml\`. Auto-closes when no PR is stalled._"
+          } > "$BODY_FILE"
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body-file "$BODY_FILE"
+          else
+            gh issue create --repo "$REPO" \
+              --title "$TITLE" --label pr-stalled --body-file "$BODY_FILE"
+          fi
