@@ -607,7 +607,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -1493,7 +1493,7 @@ jobs:
       # Version no longer comes from the (optionally-skipped) `deploy` job — read
       # it from the host app package so release tagging works on the default
       # Vercel-GitHub-App deploy path.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
