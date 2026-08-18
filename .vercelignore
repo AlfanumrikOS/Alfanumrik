@@ -1,4 +1,8 @@
 node_modules
+flutter/
+.claude/
+.next/
+apps/host/.next/
 .pnp*
 .pnpm-store
 *.tsbuildinfo
@@ -19,3 +23,8 @@ coverage
 .DS_Store
 Thumbs.db
 *.local
+# Local dev artifacts not needed for Vercel deploy
+.hermes/
+fix-api-artifacts.py
+scripts_*.js
+scripts/*.js
