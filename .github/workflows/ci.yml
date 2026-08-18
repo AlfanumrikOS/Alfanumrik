@@ -2419,7 +2419,12 @@ jobs:
     # always fail at boot; it is skipped there and ci-gate expects that skip.
     # (Previously also `needs: secret-scan` — removed for the same masking
     # reason documented on the `quality` job above.)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+    # Dependabot-authored PRs are same-repo, but GitHub withholds regular
+    # Actions secrets from Dependabot-triggered events (they read the separate
+    # Dependabot secret store), so STAGING_SUPABASE_URL / _SERVICE_ROLE_KEY are
+    # empty and the preflight below hard-fails. Excluded here and RELOCATED to
+    # ci-gate's expectedSkips for the same event -- not dropped.
+    if: github.actor != 'dependabot[bot]' && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push')
     # ── JOB-LEVEL concurrency: serialize live-DB runs across ALL refs ──
     # (added 2026-08-12)
     #
@@ -2919,12 +2924,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           SAME_REPOSITORY_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+          DEPENDABOT_ACTOR: ${{ github.actor == 'dependabot[bot]' }}
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           node <<'NODE'
           const needs = JSON.parse(process.env.NEEDS_JSON || '{}');
           const eventName = process.env.EVENT_NAME;
           const sameRepoPr = process.env.SAME_REPOSITORY_PR === 'true';
+          const isDependabot = process.env.DEPENDABOT_ACTOR === 'true';
 
           // ── EVENT MATRIX ──────────────────────────────────────────────────
           // Two upstream jobs are conditionally scheduled, so the gate must
@@ -2964,7 +2971,12 @@ jobs:
           // which a conditional job is legitimately not scheduled.
           const expectedSkips = [];
 
-          if (eventName === 'push' || (eventName === 'pull_request' && sameRepoPr)) {
+          // Dependabot PRs are same-repo but secret-less, so integration-tests
+          // is not scheduled there (see its `if:`). It is RELOCATED to
+          // expectedSkips, not dropped: if an `if:` drift ever lets it run on a
+          // Dependabot event, its result will not be 'skipped' and the gate
+          // fails loudly.
+          if (!isDependabot && (eventName === 'push' || (eventName === 'pull_request' && sameRepoPr))) {
             required.push('integration-tests');
           } else {
             expectedSkips.push('integration-tests');
