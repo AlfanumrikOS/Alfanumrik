@@ -11,6 +11,7 @@ node_modules
 !.next/app-path-routes-manifest.json
 !.next/routes-manifest.json
 !.next/trace
+!.next/prerender-manifest.json
 coverage
 *.log
 .env*
