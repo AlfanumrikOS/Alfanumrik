@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "rootDirectory": "apps/host",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "developmentCommand": "npm run dev"
+}

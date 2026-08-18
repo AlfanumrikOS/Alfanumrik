@@ -6,6 +6,7 @@ apps/host/.next/
 .pnp*
 .pnpm-store
 *.tsbuildinfo
+.git/
 # Build output (Next.js compiled artifacts — needed for --prebuilt deploy)
 !.next/standalone
 !.next/server
@@ -28,22 +29,21 @@ Thumbs.db
 fix-api-artifacts.py
 scripts_*.js
 scripts/*.js
-# Large non-source dirs (not needed for Vercel)
-python/
-tools/
-graphify-out/
-supabase/
-e2e/
-engineering-audit/
-artifacts/
-agents/
-AEOS/
-openapi/
-data/
-design-previews/
-governance/
-tests/
-cbse_parser/
+# Large non-source dirs — exclude entirely
+.git
+python
+tools
+graphify-out
+supabase
+e2e
+engineering-audit
+artifacts
+AEOS
+openapi
+data
+design-previews
+governance
+cbse_parser
 .eslintrc.ai-boundary.json
 .eslintrc.json
 playwright.config.ts
