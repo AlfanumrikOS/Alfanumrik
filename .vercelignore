@@ -10,8 +10,8 @@ node_modules
 !.next/build-manifest.json
 !.next/app-path-routes-manifest.json
 !.next/routes-manifest.json
-!.next/trace
 !.next/prerender-manifest.json
+!.next/trace
 coverage
 *.log
 .env*
