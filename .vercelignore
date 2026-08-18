@@ -27,4 +27,3 @@ Thumbs.db
 .hermes/
 fix-api-artifacts.py
 scripts_*.js
-scripts/*.js
