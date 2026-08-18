@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "next dev --webpack -H ::",
-    "build": "next build",
-    "vercel-build": "next build || exit 0",
+    "build": "node ../../scripts/auth-guard.js && next build --webpack",
+    "vercel-build": "NODE_OPTIONS=--max-old-space-size=8192 npm run build",
     "start": "next start",
     "lint": "eslint src/ --ext .ts,.tsx",
     "lint:migrations": "node ../../scripts/lint-migrations.js",
@@ -52,9 +52,7 @@
     "ncert:ingest": "npx tsx --env-file=.env.local ../../scripts/ncert-ingestion/ingest-local.ts",
     "ncert:embed": "npx tsx --env-file=.env.local ../../scripts/ncert-ingestion/embed-chunks.ts",
     "ncert:validate": "npx tsx --env-file=.env.local ../../scripts/ncert-ingestion/validate.ts",
-    "ncert:pipeline": "npm run ncert:ingest && npm run ncert:validate",
-    "postvercel-build": "",
-    "vercel_build": "next build || exit 0"
+    "ncert:pipeline": "npm run ncert:ingest && npm run ncert:validate"
   },
   "dependencies": {
     "@alfanumrik/lib": "*",
@@ -98,7 +96,6 @@
     "remark-math": "^6.0.0",
     "swr": "^2.4.1",
     "tailwind-merge": "^2.5.2",
-    "webpack": "^5.90.0",
     "zod": "^4.3.6"
   },
   "browserslist": [
