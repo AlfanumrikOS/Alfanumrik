@@ -1,0 +1,21 @@
+node_modules
+.pnp*
+.pnpm-store
+*.tsbuildinfo
+# Build output (Next.js compiled artifacts — needed for --prebuilt deploy)
+!.next/standalone
+!.next/server
+!.next/static
+!.next/BUILD_ID
+!.next/build-manifest.json
+!.next/app-path-routes-manifest.json
+!.next/routes-manifest.json
+!.next/prerender-manifest.json
+!.next/trace
+coverage
+*.log
+.env*
+!.env.local.example
+.DS_Store
+Thumbs.db
+*.local

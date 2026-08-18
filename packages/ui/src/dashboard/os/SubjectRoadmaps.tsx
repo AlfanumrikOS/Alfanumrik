@@ -67,6 +67,14 @@ export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: 
 
   const rows: MasteryOverviewRow[] = Array.isArray(data) ? (data as MasteryOverviewRow[]) : [];
 
+  // Filter to Mathematics and Science only — the two core CBSE subjects the
+  // dashboard roadmap should surface. Everything else (English, Hindi, SST,
+  // etc.) is accessible via /learn but does not get a roadmap card here.
+  const TARGET_SUBJECTS = new Set(['Mathematics', 'Science']);
+  const filteredRows: MasteryOverviewRow[] = rows.filter((r) =>
+    r.subject && TARGET_SUBJECTS.has(r.subject),
+  );
+
   if (isLoading && !data) {
     return (
       <section aria-busy="true" aria-label={isHi ? 'रोडमैप लोड हो रहा है' : 'Loading roadmaps'}>
@@ -80,7 +88,7 @@ export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: 
     );
   }
 
-  const groups = groupBySubject(rows);
+  const groups = groupBySubject(filteredRows);
 
   return (
     <section aria-label={isHi ? 'विषय रोडमैप' : 'Subject roadmaps'}>

@@ -11,7 +11,6 @@
 // age-appropriateness, and Hindi/English mixing guidance are curriculum-
 // correctness + P12/P7 invariants.
 // ─────────────────────────────────────────────────────────────────────────────
-import type { CognitiveContext, CoachMode } from '@/app/api/foxy/_lib/constants';
 import {
   MATH_STEP_DENSITY_RULES as BAND_STEP_DENSITY,
   type GradeBand,
@@ -27,6 +26,27 @@ import {
 } from '@alfanumrik/lib/ai/validation/quiz-oracle-prompts';
 import { callClaude } from '@alfanumrik/lib/ai';
 import { PROHIBITED_INFERENCES_PROMPT_SECTION } from '@alfanumrik/lib/policy/prohibited-inferences';
+
+// ─── Local type definitions (mirrored from host's foxy/_lib/constants.ts) ───
+// These types are defined in the host app's
+// `apps/host/src/app/api/foxy/_lib/constants.ts` but that file isn't on the
+// lib package's module resolution path. Define them here so tsc --noEmit
+// passes for packages/lib without depending on host path aliases.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CognitiveContext {
+  weakTopics: Array<{ title: string; mastery: number; attempts: number }>;
+  strongTopics: Array<{ title: string; mastery: number }>;
+  knowledgeGaps: Array<{ target: string; prerequisite: string; gapType: string }>;
+  revisionDue: Array<{ title: string; lastReviewed: string; mastery: number }>;
+  recentErrors: Array<{ errorType: string; count: number }>;
+  nextAction: { actionType: string; conceptName: string; reason: string } | null;
+  masteryLevel: 'low' | 'medium' | 'high';
+  loSkills: Array<{ loCode: string; loStatement: string; pKnow: number; pSlip: number; theta: number }>;
+  recentMisconceptions: Array<{ code: string; label: string; count: number; remediationText: string }>;
+}
+
+export type CoachMode = 'answer' | 'socratic' | 'review';
 
 // ─── Helper: pKnow → directive sentence (per-LO bucket) ─────────────────────
 //
