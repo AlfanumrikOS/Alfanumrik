@@ -8,7 +8,7 @@
  * phone and every small laptop window fell into the phone tier and got a
  * bottom bar stretched across a 900px viewport.
  *
- * This renders the SAME five primary slots as MobileBottomNav and
+ * This renders the SAME primary slots as MobileBottomNav and
  * DesktopSidebar — resolveStudentPrimaryNav(), same order, same labels, same
  * destinations — as a fixed vertical rail on the leading edge. It changes
  * presentation only; the information architecture is identical across tiers.
