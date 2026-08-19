@@ -142,46 +142,61 @@ export interface MonthlySynthesisAction {
 }
 
 /**
- * Introduce a chapter the student has never started — fired when the student
- * has already quizzed today (ZPD branch skipped) and there is fresh content to
- * explore, or as a secondary queue item alongside the ZPD quiz. Surfaces the
- * lowest-numbered unstarted chapter across all active subjects for the
- * student's grade (via `get_next_unstarted_chapter` RPC).
- */
-export interface IntroduceNewTopicAction {
-  kind: 'introduce_new_topic';
-  url: string; // `/learn/${subjectCode}/${chapterNumber}?mode=read&from=new_topic`
-  subjectCode: string;
-  chapterNumber: number;
-  reason: 'unstarted_chapter_available';
-}
+ /** Introduce a chapter the student has never started — fired when the student
+  * has already quizzed today (ZPD branch skipped) and there is fresh content to
+  * explore, or as a secondary queue item alongside the ZPD quiz. Surfaces the
+  * lowest-numbered unstarted chapter across all active subjects for the
+  * student's grade (via `get_next_unstarted_chapter` RPC).
+  */
+ export interface IntroduceNewTopicAction {
+   kind: 'introduce_new_topic';
+   url: string; // `/learn/${subjectCode}/${chapterNumber}?mode=read&from=new_topic`
+   subjectCode: string;
+   chapterNumber: number;
+   reason: 'unstarted_chapter_available';
+ }
 
-/** The discriminated union returned by the resolver. */
-export type LearnerAction =
-  | ColdStartDiagnosticAction
-  | TeacherRemediationAction
-  | ReviewDueCardsAction
-  | ReviseDecayedTopicAction
-  | StartQuizAction
-  | ContinueLessonAction
-  | WeeklyDiveAction
-  | MonthlySynthesisAction
-  | IntroduceNewTopicAction
-  | ResumeInProgressAction;
+ /** Completed lesson check — a chapter the student read once (is_completed)
+  * but the mastery engine has not yet promoted (low pool coverage). Surfaced as
+  * a quick comprehension quiz so chapter-read completion feeds the adaptive loop
+  * instead of silently vanishing (Step 4 bridge). */
+ export interface CompletedLessonCheckAction {
+   kind: 'check_what_you_learned';
+   url: string; // `/quiz?subject=${subjectCode}&chapter=${chapterNumber}&mode=comprehension`
+   subjectCode: string;
+   chapterNumber: number;
+   progressPct: number; // 0..1 — from chapter_progress.pool_coverage_percent
+   reason: 'completed_but_unchecked';
+ }
 
-/** Frozen list of all action kinds — used by tests + telemetry. */
-export const ALL_ACTION_KINDS = [
-  'cold_start_diagnostic',
-  'teacher_remediation',
-  'review_due_cards',
-  'revise_decayed_topic',
-  'start_quiz',
-  'continue_lesson',
-  'weekly_dive',
-  'monthly_synthesis',
-  'introduce_new_topic',
-  'resume_in_progress',
-] as const satisfies ReadonlyArray<LearnerAction['kind']>;
+ /** The discriminated union returned by the resolver. */
+ export type LearnerAction =
+   | ColdStartDiagnosticAction
+   | TeacherRemediationAction
+   | ReviewDueCardsAction
+   | ReviseDecayedTopicAction
+   | StartQuizAction
+   | ContinueLessonAction
+   | WeeklyDiveAction
+   | MonthlySynthesisAction
+   | IntroduceNewTopicAction
+   | CompletedLessonCheckAction
+   | ResumeInProgressAction;
+
+ /** Frozen list of all action kinds — used by tests + telemetry. */
+ export const ALL_ACTION_KINDS = [
+   'cold_start_diagnostic',
+   'teacher_remediation',
+   'review_due_cards',
+   'revise_decayed_topic',
+   'start_quiz',
+   'continue_lesson',
+   'weekly_dive',
+   'monthly_synthesis',
+   'introduce_new_topic',
+   'check_what_you_learned',
+   'resume_in_progress',
+ ] as const satisfies ReadonlyArray<LearnerAction['kind']>;
 
 export type LearnerActionKind = LearnerAction['kind'];
 

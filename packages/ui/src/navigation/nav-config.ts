@@ -3,20 +3,24 @@ import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 
 // ─── The student primary navigation (2026-08-09) ───────────────────────────
 //
-// FIVE primary slots, one fixed order, identical labels + destinations + order
+// FOUR primary slots, one fixed order, identical labels + destinations + order
 // at EVERY breakpoint. Only the PRESENTATION changes across tiers:
 //
-//   360–767px   → five-item bottom bar          (MobileBottomNav)
+//   360–767px   → four-item bottom bar          (MobileBottomNav)
 //   768–1023px  → vertical navigation rail      (TabletNavRail)
 //   1024px+     → persistent sidebar            (DesktopSidebar)
 //
-//   1. Today  2. Learn  3. Practice  4. Progress  5. More
+//   1. Today  2. Practice  3. Progress  4. More
 //
-// CORE_TABS is the four primary DESTINATIONS; "More" is the fifth slot and is
-// an overflow control, not a destination, so it carries no href and is supplied
-// by resolveStudentPrimaryNav() below. Consumers that need all five slots in
-// order (all three tier components do) must call resolveStudentPrimaryNav()
-// rather than reading CORE_TABS directly.
+// `Learn` was slot 2 until the 2026-08-19 Today consolidation. /today does that
+// job now; the /learn route still resolves and is still deep-linked to from
+// introduce_new_topic / revise actions — it simply owns no slot.
+//
+// CORE_TABS is the primary DESTINATIONS; "More" is the last slot and is an
+// overflow control, not a destination, so it carries no href and is supplied
+// by resolveStudentPrimaryNav() below. Consumers that need all slots in order
+// (all three tier components do) must call resolveStudentPrimaryNav() rather
+// than reading CORE_TABS directly.
 //
 // IA CHANGE — Foxy left the primary bar. It previously occupied slot 3 as a
 // raised centre FAB. Per the navigation spec, Foxy / profile / notifications /
@@ -31,17 +35,25 @@ import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 // names and two icons across viewports, and colliding with the `/me` and
 // `/profile` entries below. It is now "Progress" 📈 in BOTH lists. No route
 // changed; the labels/icons did.
+//
+// SLOT IDENTITY LIVES HERE (2026-08-19). Each tab carries its own slot `id`,
+// `altHrefs` and optional `badge`. resolveStudentPrimaryNav() maps over this
+// list instead of destructuring it positionally, and STUDENT_PRIMARY_ORDER is
+// derived from it. Removing or reordering a tab is therefore a ONE-line edit
+// that cannot silently shift the bar — which is exactly what happened when
+// `/learn` was deleted from this array while the resolver still destructured
+// four names out of it: every later slot shifted up one and the last spread
+// `undefined`, rendering a blank, hrefless nav button to students.
 export const CORE_TABS = [
-  { href: '/today', icon: '☀️', activeIcon: '☀️', label: 'Today', labelHi: 'आज' },
-  { href: '/learn', icon: '📚', activeIcon: '📚', label: 'Learn', labelHi: 'सीखें' },
-  // Slot 3 — see PRACTICE FLAG CONTRACT in resolveStudentPrimaryNav().
-  { href: '/practice', icon: '⚡', activeIcon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
-  { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
-];
+  { id: 'today', href: '/today', icon: '☀️', activeIcon: '☀️', label: 'Today', labelHi: 'आज', altHrefs: ['/dashboard'], badge: 'streak' },
+  // Slot 2 — see PRACTICE FLAG CONTRACT in resolveStudentPrimaryNav().
+  { id: 'practice', href: '/practice', icon: '⚡', activeIcon: '⚡', label: 'Practice', labelHi: 'अभ्यास', altHrefs: ['/quiz'] },
+  { id: 'progress', href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति', altHrefs: [] },
+] as const;
 
 // ─── PHASE 3 IA TRIM (2026-08-10) ──────────────────────────────────────────
 //
-// MORE_ITEMS carried 18 rows and SIDEBAR_SECTIONS 22 links. The five primary
+// MORE_ITEMS carried 18 rows and SIDEBAR_SECTIONS 22 links. The primary
 // slots were right, but the breadth BELOW them meant a student met ~20 named
 // places one tap past the bar — the overflow had become a second, unranked
 // product surface. Trimmed to 10 More rows / 14 sidebar links, and the two
@@ -67,8 +79,8 @@ export const CORE_TABS = [
 // flag settles.
 export const MORE_ITEMS = [
   // 2026-08-09 — Foxy is a UTILITY, not a primary destination. It used to be
-  // the raised centre FAB in CORE_TABS; the navigation spec reserves the five
-  // primary slots for Today / Learn / Practice / Progress / More and classes
+  // the raised centre FAB in CORE_TABS; the navigation spec reserves the
+  // primary slots for Today / Practice / Progress / More and classes
   // Foxy alongside profile, notifications and search. It leads the utilities
   // group so it stays one interaction away on phones.
   { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', group: 'utilities' },
@@ -77,10 +89,9 @@ export const MORE_ITEMS = [
   { href: '/notifications', icon: '🔔', label: 'Reminders', labelHi: 'रिमाइंडर', group: 'utilities' },
   // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
   { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है', group: 'utilities' },
-  { href: '/library', icon: '📚', label: 'Library', labelHi: 'अध्ययन सामग्री', group: 'study' },
   { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड', group: 'study' },
   { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब', group: 'study' },
-  // /practice is NOT listed here — it is primary slot 3. See the PRACTICE FLAG
+  // /practice is NOT listed here — it is primary slot 2. See the PRACTICE FLAG
   // CONTRACT note on resolveStudentPrimaryNav().
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल', group: 'account' },
   // Wave B gap screen 16 "Me" — flag-gated (ff_me_v2). Additive presentation
@@ -102,7 +113,7 @@ export const MORE_ITEMS = [
 export const MORE_SHEET_GROUPS: { key: string; en: string; hi: string }[] = [
   // Utilities first — Foxy, reminders and the memory screen are the things a
   // student reaches for mid-session, and Foxy in particular lost its
-  // centre-FAB slot when the five primary destinations were fixed.
+  // centre-FAB slot when the primary destinations were fixed.
   { key: 'utilities', en: 'Utilities', hi: 'उपयोगिताएँ' },
   { key: 'study', en: 'Study', hi: 'पढ़ाई' },
   { key: 'account', en: 'Account', hi: 'खाता' },
@@ -143,7 +154,6 @@ export const SIDEBAR_SECTIONS = [
     title: 'Main', titleHi: 'मुख्य',
     items: [
       { href: '/today', icon: '☀️', label: 'Today', labelHi: 'आज' },
-      { href: '/learn', icon: '📚', label: 'Learn', labelHi: 'सीखें' },
       { href: '/practice', icon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
       // Matches CORE_TABS exactly — same name, same icon, same route.
       { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
@@ -159,9 +169,6 @@ export const SIDEBAR_SECTIONS = [
     // /learn vs a future /learn/* entry has the same shape.
     title: 'Study', titleHi: 'पढ़ाई',
     items: [
-      { href: '/library',     icon: '📚', label: 'Library',     labelHi: 'अध्ययन सामग्री' },
-      // /leaderboard was in the More sheet but in NO sidebar section — an
-      // overflow destination that simply did not exist at 1024px+. Mirrored in.
       { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
       { href: '/stem-centre', icon: '🔬', label: 'STEM Lab',    labelHi: 'STEM लैब' },
     ],
@@ -245,19 +252,17 @@ export function isItemVisibleForFlags(
  *
  * MobileBottomNav (< 768), TabletNavRail (768–1023) and DesktopSidebar (1024+)
  * all read resolveStudentPrimaryNav(). They differ only in chrome: the same
- * five slots, the same labels, the same destinations, the same order.
+ * four slots, the same labels, the same destinations, the same order.
  * ─────────────────────────────────────────────────────────────────────────── */
 
-export type StudentNavSlotId = 'today' | 'learn' | 'practice' | 'progress' | 'more';
+export type StudentNavSlotId = (typeof CORE_TABS)[number]['id'] | 'more';
 
-/** The order is a product contract, not a rendering detail. */
+/** The order is a product contract, not a rendering detail. Derived from
+ *  CORE_TABS so the declared order and the rendered order cannot disagree. */
 export const STUDENT_PRIMARY_ORDER: readonly StudentNavSlotId[] = [
-  'today',
-  'learn',
-  'practice',
-  'progress',
+  ...CORE_TABS.map((t) => t.id),
   'more',
-] as const;
+];
 
 export interface StudentNavCapabilities {
   /** Resolved feature flags. `undefined` = not yet loaded (treated as OFF). */
@@ -312,12 +317,12 @@ const MORE_SLOT: ResolvedNavSlot = {
 export const STUDENT_MORE_SLOT: ResolvedNavSlot = MORE_SLOT;
 
 /**
- * The five primary slots for the student role, in the fixed spec order.
+ * The primary slots for the student role, in the fixed spec order.
  *
  * PRACTICE FLAG CONTRACT (`ff_practice_os_v1`)
  * --------------------------------------------
- * The Practice SLOT is permanent — the bar is five items in every flag state,
- * never four. The flag governs what `/practice` RENDERS, not whether the slot
+ * The Practice SLOT is permanent — the bar is four items in every flag state,
+ * never three. The flag governs what `/practice` RENDERS, not whether the slot
  * exists:
  *
  *   flag ON  → `/practice` renders the Alfa OS Practice Center hub.
@@ -328,7 +333,7 @@ export const STUDENT_MORE_SLOT: ResolvedNavSlot = MORE_SLOT;
  *              flag is off rather than a 404.
  *
  * So the slot is never dead and never silently disappears, and no flag has to
- * be graduated to satisfy the five-destination contract. `altHrefs: ['/quiz']`
+ * be graduated to satisfy the destination contract. `altHrefs: ['/quiz']`
  * keeps the slot marked `aria-current="page"` after the flag-OFF redirect.
  * (On a surface that ALSO lists `/quiz` in its own right — the desktop sidebar
  * does — `resolveActiveNavHref` prefers the longer exact match, so `/quiz`
@@ -349,12 +354,18 @@ export function resolveStudentPrimaryNav(
   caps: StudentNavCapabilities = {},
 ): ResolvedNavSlot[] {
   void caps; // reserved: grade / hasUpcomingExam gate no primary slot today.
-  const [today, learn, practice, progress] = CORE_TABS;
   return [
-    { ...today, id: 'today', kind: 'destination', altHrefs: ['/dashboard'], badge: 'streak' },
-    { ...learn, id: 'learn', kind: 'destination', altHrefs: [] },
-    { ...practice, id: 'practice', kind: 'destination', altHrefs: ['/quiz'] },
-    { ...progress, id: 'progress', kind: 'destination', altHrefs: [] },
+    ...CORE_TABS.map((tab): ResolvedNavSlot => ({
+      id: tab.id,
+      kind: 'destination',
+      href: tab.href,
+      icon: tab.icon,
+      activeIcon: tab.activeIcon,
+      label: tab.label,
+      labelHi: tab.labelHi,
+      altHrefs: [...tab.altHrefs],
+      ...('badge' in tab ? { badge: tab.badge } : {}),
+    })),
     MORE_SLOT,
   ];
 }
@@ -395,7 +406,22 @@ export function resolvePrimaryActiveId(
   return best?.id ?? null;
 }
 
-export function getCoreTabs(role: UserRole) {
+/**
+ * The shape every role's primary tab list projects to. Student tabs carry
+ * extra slot metadata (`id` / `altHrefs` / `badge`); the teacher and guardian
+ * projections do not. Declared explicitly rather than inferred: an inferred
+ * union of two different array shapes makes the `.map()` parameter `never` at
+ * the MobileBottomNav / TabletNavRail call sites.
+ */
+export interface CoreTab {
+  href: string;
+  icon: string;
+  activeIcon: string;
+  label: string;
+  labelHi: string;
+}
+
+export function getCoreTabs(role: UserRole): CoreTab[] {
   if (role === 'teacher') {
     const nav = ROLE_CONFIG.teacher.nav;
     return nav.slice(0, 4).map(n => ({ href: n.href, icon: n.icon, activeIcon: n.icon, label: n.label, labelHi: n.labelHi }));
@@ -404,7 +430,7 @@ export function getCoreTabs(role: UserRole) {
     const nav = ROLE_CONFIG.guardian.nav;
     return nav.slice(0, 4).map(n => ({ href: n.href, icon: n.icon, activeIcon: n.icon, label: n.label, labelHi: n.labelHi }));
   }
-  return CORE_TABS;
+  return [...CORE_TABS];
 }
 
 export function getMoreItems(role: UserRole) {

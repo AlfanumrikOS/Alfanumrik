@@ -162,6 +162,18 @@ const COPY: Record<string, CopyEntry> = {
     en: 'Begin {subject} · Chapter {chapter}',
     hi: '{subject} शुरू करो · अध्याय {chapter}',
   },
+
+  // ── Item: completed_lesson_check ───────────────────────────────
+  // A chapter the student read once but hasn't mastered yet — quick
+  // comprehension check so chapter-read completion feeds the loop.
+  'today.item.completed_lesson_check.label': {
+    en: 'Check what you learned',
+    hi: 'जो तुमने सीखा उसे जाँचें',
+  },
+  'today.item.completed_lesson_check.subtitle': {
+    en: '{subject} · {progress}% covered',
+    hi: '{subject} · {progress}% कवर किया',
+  },
 };
 
 /**

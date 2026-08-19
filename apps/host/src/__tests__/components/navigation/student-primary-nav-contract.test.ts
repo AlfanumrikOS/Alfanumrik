@@ -5,19 +5,19 @@
  * `resolveStudentPrimaryNav()` is now the single source for the navigation
  * rendered by ALL THREE tier components (MobileBottomNav < 768,
  * TabletNavRail 768–1023, DesktopSidebar 1024+). The product contract it
- * encodes — five slots, one fixed order, the same destinations at every
+ * encodes — four slots, one fixed order, the same destinations at every
  * breakpoint — had NO test at all when it landed. Every property below could
  * be broken by a one-line edit to nav-config.ts and nothing in the suite
  * would have gone red:
  *
- *   - dropping a slot (four-item bar)
- *   - reordering (Practice before Learn)
+ *   - dropping a slot (three-item bar)
+ *   - reordering (Progress before Practice)
  *   - giving the overflow slot an href (a "More" that navigates)
  *   - re-listing a primary destination inside the More sheet (the exact
  *     duplication the 2026-08-05 IA law "one destination = one name = one
  *     icon" was written to stop, and which nav-config's own comments record
  *     as having happened twice already)
- *   - a flag state that collapses the bar to four slots (the PRACTICE FLAG
+ *   - a flag state that collapses the bar to three slots (the PRACTICE FLAG
  *     CONTRACT explicitly forbids this)
  *
  * ── Why these are unit tests and not browser tests ───────────────────────
@@ -25,7 +25,7 @@
  * a pure function over a config object, so a browser adds cost and nothing
  * else. The properties that genuinely need a browser — which tier is
  * visible at which width, exactly one `aria-current="page"` in the rendered
- * accessibility tree, the five slots fitting at 360px — are pinned in
+ * accessibility tree, the four slots fitting at 360px — are pinned in
  * `e2e/ui-nav-contract.spec.ts`. The two layers are deliberately disjoint.
  */
 import { describe, it, expect } from 'vitest';
@@ -42,15 +42,17 @@ import {
 } from '@alfanumrik/ui/navigation/nav-config';
 
 /** The product order, restated here so a change to the export is a failure. */
-const EXPECTED_ORDER = ['today', 'learn', 'practice', 'progress', 'more'] as const;
+const EXPECTED_ORDER = ['today', 'practice', 'progress', 'more'] as const;
 
-/** The four primary DESTINATIONS (the fifth slot is overflow, not a route). */
-const EXPECTED_HREFS = ['/today', '/learn', '/practice', '/progress'] as const;
+/** The three primary DESTINATIONS (the fourth slot is overflow, not a route).
+ *  `/learn` left the bar in the 2026-08-19 Today consolidation; `/today` does
+ *  that job now. The route itself still resolves and is still deep-linked to. */
+const EXPECTED_HREFS = ['/today', '/practice', '/progress'] as const;
 
 /**
  * Flag states the bar must survive identically. The PRACTICE FLAG CONTRACT
  * (nav-config.ts) says the flag governs what `/practice` RENDERS, never
- * whether the slot exists — so all of these must produce the same five slots.
+ * whether the slot exists — so all of these must produce the same four slots.
  */
 const FLAG_STATES: Array<{ name: string; flags: Record<string, boolean> | null | undefined }> = [
   { name: 'flags not yet loaded (undefined)', flags: undefined },
@@ -72,21 +74,21 @@ const FLAG_STATES: Array<{ name: string; flags: Record<string, boolean> | null |
   },
 ];
 
-describe('student primary nav — the five-slot contract', () => {
-  it('exports the order as a five-entry product constant', () => {
+describe('student primary nav — the four-slot contract', () => {
+  it('exports the order as a four-entry product constant', () => {
     expect(STUDENT_PRIMARY_ORDER).toEqual(EXPECTED_ORDER);
   });
 
-  it('resolves exactly five slots, in the declared order, in every flag state', () => {
+  it('resolves exactly four slots, in the declared order, in every flag state', () => {
     for (const { name, flags } of FLAG_STATES) {
       const slots = resolveStudentPrimaryNav({ flags });
       expect(slots.map((s) => s.id), `slot order with ${name}`).toEqual([...EXPECTED_ORDER]);
-      expect(slots, `slot COUNT with ${name} — the bar is five items in every flag state, never four`)
-        .toHaveLength(5);
+      expect(slots, `slot COUNT with ${name} — the bar is four items in every flag state, never three`)
+        .toHaveLength(4);
     }
   });
 
-  it('keeps the same five slots across every grade and exam state', () => {
+  it('keeps the same four slots across every grade and exam state', () => {
     // grade/hasUpcomingExam gate More-sheet items, never a primary slot.
     for (const grade of [6, 7, 8, 9, 10, 11, 12]) {
       for (const hasUpcomingExam of [true, false]) {
@@ -99,17 +101,17 @@ describe('student primary nav — the five-slot contract', () => {
     }
   });
 
-  it('routes the first four slots to the declared destinations', () => {
+  it('routes the first three slots to the declared destinations', () => {
     const slots = resolveStudentPrimaryNav();
-    expect(slots.slice(0, 4).map((s) => s.href)).toEqual([...EXPECTED_HREFS]);
-    for (const slot of slots.slice(0, 4)) {
+    expect(slots.slice(0, 3).map((s) => s.href)).toEqual([...EXPECTED_HREFS]);
+    for (const slot of slots.slice(0, 3)) {
       expect(slot.kind, `${slot.id} must be a destination`).toBe('destination');
     }
   });
 
-  it('keeps the fifth slot an overflow control with no destination', () => {
+  it('keeps the last slot an overflow control with no destination', () => {
     const slots = resolveStudentPrimaryNav();
-    const more = slots[4];
+    const more = slots[slots.length - 1];
     expect(more.id).toBe('more');
     expect(more.kind).toBe('overflow');
     // A "More" with an href is a More that navigates — a different product.
@@ -148,7 +150,7 @@ describe('student primary nav — the primaries are never ALSO in the More sheet
    * `/progress` in the app under two names ("Me" and "My Progress") and
    * `/dashboard` under two ("Dashboard" and "Home").
    */
-  it('lists none of the four primary destinations inside MORE_ITEMS', () => {
+  it('lists none of the primary destinations inside MORE_ITEMS', () => {
     const moreHrefs = MORE_ITEMS.map((i) => i.href);
     const leaked = EXPECTED_HREFS.filter((href) => moreHrefs.includes(href));
     expect(
@@ -160,17 +162,38 @@ describe('student primary nav — the primaries are never ALSO in the More sheet
   });
 
   it('keeps CORE_TABS and the resolved primaries in sync', () => {
-    // resolveStudentPrimaryNav destructures CORE_TABS positionally, so a
-    // reorder of CORE_TABS silently reorders the bar. Pin both.
+    // resolveStudentPrimaryNav() now MAPS over CORE_TABS. It used to
+    // destructure it positionally, which is how deleting /learn from the array
+    // shifted every later slot and left the last one spreading `undefined`.
+    // Pin the list anyway: the bar's destinations are a product contract.
     expect(CORE_TABS.map((t) => t.href)).toEqual([...EXPECTED_HREFS]);
-    expect(CORE_TABS).toHaveLength(4);
+    expect(CORE_TABS).toHaveLength(3);
+  });
+
+  it('never resolves a slot without an href, label or icon', () => {
+    // The exact defect the positional destructure produced: a spread of
+    // `undefined` yielded a blank, hrefless button in the student bottom bar.
+    for (const slot of resolveStudentPrimaryNav()) {
+      if (slot.kind === 'destination') {
+        expect(slot.href, `${slot.id} destination href`).toBeTruthy();
+      }
+      expect(slot.label, `${slot.id} label`).toBeTruthy();
+      expect(slot.icon, `${slot.id} icon`).toBeTruthy();
+    }
+  });
+
+  it('gives every resolved slot the id its CORE_TABS entry declares', () => {
+    // Slot id drives active-state highlighting. When the resolver mislabels a
+    // tile (Practice carrying id 'today'), the wrong slot lights up.
+    const primaries = resolveStudentPrimaryNav().filter((s) => s.kind === 'destination');
+    expect(primaries.map((s) => s.id)).toEqual(CORE_TABS.map((t) => t.id));
   });
 
   it('gives every primary destination the same label and icon in the desktop sidebar', () => {
-    // The sidebar is the 1024+ projection of the SAME five slots. A student who
+    // The sidebar is the 1024+ projection of the SAME four slots. A student who
     // resizes must not meet a different name for the same route.
     const sidebarItems = SIDEBAR_SECTIONS.flatMap((s) => s.items);
-    for (const slot of resolveStudentPrimaryNav().slice(0, 4)) {
+    for (const slot of resolveStudentPrimaryNav().slice(0, 3)) {
       const match = sidebarItems.find((i) => i.href === slot.href);
       expect(match, `${slot.href} is a primary destination but is absent from the desktop sidebar`)
         .toBeDefined();
@@ -194,8 +217,10 @@ describe('student primary nav — exactly one slot is ever current', () => {
   const CASES: Array<[pathname: string, expected: string | null, why: string]> = [
     ['/today', 'today', 'exact primary destination'],
     ['/dashboard', 'today', 'TODAY FLAG CONTRACT: /today redirects here while ff_today_home_v1 is OFF'],
-    ['/learn', 'learn', 'exact primary destination'],
-    ['/learn/science/3', 'learn', 'descendant of a primary destination'],
+    // /learn is no longer a primary destination (2026-08-19 Today
+    // consolidation). The route still resolves; it just owns no slot.
+    ['/learn', null, 'left the bar in the Today consolidation — owns no primary slot'],
+    ['/learn/science/3', null, 'descendant of a route that owns no primary slot'],
     ['/practice', 'practice', 'exact primary destination'],
     ['/quiz', 'practice', 'PRACTICE FLAG CONTRACT: /practice redirects here while ff_practice_os_v1 is OFF'],
     ['/quiz/session/abc', 'practice', 'descendant of the practice alt destination'],

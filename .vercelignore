@@ -6,6 +6,7 @@ apps/host/.next/
 .pnp*
 .pnpm-store
 *.tsbuildinfo
+.git/
 # Build output (Next.js compiled artifacts — needed for --prebuilt deploy)
 !.next/standalone
 !.next/server

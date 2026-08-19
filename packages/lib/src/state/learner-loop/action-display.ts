@@ -162,6 +162,18 @@ export function actionDisplay(action: LearnerAction): ActionDisplay {
         tint: '#7C3AED',
       };
 
+    case 'check_what_you_learned':
+      return {
+        icon: '🔄',
+        eyebrowEn: 'Check what you learned',
+        eyebrowHi: 'जो सीखा उसे जाँचो',
+        titleEn: `${capitalize(action.subjectCode)} · Chapter ${action.chapterNumber}`,
+        titleHi: `${subjectHi(action.subjectCode)} · अध्याय ${action.chapterNumber}`,
+        subEn: 'You finished reading this — a quick check locks it in',
+        subHi: 'यह पढ़ लिया — एक छोटी जाँच इसे पक्का कर देगी',
+        tint: '#0D9488',
+      };
+
     case 'resume_in_progress':
       return {
         icon: '▶️',
@@ -235,6 +247,9 @@ export function actionPrimaryCta(action: LearnerAction): ActionPrimaryCta {
         en: `Begin Chapter ${action.chapterNumber}`,
         hi: `अध्याय ${action.chapterNumber} शुरू करो`,
       };
+
+    case 'check_what_you_learned':
+      return { en: 'Check what you learned', hi: 'सीखा हुआ जाँचो' };
 
     case 'resume_in_progress':
       return { en: 'Resume', hi: 'जारी रखो' };

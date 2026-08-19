@@ -102,6 +102,52 @@ vi.mock('@alfanumrik/lib/use-subjects-os-flag', () => ({
 
 vi.mock('next/dynamic', () => ({ default: () => () => null }));
 
+// The page moved off `getChaptersForSubject` onto the governed
+// `useAllowedChapters` SWR hook. Fake the HOOK, not SWR, and keep the same
+// ServiceResult fixtures below, so these tests still assert product behaviour
+// (error card vs empty state vs list, retry, logging) rather than the
+// data-fetching library. `refresh()` re-runs the read, which is what the
+// "Try again" control must do.
+vi.mock('@alfanumrik/lib/useAllowedChapters', async () => {
+  const ReactMod = await import('react');
+  return {
+    useAllowedChapters: (subjectCode?: string | null) => {
+      const [state, setState] = ReactMod.useState<{
+        chapters: Array<Record<string, unknown>>;
+        isLoading: boolean;
+        error: Error | null;
+      }>({ chapters: [], isLoading: false, error: null });
+      const [attempt, setAttempt] = ReactMod.useState(0);
+
+      ReactMod.useEffect(() => {
+        if (!subjectCode) {
+          setState({ chapters: [], isLoading: false, error: null });
+          return;
+        }
+        let live = true;
+        setState((s) => ({ ...s, isLoading: true }));
+        Promise.resolve(chaptersRead(subjectCode))
+          .then((res: { ok: boolean; data?: unknown[]; error?: string }) => {
+            if (!live) return;
+            if (!res || !res.ok) {
+              setState({ chapters: [], isLoading: false, error: new Error(res?.error ?? 'chapters.fetch_failed') });
+              return;
+            }
+            setState({ chapters: (res.data ?? []) as Array<Record<string, unknown>>, isLoading: false, error: null });
+          })
+          .catch((e: unknown) => {
+            if (!live) return;
+            setState({ chapters: [], isLoading: false, error: e instanceof Error ? e : new Error('unknown error') });
+          });
+        return () => { live = false; };
+      }, [subjectCode, attempt]);
+
+      return { ...state, refresh: () => setAttempt((a) => a + 1) };
+    },
+  };
+});
+
+
 vi.mock('@alfanumrik/lib/supabase', () => {
   const CHAIN = ['select', 'eq', 'neq', 'order', 'limit', 'gte', 'lt', 'gt', 'in', 'single', 'maybeSingle'];
   return {
