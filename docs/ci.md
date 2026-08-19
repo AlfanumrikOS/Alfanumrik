@@ -29,10 +29,21 @@ Two rules keep this honest:
    reached only via a dynamic import is not selected, and coverage thresholds are deliberately not enforced on
    a partial run. The full suite and the thresholds run in the merge queue before the commit can land.
 
-**The merge queue is load-bearing.** `Lint, Type-check & Test` and `Production Build` are ruleset-required but
-no longer report on the `pull_request` event. If "Require merge queue" is ever turned off on `main` while those
-two contexts stay required, every PR becomes permanently unmergeable ("Required status check ... is expected").
-Turning the queue off therefore means reverting this workflow change in the same action.
+**The merge queue is load-bearing, and its absence fails OPEN — not closed.** `Lint, Type-check & Test` and
+`Production Build` are ruleset-required but no longer report on the `pull_request` event: they are *skipped*, and
+**GitHub counts a skipped required check as satisfied.** This was observed directly on PR #1572, the change that
+introduced this section — with the full suite and the production build both skipped, the PR read **"Ready to
+merge"**, green, with no build and no full test run behind it.
+
+The consequence is the opposite of the usual failure mode, and worse:
+
+- With the queue **ON**, the heavy tier runs in the queue and genuinely gates the merge. Correct.
+- With the queue **OFF**, PRs merge with those contexts vacuously green. Nothing blocks. Nothing warns.
+
+So "Require merge queue" is not a convenience setting here — it is the only thing standing between a PR and an
+unvalidated merge to `main`. It must be enabled immediately after this workflow change lands, and it must never
+be disabled without reverting the workflow change in the same action. There is no safe intermediate state, and
+the unsafe state is silent.
 
 ---
 
