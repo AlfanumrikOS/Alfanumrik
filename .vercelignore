@@ -32,9 +32,8 @@ scripts/*.js
 # Large non-source dirs — exclude entirely
 .git
 python
-tools
+/tools/
 graphify-out
-supabase
 e2e
 engineering-audit
 artifacts
