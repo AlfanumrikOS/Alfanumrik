@@ -3132,3 +3132,31 @@
   .showCard3:hover { transform: none; }
   .phoneFigure:hover { transform: rotate(-1deg); }
 }
+
+/* ---------------------------------------------------------------------------
+   #1418 - desktop/tablet footer link columns were invisible.
+
+   FooterV2 renders each footer column as a CLOSED <details>. A closed
+   <details> hides its non-<summary> children through the UA rule
+     details:not([open]) > *:not(summary) { content-visibility: hidden }
+   The existing >=768px override styles the inner <ul> (padding/border/display),
+   which cannot defeat that: the UA rule applies to the subtree, not to the
+   element's own display. FooterV2.tsx:75 states "tablet+ CSS overrides to force
+   the column open visually. No `open` attribute needed." - that assumption was
+   false. Every visitor at >=768px saw three collapsed headings and NO footer
+   links, so Pricing, Privacy and Terms were unreachable from the footer, and
+   e2e/welcome-v2.spec.ts:290 correctly went red on the nightly.
+
+   Appended at end-of-file rather than edited into the >=768px block above so
+   the diff stays minimal and reviewable; as the last rule in the file it wins
+   the cascade regardless.
+
+   Caveat: content-visibility is how Chromium implements the collapse, and the
+   E2E suite runs chromium only. For engine independence the durable fix is to
+   set the `open` attribute at >=768px in FooterV2.tsx - tracked separately.
+   --------------------------------------------------------------------------- */
+@media (min-width: 768px) {
+  .footAcc :global(> *:not(summary)) {
+    content-visibility: visible !important;
+  }
+}
