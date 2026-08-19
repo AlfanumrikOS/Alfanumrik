@@ -97,7 +97,7 @@ export interface LoopAugmentation {
    *  read once but not yet mastered — surfaced as a "check what you learned"
    *  action so chapter-read completion feeds the adaptive engine.
    *  Optional so existing callers and test fixtures remain valid. */
-  completedLessons: Array<{
+  completedLessons?: Array<{
     subjectCode: string;
     chapterNumber: number;
     progressPct: number;
@@ -714,9 +714,9 @@ const BRANCHES: ResolverBranch[] = [
   // loop instead of silently vanishing (Step 4 bridge).
   {
     kind: 'check_what_you_learned',
-    predicate: (_state, aug) => aug.completedLessons.length > 0,
+    predicate: (_state, aug) => (aug.completedLessons?.length ?? 0) > 0,
     build: (_state, aug) => {
-      const top = aug.completedLessons[0];
+      const top = aug.completedLessons![0];
       return {
         kind: 'check_what_you_learned',
         url: `/quiz?subject=${encodeURIComponent(top.subjectCode)}&chapter=${top.chapterNumber}&mode=comprehension`,
