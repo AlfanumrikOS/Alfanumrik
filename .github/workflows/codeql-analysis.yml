@@ -5,6 +5,14 @@ on:
     branches: [main, master]
   push:
     branches: [main, master]
+  # "CodeQL Analysis" is one of the four contexts the `main-protection` ruleset
+  # requires. With a merge queue on main, a required context MUST also report
+  # on the merge_group event or the queue sits until its status-check timeout
+  # and every PR becomes unmergeable. Kept on `pull_request` as well: CodeQL is
+  # ~1m40s on a PR, it runs in parallel with the lint/type-check job, so it
+  # costs no additional wall-clock and gives the author the finding early.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 permissions:

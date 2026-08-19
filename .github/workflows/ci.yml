@@ -4,6 +4,19 @@ on:
   workflow_dispatch:
   push:
     branches: [main, master, develop]
+  # ── Merge queue tier (added 2026-08-19) ──────────────────────────────────
+  # The heavy jobs below (full 4-shard unit suite + coverage merge, Production
+  # Build, Edge Deno tests, live-DB integration tests, blocking E2E) no longer
+  # run on `pull_request`. They run HERE, once, on the exact commit GitHub will
+  # land on main. Nothing was deleted -- every check was RELOCATED to a tier
+  # where it still blocks the merge, and `ci-gate`'s event matrix asserts
+  # per-event that each one either succeeded or is an EXPECTED skip.
+  #
+  # REQUIRED: the `main-protection` ruleset must have "Require merge queue"
+  # enabled, or the required contexts produced only here never report and PRs
+  # become unmergeable. See docs/runbooks/branch-protection-required-checks.md.
+  merge_group:
+    types: [checks_requested]
   pull_request:
     branches: [main, master]
     # `labeled` added 2026-07-20 (E2E label opt-in) so applying the
@@ -41,7 +54,11 @@ concurrency:
   # EXACT pushed SHA. Two quick pushes to main used to cancel run 1's CI Gate
   # while run 1's deploy kept waiting on that SHA — a stranded deploy needing
   # a manual rerun. PR/develop refs keep the cancel-and-supersede behavior.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # merge_group refs (refs/heads/gh-readonly-queue/...) are unique per queue
+  # entry, so they can never collide with each other -- but an explicit guard
+  # keeps a future group-key change from silently cancelling a queue entry's
+  # validation, which would strand the queue until its status-check timeout.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name != 'merge_group' }}
 
 env:
   NODE_VERSION: '22'
@@ -1278,7 +1295,11 @@ jobs:
       # As measured 2026-07-28: prod-critical = 0, dev-only-critical = 3
       # (@openapitools/openapi-generator-cli -> concurrently -> shell-quote).
       # Under the OLD `|| echo` step, neither number could ever fail CI.
+      # MERGE-QUEUE TIER: npm audit reaches the registry and is the slowest
+      # non-tsc step in this job. Still BLOCKING -- it runs on merge_group,
+      # push and workflow_dispatch, i.e. before anything can land on main.
       - name: Security audit (production criticals are blocking)
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           # `set +e`: Actions runs this under `bash -e`, and `npm audit` exits
           # non-zero simply because vulnerabilities EXIST. We grade the payload,
@@ -1462,7 +1483,12 @@ jobs:
       # files under apps/host/src/__tests__/), captures vitest's real exit code
       # via PIPESTATUS[0], and additionally fails if zero tests passed —
       # belt-and-braces against any future silent no-op.
+      # MERGE-QUEUE TIER: this is a vitest run, not a lint/type step. On PRs
+      # the `unit-tests-changed` job covers auth/identity files when they are
+      # touched; the full suite (which includes these specs) runs on
+      # merge_group before the commit can land.
       - name: Auth & Identity test gate
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           echo "## Auth & Identity Test Gate" >> $GITHUB_STEP_SUMMARY
           npm test -w apps/host -- src/__tests__/auth- src/__tests__/identity- --reporter=verbose 2>&1 | tee /tmp/auth-test-output.txt
@@ -1591,6 +1617,9 @@ jobs:
     name: Unit Tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # TIER: merge_group / push / workflow_dispatch only. Relocated off the
+    # `pull_request` event 2026-08-19 -- see the merge_group note in `on:`.
+    if: ${{ github.event_name != 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1673,6 +1702,88 @@ jobs:
   # ruleset's required status-check context "Lint, Type-check & Test" keeps
   # green-gating merges with identical semantics (lint + type-check + all unit
   # tests + coverage thresholds).
+  # ─────────────────────────────────────────────────────────────────────────
+  # PR TIER: tests related to the diff, not the whole suite.
+  #
+  # WHY THIS EXISTS: the 4-shard suite is ~5 min of runner time and the merge
+  # step that enforces coverage thresholds adds ~70s more. That is the right
+  # amount of work to do ONCE, on the commit that is about to land -- it is the
+  # wrong amount of work to do on every `git push` to a feature branch.
+  #
+  # WHAT IT IS NOT: this is NOT a replacement for the full suite and MUST NOT
+  # be treated as one. Vitest's `--changed` walks the module graph from the
+  # changed files, so a test reached only through a dynamic import, a string
+  # route lookup, or a fixture file it does not import is NOT selected. That
+  # residual gap is closed by the merge-queue tier, which runs all 4 shards and
+  # the coverage thresholds before the commit can land on main. Coverage
+  # thresholds are deliberately NOT enforced here -- a partial run cannot
+  # satisfy a whole-repo threshold, and pretending otherwise is how a gate
+  # becomes a rubber stamp.
+  # ─────────────────────────────────────────────────────────────────────────
+  unit-tests-changed:
+    name: Unit Tests (changed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history: `--changed <sha>` needs the merge base to exist
+          # locally, and the default shallow fetch does not contain it.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-node-workspace
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Resolve merge base with the PR base branch
+        id: base
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin "$BASE_REF"
+          merge_base="$(git merge-base FETCH_HEAD HEAD)"
+          # FAIL CLOSED: if the merge base cannot be resolved we do NOT quietly
+          # fall back to "no tests changed" -- an empty selection that reports
+          # green is exactly the vacuous-pass failure mode the auth gate and the
+          # bundle-size gate both guard against elsewhere in this file.
+          if [[ -z "$merge_base" ]]; then
+            echo "::error::Could not resolve merge base against origin/$BASE_REF."
+            exit 1
+          fi
+          echo "sha=$merge_base" >> "$GITHUB_OUTPUT"
+          echo "Merge base: $merge_base" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run unit tests related to the changed files
+        shell: bash
+        env:
+          MERGE_BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # --passWithNoTests is correct HERE and only here: a docs-only or
+          # workflow-only PR legitimately selects zero tests. It is NOT set on
+          # the merge-queue shards, where zero collected tests is a bug.
+          npm test -w apps/host -- \
+            --changed "$MERGE_BASE" \
+            --passWithNoTests \
+            --reporter=default
+
+      - name: Note the tier boundary in the run summary
+        if: always()
+        run: |
+          {
+            echo "### Unit Tests (changed) — PR tier"
+            echo ""
+            echo "Selected by \`vitest --changed <merge-base>\`. This is a FAST"
+            echo "SUBSET, not the full suite. All 4 shards plus the coverage"
+            echo "thresholds run in the merge queue before this commit can land."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   unit-tests-merge:
     name: Lint, Type-check & Test
     runs-on: ubuntu-latest
@@ -1681,7 +1792,10 @@ jobs:
     # fails — a skipped job would otherwise satisfy the required status check.
     # The first step re-asserts success explicitly instead (same node-script
     # pattern as ci-gate).
-    if: always()
+    # `always()` is preserved so a failed/cancelled upstream still turns this
+    # required context RED rather than skipping it. The added event clause is
+    # what moves the job to the merge-queue tier.
+    if: ${{ always() && github.event_name != 'pull_request' }}
     needs: [quality, unit-tests]
     steps:
       - name: Enforce upstream lint/type-check and shard success
@@ -1918,6 +2032,9 @@ jobs:
     name: Edge Function Deno Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # TIER: merge_group / push / workflow_dispatch only. Relocated off the
+    # `pull_request` event 2026-08-19 -- see the merge_group note in `on:`.
+    if: ${{ github.event_name != 'pull_request' }}
     env:
       # ════════════════════════════════════════════════════════════════════════
       #  SINGLE SOURCE OF TRUTH for the Deno test target set.
@@ -2465,7 +2582,11 @@ jobs:
     # Dependabot secret store), so STAGING_SUPABASE_URL / _SERVICE_ROLE_KEY are
     # empty and the preflight below hard-fails. Excluded here and RELOCATED to
     # ci-gate's expectedSkips for the same event -- not dropped.
-    if: github.actor != 'dependabot[bot]' && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push')
+    # 2026-08-19: relocated off `pull_request` to the merge-queue tier. The
+    # same-repo/fork clause is gone because forks never reach merge_group --
+    # a fork PR is queued only after it is approved, and the queue runs on a
+    # branch in THIS repo, so secrets are present by construction.
+    if: github.actor != 'dependabot[bot]' && (github.event_name == 'push' || github.event_name == 'merge_group')
     # ── JOB-LEVEL concurrency: serialize live-DB runs across ALL refs ──
     # (added 2026-08-12)
     #
@@ -2578,6 +2699,9 @@ jobs:
     name: Production Build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # TIER: merge_group / push / workflow_dispatch only. Relocated off the
+    # `pull_request` event 2026-08-19 -- see the merge_group note in `on:`.
+    if: ${{ github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -2857,10 +2981,10 @@ jobs:
     # branches that haven't proposed a merge yet. Skip on forked PRs (no
     # secrets) — when staging fixtures are wired in, this `if` should also
     # require the same-repo guard used by the integration-tests job.
-    if: |
-      github.event_name == 'pull_request' &&
-      (github.base_ref == 'main' || github.base_ref == 'master' || github.base_ref == 'staging') &&
-      github.event.pull_request.head.repo.full_name == github.repository
+    # 2026-08-19: relocated off `pull_request` to the merge-queue tier. The
+    # base-branch clause is unnecessary here -- a merge_group event only ever
+    # exists for a branch that has a merge queue configured (main).
+    if: github.event_name == 'merge_group'
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-node-workspace
@@ -2957,6 +3081,7 @@ jobs:
       - gen-mol-matrix
       - quality
       - unit-tests
+      - unit-tests-changed
       - unit-tests-merge
       - edge-function-tests
       - integration-tests
@@ -2976,60 +3101,77 @@ jobs:
           const sameRepoPr = process.env.SAME_REPOSITORY_PR === 'true';
           const isDependabot = process.env.DEPENDABOT_ACTOR === 'true';
 
-          // ── EVENT MATRIX ──────────────────────────────────────────────────
-          // Two upstream jobs are conditionally scheduled, so the gate must
-          // classify them PER EVENT. Every job in `needs` lands in exactly one
-          // of two lists — `required` (must be 'success') or `expectedSkips`
-          // (must be EXACTLY 'skipped'). Nothing is ever silently unchecked,
-          // and nothing is ever forgiven for failing: a job that RAN and
-          // FAILED is never 'skipped', so it fails the gate on every event.
+          // ── EVENT MATRIX (rewritten 2026-08-19: two-tier pipeline) ───────
+          // Every job in `needs` lands in exactly one of two lists — `required`
+          // (must be 'success') or `expectedSkips` (must be EXACTLY 'skipped').
+          // Nothing is ever silently unchecked, and nothing is ever forgiven
+          // for failing: a job that RAN and FAILED is never 'skipped', so it
+          // fails the gate on every event.
           //
-          //   integration-tests  if: same-repo PR || push
-          //   e2e-critical-paths if: PR && base main/master/staging && same-repo
+          // The heavy jobs moved from the PR tier to the merge-queue tier on
+          // 2026-08-19. They are NOT dropped — on `pull_request` they are
+          // asserted to be EXACTLY 'skipped', so an `if:` drift that lets one
+          // run (or a rename that makes it 'missing') fails this gate loudly,
+          // and on merge_group/push they are asserted 'success' exactly as
+          // before.
           //
-          //                     | integration-tests | e2e-critical-paths
-          //   push              | required          | expected skip
-          //   PR (same repo)    | required          | required
-          //   PR (fork)         | expected skip     | expected skip
-          //   workflow_dispatch | expected skip     | expected skip
+          //                    | PR tier            | merge_group / push
+          //   secret-scan      | required           | required
+          //   selected-school  | required           | required
+          //   protected-flag   | required           | required
+          //   foxy-alignment   | required           | required
+          //   gen-mol-matrix   | required           | required
+          //   quality          | required           | required
+          //   unit-tests-changed| required          | expected skip
+          //   unit-tests (x4)  | expected skip      | required
+          //   unit-tests-merge | expected skip      | required
+          //   edge-function    | expected skip      | required
+          //   build            | expected skip      | required
+          //   integration-tests| expected skip      | required (push/merge_group,
+          //                    |                    |  non-Dependabot); else skip
+          //   e2e-critical     | expected skip      | required on merge_group only
           //
-          // WHY workflow_dispatch IS CALLED OUT: this gate used to be
-          // unpassable there. integration-tests stayed in `required` on every
-          // event, but its own `if:` is false outside push/same-repo-PR, so on
-          // a manual dispatch the job was SKIPPED, the gate read
-          // skipped !== 'success', and it exited 1 — with every other job
-          // green. Both workflow_dispatch runs ever attempted (31258602448,
-          // 31128820645) failed the gate with `integration-tests=skipped` in
-          // the failure list. Both ALSO had genuine failures (secret-scan, and
-          // in 31128820645 quality/unit-tests too), so they are not clean
-          // proof on their own — the proof is structural: with integration-
-          // tests in `required` and its `if:` false, no dispatch run could
-          // pass no matter how green everything else was.
-          // The job is moved into expectedSkips on those events rather than
-          // dropped, so the check is RELOCATED, not deleted: if it ever runs
-          // on a dispatch (an `if:` drift), 'success' !== 'skipped' and the
-          // gate still fails, loudly.
-          const required = ['secret-scan','selected-school-rpc-integration','protected-flag-migration-guard','foxy-alignment','gen-mol-matrix','quality','unit-tests','unit-tests-merge','edge-function-tests','build'];
-          // Formerly `forkSkips` — same mechanism, now covering every event on
-          // which a conditional job is legitimately not scheduled.
+          // WHY workflow_dispatch STILL MATTERS: this gate used to be
+          // unpassable there because integration-tests sat in `required` on
+          // every event while its own `if:` was false outside push/same-repo-PR
+          // (runs 31258602448, 31128820645). That class of bug is why every
+          // conditional job below is RELOCATED into expectedSkips rather than
+          // dropped from the list.
+          const isPullRequest = eventName === 'pull_request';
+          const heavyTier = ['unit-tests','unit-tests-merge','edge-function-tests','build'];
+
+          const required = ['secret-scan','selected-school-rpc-integration','protected-flag-migration-guard','foxy-alignment','gen-mol-matrix','quality'];
           const expectedSkips = [];
 
-          // Dependabot PRs are same-repo but secret-less, so integration-tests
-          // is not scheduled there (see its `if:`). It is RELOCATED to
-          // expectedSkips, not dropped: if an `if:` drift ever lets it run on a
-          // Dependabot event, its result will not be 'skipped' and the gate
-          // fails loudly.
-          if (!isDependabot && (eventName === 'push' || (eventName === 'pull_request' && sameRepoPr))) {
+          if (isPullRequest) {
+            required.push('unit-tests-changed');
+            expectedSkips.push(...heavyTier);
+          } else {
+            required.push(...heavyTier);
+            expectedSkips.push('unit-tests-changed');
+          }
+
+          // integration-tests talks to the shared staging Supabase project, so
+          // it needs real Actions secrets. Dependabot events read a separate
+          // secret store and would hard-fail its preflight, so it is not
+          // scheduled there — RELOCATED to expectedSkips, not dropped.
+          if (!isPullRequest && !isDependabot && (eventName === 'push' || eventName === 'merge_group')) {
             required.push('integration-tests');
           } else {
             expectedSkips.push('integration-tests');
           }
 
-          if (eventName === 'pull_request' && sameRepoPr) {
+          // e2e-critical-paths runs ONLY in the merge queue: it is the slowest
+          // blocking job and its value is "this exact commit is safe to land".
+          if (eventName === 'merge_group') {
             required.push('e2e-critical-paths');
           } else {
             expectedSkips.push('e2e-critical-paths');
           }
+
+          // `sameRepoPr` is retained above as a diagnostic env value; it is no
+          // longer part of the matrix because no job is fork-conditional now
+          // (forks never produce a merge_group event).
 
           const failures = required.filter((job) => needs[job]?.result !== 'success');
           failures.push(...expectedSkips.filter((job) => needs[job]?.result !== 'skipped'));
