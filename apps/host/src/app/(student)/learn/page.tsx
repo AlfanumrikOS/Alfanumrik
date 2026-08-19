@@ -157,6 +157,16 @@ function LegacyLearnPage() {
 
   const { chapters: hookChapters, isLoading: hookChaptersLoading, error: hookChaptersError, refresh: refreshChapters } = useAllowedChapters(selectedSubject);
 
+  // A failed chapter read must stay observable. The pre-SWR effect logged this
+  // and the move to useAllowedChapters dropped it, leaving the read failing
+  // silently behind the error card. P13: message only — no student id, no rows.
+  useEffect(() => {
+    if (!hookChaptersError) return;
+    logger.warn('learn: chapter list failed to load', {
+      reason: hookChaptersError instanceof Error ? hookChaptersError.message : 'unknown error',
+    });
+  }, [hookChaptersError]);
+
   // Guard: if selected subject is locked (plan downgrade, grade change, etc.),
   // reset selection. Calling setSelectedSubject() during render is a React
   // anti-pattern — it must run from an effect.
@@ -318,10 +328,14 @@ function LegacyLearnPage() {
 
               </div>
 
-              {/* Upgrade prompt strip — only shown when there are locked subjects */}
+              {/* Upgrade prompt strip — only shown when there are locked subjects.
+                  This CTA must land on /pricing: it is the upgrade path off a
+                  locked subject. Pointing it at /today (as the Today
+                  consolidation briefly did) silently removes the only in-context
+                  route from a paywalled subject to the plans page. */}
               {lockedSubjects.length > 0 && (
                 <button
-                  onClick={() => router.push('/today')}
+                  onClick={() => router.push('/pricing')}
                   className="w-full mt-4 py-3 px-4 rounded-2xl text-sm font-bold flex items-center justify-between transition-all active:scale-[0.98]"
                   style={{
                     background: 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.08), rgb(var(--accent-warm-rgb) / 0.04))',
