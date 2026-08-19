@@ -44,6 +44,11 @@ const repoRoot = path.join(__dirname, '../..');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ['@alfanumrik/ui', '@alfanumrik/lib'],
+  // Bundle a self-contained Node server into .next/standalone/ so the image
+  // can run on AWS ECS Fargate (or any container runtime) without needing a
+  // full node_modules install. Public assets and static chunks are copied
+  // separately in the Dockerfile.
+  output: 'standalone',
   typescript: {
     // The build-time type-checker generates `.next/types/validator.ts` which
     // imports `../../src/app/<route>/layout.js` for every App Router layout —
