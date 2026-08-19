@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev --webpack -H ::",
     "build": "next build",
-    "vercel-build": "next build || exit 0",
+    "vercel-build": "next build",
     "start": "next start",
     "lint": "eslint src/ --ext .ts,.tsx",
     "lint:migrations": "node ../../scripts/lint-migrations.js",
@@ -54,7 +54,7 @@
     "ncert:validate": "npx tsx --env-file=.env.local ../../scripts/ncert-ingestion/validate.ts",
     "ncert:pipeline": "npm run ncert:ingest && npm run ncert:validate",
     "postvercel-build": "",
-    "vercel_build": "next build || exit 0"
+    "vercel_build": "next build"
   },
   "dependencies": {
     "@alfanumrik/lib": "*",
