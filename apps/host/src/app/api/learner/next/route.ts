@@ -108,6 +108,7 @@ export async function GET(request: Request) {
       dueReviewCount: 0,
       attemptedQuizToday: false,
       inProgressLessons: [],
+      completedLessons: [],
     };
   }
 

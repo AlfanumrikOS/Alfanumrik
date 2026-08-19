@@ -208,7 +208,7 @@ function LegacyLearnPage() {
         <div className="page-header-inner flex items-center gap-3">
           {selectedSubject ? (
             <button
-              onClick={() => { setSelectedSubject(null); setChapters([]); }}
+              onClick={() => { setSelectedSubject(null); }}
               className="text-[var(--text-3)] text-lg p-2 rounded-lg"
               aria-label={isHi ? 'वापस जाएं' : 'Go back'}
             >
