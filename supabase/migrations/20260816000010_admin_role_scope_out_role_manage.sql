@@ -1,0 +1,144 @@
+-- Migration: 20260816000010_admin_role_scope_out_role_manage.sql
+-- Purpose: P9 CRITICAL — close a privilege-escalation gap OPENED by
+--          20260816000008's all-6-tier admin_users -> RBAC role sync
+--          trigger. Ops Gate 5 finding on the Phase 1 Mission Control
+--          overhaul (2026-08-16), independently verified by architect.
+--
+-- ─── The gap ──────────────────────────────────────────────────────────────
+-- The RBAC `admin` role has held EVERY permission code via an unconditional
+-- wildcard grant since 20260612123200_rbac_matrix_conformance.sql (lines
+-- 339-344: `INSERT INTO role_permissions SELECT r.id, p.id FROM roles r
+-- CROSS JOIN permissions p WHERE r.name = 'admin'` — no p.code filter). That
+-- always included 'role.manage' and 'permission.manage'.
+--
+-- BEFORE 20260816000008, this was latent/unreachable: the only bridge from
+-- admin_users to RBAC was the one-time, super_admin-ONLY backfill
+-- (20260803140000). An admin_users row with admin_level='admin' held NO RBAC
+-- role at all, so any authorizeRequest()-gated route (including
+-- 'role.manage') 403'd it with NO_ROLES.
+--
+-- 20260816000008 (this session, same PR) intentionally closed that bridge
+-- for ALL 6 tiers (CEO mandate: RBAC becomes the sole authorization
+-- authority) via an ongoing sync trigger. That is architecturally correct,
+-- but it has the side effect of granting every admin_level='admin'
+-- admin_users row the RBAC `admin` role for the FIRST time — which, via the
+-- wildcard above, hands them 'role.manage' for the first time too.
+--
+-- 'role.manage' gates GET/POST/PATCH /api/v1/admin/roles
+-- (apps/host/src/app/api/v1/admin/roles/route.ts) via a bare
+-- authorizeRequest(request, 'role.manage') call — no additional super_admin-
+-- specific check, and NOT covered by src/proxy.ts's hardcoded super_admin-
+-- session gate (that gate only covers /internal/admin/* and
+-- /api/internal/admin/*, not /api/v1/admin/*; verified by reading
+-- src/proxy.ts's Layer 2.1 block and confirming the Layer 0.5 /api/v1/* gate
+-- is session-presence-only, not tier-checked). PATCH there replaces a given
+-- role_id's ENTIRE role_permissions set with a caller-supplied list — an
+-- 'admin'-tier operator could self-service-grant their own 'admin' role
+-- (or any role) EVERY permission, including super_admin-equivalent reach,
+-- via one raw HTTP call. Zero UI callers today (confirmed in the earlier
+-- RCA) does not change the reachability: any HTTP client with valid
+-- admin-tier session cookies can hit it directly.
+--
+-- ─── The fix (Approach A — narrow the wildcard, not just gate the route) ──
+-- Reserve 'role.manage' and 'permission.manage' for super_admin ONLY, by
+-- deleting exactly those two role_permissions rows for the `admin` role.
+-- Chosen over (or rather: in addition to, see the companion route change)
+-- purely gating the route, because:
+--   1. It is the categorically correct fix — role/permission management is
+--      a structurally different capability than "run the day-to-day admin
+--      console" (the CEO's own framing for why 'admin' exists as a tier
+--      below 'super_admin' at all). The existing PARALLEL route
+--      /api/super-admin/roles already encodes exactly this boundary: its
+--      POST (grant) and DELETE (revoke) handlers require
+--      authorizeAdmin(request, 'super_admin') explicitly, deliberately
+--      excluding 'admin' tier, with an inline comment ("Granting an RBAC
+--      role is a privilege-escalation operation... super_admin only").
+--      The DB-level wildcard grant on 'admin' was never consistent with
+--      that already-established boundary; this migration reconciles them.
+--   2. It closes the gap at the single source of truth (RBAC), matching the
+--      "RBAC becomes the sole authorization source of truth" mandate — a
+--      route-only fix would leave the DB matrix internally contradictory
+--      (an 'admin' role that nominally "holds all permissions" but is
+--      secretly carved out at every call site that checks role.manage).
+--   3. Blast radius is verified zero: `admin`-tier admin_users rows have
+--      NEVER been able to reach a role.manage-gated route before this same
+--      migration chain (20260816000008) shipped, so no admin-tier operator
+--      has ever legitimately relied on holding role.manage. Every other
+--      consumer of the RBAC `admin` role (granted directly via
+--      POST /api/super-admin/roles, itself super_admin-gated) was granted
+--      that role by a super_admin who already holds every capability
+--      role.manage would add — narrowing removes nothing any legitimate
+--      actor was depending on. Grep of all authorizeRequest() call sites
+--      confirms 'role.manage' gates ONLY /api/v1/admin/roles; 'permission.manage'
+--      gates no route today (defensive close of a dormant future vector).
+--
+-- ─── Deliberately NOT touched in this pass (documented, not overlooked) ───
+--   - system.config: also admin-wildcard-granted, but its only two consumers
+--     (/api/internal/admin/schools, /api/internal/admin/feature-flags) live
+--     under /api/internal/admin/*, which src/proxy.ts's Layer 2.1 already
+--     hard-gates to a DEFINITIVE super_admin session BEFORE the route's own
+--     authorizeRequest('system.config') check ever runs. An 'admin'-tier
+--     operator's system.config wildcard grant is therefore inert today —
+--     no live reachable path exists. Narrowing it now would be optional
+--     hardening beyond this specific finding's scope, not a fix; left for a
+--     future pass if a system.config-gated route is ever added outside
+--     /api/internal/admin/*.
+--   - user.manage: also admin-wildcard-granted, reachable by 'admin' tier
+--     via /api/auth/repair (not proxy-gated) and via /api/internal/admin/*
+--     (proxy-gated, same as system.config above). /api/auth/repair only
+--     re-runs profile-bootstrap repair for a stuck onboarding row — it
+--     cannot grant roles/permissions or otherwise escalate privilege. This
+--     grant was an explicit, tested, already-shipped design decision (see
+--     apps/host/src/__tests__/api/permission-gate-orphan-repoint.test.ts,
+--     predating this PR) fixing a real production 403 — out of scope for
+--     this P9 finding, which is specifically about role/permission rewrite.
+--   - The `analyst` role and the RLS fix in 20260816000009 are untouched by
+--     this migration (out of scope per this PR's own constraints).
+--
+-- ─── Scope / safety contract ──────────────────────────────────────────────
+--   - ADDITIVE/CORRECTIVE data change, NOT a schema change: no DROP TABLE,
+--     no DROP COLUMN. Removes exactly 2 rows from role_permissions (a join
+--     table), which is a permission REVOCATION, not data loss of any
+--     user-owned entity.
+--   - IDEMPOTENT / SAFE TO REPLAY: the DELETE is a plain WHERE-scoped
+--     statement; deleting zero matching rows on a second run is a no-op.
+--   - RESOLVE BY NAME/CODE, NEVER BY HARDCODED UUID (matches repo
+--     convention: 20260612123200, 20260816000008).
+--   - super_admin's OWN wildcard grant (20260612123200 lines 346-351) is a
+--     SEPARATE INSERT keyed on r.name = 'super_admin' — this DELETE is
+--     scoped to role_id = (the admin role's id) only, so super_admin's
+--     role.manage / permission.manage grant is completely untouched.
+--   - Fail-closed per P8/P9: this migration can only ever REMOVE an
+--     over-broad grant, never add one, and never weakens any route's
+--     existing floor (the route-level defense-in-depth added in the
+--     companion PR change to apps/host/src/app/api/v1/admin/roles/route.ts
+--     is independent and unaffected by whether this migration has run).
+
+BEGIN;
+
+DELETE FROM role_permissions
+WHERE role_id = (SELECT id FROM roles WHERE name = 'admin')
+  AND permission_id IN (
+    SELECT id FROM permissions WHERE code IN ('role.manage', 'permission.manage')
+  );
+
+COMMIT;
+
+-- ─── Verify (manual checks after applying) ───────────────────────────────
+-- 1. admin role no longer holds role.manage / permission.manage (expect 0 rows):
+--   SELECT p.code FROM role_permissions rp
+--     JOIN roles r ON r.id = rp.role_id JOIN permissions p ON p.id = rp.permission_id
+--    WHERE r.name = 'admin' AND p.code IN ('role.manage', 'permission.manage');
+--
+-- 2. admin role still holds every OTHER permission code (wildcard minus 2;
+--    expect count = total permission count - 2):
+--   SELECT (SELECT count(*) FROM permissions) - 2 AS expected,
+--          (SELECT count(*) FROM role_permissions rp
+--             JOIN roles r ON r.id = rp.role_id WHERE r.name = 'admin') AS actual;
+--
+-- 3. super_admin is completely unaffected (expect 2 rows, both present):
+--   SELECT p.code FROM role_permissions rp
+--     JOIN roles r ON r.id = rp.role_id JOIN permissions p ON p.id = rp.permission_id
+--    WHERE r.name = 'super_admin' AND p.code IN ('role.manage', 'permission.manage');
+--
+-- End of migration: 20260816000010_admin_role_scope_out_role_manage.sql
