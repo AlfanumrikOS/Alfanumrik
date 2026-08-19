@@ -69,14 +69,14 @@ jobs:
     # ~50% headroom without re-opening a 40+ min hang budget.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
       - name: Cache node_modules
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -93,7 +93,7 @@ jobs:
       # hash can never equal the literal `e2e`.) The nightly caller shares
       # this cache with PR-label runs — same key space, same content.
       - name: Cache Next.js build cache (e2e staging build)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/host/.next/cache
           key: ${{ runner.os }}-nextjs-e2e-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/host/src/**/*.ts', 'apps/host/src/**/*.tsx', 'packages/**/*.ts', 'packages/**/*.tsx') }}

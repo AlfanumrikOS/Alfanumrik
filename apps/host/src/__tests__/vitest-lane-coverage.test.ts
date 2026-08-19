@@ -160,6 +160,24 @@ describe('vitest lane coverage (anti-orphan guard)', () => {
     expect(include.length).toBeGreaterThan(0);
   });
 
+  it('vitest.config test.exclude contains no negated ("!") globs', async () => {
+    const { exclude } = await laneGlobs();
+    const negated = exclude.filter((p) => typeof p === 'string' && p.startsWith('!'));
+
+    expect(
+      negated,
+      'A leading "!" does NOT carve a path back into the lane here. Every entry in ' +
+        'test.exclude is compiled as its OWN picomatch matcher and a file counts as ' +
+        'excluded when ANY matcher hits, so "!x" yields a matcher that matches ' +
+        'EVERYTHING EXCEPT x -- it excludes the whole repo. On 2026-08-18 four such ' +
+        'entries orphaned all 1436 test files at once. To keep a file in the lane, ' +
+        'NARROW the exclude glob that swallows it (see the ' +
+        'scripts/!(knowledge-audit)/** extglob in vitest.config.ts for the idiom) ' +
+        'instead of negating it here:\n' +
+        negated.join('\n'),
+    ).toEqual([]);
+  });
+
   it('every test file on disk either runs in the unit lane or has a named reason', async () => {
     const pm = loadPicomatch();
     const { include, exclude } = await laneGlobs();
@@ -173,6 +191,22 @@ describe('vitest lane coverage (anti-orphan guard)', () => {
       if (ACCOUNTED_FOR.some((entry) => entry.matches(abs, src))) continue;
       orphans.push(path.relative(REPO_ROOT, abs));
     }
+    // ── Config-sanity short-circuit ───────────────────────────────
+    // A malformed include/exclude makes EVERY file look orphaned. Reporting
+    // that as 1400+ individual orphans buries the actual fault, which is
+    // exactly what happened on 2026-08-18. Past a sane threshold, say THE
+    // CONFIG IS BROKEN instead and stop.
+    const orphanRatio = files.length === 0 ? 0 : orphans.length / files.length;
+    expect(
+      orphanRatio,
+      orphans.length +
+        ' of ' +
+        files.length +
+        ' test files resolve to NO lane. That is a broken vitest.config.ts, not ' +
+        'that many orphaned files: check test.exclude for negated ("!") globs, and ' +
+        'check that test.include is non-empty and repo-anchored. Fix the config ' +
+        'first -- the orphan list below is meaningless until you do.',
+    ).toBeLessThan(0.5);
 
     expect(
       orphans,

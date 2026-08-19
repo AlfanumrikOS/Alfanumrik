@@ -15,7 +15,7 @@
   "scripts": {
     "dev": "npm run dev -w apps/host",
     "build": "npm run build -w apps/host",
-    "vercel-build": "NODE_OPTIONS=--max-old-space-size=4096 npm run build -w apps/host && node -e \"require('fs').cpSync('apps/host/.next', '.next', {recursive: true})\" || exit 0",
+    "vercel-build": "NODE_OPTIONS=--max-old-space-size=4096 npm run build -w apps/host && node -e \"require('fs').cpSync('apps/host/.next', '.next', {recursive: true})\"",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "check:bundle-size:baseline": "node scripts/check-bundle-size.mjs --update-baseline",
     "check:licenses": "node scripts/check-licenses.mjs",
@@ -48,8 +48,5 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2"
-  },
-  "overrides": {
-    "webpack": "5.90.3"
   }
 }

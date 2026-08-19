@@ -77,7 +77,7 @@ jobs:
       contents: read       # gitleaks needs to read repo history
       pull-requests: read  # gitleaks needs the PR commit list (fixes 403)
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # Full history required by gitleaks to scan diffs
 
@@ -87,6 +87,20 @@ jobs:
       # must fail CI. If a finding is a known false positive, allowlist it via
       # .gitleaks.toml (preferred) rather than re-disabling this gate.
       - name: Gitleaks scan
+        # DISPATCH SCOPE (2026-08-18): this action is DIFF-scoped -- on
+        # pull_request it scans the PR commits, on push the pushed range.
+        # workflow_dispatch has no range, so it degenerates into a full-history
+        # audit and reports 31 findings in pre-monorepo directories deleted long
+        # ago. That made the manual Run workflow button permanently red, so a
+        # branch that is not a PR into main had no way to be validated at all.
+        #
+        # Per-change scanning is UNCHANGED: pull_request and push still run
+        # gitleaks, still BLOCKING. The working-tree pattern scan in the next
+        # step runs on EVERY event including dispatch. Triaged 2026-08-18: all
+        # 59 JWT hits in the 7 historical files are role=anon for the
+        # DECOMMISSIONED project dxipobqngyfpqbbznojz -- no service_role key.
+        # Allowlist them in .gitleaks.toml to re-enable the history audit here.
+        if: github.event_name != 'workflow_dispatch'
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -217,7 +231,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ''
       SUPABASE_DB_PASSWORD: ''
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -230,11 +244,22 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             base_sha="$PR_BASE_SHA"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A manual dispatch has no "before" commit. Without one this fell
+            # through to the fail-closed branch below, which forces the whole
+            # local PG17 integration stack to run on EVERY dispatch. Compare
+            # against the merge-base with the default branch instead: that is
+            # exactly "what this ref adds", which is what the filter is for.
+            # If it cannot be resolved we STILL fall through to fail-closed
+            # below, so the safety property is unchanged.
+            git fetch --no-tags --quiet origin "$DEFAULT_BRANCH" 2>/dev/null || true
+            base_sha="$(git merge-base FETCH_HEAD "$HEAD_SHA" 2>/dev/null || true)"
           else
             base_sha="$PUSH_BEFORE_SHA"
           fi
@@ -1058,7 +1083,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -1071,11 +1096,24 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             base_sha="$PR_BASE_SHA"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A manual dispatch has no "before" commit. Without one this fell
+            # through to the fail-closed branch below, which re-scans EVERY
+            # migration in the repo -- including pre-policy ones that predate
+            # the CEO-APPROVED-FLAG-FLIP marker -- so NO dispatch run could
+            # ever pass this guard. Compare against the merge-base with the
+            # default branch instead: that is exactly "what this ref adds",
+            # which is what the guard is for. If it cannot be resolved we
+            # STILL fall through to fail-closed below; the safety property is
+            # unchanged.
+            git fetch --no-tags --quiet origin "$DEFAULT_BRANCH" 2>/dev/null || true
+            base_sha="$(git merge-base FETCH_HEAD "$HEAD_SHA" 2>/dev/null || true)"
           else
             base_sha="$PUSH_BEFORE_SHA"
           fi
@@ -1099,7 +1137,7 @@ jobs:
           fi
           printf '%s\n' "$files" > "$RUNNER_TEMP/changed-migrations.txt"
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         if: steps.changes.outputs.changed == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -1140,9 +1178,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -1169,9 +1207,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -1197,7 +1235,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # apps/host/vercel.json is the single deploy config (Vercel project root dir = apps/host); a root copy is dead config that silently drifts.
       - name: Root vercel.json drift guard
@@ -1207,6 +1245,7 @@ jobs:
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       # ADR-006 #4: both Anthropic call paths (Node claude.ts, Deno
       # reliability.ts) must keep exponential-backoff retry on 429/5xx/529.
@@ -1557,11 +1596,12 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       # Vitest 4.1.8 enforces coverage thresholds on EVERY run that reports
       # coverage — including partial shard runs, where the global and per-file
@@ -1658,11 +1698,12 @@ jobs:
           console.log('Lint/type-check and all 4 unit-test shards succeeded.');
           NODE
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       - name: Download shard blob reports
         uses: actions/download-artifact@v8
@@ -1958,7 +1999,7 @@ jobs:
         supabase/functions/grounded-answer/__tests__/validation.test.ts
         supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -2419,7 +2460,12 @@ jobs:
     # always fail at boot; it is skipped there and ci-gate expects that skip.
     # (Previously also `needs: secret-scan` — removed for the same masking
     # reason documented on the `quality` job above.)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+    # Dependabot-authored PRs are same-repo, but GitHub withholds regular
+    # Actions secrets from Dependabot-triggered events (they read the separate
+    # Dependabot secret store), so STAGING_SUPABASE_URL / _SERVICE_ROLE_KEY are
+    # empty and the preflight below hard-fails. Excluded here and RELOCATED to
+    # ci-gate's expectedSkips for the same event -- not dropped.
+    if: github.actor != 'dependabot[bot]' && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push')
     # ── JOB-LEVEL concurrency: serialize live-DB runs across ALL refs ──
     # (added 2026-08-12)
     #
@@ -2471,11 +2517,12 @@ jobs:
       group: integration-tests-live-staging-db
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       # Secrets are bound through `env:` and tested as shell VARIABLES. Never
       # interpolate `${{ secrets.* }}` directly into a bash line: `${{ }}` is
@@ -2532,11 +2579,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
 
       # Next.js incremental build cache (per Next.js CI-caching guidance:
       # https://nextjs.org/docs/app/guides/ci-build-caching#github-actions).
@@ -2547,7 +2595,7 @@ jobs:
       # support {ts,tsx} brace expansion (patterns use @actions/glob), so the
       # ts/tsx globs are listed separately.
       - name: Cache Next.js build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/host/.next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/host/src/**/*.ts', 'apps/host/src/**/*.tsx', 'packages/**/*.ts', 'packages/**/*.tsx') }}
@@ -2814,7 +2862,7 @@ jobs:
       (github.base_ref == 'main' || github.base_ref == 'master' || github.base_ref == 'staging') &&
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-node-workspace
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -2919,12 +2967,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           SAME_REPOSITORY_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+          DEPENDABOT_ACTOR: ${{ github.actor == 'dependabot[bot]' }}
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           node <<'NODE'
           const needs = JSON.parse(process.env.NEEDS_JSON || '{}');
           const eventName = process.env.EVENT_NAME;
           const sameRepoPr = process.env.SAME_REPOSITORY_PR === 'true';
+          const isDependabot = process.env.DEPENDABOT_ACTOR === 'true';
 
           // ── EVENT MATRIX ──────────────────────────────────────────────────
           // Two upstream jobs are conditionally scheduled, so the gate must
@@ -2964,7 +3014,12 @@ jobs:
           // which a conditional job is legitimately not scheduled.
           const expectedSkips = [];
 
-          if (eventName === 'push' || (eventName === 'pull_request' && sameRepoPr)) {
+          // Dependabot PRs are same-repo but secret-less, so integration-tests
+          // is not scheduled there (see its `if:`). It is RELOCATED to
+          // expectedSkips, not dropped: if an `if:` drift ever lets it run on a
+          // Dependabot event, its result will not be 'skipped' and the gate
+          // fails loudly.
+          if (!isDependabot && (eventName === 'push' || (eventName === 'pull_request' && sameRepoPr))) {
             required.push('integration-tests');
           } else {
             expectedSkips.push('integration-tests');

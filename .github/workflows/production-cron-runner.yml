@@ -99,9 +99,9 @@ jobs:
       # Removed with the 2026-08-03 AWS decommission; least privilege restored.
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
