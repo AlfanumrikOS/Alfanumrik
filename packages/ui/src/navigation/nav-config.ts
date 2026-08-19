@@ -31,12 +31,21 @@ import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 // names and two icons across viewports, and colliding with the `/me` and
 // `/profile` entries below. It is now "Progress" 📈 in BOTH lists. No route
 // changed; the labels/icons did.
+//
+// SLOT IDENTITY LIVES HERE (2026-08-19). Each tab carries its own slot `id`,
+// `altHrefs` and optional `badge`. resolveStudentPrimaryNav() maps over this
+// list instead of destructuring it positionally, and STUDENT_PRIMARY_ORDER is
+// derived from it. Removing or reordering a tab is therefore a ONE-line edit
+// that cannot silently shift the bar — which is exactly what happened when
+// `/learn` was deleted from this array while the resolver still destructured
+// four names out of it: every later slot shifted up one and the last spread
+// `undefined`, rendering a blank, hrefless nav button to students.
 export const CORE_TABS = [
-  { href: '/today', icon: '☀️', activeIcon: '☀️', label: 'Today', labelHi: 'आज' },
-  // Slot 3 — see PRACTICE FLAG CONTRACT in resolveStudentPrimaryNav().
-  { href: '/practice', icon: '⚡', activeIcon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
-  { href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति' },
-];
+  { id: 'today', href: '/today', icon: '☀️', activeIcon: '☀️', label: 'Today', labelHi: 'आज', altHrefs: ['/dashboard'], badge: 'streak' },
+  // Slot 2 — see PRACTICE FLAG CONTRACT in resolveStudentPrimaryNav().
+  { id: 'practice', href: '/practice', icon: '⚡', activeIcon: '⚡', label: 'Practice', labelHi: 'अभ्यास', altHrefs: ['/quiz'] },
+  { id: 'progress', href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति', altHrefs: [] },
+] as const;
 
 // ─── PHASE 3 IA TRIM (2026-08-10) ──────────────────────────────────────────
 //
@@ -141,7 +150,6 @@ export const SIDEBAR_SECTIONS = [
     title: 'Main', titleHi: 'मुख्य',
     items: [
       { href: '/today', icon: '☀️', label: 'Today', labelHi: 'आज' },
-      { href: '/today', icon: '📚', label: 'Learn', labelHi: 'सीखें' },
       { href: '/practice', icon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
       // Matches CORE_TABS exactly — same name, same icon, same route.
       { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
@@ -243,15 +251,14 @@ export function isItemVisibleForFlags(
  * five slots, the same labels, the same destinations, the same order.
  * ─────────────────────────────────────────────────────────────────────────── */
 
-export type StudentNavSlotId = 'today' | 'practice' | 'progress' | 'more';
+export type StudentNavSlotId = (typeof CORE_TABS)[number]['id'] | 'more';
 
-/** The order is a product contract, not a rendering detail. */
+/** The order is a product contract, not a rendering detail. Derived from
+ *  CORE_TABS so the declared order and the rendered order cannot disagree. */
 export const STUDENT_PRIMARY_ORDER: readonly StudentNavSlotId[] = [
-  'today',
-  'practice',
-  'progress',
+  ...CORE_TABS.map((t) => t.id),
   'more',
-] as const;
+];
 
 export interface StudentNavCapabilities {
   /** Resolved feature flags. `undefined` = not yet loaded (treated as OFF). */
@@ -343,12 +350,18 @@ export function resolveStudentPrimaryNav(
   caps: StudentNavCapabilities = {},
 ): ResolvedNavSlot[] {
   void caps; // reserved: grade / hasUpcomingExam gate no primary slot today.
-  const [today, learn, practice, progress] = CORE_TABS;
   return [
-    { ...today, id: 'today', kind: 'destination', altHrefs: ['/dashboard'], badge: 'streak' },
-    { ...learn, id: 'today', kind: 'destination', altHrefs: [] },
-    { ...practice, id: 'practice', kind: 'destination', altHrefs: ['/quiz'] },
-    { ...progress, id: 'progress', kind: 'destination', altHrefs: [] },
+    ...CORE_TABS.map((tab): ResolvedNavSlot => ({
+      id: tab.id,
+      kind: 'destination',
+      href: tab.href,
+      icon: tab.icon,
+      activeIcon: tab.activeIcon,
+      label: tab.label,
+      labelHi: tab.labelHi,
+      altHrefs: [...tab.altHrefs],
+      ...('badge' in tab ? { badge: tab.badge } : {}),
+    })),
     MORE_SLOT,
   ];
 }
@@ -389,7 +402,22 @@ export function resolvePrimaryActiveId(
   return best?.id ?? null;
 }
 
-export function getCoreTabs(role: UserRole) {
+/**
+ * The shape every role's primary tab list projects to. Student tabs carry
+ * extra slot metadata (`id` / `altHrefs` / `badge`); the teacher and guardian
+ * projections do not. Declared explicitly rather than inferred: an inferred
+ * union of two different array shapes makes the `.map()` parameter `never` at
+ * the MobileBottomNav / TabletNavRail call sites.
+ */
+export interface CoreTab {
+  href: string;
+  icon: string;
+  activeIcon: string;
+  label: string;
+  labelHi: string;
+}
+
+export function getCoreTabs(role: UserRole): CoreTab[] {
   if (role === 'teacher') {
     const nav = ROLE_CONFIG.teacher.nav;
     return nav.slice(0, 4).map(n => ({ href: n.href, icon: n.icon, activeIcon: n.icon, label: n.label, labelHi: n.labelHi }));
@@ -398,7 +426,7 @@ export function getCoreTabs(role: UserRole) {
     const nav = ROLE_CONFIG.guardian.nav;
     return nav.slice(0, 4).map(n => ({ href: n.href, icon: n.icon, activeIcon: n.icon, label: n.label, labelHi: n.labelHi }));
   }
-  return CORE_TABS;
+  return [...CORE_TABS];
 }
 
 export function getMoreItems(role: UserRole) {
