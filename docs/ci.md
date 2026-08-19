@@ -6,8 +6,33 @@ diagnose the failures that actually happen. Everything below is derived from the
 
 Main workflow: `.github/workflows/ci.yml` (`name: CI — Alfanumrik`). Triggers: `push` to
 `main`/`master`/`develop`, `pull_request` to `main`/`master` (types `opened, synchronize, reopened, labeled`),
-and `workflow_dispatch`. Concurrency group `ci-${{ github.ref }}`, with `cancel-in-progress` disabled on
-`main` so a deploy polling a specific SHA is never stranded by a supersede.
+`merge_group` (the merge queue), and `workflow_dispatch`. Concurrency group `ci-${{ github.ref }}`, with
+`cancel-in-progress` disabled on `main` and on `merge_group` so neither a deploy polling a specific SHA nor a
+queue entry awaiting its checks is ever stranded by a supersede.
+
+## 0. The two tiers (2026-08-19)
+
+`ci.yml` is one workflow running at two tiers. **No check was deleted; several were relocated.**
+
+| Tier | Event | Jobs | Measured wall clock |
+|---|---|---|---|
+| **PR tier** | `pull_request` | Secret Scanning, Selected-School RPC, Protected Flag Migration Guard, Foxy North-Star Alignment, MOL Matrix Drift Check, Lint & Type-check, **Unit Tests (changed)**, CI Gate | ~2.5–3 min (was 5m24s–7m08s) |
+| **Merge-queue tier** | `merge_group` | everything above except `Unit Tests (changed)`, **plus** the 4 unit shards + `Lint, Type-check & Test` (coverage thresholds), Production Build, Edge Function Deno Tests, Integration Tests (live DB), E2E Critical Paths, CI Gate | ~6–7 min, off the author's critical path |
+| **Post-merge** | `push` to `main` | same as merge-queue tier minus E2E Critical Paths | unchanged — this is the run `deploy-production.yml` polls for `CI Gate` |
+
+Two rules keep this honest:
+
+1. `ci-gate` classifies **every** job per event as either `required` (must be `success`) or an **expected skip**
+   (must be exactly `skipped`). A relocated job that unexpectedly runs, is renamed, or goes missing fails the
+   gate loudly. Nothing is silently unchecked.
+2. `Unit Tests (changed)` is `vitest --changed <merge-base>`. It is a **subset**, not a substitute — a test
+   reached only via a dynamic import is not selected, and coverage thresholds are deliberately not enforced on
+   a partial run. The full suite and the thresholds run in the merge queue before the commit can land.
+
+**The merge queue is load-bearing.** `Lint, Type-check & Test` and `Production Build` are ruleset-required but
+no longer report on the `pull_request` event. If "Require merge queue" is ever turned off on `main` while those
+two contexts stay required, every PR becomes permanently unmergeable ("Required status check ... is expected").
+Turning the queue off therefore means reverting this workflow change in the same action.
 
 ---
 
@@ -64,6 +89,11 @@ merge with, say, `integration-tests` or `e2e-critical-paths` red, and that failu
 
 > **Recommendation (repo-settings change, requires the CEO):** add `CI Gate` to the `main-protection`
 > required-contexts list. This is a GitHub ruleset edit, not a workflow edit.
+>
+> **This became more important on 2026-08-19.** `E2E Critical Paths`, `Integration Tests (live DB)` and
+> `Edge Function Deno Tests` now run in the merge queue rather than on the PR. They were never
+> ruleset-required and still are not, so today a red one of them blocks nothing. Adding `CI Gate` to the
+> required list is the single settings change that makes the merge-queue tier actually gate the merge.
 
 ### Names that must never be renamed
 
