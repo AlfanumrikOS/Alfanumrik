@@ -26,6 +26,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Added 2026-08-19 with the merge queue. Not a required context today, but a
+  # merge queue is exactly where a placeholder migration would otherwise slip
+  # through: the queue validates the MERGED commit, and two PRs that are each
+  # individually clean can land a bad migration pair. ~14s, so it is free.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 permissions:
