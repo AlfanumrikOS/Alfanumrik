@@ -88,7 +88,73 @@ For each HIGH-priority placeholder:
 - **Phase E.1** (already planned): branch-lifecycle GitHub Action that auto-deletes merged branches, reducing the "operator applies via MCP rather than fight a CI failure" temptation.
 - **Pre-deploy check** (new ask): a CI job that runs `supabase db reset` on a fresh staging clone and asserts no schema drift against prod. Would catch the drift proactively.
 
+## Exceptions to the placeholder pattern
+
+This section exists because a 2026-08-20 incident (PR #1584) hit the exact
+"remote version not found locally" symptom this doc's pattern was written
+for, and used a different fix — `supabase migration repair --status
+reverted` in CI, run against two hardcoded ghost versions — instead of
+committing a placeholder file. That divergence was flagged by review as
+needing an explicit, written rationale rather than living only in the PR
+author's head. This is that rationale.
+
+**The incident:** staging's ledger had two versions —
+`20260814000023` and `20260814000024` — with no corresponding file
+anywhere in git history. Full trace and fix in
+`docs/runbooks/staging-schema-drift-resolution.md`'s "2026-08-20 — staging
+migration ledger drift" section and in
+`.github/workflows/sync-staging-migrations.yml`'s own header comment.
+
+**Why a placeholder file was NOT used here, even though the symptom
+matches this doc's pattern exactly:**
+
+1. **What actually happened to the DDL is different in kind from the other
+   10 instances.** Every placeholder in the inventory above stands in for a
+   migration that WAS applied somewhere for real (via MCP/dashboard, or an
+   advisor recommendation) and needs a no-op local record so the ledger and
+   the filesystem agree that "yes, this happened." The two 2026-08-20
+   versions are the opposite: both trace to abandoned/rewritten branches
+   whose migration content was deliberately dropped or superseded before
+   merge — `20260814000023` was explicitly not recovered (stopped at
+   `000022`) and `20260814000024`'s own commit message records it as
+   superseded during the same PR's iteration. Nothing about either version
+   was ever meant to ship. A `SELECT 1` placeholder would assert "this was
+   applied and is accounted for," which is not true — these were never
+   supposed to be applied at all; they only exist in staging's ledger as a
+   side effect of a preview/branch-deploy apply that predates the
+   abandonment. `migration repair --status reverted` — which deletes the
+   ledger row, i.e. asserts "this never happened" — is the more accurate
+   statement of the two. In that specific narrow sense, a repair step
+   arguably has a *stronger* claim to being the honest choice for this
+   incident than a placeholder file would.
+2. **Blast radius is staging-only.** All 10 cataloged placeholder instances
+   above (and the 2026-06-28 precedent that first rejected a repair-in-CI
+   approach for this doc's convention) are production-facing, which is why
+   the "What's at risk" section above weighs DPDP/SOC-2 audit-trail
+   questions ("what changed in your schema on this date, show me the git
+   commit") so heavily — a repair step that silently deletes a prod ledger
+   row with no git-visible trace is a real audit-trail liability. Staging
+   carries materially lower stakes: no regulator or customer data audit
+   depends on staging's migration history, so the audit-trail cost that
+   motivated the placeholder convention is largely absent here. (The fix
+   still documents the repair in git — via the workflow file's own header
+   comment plus this doc — so even the staging case isn't audit-trail-free,
+   just lower-stakes.)
+
+**This is a judgment call, not a new rule.** Do not read this as "orphan
+ghost versions on staging always get repaired, never placeholdered." A
+future recurrence of this exact symptom could still be a case where (a) the
+orphan version DID carry real, intentional DDL that's now unrecoverable
+except via `pg_dump`, in which case the placeholder-plus-backfill pattern
+in the rest of this document is almost certainly the right call even on
+staging, or (b) the blast radius turns out not to be staging-only after
+all. Re-evaluate each occurrence on its own facts — trace the version to
+its origin commit/branch first (as PR #1584 did), and only reach for
+`migration repair` when that trace shows the DDL was genuinely never meant
+to ship, not merely "we don't currently know what it was."
+
 ## Related runbooks
 
 - [`2026-04-27-schema-reconciliation.md`](./2026-04-27-schema-reconciliation.md) — the foundational reconciliation walkthrough that this audit builds on
 - [`2026-05-03-schema-reproducibility-completion.md`](./2026-05-03-schema-reproducibility-completion.md) — broader schema-reproducibility status report
+- [`staging-schema-drift-resolution.md`](./staging-schema-drift-resolution.md) — the 2026-08-20 ledger-drift incident (PR #1584) that motivated the "Exceptions" section above

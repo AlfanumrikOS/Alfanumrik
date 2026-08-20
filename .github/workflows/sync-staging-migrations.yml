@@ -77,15 +77,22 @@
 #   hardcoded 2026-08-20-incident versions are named, so a genuine FUTURE
 #   drift (an unrelated orphan version) will still abort the push and be
 #   visible, not silently swallowed.
-#   Idempotent by construction — DELETE on an absent row is a no-op — so this
-#   step is safe to leave in permanently. Still, it is a one-time incident
-#   fix, not a standing pattern: safe to delete once staging's ledger is
-#   confirmed clean, e.g. `supabase migration repair --status reverted` no
-#   longer being needed for a green run of this workflow. Tracking check:
-#   run `supabase migration list --linked` against staging (see
-#   `schema-reproducibility-fix.yml`'s `verify-staging` job for the pattern)
-#   and confirm 20260814000023/000024 no longer appear before deleting this
-#   step.
+#   DECISION: leave this step in permanently — do not schedule its removal.
+#   Idempotent by construction — DELETE on an absent row is a no-op
+#   (confirmed above via the CLI binary's own embedded SQL) — so once
+#   staging's ledger is clean, every future run of this step costs one
+#   no-op DELETE and changes nothing. It is also narrowly scoped: only
+#   these two hardcoded 2026-08-20-incident versions are named, so it can
+#   never mask a genuine FUTURE orphan-ledger drift — an unrelated future
+#   ghost version will still name itself in the CLI's pre-flight error and
+#   abort the push exactly as it did here, visibly, not silently. A
+#   "delete once confirmed clean" alternative was considered and rejected:
+#   it trades a permanently-safe no-op for a manual follow-up with no
+#   forcing function to ever get done, for a saving of zero risk (the step
+#   already can't hide a different incident's drift). If a *future*
+#   incident hits this same symptom with different version numbers, add a
+#   new dated step for those versions rather than editing the two hardcoded
+#   here — don't widen this into a generic auto-healer.
 
 name: Sync Migrations to Staging
 

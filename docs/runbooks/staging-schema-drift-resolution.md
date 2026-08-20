@@ -209,3 +209,88 @@ credentials:** run the smoke-test pattern below (adapted) against
 `workflow_dispatch` (this session's GitHub token was read-only and could not
 dispatch it) and confirm it reaches `success` before treating this as fully
 closed.
+
+## 2026-08-20 — staging migration ledger drift (orphan ghost versions, PR #1584)
+
+**This is a separate incident from the concurrency-gap recurrence directly
+above it** — same date, unrelated root cause. That section is about two
+DB-writing jobs racing each other; this one is about two migration *version
+numbers* existing in staging's ledger with no corresponding local file.
+
+**Symptom:** every run of `sync-staging-migrations.yml` since before
+2026-08-20 aborted pre-flight (before `supabase db push` touched any schema)
+with:
+
+```
+Remote migration versions not found in local migrations directory: 20260814000023, 20260814000024.
+```
+
+Neither file exists on `main`, in `_legacy/`, or anywhere else in git
+history at HEAD. This blocked every subsequent run of the workflow, and
+because `ci.yml`'s `Integration Tests (live DB)` job shares the
+`staging-db-push` concurrency group, it transitively blocked the CI Gate for
+every PR — i.e. a wedged staging ledger was blocking production deploys via
+a staging-only workflow.
+
+**Root cause (two independent, unrelated abandoned/rewritten branches — full
+trace already established in PR #1584's own investigation; not re-derived
+here, only cited):**
+
+- `20260814000023` (`keyless_question_serving_and_server_side_p6`) came from
+  commit `145eed3e7` on the unmerged branch
+  `Alfanumrik/alfanumrik-e2e-fix-d9bca6` (PR #1524). Commit `cbd86866`
+  (#1529) recovered 5 of that commit's 6 renumbered migration files
+  (`20260814000018`..`000022`) into `main` as the record of what had already
+  shipped to PRODUCTION — but stopped at `000022`; `000023` was never
+  recovered, so no file for it exists anywhere on `main`. It only reached
+  STAGING's ledger via a preview/branch-deploy apply that predates that
+  recovery-and-abandonment.
+- `20260814000024` (`reconcile_subjects_allowed_with_plan_reality`) came
+  from commit `717265e6` ("...three superseded pins", 2026-08-11), whose
+  branch was later squash-merged with different final content — the
+  commit's own title records that this migration was superseded/dropped
+  during that PR's iteration. Same mechanism: a preview/staging apply ran
+  before the squash, so the version landed in staging's ledger with no
+  surviving file.
+- Neither version is present in PRODUCTION's ledger — `cbd86866`'s recovery
+  scope was explicitly `000018`..`000022` only ("ALREADY APPLIED" never
+  mentions `000023` or `000024`). This is a staging-only ledger artifact.
+
+The full trace (exact commit SHAs, branch names, and the CLI-internals
+verification that the repair command is metadata-only) lives in
+`.github/workflows/sync-staging-migrations.yml`'s own header comment (the
+"2026-08-20 incident" block) — treat that comment as the source of record;
+this section is a pointer + summary, not a duplicate.
+
+**Fix (PR #1584):**
+
+1. Added a `supabase migration repair --status reverted 20260814000023
+   20260814000024` step, run immediately after `supabase link` and before
+   `supabase db push`. This deletes exactly those two rows from
+   `supabase_migrations.schema_migrations` on staging — confirmed
+   metadata-only (no table/column/data touched) by inspecting the CLI
+   binary's embedded SQL. It is hardcoded to these two versions, not a
+   generic orphan-healer, so a genuine future drift still aborts the push
+   loudly.
+2. Pinned `SUPABASE_CLI_VERSION` to `2.109.1` (was `latest`) in this
+   workflow, matching the pin already used in `ci.yml` and
+   `deploy-production.yml` — an unpinned CLI silently changing its
+   pre-flight reconciliation behavior between runs was an independent
+   reproducibility risk surfaced by this incident, not just the ghost
+   versions themselves.
+
+**Divergence from this repo's usual pattern — read before reusing this as a
+template:** this repo has a documented, 10-instance-strong convention for
+the identical class of symptom ("remote version not found locally"): commit
+a no-op placeholder migration file at the exact ghost version instead of
+running `migration repair` in CI (see
+`docs/runbooks/migration-placeholders-audit.md`, and the 2026-06-28
+PRODUCTION incident that deliberately chose that convention over a repair
+step). PR #1584 did not follow that convention, and did not explain the
+fork in the PR itself. The reasoning for why a repair step is still
+defensible for *this* incident specifically — and why it is not a general
+license to always prefer repair over placeholders — is written up as an
+explicit exception in `docs/runbooks/migration-placeholders-audit.md`
+("Exceptions to the placeholder pattern" section). Read that section, not
+just this one, before deciding how to handle the next occurrence of this
+symptom.
