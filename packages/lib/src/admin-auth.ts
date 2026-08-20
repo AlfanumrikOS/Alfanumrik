@@ -90,6 +90,35 @@ function getSupabaseConfig() {
   return { url: url || null, key: key || null };
 }
 
+/**
+ * Fire-and-forget POST used by the audit writers below. Never throws — a
+ * failure (network-level rejection OR a non-2xx response, e.g. an FK
+ * violation on `admin_audit_log.admin_id`) is logged via `logger.error` and
+ * swallowed so it can never block the calling route.
+ *
+ * P0-2 fix (2026-08-20): previously these writes were `.catch()`-only, which
+ * only observes network-level rejections — `fetch` RESOLVES (doesn't throw)
+ * on a 4xx/5xx response, so a rejected insert (e.g. FK violation) silently
+ * dropped the audit row with no log. This helper checks `res.ok` explicitly.
+ */
+async function auditPost(
+  endpoint: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown>,
+  failureLogKey: string,
+  meta: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      logger.error(failureLogKey, { ...meta, status: res.status, body: bodyText.slice(0, 500) });
+    }
+  } catch (e) {
+    logger.error(failureLogKey, { ...meta, error: e instanceof Error ? e : new Error(String(e)) });
+  }
+}
+
 // ─── Session-based admin auth (used by /api/super-admin/* routes) ─────────────
 
 /**
@@ -618,11 +647,13 @@ export async function logAdminAudit(
   const headers = { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
   const enrichedDetails = { ...details, admin_name: admin.name, admin_email: admin.email };
 
-  // 1. Canonical write: audit_logs with actor_type='admin'
-  const canonicalWrite = fetch(`${url}/rest/v1/audit_logs`, {
-    method: 'POST',
+  // 1. Canonical write: audit_logs with actor_type='admin'. auth_user_id has
+  // no FK (verified against baseline schema) — the raw auth.users id is the
+  // correct value here.
+  const canonicalWrite = auditPost(
+    `${url}/rest/v1/audit_logs`,
     headers,
-    body: JSON.stringify({
+    {
       auth_user_id: admin.userId,
       actor_type: 'admin',
       admin_level: admin.adminLevel,
@@ -636,31 +667,27 @@ export async function logAdminAudit(
       user_agent: opts?.userAgent || null,
       school_id: opts?.schoolId ?? null,
       status: 'success',
-    }),
-  }).catch((e) => {
-    logger.error('audit_logs_admin_write_failed', {
-      error: e instanceof Error ? e : new Error(String(e)),
-      action, entityType, entityId, adminId: admin.userId,
-    });
-    return null;
-  });
+    },
+    'audit_logs_admin_write_failed',
+    { action, entityType, entityId, adminId: admin.userId },
+  );
 
-  // 2. Legacy back-compat write: admin_audit_log
-  const legacyWrite = fetch(`${url}/rest/v1/admin_audit_log`, {
-    method: 'POST',
+  // 2. Legacy back-compat write: admin_audit_log. `admin_audit_log.admin_id`
+  // has an FK to `admin_users(id)` — a DIFFERENT uuid from `admin.userId`
+  // (the auth.users id). `admin.adminId` (set by authorizeAdmin() from the
+  // resolved admin_users row) is the correct value here; using `userId`
+  // FK-violates and silently drops the row (P0-2, 2026-08-20).
+  const legacyWrite = auditPost(
+    `${url}/rest/v1/admin_audit_log`,
     headers,
-    body: JSON.stringify({
-      admin_id: admin.userId, action, entity_type: entityType, entity_id: entityId,
+    {
+      admin_id: admin.adminId, action, entity_type: entityType, entity_id: entityId,
       details: { ...enrichedDetails, admin_level: admin.adminLevel },
       ip_address: ipAddress || null,
-    }),
-  }).catch((e) => {
-    logger.error('admin_audit_log_failed', {
-      error: e instanceof Error ? e : new Error(String(e)),
-      route: 'admin-auth', action, entityType, entityId, adminId: admin.userId,
-    });
-    return null;
-  });
+    },
+    'admin_audit_log_failed',
+    { route: 'admin-auth', action, entityType, entityId, adminId: admin.adminId },
+  );
 
   // Don't await — audit is fire-and-forget. But also don't drop the
   // microtask if Node hasn't scheduled it (the function awaits a promise
@@ -690,11 +717,12 @@ export async function logAdminAuditByUserId(
 
   const headers = { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
 
-  // 1. Canonical: audit_logs
-  const canonicalWrite = fetch(`${url}/rest/v1/audit_logs`, {
-    method: 'POST',
+  // 1. Canonical: audit_logs. auth_user_id has no FK — the raw auth.users id
+  // (all this caller has) is the correct value here.
+  const canonicalWrite = auditPost(
+    `${url}/rest/v1/audit_logs`,
     headers,
-    body: JSON.stringify({
+    {
       auth_user_id: userId,
       actor_type: 'admin',
       admin_level: opts?.adminLevel ?? null,
@@ -708,34 +736,67 @@ export async function logAdminAuditByUserId(
       user_agent: opts?.userAgent || null,
       school_id: opts?.schoolId ?? null,
       status: 'success',
-    }),
-  }).catch((e) => {
-    logger.error('audit_logs_admin_write_failed', {
-      error: e instanceof Error ? e : new Error(String(e)),
-      action, entityType, entityId, adminId: userId,
-    });
-    return null;
-  });
+    },
+    'audit_logs_admin_write_failed',
+    { action, entityType, entityId, adminId: userId },
+  );
 
-  // 2. Legacy back-compat: admin_audit_log
-  const legacyWrite = fetch(`${url}/rest/v1/admin_audit_log`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      admin_id: userId,
-      action,
-      entity_type: entityType,
-      entity_id: entityId ?? null,
-      details: details ?? {},
-      ip_address: ipAddress || null,
-    }),
-  }).catch((e) => {
-    logger.error('admin_audit_log_failed', {
-      error: e instanceof Error ? e : new Error(String(e)),
-      route: 'admin-auth', action, entityType, entityId, adminId: userId,
-    });
-    return null;
-  });
+  // 2. Legacy back-compat: admin_audit_log. `admin_audit_log.admin_id` has an
+  // FK to `admin_users(id)` — this function only ever receives the raw
+  // auth.users id (its own JSDoc above), a DIFFERENT uuid, so it must be
+  // resolved first (P0-2, 2026-08-20). A caller authorized via
+  // authorizeRequest() may be a purely RBAC-granted operator with NO
+  // admin_users row at all (a supported case — see authorizeOperator()'s
+  // enrichment comment) — when no row resolves, skip the legacy write
+  // entirely rather than insert a row that will FK-violate and be silently
+  // dropped. The canonical audit_logs write above proceeds regardless.
+  const legacyWrite = (async () => {
+    if (!userId) {
+      logger.debug('admin_audit_log_skipped', { reason: 'no_user_id', action, entityType, entityId });
+      return;
+    }
+
+    let adminUsersId: string | null = null;
+    try {
+      const lookupRes = await fetch(
+        `${url}/rest/v1/admin_users?select=id&auth_user_id=eq.${userId}&limit=1`,
+        { headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' } },
+      );
+      if (lookupRes.ok) {
+        const rows = await lookupRes.json();
+        if (Array.isArray(rows) && rows.length > 0 && rows[0]?.id) {
+          adminUsersId = rows[0].id as string;
+        }
+      } else {
+        logger.error('admin_audit_log_lookup_failed', { status: lookupRes.status, action, entityType, entityId, userId });
+      }
+    } catch (e) {
+      logger.error('admin_audit_log_lookup_failed', {
+        error: e instanceof Error ? e : new Error(String(e)),
+        action, entityType, entityId, userId,
+      });
+    }
+
+    if (!adminUsersId) {
+      logger.debug('admin_audit_log_skipped', { reason: 'no_admin_users_row', action, entityType, entityId, userId });
+      return;
+    }
+
+    await auditPost(
+      `${url}/rest/v1/admin_audit_log`,
+      headers,
+      {
+        admin_id: adminUsersId,
+        action,
+        entity_type: entityType,
+        entity_id: entityId ?? null,
+        details: details ?? {},
+        ip_address: ipAddress || null,
+      },
+      'admin_audit_log_failed',
+      { route: 'admin-auth', action, entityType, entityId, adminId: adminUsersId },
+    );
+  })();
 
   await Promise.allSettled([canonicalWrite, legacyWrite]);
 }

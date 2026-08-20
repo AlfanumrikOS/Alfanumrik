@@ -113,5 +113,3 @@ lib/src/model/today_queue_item.dart
 lib/src/model/today_response.dart
 lib/src/model/today_response_meta.dart
 lib/src/serializers.dart
-test/leaderboard_self_test.dart
-test/subject_not_allowed_details_test.dart

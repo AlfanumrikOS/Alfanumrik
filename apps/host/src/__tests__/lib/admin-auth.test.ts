@@ -188,12 +188,20 @@ describe('requireAdminSecret', () => {
 // pattern as the `logAdminAudit` describe block.
 
 describe('logAdminAction', () => {
-  it('dual-writes to admin_audit_log AND audit_logs when actorUserId is provided', async () => {
+  // P0-2 fix (2026-08-20): `admin_audit_log.admin_id` FKs to `admin_users(id)`,
+  // NOT the raw auth.users id these routes hold. logAdminAuditByUserId now
+  // resolves `admin_users.id` via a lookup before the legacy write — so the
+  // legacy write is now the THIRD fetch call (canonical audit_logs, then the
+  // admin_users lookup, then admin_audit_log with the RESOLVED id).
+  it('dual-writes to admin_audit_log (with the resolved admin_users.id) AND audit_logs when actorUserId is provided', async () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('', { status: 201 }),
-    );
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('', { status: 201 })) // 1. canonical audit_logs
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ id: 'admin-users-id-99' }]), { status: 200 }),
+      ) // 2. admin_users lookup (auth_user_id -> admin_users.id)
+      .mockResolvedValueOnce(new Response('', { status: 201 })); // 3. legacy admin_audit_log
 
     await logAdminAction({
       action: 'flag.toggle',
@@ -205,20 +213,24 @@ describe('logAdminAction', () => {
       adminLevel: 'admin',
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
 
+    const lookupCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/rest/v1/admin_users') && String(url).includes('auth_user_id=eq.user-42'),
+    );
     const legacyCall = fetchSpy.mock.calls.find(([url]) =>
       String(url).endsWith('/rest/v1/admin_audit_log'),
     );
     const canonicalCall = fetchSpy.mock.calls.find(([url]) =>
       String(url).endsWith('/rest/v1/audit_logs'),
     );
+    expect(lookupCall).toBeDefined();
     expect(legacyCall).toBeDefined();
     expect(canonicalCall).toBeDefined();
 
     const legacyBody = JSON.parse(((legacyCall![1] as RequestInit).body as string) ?? '{}');
     expect(legacyBody).toMatchObject({
-      admin_id: 'user-42',
+      admin_id: 'admin-users-id-99', // resolved admin_users.id, NOT the raw auth uid
       action: 'flag.toggle',
       entity_type: 'feature_flag',
       entity_id: 'ff-123',
@@ -242,7 +254,29 @@ describe('logAdminAction', () => {
     fetchSpy.mockRestore();
   });
 
-  it('still writes without throwing when actorUserId is omitted (back-compat path)', async () => {
+  it('skips the legacy admin_audit_log write (but still writes audit_logs) when the actor has no resolvable admin_users row', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('', { status: 201 })) // canonical audit_logs
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 })); // admin_users lookup: no row
+
+    await expect(
+      logAdminAction({ action: 'a', entity_type: 't', actorUserId: 'rbac-only-user' }),
+    ).resolves.toBeUndefined();
+
+    // Exactly 2 calls: canonical write + the lookup. No third (legacy) write —
+    // inserting with a null/guessed admin_id would FK-violate and silently drop.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const legacyCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).endsWith('/rest/v1/admin_audit_log'),
+    );
+    expect(legacyCall).toBeUndefined();
+
+    fetchSpy.mockRestore();
+  });
+
+  it('still writes audit_logs without throwing when actorUserId is omitted, and skips the legacy write entirely (back-compat path)', async () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -253,7 +287,10 @@ describe('logAdminAction', () => {
       logAdminAction({ action: 'a', entity_type: 't' }),
     ).resolves.toBeUndefined();
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    // No actorUserId -> no admin_users row can ever be resolved -> the legacy
+    // write is skipped without even attempting a lookup. Only the canonical
+    // audit_logs write fires.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     const legacyCall = fetchSpy.mock.calls.find(([url]) =>
       String(url).endsWith('/rest/v1/admin_audit_log'),
@@ -261,16 +298,8 @@ describe('logAdminAction', () => {
     const canonicalCall = fetchSpy.mock.calls.find(([url]) =>
       String(url).endsWith('/rest/v1/audit_logs'),
     );
-
-    const legacyBody = JSON.parse(((legacyCall![1] as RequestInit).body as string) ?? '{}');
-    expect(legacyBody).toMatchObject({
-      admin_id: null,
-      action: 'a',
-      entity_type: 't',
-      entity_id: null,
-      details: {},
-      ip_address: null,
-    });
+    expect(legacyCall).toBeUndefined();
+    expect(canonicalCall).toBeDefined();
 
     const canonicalBody = JSON.parse(((canonicalCall![1] as RequestInit).body as string) ?? '{}');
     expect(canonicalBody).toMatchObject({
@@ -283,13 +312,25 @@ describe('logAdminAction', () => {
     fetchSpy.mockRestore();
   });
 
-  it('never throws even when both underlying fetch writes reject', async () => {
+  it('never throws even when the underlying fetch writes reject', async () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
 
     await expect(
       logAdminAction({ action: 'a', entity_type: 't' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('never throws even when the admin_users lookup itself rejects', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('', { status: 201 })) // canonical audit_logs
+      .mockRejectedValueOnce(new Error('lookup network down')); // admin_users lookup
+
+    await expect(
+      logAdminAction({ action: 'a', entity_type: 't', actorUserId: 'user-1' }),
     ).resolves.toBeUndefined();
   });
 });

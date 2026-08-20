@@ -486,13 +486,31 @@ jobs:
           supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
           supabase db push --linked --include-all
 
+      - name: Ensure psql is available
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends postgresql-client
+          fi
+
       # ── Migration-history parity check (runs on BOTH paths) ──
-      # READ-ONLY. Compares the committed migration set against the remote
-      # `supabase_migrations.schema_migrations` ledger, read through the
-      # Supabase CLI's own view of it (`supabase migration list --linked`), so
-      # this check sees exactly what `supabase db push` would see. No new
-      # secret: it reuses SUPABASE_ACCESS_TOKEN / SUPABASE_DB_PASSWORD /
-      # SUPABASE_PROJECT_REF, which the push step above already uses.
+      # READ-ONLY. Compares the committed migration set against the versions
+      # GENUINELY PRESENT in the remote `supabase_migrations.schema_migrations`
+      # ledger via a direct SQL SELECT (.github/scripts/verify-migration-ledger.sh).
+      # No new secret: it reuses SUPABASE_DB_PASSWORD / SUPABASE_PROJECT_REF,
+      # which the push step above already uses.
+      #
+      # P0-6 fix (2026-08-20): this step used to parse the rendered
+      # `supabase migration list --linked` table with
+      # `awk -F'|' '{ v=$2 }'`. The CLI emits each row with a LEADING pipe
+      # (`|local|remote|time|`), so under `-F'|'` field 2 is actually the
+      # LOCAL column, not remote — the check compared the local migration set
+      # against itself and could never fail. Across four consecutive
+      # production deploys it printed EXACTLY equal counts (580/580, 585/585,
+      # 587/587, 588/588) while production's real ledger was missing 8
+      # committed versions. verify-migration-ledger.sh SELECTs the ledger
+      # table directly instead of parsing rendered CLI output. See the
+      # script's own header for the full RCA.
       #
       # On the changed==true path it runs AFTER the push, so a green push must
       # leave the two ledgers in parity. On the changed==false path it is the
@@ -502,91 +520,40 @@ jobs:
         id: parity
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          EXPECTED_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          FORBIDDEN_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          ENV_LABEL: production
           LC_ALL: C
         run: |
           echo "target_environment=production" >> "$GITHUB_OUTPUT"
 
           supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
 
-          # LOCAL: committed, top-level supabase/migrations/*.sql only.
-          # -maxdepth 1 is what excludes `_legacy/`, matching both the Supabase
-          # CLI's own scope and scripts/lint-migrations.js.
-          LOCAL_VERSIONS=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
-            | sed -nE 's#^([0-9]{14})_.*\.sql$#\1#p' \
-            | sort -u)
-
-          # REMOTE: the "Remote" column of the CLI ledger view. Parsed
-          # positionally (field 2 of a pipe-delimited row) and filtered to
-          # 14-digit versions, so header/separator/progress lines drop out.
-          if ! REMOTE_RAW=$(supabase migration list --linked 2>&1); then
-            echo "::error::Could not read remote migration history — cannot prove database state for this release."
-            printf '%s\n' "$REMOTE_RAW"
-            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-          REMOTE_VERSIONS=$(printf '%s\n' "$REMOTE_RAW" \
-            | awk -F'|' 'NF>=2 { v=$2; gsub(/[^0-9]/, "", v); if (length(v) == 14) print v }' \
-            | sort -u)
-
-          LOCAL_COUNT=$(printf '%s\n' "$LOCAL_VERSIONS" | sed '/^$/d' | wc -l)
-          REMOTE_COUNT=$(printf '%s\n' "$REMOTE_VERSIONS" | sed '/^$/d' | wc -l)
-          echo "Committed migration versions: $LOCAL_COUNT"
-          echo "Remote ledger versions:       $REMOTE_COUNT"
-
-          # Non-vacuity: an empty side means the scan or the parse broke, not
-          # that the ledgers agree. Fail rather than pass for the wrong reason.
-          if [ "$LOCAL_COUNT" -eq 0 ]; then
-            echo "::error::Found 0 committed migration versions under supabase/migrations/ — the parity scan is broken, not clean."
-            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-          if [ "$REMOTE_COUNT" -eq 0 ]; then
-            echo "::error::Parsed 0 remote migration versions from 'supabase migration list --linked' — the ledger read is broken, not clean."
-            printf '%s\n' "$REMOTE_RAW"
+          if bash .github/scripts/verify-migration-ledger.sh; then
+            echo "migration_parity=verified" >> "$GITHUB_OUTPUT"
+          else
             echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
-          COMMITTED_NOT_REMOTE=$(comm -23 <(printf '%s\n' "$LOCAL_VERSIONS" | sed '/^$/d') <(printf '%s\n' "$REMOTE_VERSIONS" | sed '/^$/d'))
-          REMOTE_NOT_COMMITTED=$(comm -13 <(printf '%s\n' "$LOCAL_VERSIONS" | sed '/^$/d') <(printf '%s\n' "$REMOTE_VERSIONS" | sed '/^$/d'))
-
-          if [ -n "$COMMITTED_NOT_REMOTE" ] || [ -n "$REMOTE_NOT_COMMITTED" ]; then
-            {
-              echo ""
-              echo "### Migration history parity: DRIFT"
-              echo ""
-              echo "Target environment: \`production\` (linked Supabase project)."
-              echo ""
-            } >> "$GITHUB_STEP_SUMMARY"
-            if [ -n "$COMMITTED_NOT_REMOTE" ]; then
-              {
-                echo "**Committed but NOT applied on remote** — this release would ship application code ahead of its schema:"
-                echo '```'
-                printf '%s\n' "$COMMITTED_NOT_REMOTE"
-                echo '```'
-                echo "Remediation: re-run this job after fixing whatever blocked the push, or apply the pending versions deliberately with \`supabase db push --linked --include-all\`."
-                echo ""
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
-            if [ -n "$REMOTE_NOT_COMMITTED" ]; then
-              {
-                echo "**Applied on remote but NOT committed** — out-of-band drift. This is exactly what aborts \`supabase db push --include-all\`, and surfacing it here is the point of this check:"
-                echo '```'
-                printf '%s\n' "$REMOTE_NOT_COMMITTED"
-                echo '```'
-                echo "Remediation: recover each version into a committed, idempotent migration file that reproduces what the operator applied — the same recovery performed for 20260808085345 / 20260808085349 / 20260808085419 (see \`docs/runbooks/production-release-gating.md\`). If a remote row is genuinely bogus, clear it deliberately with \`supabase migration repair --status reverted <version>\`; never hand-edit the ledger."
-                echo ""
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
-            echo "::error::Migration history parity FAILED — committed migrations and the production ledger disagree. See the job summary for the offending versions."
-            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          echo "migration_parity=verified" >> "$GITHUB_OUTPUT"
-          echo "| Migration history parity | verified ($LOCAL_COUNT committed == $REMOTE_COUNT remote) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "Migration history parity verified against production."
+      # ── Live-database security invariants (runs on BOTH paths, post-parity) ──
+      # POST-DEPLOY BEHAVIOURAL assertion (.github/scripts/assert-db-security-invariants.sh):
+      # verifies OBSERVABLE EFFECT on the live database — that `anon` cannot
+      # EXECUTE the student-data SECURITY DEFINER RPCs — rather than ledger
+      # metadata. Named by migration 20260816000002 (curated learning corpus)
+      # as "the hard gate belongs in CI"; previously wired into nothing (P0-6).
+      - name: Assert live-database security invariants
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          EXPECTED_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          FORBIDDEN_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          ENV_LABEL: production
+          LC_ALL: C
+        run: |
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
+          bash .github/scripts/assert-db-security-invariants.sh
 
   # ── Step 2: Deploy to Vercel Production (requires approval) ──
   # NOTE: Vercel's native GitHub App handles auto-deploys on push to main.
