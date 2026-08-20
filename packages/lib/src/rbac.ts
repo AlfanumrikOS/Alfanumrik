@@ -888,6 +888,16 @@ export const PERMISSIONS = {
   // bypass via wildcard. Seeded by companion migration below.
   STUDENT_ROUTER_ACCESS: 'student.router_access',
 
+  // ── Learning sources (curated corpus signed-URL surface) ────
+  // Gates /api/learning-sources — mints a short-lived signed URL into the
+  // rights-restricted corpus bucket via supabaseAdmin (service role, bypasses
+  // RLS). Any authenticated student role can access; teacher also granted
+  // (lesson prep against the same curated corpus); admin/super_admin bypass
+  // via wildcard. P0-1 fix (2026-08-20) — the route previously called
+  // authorizeRequest() with NO permission code at all. Seeded by companion
+  // migration 20260820000100_seed_learning_source_view_permission.sql.
+  LEARNING_SOURCE_VIEW: 'learning_source.view',
+
   // ── Study plan ──────────────────────────────────────────────
   STUDY_PLAN_VIEW: 'study_plan.view',
   STUDY_PLAN_CREATE: 'study_plan.create',
