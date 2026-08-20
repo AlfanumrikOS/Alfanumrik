@@ -193,6 +193,9 @@ jobs:
     # database. Scoped to this JOB (not the workflow) so only the DB-push
     # portion queues — build/deploy stay parallel under the workflow group
     # above. Never cancel a migration push mid-flight.
+    # 2026-08-20: ci.yml's `Integration Tests (live DB)` job (reads/writes the
+    # same staging DB) also joined this group — see that job's concurrency
+    # comment for the incident (commit 0b05519) that motivated it.
     concurrency:
       group: staging-db-push
       cancel-in-progress: false
