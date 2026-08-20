@@ -30,7 +30,62 @@
 #     against the staging org and previously caused `Unauthorized`).
 #   - --include-all is safe because all migrations in this repo are
 #     idempotent per CLAUDE.md product invariants
-#   - Failure does NOT block production deploy (this workflow is staging-only)
+#   - Failure does NOT block production deploy (this workflow is staging-only),
+#     but it DOES block ci.yml's `Integration Tests (live DB)` job (same
+#     `staging-db-push` concurrency group, same STAGING project) — which gates
+#     the CI Gate every PR needs to merge to main, so a wedged staging ledger
+#     transitively blocks getting anything to production.
+#
+# 2026-08-20 incident — one-time staging ledger repair (2 hardcoded versions):
+#   Every run since before 2026-08-20 aborted pre-flight with "Remote
+#   migration versions not found in local migrations directory", naming
+#   20260814000023 and 20260814000024. Neither file exists on `main` or in
+#   `_legacy/`. Root cause (two independent, unrelated abandoned branches that
+#   were each applied to staging out-of-band before being rewritten/dropped):
+#     - 20260814000023 (keyless_question_serving_and_server_side_p6) came from
+#       commit 145eed3e7 on the unmerged branch
+#       Alfanumrik/alfanumrik-e2e-fix-d9bca6 (PR #1524). Commit cbd86866
+#       (#1529) already recovered 5 of that commit's 6 renumbered files
+#       (20260814000018..000022) into `main` as the record of what was
+#       already applied to PRODUCTION — but explicitly stopped at 000022;
+#       000023 was never recovered, so no file for it exists anywhere on
+#       `main`. It reached STAGING's ledger (this project only) via a preview
+#       apply of that branch that predates the recovery/abandonment.
+#     - 20260814000024 (reconcile_subjects_allowed_with_plan_reality) came
+#       from commit 717265e6 ("...three superseded pins", 2026-08-11), whose
+#       branch was squash-merged with different final content — the commit's
+#       own title says this migration was superseded/dropped during that PR's
+#       iteration. Same mechanism: a preview/staging apply ran before the
+#       squash, so the version landed in staging's ledger with no surviving
+#       file.
+#   Neither version is present in PRODUCTION's ledger (cbd86866's recovery
+#   scope was 18..22 only, confirmed by that commit's own "ALREADY APPLIED"
+#   claim never mentioning 000023 or 000024) — this repair targets STAGING
+#   ONLY and intentionally does not touch prod.
+#   Remediation: `supabase migration repair --status reverted` for exactly
+#   these two hardcoded versions, run before `db push`, per the CLI's own
+#   suggested fix and the identical pattern already used for a 2026-06-28
+#   PROD ghost-migration incident (see `schema-reproducibility-fix.yml`'s
+#   `repair-prod-drift` job / docs/runbooks/schema-reproducibility-fix.md).
+#   This is METADATA-ONLY: it deletes the two ledger rows from
+#   `supabase_migrations.schema_migrations` (confirmed via the CLI binary's
+#   own embedded SQL: `--status reverted` issues
+#   `DELETE FROM supabase_migrations.schema_migrations WHERE version = ANY($1)`)
+#   — it does not touch any table, column, or data, and it never re-applies
+#   the SQL those two ghost versions once ran (there is no local file to
+#   apply). It is intentionally NOT a generic auto-healer: only these two
+#   hardcoded 2026-08-20-incident versions are named, so a genuine FUTURE
+#   drift (an unrelated orphan version) will still abort the push and be
+#   visible, not silently swallowed.
+#   Idempotent by construction — DELETE on an absent row is a no-op — so this
+#   step is safe to leave in permanently. Still, it is a one-time incident
+#   fix, not a standing pattern: safe to delete once staging's ledger is
+#   confirmed clean, e.g. `supabase migration repair --status reverted` no
+#   longer being needed for a green run of this workflow. Tracking check:
+#   run `supabase migration list --linked` against staging (see
+#   `schema-reproducibility-fix.yml`'s `verify-staging` job for the pattern)
+#   and confirm 20260814000023/000024 no longer appear before deleting this
+#   step.
 
 name: Sync Migrations to Staging
 
@@ -59,6 +114,16 @@ concurrency:
   group: staging-db-push
   cancel-in-progress: false   # never cancel a migration push mid-flight
 
+env:
+  # Pinned, not `latest`: an unpinned CLI silently changing its pre-flight
+  # reconciliation behavior between runs is a reproducibility risk independent
+  # of the 2026-08-20 incident below (the previous green run of this workflow
+  # was #261 on 2026-08-16; nothing in `supabase/migrations/**` changed in a
+  # way that should have newly triggered "Remote migration versions not found"
+  # between then and now). Matches the version already pinned in `ci.yml` and
+  # `deploy-production.yml`'s `SUPABASE_CLI_VERSION` — bump all three together.
+  SUPABASE_CLI_VERSION: '2.109.1'
+
 jobs:
   push-migrations:
     name: Apply pending migrations to staging
@@ -69,7 +134,19 @@ jobs:
 
       - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: One-time staging ledger repair (2026-08-20 incident — see file header)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref ${{ secrets.SUPABASE_STAGING_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
+          # Hardcoded, exactly these two versions — not a generic orphan-healer.
+          # See the file header for the full incident trace. Idempotent:
+          # `--status reverted` DELETEs the ledger row(s); deleting an absent
+          # row is a no-op, so this is safe to run on every invocation.
+          supabase migration repair --status reverted 20260814000023 20260814000024
 
       - name: Push migrations to staging Supabase
         env:
