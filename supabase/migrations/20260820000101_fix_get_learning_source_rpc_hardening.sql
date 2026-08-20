@@ -72,7 +72,13 @@ BEGIN
     RAISE EXCEPTION 'board is required' USING ERRCODE = 'invalid_parameter_value';
   END IF;
   -- P5: grades are strings ('6'..'12'), never integers.
-  IF p_grade IS NULL OR p_grade <> ANY (ARRAY['6','7','8','9','10','11','12']) THEN
+  -- NOTE: this must be `NOT (p_grade = ANY (...))`, not `p_grade <> ANY (...)`.
+  -- `x <> ANY(array)` means "x differs from AT LEAST ONE element" — true for
+  -- almost any x against a multi-element array, so it would reject every
+  -- grade including valid ones. `NOT (x = ANY(array))` correctly means
+  -- "x matches NONE of the elements" (verified against a live Postgres
+  -- instance during review — the naive `<> ANY` form rejected all input).
+  IF p_grade IS NULL OR NOT (p_grade = ANY (ARRAY['6','7','8','9','10','11','12'])) THEN
     RAISE EXCEPTION 'grade must be one of 6..12 (as a string)' USING ERRCODE = 'invalid_parameter_value';
   END IF;
   IF p_subject_code IS NULL OR p_subject_code = '' THEN
