@@ -47,9 +47,17 @@
 
 BEGIN;
 
+-- Drops the OLD (p_grade integer) signature only — a one-time transition
+-- step. Idempotency across repeated applies of THIS migration is then
+-- carried by CREATE OR REPLACE below (not by this DROP): on a second replay
+-- the integer-signature function is already gone (this DROP IF EXISTS is a
+-- no-op), and CREATE OR REPLACE against the now-existing text-signature
+-- function succeeds instead of erroring "already exists with same argument
+-- types" (verified against a live Postgres instance during review — a plain
+-- CREATE FUNCTION without OR REPLACE fails exactly that way on replay).
 DROP FUNCTION IF EXISTS "public"."get_learning_source"(text, integer, text, text, text);
 
-CREATE FUNCTION "public"."get_learning_source"(
+CREATE OR REPLACE FUNCTION "public"."get_learning_source"(
   p_board text,
   p_grade text,
   p_subject_code text,
