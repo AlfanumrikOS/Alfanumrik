@@ -13,17 +13,55 @@
  * is what must catch source drift."
  *
  * Deterministic, no DB, no network. Runs on every PR.
+ *
+ * SOURCE RESOLUTION (fixed 2026-08-20, PR #1582 follow-up): this test used to
+ * hardcode its source path to the ORIGINAL migration that introduced the
+ * verification gate (`20260802100000_select_quiz_questions_rag_verification_
+ * gate.sql`). The function has since been re-issued twice more —
+ * `20260814000014_tiered_verification_serving_and_truthful_picker.sql`
+ * (widened the Tier-0 disproved-state exclusion from one state to three) and
+ * `20260820120000_reassert_select_quiz_questions_rag_staging_drift.sql` (a
+ * byte-identical-body defensive re-assertion that additionally re-issues the
+ * function's anon REVOKE) — and the hardcoded path silently stopped tracking
+ * the live definition, so this "PR-gating" test was checking a stale,
+ * superseded predicate (`!= 'failed'`) while the real function had long since
+ * moved to `NOT IN ('failed', 'failed_fix_in_flight', 'failed_unfixable')`.
+ * A hardcoded filename will go stale again the next time this function is
+ * re-issued, so instead of repointing to another fixed name, this test now
+ * resolves the source dynamically: it scans every `supabase/migrations/
+ * *.sql` file for one containing a `CREATE OR REPLACE FUNCTION public.
+ * select_quiz_questions_rag` marker and takes the LEXICOGRAPHICALLY LAST
+ * match. Migration filenames are `YYYYMMDDHHMMSS`-prefixed, so lexicographic
+ * order is chronological order, and the most recent `CREATE OR REPLACE` of a
+ * function is always its current, authoritative definition — this is the
+ * same "supersession" reasoning documented in each migration's own header.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..', '..');
 const migrationsRoot = resolve(REPO_ROOT, 'supabase', 'migrations');
-const migrationPath = resolve(
-  migrationsRoot,
-  '20260802100000_select_quiz_questions_rag_verification_gate.sql',
-);
+const FUNCTION_DEFINITION_MARKER =
+  'CREATE OR REPLACE FUNCTION public.select_quiz_questions_rag';
+
+function findLatestMigrationDefining(marker: string): string {
+  const matches = readdirSync(migrationsRoot)
+    .filter((name) => name.endsWith('.sql'))
+    .sort() // YYYYMMDDHHMMSS-prefixed filenames => lexicographic === chronological
+    .filter((name) => readFileSync(resolve(migrationsRoot, name), 'utf8').includes(marker));
+
+  if (matches.length === 0) {
+    throw new Error(
+      `No file under ${migrationsRoot} contains a definition of: ${marker}. ` +
+        'Has select_quiz_questions_rag been renamed, dropped, or moved?',
+    );
+  }
+  return matches[matches.length - 1];
+}
+
+const migrationFilename = findLatestMigrationDefining(FUNCTION_DEFINITION_MARKER);
+const migrationPath = resolve(migrationsRoot, migrationFilename);
 const migrationSql = readFileSync(migrationPath, 'utf8');
 
 // Strip SQL line comments so marker-searches can't accidentally match text
@@ -94,11 +132,19 @@ describe('select_quiz_questions_rag verification gate — migration structure', 
   });
 
   it.each(FOUR_BLOCKS)(
-    'the %s block contains all three Tier-0 closures (spec §2.1)',
+    'the %s block contains all three Tier-0 closures (spec §2.1, widened 2026-08-14)',
     (_label, block) => {
       expect(block).toContain('qb.deleted_at IS NULL');
       expect(block).toContain("qb.content_status = 'published'");
-      expect(block).toContain("qb.verification_state != 'failed'");
+      // Widened by 20260814000014_tiered_verification_serving_and_truthful_
+      // picker.sql from the single-state `!= 'failed'` to all three
+      // disproved states — the CHECK constraint allows six verification_state
+      // values (20260510064952) but every serving gate had kept testing only
+      // 'failed', so rows the verifier had disproved via
+      // 'failed_fix_in_flight' / 'failed_unfixable' were still servable.
+      expect(block).toContain(
+        "qb.verification_state NOT IN ('failed', 'failed_fix_in_flight', 'failed_unfixable')",
+      );
     },
   );
 
@@ -211,9 +257,22 @@ describe('select_quiz_questions_rag verification gate — migration structure', 
     expect(executableSql).not.toMatch(/UPSERT.*ff_grounded_ai_enforced_pairs/i);
   });
 
-  it('issues no GRANT/REVOKE (preserves the existing ACL via CREATE OR REPLACE only)', () => {
+  it('issues no GRANT, and any REVOKE is only the pre-existing anon-execute revoke reissued verbatim (preserves ACL)', () => {
+    // No migration re-issuing this function may GRANT new privileges — the
+    // ACL is preserved via CREATE OR REPLACE alone. A REVOKE is allowed ONLY
+    // if it is the anon-execute revoke against THIS function, reissued
+    // verbatim from 20260515000002_security_hardening_secdef_anon_
+    // searchpath_rls_view.sql (idempotent — REVOKE on an already-revoked
+    // grant is a no-op). This is deliberately not a blanket "no REVOKE"
+    // check: 20260820120000_reassert_select_quiz_questions_rag_staging_
+    // drift.sql re-affirms that exact REVOKE defensively, so a blanket ban
+    // would itself be stale against the current source.
     expect(executableSql).not.toMatch(/\bGRANT\b/);
-    expect(executableSql).not.toMatch(/\bREVOKE\b/);
+    const revokeStatements = executableSql.match(/REVOKE\b[^;]*;/gi) ?? [];
+    for (const statement of revokeStatements) {
+      expect(statement).toMatch(/EXECUTE ON FUNCTION public\.select_quiz_questions_rag/);
+      expect(statement).toMatch(/FROM anon/);
+    }
   });
 
   it('the empty-Tier-0-pool early return is unchanged and precedes the ladder computation', () => {
