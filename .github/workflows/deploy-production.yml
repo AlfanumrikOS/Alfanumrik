@@ -519,6 +519,7 @@ jobs:
       - name: Verify migration-history parity
         id: parity
         env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           EXPECTED_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           FORBIDDEN_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -544,6 +545,7 @@ jobs:
       # as "the hard gate belongs in CI"; previously wired into nothing (P0-6).
       - name: Assert live-database security invariants
         env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           EXPECTED_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           FORBIDDEN_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
