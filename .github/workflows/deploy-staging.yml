@@ -389,7 +389,7 @@ jobs:
 
           for i in 1 2 3; do
             RESPONSE=$(curl -s -w "\n%{http_code}" \
-              "${DEPLOY_URL}/api/v1/health" 2>/dev/null)
+              "${DEPLOY_URL}/api/health" 2>/dev/null)
             STATUS=$(echo "$RESPONSE" | tail -1)
             BODY=$(echo "$RESPONSE" | head -1)
             if [ "$STATUS" = "200" ]; then
