@@ -2634,8 +2634,27 @@ jobs:
     # then re-opens the deploy-blocking flake. Nothing here weakens a test: the job
     # is still BLOCKING, still in ci-gate's `required` list, and a REAL failure
     # still fails the gate.
+    # 2026-08-20: group renamed from the job-local `integration-tests-live-
+    # staging-db` to the SAME `staging-db-push` lane already shared by
+    # sync-staging-migrations.yml and deploy-staging.yml's `migrations` job
+    # (see their concurrency comments — both call this "the contended
+    # resource is the shared staging Supabase project", but neither one's
+    # group previously included this job). Root-caused via the annotations
+    # for run 32337055976 (sync-staging-migrations, commit 0b05519) and
+    # 32337056137 (this job, same commit/push): both jobs ran against the
+    # staging DB in the SAME wall-clock window (05:49:09-05:49:36 vs
+    # 05:49:10-05:52:42) with no coordination between them, because they sat
+    # in disjoint concurrency groups. A `supabase db push` running DDL
+    # (CREATE OR REPLACE FUNCTION, ALTER TABLE, RLS policy changes) at the
+    # same moment this job seeds fixtures and calls affected RPCs is exactly
+    # the class of contention the 2026-08-12 fix above (job-level group
+    # across refs) was written for — it just didn't cover this cross-workflow
+    # case. Folding this job into `staging-db-push` makes ALL THREE writers
+    # of the staging DB (this job, sync-staging-migrations.yml,
+    # deploy-staging.yml's migrations job) mutually exclusive, closing the
+    # gap without changing this job's own required/blocking status.
     concurrency:
-      group: integration-tests-live-staging-db
+      group: staging-db-push
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
