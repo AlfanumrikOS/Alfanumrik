@@ -23,8 +23,23 @@ import { logger } from '@alfanumrik/lib/logger';
  *
  * The signed URL expires in 5 minutes (300s).
  *
- * P13: this route does NOT log the requested path to the structured
- * logger beyond a minimal event id.
+ * AUTH: requires 'learning_source.view' permission (student/teacher roles;
+ * admin/super_admin bypass via wildcard, per authorizeRequest()).
+ *
+ * RIGHTS CHECK: the `learning-sources` bucket has ZERO storage.objects
+ * policies by deliberate design (see
+ * supabase/migrations/20260816000001_learning_sources_bucket.sql) — it is
+ * service-role-only, and this route is the ONLY enforcement point for both
+ * WHO may fetch an asset (permission check) and WHETHER that asset is legally
+ * servable (rights_status check against public.rag_content_sources, joined
+ * via public.rag_content_documents on storage_bucket/storage_path). A path
+ * that resolves to no document row, or to a source whose rights_status is
+ * not one of public_domain/ncert_open/licensed, is treated identically to a
+ * genuinely-missing object (same 404) so callers cannot probe which
+ * restricted documents exist.
+ *
+ * P13: this route does NOT log the requested storage path to the
+ * structured logger.
  */
 
 export const runtime = 'nodejs';
@@ -69,10 +84,20 @@ function validateParams(params: {
     return { ok: false, error: 'sha256 must be a hex string (at least 16 chars)' };
   }
 
-  // grade must be 6-12
-  const gradeNum = parseInt(grade, 10);
-  if (isNaN(gradeNum) || gradeNum < 6 || gradeNum > 12) {
-    return { ok: false, error: 'grade must be a number from 6 to 12' };
+  // board: strict charset — no slashes, dots, or other path-meaningful
+  // characters. Path convention documented in
+  // supabase/migrations/20260816000001_learning_sources_bucket.sql uses
+  // e.g. 'CBSE'.
+  if (!/^[a-z]{2,10}$/i.test(board)) {
+    return { ok: false, error: 'board must be 2-10 alphabetic characters' };
+  }
+
+  // grade must be an EXACT string match against '6'..'12' (P5 — grades are
+  // strings, never integers; do NOT parseInt, which would accept garbage
+  // like '6/../../secret' since parseInt stops at the first non-digit).
+  const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
+  if (!VALID_GRADES.includes(grade)) {
+    return { ok: false, error: 'grade must be one of: ' + VALID_GRADES.join(', ') };
   }
 
   // subject_code: 2-8 lowercase alphanumeric
@@ -100,12 +125,27 @@ function validateParams(params: {
   return { ok: true };
 }
 
+// Only these rights_status values may ever be served to a caller. The
+// bucket carries NO storage.objects policies (service-role-only by design —
+// see supabase/migrations/20260816000001_learning_sources_bucket.sql), so
+// this route is the sole place that content-level access is enforced.
+const SERVABLE_RIGHTS_STATUSES = new Set(['public_domain', 'ncert_open', 'licensed']);
+
+function notFoundResponse() {
+  return NextResponse.json(
+    { error: 'Resource not found in learning-sources bucket' },
+    { status: 404 }
+  );
+}
+
 export async function GET(request: NextRequest) {
-  // Auth: any authenticated caller can request a signed URL. The bucket's
-  // RLS policies enforce per-resource access; this route only validates path
-  // shape and mints the signed URL. No specific permission code required —
-  // just authentication (admin/super_admin bypass via wildcard).
-  const auth = await authorizeRequest(request);
+  // Auth: the `learning-sources` bucket has ZERO storage.objects policies
+  // (deliberate — see supabase/migrations/20260816000001_learning_sources_bucket.sql).
+  // It is service-role-only, so THIS ROUTE is the only enforcement point for
+  // both who may fetch an asset (permission check, below) and whether the
+  // asset is legally servable (rights_status check, below — see the
+  // rag_content_sources lookup after path validation).
+  const auth = await authorizeRequest(request, 'learning_source.view');
   if (!auth.authorized) {
     return auth.errorResponse!;
   }
@@ -139,8 +179,40 @@ export async function GET(request: NextRequest) {
   // Build the storage path
   const storagePath = buildPath(board, grade, subjectCode, sha16, fn);
 
-  // Mint the signed URL
   try {
+    // Rights check — the ONLY content-level access control for this bucket.
+    // A path with no matching rag_content_documents row, or whose source
+    // rights_status isn't in SERVABLE_RIGHTS_STATUSES (public_domain /
+    // ncert_open / licensed), is treated identically to "genuinely missing"
+    // — same 404, same message — so a caller cannot distinguish "restricted"
+    // from "never existed" by response shape.
+    const { data: docRow, error: docError } = await supabaseAdmin
+      .from('rag_content_documents')
+      .select('rag_content_sources!inner(rights_status)')
+      .eq('storage_bucket', 'learning-sources')
+      .eq('storage_path', storagePath)
+      .maybeSingle();
+
+    if (docError) {
+      logger.error('learning-sources: rights lookup failed', {
+        error: docError.message,
+        ip: request.headers.get('x-forwarded-for'),
+      });
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const source = (docRow as { rag_content_sources?: { rights_status?: string } | { rights_status?: string }[] } | null)
+      ?.rag_content_sources;
+    const rightsStatus = Array.isArray(source) ? source[0]?.rights_status : source?.rights_status;
+
+    if (!docRow || !rightsStatus || !SERVABLE_RIGHTS_STATUSES.has(rightsStatus)) {
+      return notFoundResponse();
+    }
+
+    // Mint the signed URL
     const { data, error } = await supabaseAdmin.storage
       .from('learning-sources')
       .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
@@ -149,7 +221,6 @@ export async function GET(request: NextRequest) {
       const isNotFound = error.message.toLowerCase().includes('not found')
         || error.message.toLowerCase().includes('no such file');
       logger.warn('learning-sources: signed URL creation failed', {
-        storagePath,
         error: error.message,
         ip: request.headers.get('x-forwarded-for'),
       });

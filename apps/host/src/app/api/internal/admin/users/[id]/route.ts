@@ -121,7 +121,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         status: 'approved',
       }, { onConflict: 'guardian_id,student_id' });
 
-      await logAdminAction({ action: 'force_link_guardian', entity_type: 'student', entity_id: id, details: { guardian_email }, ip, actorUserId: auth.userId });
+      // P13: audit_logs.details is metadata-only — never email/phone/name or
+      // other PII (REG-68). Log the resolved guardian UUID, not the raw
+      // email that was used to look it up. The HTTP response below never
+      // echoed the email either (only success/action), so this only
+      // changes what lands in the audit trail.
+      await logAdminAction({ action: 'force_link_guardian', entity_type: 'student', entity_id: id, details: { guardian_id: guardian.id }, ip, actorUserId: auth.userId });
       return NextResponse.json({ success: true, action: 'guardian_linked' });
     }
 
