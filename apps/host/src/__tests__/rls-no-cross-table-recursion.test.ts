@@ -424,9 +424,19 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'student_burst_progress::Students see own burst progress',
   'student_cluster_assignments::students_own_student_cluster_assignments',
   'student_competency_scores::Students see own competency scores',
-  'student_daily_usage::student_usage_insert',
+  // Money/quota policy convergence (migration 20260821121232_converge_money_table_
+  // client_write_policies.sql, merged in PR #1600, already applied to production):
+  // dropped 'student_usage_insert' and 'student_usage_update' from
+  // public.student_daily_usage. Both were permissive `TO public` (= anon +
+  // authenticated) INSERT/UPDATE policies — live exploit #6 on staging: any logged-in
+  // student could self-reset their AI quota counters (unmetered Claude API spend).
+  // They were STAGING-ONLY drift; production never had them, so the drop converges
+  // staging DOWN to production's 8-policy shape. The legitimate writer is the
+  // service-role client at apps/host/src/app/api/foxy/_lib/quota.ts (bypasses RLS,
+  // unaffected); the client path is SELECT-only and keeps student_usage_select below.
+  // Both dropped policies leave the detected set, so their two grandfather entries are
+  // pruned here — a real fix ratcheting the ledger down. Ledger: 224 -> 222.
   'student_daily_usage::student_usage_select',
-  'student_daily_usage::student_usage_update',
   'student_scans::scans_insert',
   'student_scans::scans_own',
   'student_skill_state::skill_state_teacher_select',
@@ -795,8 +805,15 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // the 3 offenders were never added to the ledger in the first place (they were
     // fixed before merge, not grandfathered), so the net change from the last
     // committed 225 is just the single UPDATE drain: 225 -> 224.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(224);
-    expect(detectedRiskKeys().length).toBe(224);
+    // Money/quota policy convergence (migration 20260821121232, merged in PR #1600,
+    // already applied to production): dropped student_usage_insert and
+    // student_usage_update on student_daily_usage — permissive `TO public`
+    // INSERT/UPDATE policies that let any logged-in student reset their own AI quota
+    // counters (live exploit #6 on staging), STAGING-ONLY drift now converged DOWN to
+    // production's 8-policy shape. Both leave the detected set, so the freeze ratchets
+    // down by exactly the two pruned ledger entries: 224 -> 222.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(222);
+    expect(detectedRiskKeys().length).toBe(222);
   });
 });
 
