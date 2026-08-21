@@ -1,8 +1,8 @@
 # Fix Ledger — live-integrity audit of `shktyoxqhundlvkiwguu` (2026-08-20)
 
-**Single source of truth for the repair program.** One row per finding — 42 rows as of
-2026-08-21. This count drifts as findings are added; re-count the `DB-` rows rather than
-trusting it.
+**Single source of truth for the repair program.** One row per finding — 43 rows as of
+2026-08-21 (DB-43 added by the second run of the scheduled data-quality routine, same day).
+This count drifts as findings are added; re-count the `DB-` rows rather than trusting it.
 
 ## How to read this file
 
@@ -86,6 +86,7 @@ trusting it.
 | **DB-34** — `question_bank.embedding` 100% NULL; queue pending since 2026-08-01 with zero worker attempts | P1 | — | NOT-STARTED | embedding null count + queue state | 18,765 rows / 0 embeddings; 18,750 pending, max(attempts)=0 | — | — | — |
 | **DB-35** — `get_learning_source` declares `p_grade integer` (P5 violation) and is SECURITY DEFINER with no `search_path` | P1 | — | NOT-STARTED | `pg_get_functiondef` | 1 of 75 grade-taking functions integer-typed | — | — | — |
 | **DB-41** — `question_bank` base table still exposes the answer key on every serving path; the safe view was built and never wired up. `question_bank_student_safe` (migration `20260806000004:14`) hard-NULLs `correct_answer_index`, `correct_answer_text` and `solution_steps` and is a genuinely correct safe projection — but it has **zero callers**. Every question-serving surface still reads the base `question_bank` table directly: web `(student)/pyq/page.tsx:66,79`, `(student)/quiz/page.tsx:907,954`, `(student)/mock-exam/page.tsx:126,144`; API `/api/diagnostic/start:295,503`, `/api/diagnostic/complete:193`; mobile `pyq_repository.dart:34,50`, `quiz_repository.dart:104`. Migration `20260814000000`'s own header lists "re-point PYQ/mobile" as outstanding work. So the answer-key protection that was built is not in effect on any serving path | P1 | — | NOT-STARTED | grep for `.from('question_bank')` across `apps/host`, `packages`, `mobile/lib` vs `.from('question_bank_student_safe')` (currently 0) | 0 surfaces use the safe view; all serving paths read the base table | — | — | — |
+| **DB-43** — `ai_usage_stats` has zero writers anywhere in the codebase (checked all migrations, all Edge Functions, all app code) but is read by two live super-admin/internal-admin dashboards (`apps/host/src/app/api/internal/admin/ai-monitor/route.ts`, `.../command-center/route.ts`) and `packages/lib/src/issue-detector.ts:98`. The dashboards will always render as zero-traffic/zero-error — indistinguishable from a genuinely healthy AI pipeline — rather than surfacing that the metric source is dark. Compounding it: both routes discard Supabase `.error` on every parallel query (only `.data` is read from the `Promise.all` results), so a real query failure also reads as "zero, all clear." Source: code audit only (no live-DB query available in this environment); the "zero writers" claim is a grep-completeness finding, not a live row count, so it should be read as "the table cannot possibly be populated," not "the table was observed empty." | P1 | — | NOT-STARTED | grep all `INSERT`/`upsert` into `ai_usage_stats` across `supabase/`, `apps/`, `packages/` (expect zero); `SELECT count(*) FROM ai_usage_stats WHERE created_at > now() - interval '7 days'` against production to confirm live emptiness | 0 writer call sites found in source; live row count unverified (no DB access from this session) | — | — | — |
 
 ---
 
