@@ -1,0 +1,226 @@
+-- Migration: 20260821070000_create_v_xp_ledger_drift.sql
+-- Purpose: Create `public.v_xp_ledger_drift` EARLY ENOUGH IN VERSION ORDER that
+--          20260821082059_restrict_secdef_views_to_service_role.sql can revoke on it without
+--          raising 42P01 on an environment where the view does not exist. One statement, nothing
+--          else. No GRANT, no REVOKE — 20260821082059 runs immediately after this file and does
+--          the revokes.
+--
+-- ============================================================================
+-- *** THIS VERSION NUMBER IS DELIBERATELY BACKDATED. READ WHY BEFORE JUDGING IT. ***
+-- ============================================================================
+-- 20260821070000 is NOT the wall-clock time this file was authored. It was authored on
+-- 2026-08-21 in the evening, AFTER 20260821082059 and AFTER 20260821121122. The version was
+-- chosen so the file sorts into a specific gap:
+--
+--     20260821061915_revoke_public_execute_quiz_serving_rpcs.sql   <-- staging's ledger head
+--  >> 20260821070000_create_v_xp_ledger_drift.sql                  <-- THIS FILE
+--     20260821082059_restrict_secdef_views_to_service_role.sql     <-- REVOKEs the view
+--     20260821121122_create_v_xp_ledger_drift_and_reassert_view_revokes.sql
+--     20260821121232_converge_money_table_client_write_policies.sql
+--
+-- `supabase db push` applies files in VERSION ORDER, not authoring order. 20260821082059
+-- contains, inside a single BEGIN/COMMIT:
+--
+--     REVOKE ALL ON public.v_xp_ledger_drift FROM PUBLIC, anon, authenticated;
+--
+-- `REVOKE` has no `IF EXISTS` form. On staging `gzpxqklxwzishrkiaatd`, where
+-- `to_regclass('public.v_xp_ledger_drift')` IS NULL, that statement raises 42P01
+-- (undefined_table) and — because all eight statements share one transaction — ROLLS BACK THE
+-- OTHER SIX REVOKES TOO. None of DB-1 lands on staging. Not partially; not at all.
+--
+-- 20260821121122 already creates the view, but at a HIGHER version, so `db push` reaches it only
+-- AFTER 20260821082059 has already aborted. CREATING THE VIEW AT A LATER VERSION CANNOT HELP.
+-- The CREATE has to sort BEFORE the REVOKE or it is not a fix at all.
+--
+-- ---------------------------------------------------------------------------
+-- THIS IS THE OUT-OF-ORDER PATTERN THIS REPO HAS REPEATEDLY FLAGGED
+-- ---------------------------------------------------------------------------
+-- Say it plainly rather than let a future reader discover it: inserting a migration BELOW the
+-- current head is the anti-pattern the 20260821082059, 20260821121122 and 20260820152908 headers
+-- all warn about.
+--
+-- AND DO NOT COMFORT YOURSELF WITH "PRODUCTION IS PAST THIS VERSION SO IT WILL BE SKIPPED." IT
+-- WILL NOT BE SKIPPED. Every deploy path in this repo passes `--include-all`:
+--
+--     .github/workflows/deploy-production.yml:487      supabase db push --linked --include-all
+--     .github/workflows/deploy-staging.yml:218         supabase db push --linked --include-all
+--     .github/workflows/sync-staging-migrations.yml:286  … --db-url "$DB_URL" --include-all
+--
+-- `--include-all` applies every local migration ABSENT FROM THE REMOTE HISTORY TABLE, regardless
+-- of whether it sorts above or below the remote head. deploy-production.yml:419-425 says so in
+-- as many words: "Without `--include-all` the CLI refuses to apply committed files that sort
+-- BEFORE the newest remote version … it makes out-of-order LOCAL files applicable." It is also
+-- load-bearing for the staging backlog (sync-staging-migrations.yml:158, 170-179), so it will
+-- not be removed to make this file inert.
+--
+-- SO THIS FILE WILL RUN ON PRODUCTION, OUT OF ORDER, ON THE NEXT MIGRATION-BEARING DEPLOY, and
+-- will be stamped into `supabase_migrations.schema_migrations` at 20260821070000 — below two
+-- versions already recorded there. THAT IS ACCEPTED HERE ONLY BECAUSE THE STATEMENT IS A
+-- VERIFIED NO-OP ON PRODUCTION (see the next section: in-place replace preserves the ACL, and
+-- the definition is byte-identical). The no-op property is not a nicety — IT IS THE ENTIRE
+-- SAFETY ARGUMENT FOR BACKDATING. Do not reuse this pattern for a migration that changes
+-- anything.
+--
+-- Where it actually MATTERS is any environment whose head is below 20260821070000 — staging
+-- (head 20260821061915), a fresh CI project, a DR restore replaying from baseline — because
+-- there it runs BEFORE 20260821082059 and is what stops the 42P01.
+--
+-- It was chosen anyway, as the LEAST-BAD of three options:
+--
+--   (a) GUARD THE REVOKE with `DO $$ BEGIN IF to_regclass('public.v_xp_ledger_drift') IS NOT
+--       NULL THEN ... END IF; END $$;` — REJECTED. It makes the migration exit green on staging
+--       while leaving the view still absent there, so the environments stay divergent and the
+--       audit reads as closed. Worse, it ERASES THE FINDING: the 42P01 is the only signal that a
+--       live production object has no migration provenance. Suppressing the error suppresses the
+--       discovery. That reasoning is recorded at length in 20260821121122's header and is not
+--       reopened here.
+--
+--   (b) EDIT 20260821082059 — REJECTED. It is ALREADY APPLIED to production
+--       `shktyoxqhundlvkiwguu` and recorded in `supabase_migrations.schema_migrations`. Editing
+--       an applied migration makes the repo disagree with what actually ran on a live database,
+--       which is a worse and more permanent lie than an out-of-order version number.
+--
+--   (c) BACKDATE A CREATE-ONLY MIGRATION INTO THE GAP — chosen. It leaves every applied file
+--       byte-for-byte untouched, keeps the 42P01's cause visible in this header rather than
+--       swallowed by a guard, and — because the statement is a verified no-op on production —
+--       costs nothing there beyond one out-of-order ledger row.
+--
+-- ============================================================================
+-- THE FINDING THIS FILE MUST NOT BE READ AS ERASING
+-- ============================================================================
+-- `public.v_xp_ledger_drift` EXISTED ON PRODUCTION, CREATED BY NO MIGRATION.
+--
+-- The other six views in the DB-1 set each have a creating migration in the 2026-08-06 batch
+-- (20260806000004, …0007, …0009, …0010, …0011, …0012). This one has none.
+-- `git log --all -S 'v_xp_ledger_drift'` finds the string ONLY in the 2026-08-20/21 remediation
+-- commits — the REVOKE that assumes the view exists, and FIX-LEDGER.md's DB-3 detection query.
+-- It has NEVER appeared in a migration on ANY branch. `grep -rn 'VIEW public.v_xp_ledger_drift'`
+-- across every `.sql` in the repo returned zero rows before this remediation.
+--
+-- It was therefore created by hand, directly against production, OUTSIDE THE MIGRATION CHAIN —
+-- a live object no environment could reproduce, that no code review ever saw, and that a fresh
+-- CI project or DR restore would silently lack.
+--
+-- THIS MIGRATION GIVES THAT OBJECT PROVENANCE RETROACTIVELY. IT DOES NOT MAKE THE ORIGINAL
+-- CREATION LEGITIMATE. The out-of-band write itself is a separate, open finding — see
+-- docs/audits/2026-08-21-out-of-band-write-incident-logs.md, which is the durable verbatim log
+-- record of the 2026-08-18 (production) and 2026-08-20 (staging) out-of-band write sessions.
+-- Do not cite this file as evidence that the object was properly introduced. It was not.
+--
+-- ============================================================================
+-- EFFECT ON PRODUCTION — A VERIFIED NO-OP (IT DOES RUN; IT JUST CHANGES NOTHING)
+-- ============================================================================
+-- Per the `--include-all` note above, this file WILL be applied to production out of order. It
+-- changes nothing when it is:
+--
+--   * `CREATE OR REPLACE VIEW` REPLACES IN PLACE — it does not drop and recreate — so THE
+--     EXISTING ACL IS PRESERVED. Production's hardened `{postgres,service_role}` grant set
+--     survives untouched. (A DROP-then-CREATE would discard it and silently re-inherit
+--     `GRANT ALL TO anon` from baseline:22640-22643. Do not "simplify" this into a DROP.)
+--   * THE DEFINITION IS BYTE-IDENTICAL to the live production view: transcribed verbatim from
+--     `pg_get_viewdef('public.v_xp_ledger_drift'::regclass, true)` on 2026-08-21, with
+--     `md5(pg_get_viewdef(...))` = `c69c438d…` measured identical before and after the
+--     equivalent statement in 20260821121122 was applied to production.
+--
+-- Same projection, same LEFT JOIN, same GROUP BY, same COALESCE defaults, same `<>` filter, same
+-- column names and order. Note `0::bigint`: `sum(integer)` returns bigint, so the COALESCE arms
+-- must agree in type. Do not tidy that cast away.
+--
+-- ============================================================================
+-- EFFECT ON STAGING — THE VIEW IS BORN WORLD-WRITABLE, AND THAT IS EXPECTED
+-- ============================================================================
+-- On staging the view does not exist, so this statement CREATES it — and walks straight into the
+-- trap at `supabase/migrations/00000000000000_baseline_from_prod.sql:22640-22643`, which still
+-- carries:
+--
+--     ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+--       GRANT ALL ON TABLES TO "anon";            <-- :22641
+--       GRANT ALL ON TABLES TO "authenticated";   <-- :22642
+--
+-- `ON TABLES` covers views. The view is therefore BORN with `anon` and `authenticated` holding
+-- `arwdDxtm` — all eight privileges — the instant it is created.
+--
+-- THAT EXPOSURE IS CLOSED BY THE VERY NEXT MIGRATION. 20260821082059 sorts immediately after
+-- this file and revokes `PUBLIC, anon, authenticated` on all seven views, including this one.
+-- The window is one migration wide, inside a single `db push`, on a non-production project.
+--
+-- THIS IS WHY THIS FILE CARRIES NO GRANT AND NO REVOKE. Adding them here would duplicate
+-- 20260821082059's job and create a second place to keep in sync. The rule from
+-- 20260821082059:125-127 — "any future migration that recreates one of these seven must
+-- re-assert the revocations IN THE SAME FILE" — is satisfied structurally here by the adjacent
+-- ordering, not ignored: the revoke file is the immediate successor and cannot be skipped
+-- without skipping the whole hardening.
+--
+-- ============================================================================
+-- ON THE OVERLAP WITH 20260821121122 — INTENTIONAL, HARMLESS, RETAINED
+-- ============================================================================
+-- 20260821121122_create_v_xp_ledger_drift_and_reassert_view_revokes.sql ALSO creates this view
+-- and ALSO re-issues all seven revokes. That duplication is deliberate and is KEPT:
+--
+--   * It is already APPLIED TO PRODUCTION (ledger version 20260821121122). Deleting or editing
+--     it would make the repo disagree with a live database's ledger — option (b) above, rejected.
+--   * Every statement in it is IDEMPOTENT. Re-creating an identical view body via
+--     `CREATE OR REPLACE` changes nothing and preserves the ACL; re-revoking an already-revoked
+--     privilege is a no-op. Running both files in sequence is safe.
+--   * It remains the SELF-SUFFICIENT file for the seven-view convergence. This file is narrower
+--     by design: it exists only to satisfy the ordering constraint, and it is the wrong place to
+--     restate the security posture.
+--
+-- If the view definition ever changes, THREE files must change together: this one,
+-- 20260821121122, and the DOWN partner in docs/runbooks/.
+--
+-- ============================================================================
+-- HOW TO VERIFY — ASSERT RESULTING STATE, NOT EXIT CODE
+-- ============================================================================
+--   1. `SELECT to_regclass('public.v_xp_ledger_drift');` -> non-NULL on BOTH projects.
+--   2. `md5(pg_get_viewdef('public.v_xp_ledger_drift'::regclass, true))` -> EQUAL across the two
+--      projects, and equal to `c69c438d…` on production (unchanged).
+--   3. AFTER 20260821082059 has run, `relacl` on all seven views lists ONLY `postgres` and
+--      `service_role` — no `anon`, no `authenticated`.
+--   4. BEHAVIOURALLY, not from the catalogue: under `SET LOCAL ROLE anon`,
+--      `has_table_privilege` returns false for all eight privilege types on all seven views.
+--
+-- ============================================================================
+-- ROLLBACK
+-- ============================================================================
+-- DOWN migration:
+--     docs/runbooks/20260821070000_create_v_xp_ledger_drift.DOWN.sql
+--
+-- Deliberately NOT in `supabase/migrations/`: `supabase db push` applies every file in that
+-- directory in version order, so a down-migration parked there would be auto-applied on the next
+-- deploy with no operator decision. Its `DROP VIEW` line is additionally COMMENTED OUT by
+-- default — on production that would delete a live object DB-3's detection query depends on.
+-- Read it before running it.
+--
+-- Ledger: docs/audits/FIX-LEDGER.md  (DB-1 convergence; DB-3 owns the XP drift this view
+--         reports; DB-12 owns the default-privileges root cause at baseline:22640-22643)
+
+BEGIN;
+
+-- ---------------------------------------------------------------------------
+-- Verbatim `pg_get_viewdef('public.v_xp_ledger_drift'::regclass, true)` from
+-- production `shktyoxqhundlvkiwguu`, 2026-08-21. Reformatted only for leading
+-- whitespace and statement termination; semantics unchanged.
+--
+-- `CREATE OR REPLACE`, never DROP + CREATE: an in-place replace PRESERVES the
+-- existing ACL, so production's hardened `{postgres,service_role}` grant set
+-- survives. A DROP-then-CREATE would silently re-inherit `GRANT ALL TO anon`
+-- from baseline:22640-22643.
+--
+-- Reports students whose denormalised `students.xp_total` disagrees with the
+-- sum of their `xp_transactions` ledger. It DETECTS drift (DB-3: 14 of 68
+-- students at capture); it repairs nothing, and neither does this migration.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.v_xp_ledger_drift AS
+ SELECT s.id AS student_id,
+    COALESCE(s.xp_total, 0) AS xp_total,
+    COALESCE(l.ledger_sum, 0::bigint) AS ledger_sum,
+    COALESCE(s.xp_total, 0) - COALESCE(l.ledger_sum, 0::bigint) AS drift
+   FROM students s
+     LEFT JOIN ( SELECT xp_transactions.student_id,
+            sum(xp_transactions.amount) AS ledger_sum
+           FROM xp_transactions
+          GROUP BY xp_transactions.student_id) l ON l.student_id = s.id
+  WHERE COALESCE(s.xp_total, 0) <> COALESCE(l.ledger_sum, 0::bigint);
+
+COMMIT;

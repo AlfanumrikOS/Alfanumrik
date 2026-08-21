@@ -46,6 +46,42 @@ regexes = [
     # migration) and anchored ^…$ against the literal captured secret so
     # nothing broader can hide behind it.
     '^subject/chapter$',
+    # 2026-08-21 (PR #1600): docs/audits/2026-08-21-out-of-band-write-incident-logs.md,
+    # original commit cc28d775b. These two values are Supabase MANAGEMENT-PLANE
+    # ACTOR IDENTIFIERS — a Studio session id and an MCP oauth session id — NOT
+    # credentials. They are opaque handles the platform stamps into its own
+    # audit trail; they carry no key material, they authenticate nothing, and
+    # they cannot be replayed to obtain access. They appeared verbatim in the
+    # `-- user:` trailers that Postgres records on every statement, captured as
+    # part of a read-only log export documenting the two out-of-band write
+    # incidents: 2026-08-18 on production `shktyoxqhundlvkiwguu`
+    # (`session:d7881e43-…`) and 2026-08-20 on staging `gzpxqklxwzishrkiaatd`
+    # (`oauth:c36bf53d-…`). Publishing them is the POINT of that file — they are
+    # the only evidence tying the unauthorised writes to a specific actor
+    # session, and the incident analysis cross-references them by value.
+    #
+    # generic-api-key fired on SHAPE, not substance: `oauth:` contains the rule's
+    # `auth` keyword, `session:` its own, each followed by `:` and a
+    # high-entropy `[\w-]{10,150}` run — a UUID satisfies that without being a
+    # secret. The captured Secret is the bare UUID (default regexTarget), which
+    # is what these anchors match.
+    #
+    # The audit file has SINCE BEEN TRUNCATED to 8-char prefixes
+    # (`session:d7881e43-…[REDACTED]`), so the full values no longer appear in
+    # HEAD. That is not sufficient on its own: gitleaks-action is DIFF-scoped and
+    # on `pull_request` walks the PR's commits via `git log -p`, so the 38 lines
+    # carrying the full values in commit cc28d775b are still scanned. Truncating
+    # the working tree does not erase a value from the commit range — the same
+    # lesson as the `^subject/chapter$` entry above. History rewrite was again
+    # out of scope (force-push).
+    #
+    # VALUE-scoped and anchored ^…$, deliberately. NOT path-scoped: allowlisting
+    # docs/audits/** would blind the scanner to a genuine credential pasted into
+    # a future incident export — exactly the artefact most likely to contain one.
+    # Anchoring means only these two exact identifiers can hide here; any other
+    # value on the same lines still fails the gate.
+    '^c36bf53d-13ec-492a-8af4-bd5bc1ada902$',
+    '^d7881e43-542d-4d55-8221-dce4d638b85d$',
 ]
 paths = [
     'src/__tests__/ai-prompt-pii\.test\.ts',

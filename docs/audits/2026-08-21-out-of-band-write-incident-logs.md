@@ -26,6 +26,36 @@ there will be nothing to refresh from.
 
 ---
 
+## Redaction note — the two actor identifiers are truncated
+
+**Added 2026-08-21, immediately after this file was first committed.** Two values — and only two — were
+shortened. They now appear in this exact form at **every** occurrence:
+
+* `oauth:c36bf53d-…[REDACTED]` — the Incident B (staging) MCP actor
+* `session:d7881e43-…[REDACTED]` — the Incident A (production) Studio actor
+
+**Why.** Gitleaks' `generic-api-key` rule fires on the `oauth:<high-entropy-string>` /
+`session:<high-entropy-string>` shape and failed the secret-scanning gate on this file. The rule matched a
+*shape*, not a real credential.
+
+**What these are.** Opaque session/user identifiers minted by the Supabase management plane and echoed back in
+the `-- user:` statement trailer. They are **identifiers, not credentials** — they authenticate nothing, grant
+nothing, and cannot be replayed. Truncating them is a scanner accommodation, not a security finding.
+
+**Forensic impact — read this before November 2026.** The 8-character prefix is preserved and is written
+identically everywhere, so the two actors stay distinguishable from each other and every mention still
+cross-references correctly (`grep c36bf53d` / `grep d7881e43` still finds them all). The **full** values remain
+recoverable from each project's `postgres_logs` only until that project's rolling window closes — **2026-11-16**
+for Incident A (production) and **2026-11-18** for Incident B (staging), the same dates as the retention table
+above. After those dates the truncated prefixes in this file are all that survives of them. If a full identifier
+is ever needed, re-query before those dates; afterwards it is unrecoverable from any source.
+
+**Nothing else was redacted.** Project refs, view/function/table names, SQL bodies, timestamps, pids, vxids, and
+`alfanumrik@outlook.com` are all intact and verbatim. See §Redactions at the end of this file for the full
+inventory of what was seen and kept.
+
+---
+
 ## Method and provenance
 
 * Source: Supabase MCP `query_logs`, `source = 'postgres_logs'`, run against each project explicitly by ref.
@@ -58,7 +88,7 @@ there will be nothing to refresh from.
 Every row below carries one of two source trailers, both bound to the **same** Supabase Studio session id:
 
 ```
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 ```
 
 with `-- source:` taking three distinct values across the session:
@@ -93,7 +123,7 @@ Trailer embedded at offset 6737:
 
 ```
 -- source: POST /mcp
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:01:31.630Z
 Query Parameters: $1 = 'public', $2 = 'analytics'
 ```
@@ -106,7 +136,7 @@ Same introspection query. `duration: 15561.804 ms`.
 
 ```
 -- source: POST /mcp
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:01:58.422Z
 Query Parameters: $1 = 'public'
 ```
@@ -119,7 +149,7 @@ Same introspection query. `duration: 16273.869 ms`.
 
 ```
 -- source: POST /mcp
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:03:32.031Z
 Query Parameters: $1 = 'public', $2 = 'storage'
 ```
@@ -132,7 +162,7 @@ Same introspection query. `duration: 16986.960 ms`.
 
 ```
 -- source: POST /mcp
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:04:01.213Z
 Query Parameters: $1 = 'public', $2 = 'storage'
 ```
@@ -154,7 +184,7 @@ select json_agg(x)::text r from (
 ) x
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:18:55.982Z
 ```
 
@@ -174,7 +204,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:20:06.401Z
 ```
 
@@ -194,7 +224,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:20:17.409Z
 ```
 
@@ -215,7 +245,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:26:19.128Z
 ```
 
@@ -236,7 +266,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:26:36.325Z
 ```
 
@@ -260,7 +290,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:29:31.432Z
 ```
 
@@ -280,7 +310,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:30:52.523Z
 ```
 
@@ -302,7 +332,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:31:14.455Z
 ```
 
@@ -334,7 +364,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:39:15.564Z
 ```
 
@@ -353,7 +383,7 @@ select cron.unschedule('synthetic-host-monitor-tick') as a,
        cron.alter_job((select jobid from cron.job where jobname='agent-timeout-sweep-every-minute'), schedule => '*/5 * * * *') as c
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:39:41.669Z
 ```
 
@@ -374,7 +404,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:46:43.339Z
 ```
 
@@ -391,7 +421,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T12:48:04.114Z
 ```
 
@@ -408,7 +438,7 @@ where (schemaname='realtime' and tablename='messages');
 select count(*) backed_up from public._rls_policy_backup_20260818
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:12:01.636Z
 ```
 
@@ -490,7 +520,7 @@ y = 'learning_loop_stale' order by occurred_at desc;
 -- drop function if exists public.ops_check_learning_loop_health();
 
 -- source: dashboard
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:28:07.759Z
 ```
 
@@ -525,7 +555,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:32:28.633Z
 ```
 
@@ -535,7 +565,7 @@ auto_explain plan record for Studio's own schema introspection, `duration: 12970
 
 ```
 -- source: dashboard
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:35:28.581Z
 ```
 
@@ -549,7 +579,7 @@ auto_explain plan record for Studio's own schema introspection, `duration: 12970
 SET statement_timeout='58s'; SET idle_session_timeout='58s';select public.ops_check_learning_loop_health() as emitted
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:35:45.446Z
 ```
 
@@ -609,7 +639,7 @@ nb_build_object('failed_6h',v_disp_fail,'sent_6h',0,
 end; $fn$;
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:38:07.401Z
 ```
 
@@ -626,7 +656,7 @@ select json_build_object(
 )::text r
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:38:19.837Z
 ```
 
@@ -674,7 +704,7 @@ begin
 end; $fn$;
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:45:18.959Z
 ```
 
@@ -684,7 +714,7 @@ end; $fn$;
 statement: SET statement_timeout='58s'; SET idle_session_timeout='58s';revoke all on function public.reconcile_embedding_backfill_queue() from public, anon, authenticated
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:45:19.714Z
 ```
 
@@ -696,7 +726,7 @@ statement: SET statement_timeout='58s'; SET idle_session_timeout='58s';revoke al
 SET statement_timeout='58s'; SET idle_session_timeout='58s';select public.reconcile_embedding_backfill_queue() as closed
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:45:20.363Z
 ```
 
@@ -727,7 +757,7 @@ begin
 end; $fn$;
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:46:35.163Z
 ```
 
@@ -737,7 +767,7 @@ end; $fn$;
 statement: SET statement_timeout='58s'; SET idle_session_timeout='58s';revoke all on function public.reconcile_embedding_backfill_queue() from public, anon, authenticated
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:46:35.848Z
 ```
 
@@ -787,13 +817,14 @@ begin
 end; $fn$;
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:48:02.166Z
 ```
 
 > **Secret handling:** the logged text references Vault secrets **by name only**
 > (`ADMIN_API_KEY`, `projector_runner_service_role_key_v2`) and binds their values into local variables at
-> runtime. **No secret value appears in any log row in this window** — nothing was redacted here.
+> runtime. **No secret value appears in any log row in this window** — nothing here was redacted for secrecy.
+> (The `-- user:` actor identifier above is truncated, as it is throughout this file — see §Redaction note.)
 
 ### A-34 · `2026-08-18T13:48:03.336Z` · LOG · `mgmt-api` · `postgres` · pid 998936 · vxid 18/6178
 
@@ -801,7 +832,7 @@ end; $fn$;
 statement: SET statement_timeout='58s'; SET idle_session_timeout='58s';revoke all on function public.run_embedding_backfill_tick() from public, anon, authenticated
 
 -- source: POST /platform/pg-meta/:ref/query
--- user: session:d7881e43-542d-4d55-8221-dce4d638b85d
+-- user: session:d7881e43-…[REDACTED]
 -- date: 2026-08-18T13:48:02.873Z
 ```
 
@@ -893,7 +924,8 @@ textbook_chunks rows (queue: 21,411 -> 18,750 pending, all genuinely question_ba
 second call correctly returns 0.`
 
 > Secret-name references (`projector_runner_service_role_key`, `…_v2`, `INTERNAL_CALLER_SIGNING_SECRET`,
-> `ADMIN_API_KEY`) appear as **names**, never as values. Nothing redacted.
+> `ADMIN_API_KEY`) appear as **names**, never as values. Nothing redacted for secrecy — the only shortened
+> values anywhere in this file are the two actor identifiers (see §Redaction note).
 
 ## A.4 The three feature-flag flips — **explicitly NOT captured as DDL, and here is what the logs do show**
 
@@ -930,7 +962,7 @@ WITH pgrst_source AS (UPDATE "public"."feature_flags" SET "is_enabled" = "pgrst_
 ```
 
 These rows carry **no session trailer** — they came through PostgREST as `authenticator`, i.e. the application
-surface, not the Studio session `d7881e43-…`. They are **failed** attempts. They are evidence that a guard
+surface, not the Studio session `d7881e43-…[REDACTED]`. They are **failed** attempts. They are evidence that a guard
 exists and fired; they are **not** evidence of how the flags actually reached `is_enabled = true`. Zero rows
 matching `ff_adaptive_remediation_v1` exist anywhere in the 2026-08-18 log day.
 
@@ -942,7 +974,7 @@ matching `ff_adaptive_remediation_v1` exist anywhere in the 2026-08-18 log day.
 
 ```
 -- source: POST /mcp
--- user: oauth:c36bf53d-13ec-492a-8af4-bd5bc1ada902
+-- user: oauth:c36bf53d-…[REDACTED]
 ```
 
 Note the actor-token shape differs from Incident A: `oauth:` here vs `session:` there.
@@ -950,7 +982,7 @@ Note the actor-token shape differs from Incident A: `oauth:` here vs `session:` 
 **Row counts for the requested window 15:00Z → 16:00Z:**
 
 * Total `postgres_logs` rows in window: **258**
-* Rows carrying the `oauth:c36bf53d-…` trailer or `POST /mcp`: **4** (3 in `event_message`, 1 in `parsed.query`)
+* Rows carrying the `oauth:c36bf53d-…[REDACTED]` trailer or `POST /mcp`: **4** (3 in `event_message`, 1 in `parsed.query`)
 * ERROR rows in window: **52** — of which **50** are `postgrest`/`authenticator` from an unrelated
   certification-tenant/seat-policy test run (`purge_certification_tenant`, `seat_policy_block`,
   `not authorized for school …`), and exactly **2** are `mgmt-api`, both belonging to this actor.
@@ -980,7 +1012,7 @@ select jsonb_array_length(coalesce(public.select_quiz_questions_rag('11111111-22
 rollback;
 
 -- source: POST /mcp
--- user: oauth:c36bf53d-13ec-492a-8af4-bd5bc1ada902
+-- user: oauth:c36bf53d-…[REDACTED]
 -- date: 2026-08-20T15:20:47.780Z
 ```
 
@@ -1006,7 +1038,7 @@ alter table supabase_migrations.schema_migrations add column if not exists rollb
 commit;
 
 -- source: POST /mcp
--- user: oauth:c36bf53d-13ec-492a-8af4-bd5bc1ada902
+-- user: oauth:c36bf53d-…[REDACTED]
 -- date: 2026-08-20T15:25:16.181Z
 ```
 
@@ -1153,7 +1185,7 @@ Ledger-bootstrap preamble, byte-identical to B-02 except the date trailer:
 
 ```sql
 -- source: POST /mcp
--- user: oauth:c36bf53d-13ec-492a-8af4-bd5bc1ada902
+-- user: oauth:c36bf53d-…[REDACTED]
 -- date: 2026-08-20T15:28:19.059Z
 ```
 
@@ -1240,7 +1272,7 @@ Ledger-bootstrap preamble, byte-identical to B-02/B-04 except:
 
 ```sql
 -- source: POST /mcp
--- user: oauth:c36bf53d-13ec-492a-8af4-bd5bc1ada902
+-- user: oauth:c36bf53d-…[REDACTED]
 -- date: 2026-08-20T15:30:04.792Z
 ```
 
@@ -1305,8 +1337,8 @@ reproducing them would copy identifiers into a document that does not need them.
 ## It proves
 
 1. **Attribution of the writes to a specific actor token, with wall-clock precision.** Every production write in
-   §A.2 carries `-- user: session:d7881e43-542d-4d55-8221-dce4d638b85d`; every staging `apply_migration` call in
-   §B.2 carries `-- user: oauth:c36bf53d-13ec-492a-8af4-bd5bc1ada902`. Both ran as the `postgres` superuser role.
+   §A.2 carries `-- user: session:d7881e43-…[REDACTED]`; every staging `apply_migration` call in
+   §B.2 carries `-- user: oauth:c36bf53d-…[REDACTED]`. Both ran as the `postgres` superuser role.
 2. **That production DDL was executed from Supabase Studio, not through CI.** Three distinct surfaces are named
    in the trailers — the pg-meta query endpoint, the Studio SQL editor (`-- source: dashboard`), and an MCP
    client (`-- source: POST /mcp`) — all bound to one Studio session.
@@ -1338,7 +1370,7 @@ reproducing them would copy identifiers into a document that does not need them.
    occurred. A-13 was captured only because a `drop index` rode along in the same transaction.
 3. **The verbatim body of staging ledger row `20260820153007`.** See §B.2 Call 3 — four independent recovery
    paths were tried and all are closed. Only a second-hand human summary survives, and it is labelled as such.
-4. **Who the human behind the tokens was.** `session:d7881e43-…` and `oauth:c36bf53d-…` are opaque identifiers;
+4. **Who the human behind the tokens was.** `session:d7881e43-…[REDACTED]` and `oauth:c36bf53d-…[REDACTED]` are opaque identifiers;
    the connection IPs are Supabase management-plane egress addresses, not operator IPs. The staging ledger's
    `created_by` recorded `alfanumrik@outlook.com`, which is an account label, not proof of who held the session.
 5. **Whether individual statements' *effects* persisted.** The log records submission and success/failure at
@@ -1352,8 +1384,11 @@ reproducing them would copy identifiers into a document that does not need them.
 
 # Redactions
 
-**Nothing was redacted, because no secret value appeared in any captured row.** Recorded explicitly so a future
-reader does not assume material was quietly removed:
+**No secret value appeared in any captured row, so nothing was redacted for secrecy.** The only values altered
+anywhere in this file are the two **actor identifiers**, truncated to an 8-character prefix after the initial
+commit so that Gitleaks' `generic-api-key` rule stops matching the `oauth:`/`session:` + high-entropy shape —
+see §Redaction note near the top of this file. Everything else below is verbatim. Recorded explicitly so a
+future reader does not assume material was quietly removed:
 
 | Item seen in the logs | Kind | Action |
 |---|---|---|
@@ -1363,5 +1398,6 @@ reader does not assume material was quietly removed:
 | `alfanumrik@outlook.com` | `created_by` value written into the staging migration ledger | Kept — it is the actor attribution this audit exists to record |
 | Project refs `shktyoxqhundlvkiwguu` / `gzpxqklxwzishrkiaatd`, view/function/table names, `alert_rules` UUIDs | Already present throughout this repo | Kept |
 | School UUIDs in the 50 unrelated staging PostgREST errors | Not actor evidence | Not reproduced — see §B.3 |
+| `oauth:c36bf53d-…[REDACTED]` (staging MCP actor), `session:d7881e43-…[REDACTED]` (production Studio actor) | Opaque session/user identifiers — **not** credentials | **Truncated to an 8-char prefix — the only alteration in this file.** Done to satisfy Gitleaks `generic-api-key`; the same truncation is used at every occurrence so cross-referencing still works. Full values remain in `postgres_logs` until 2026-11-16 (prod) / 2026-11-18 (staging) — see §Redaction note |
 
 Had any API key, JWT, or password appeared, it would have been replaced with `[REDACTED]` and listed here.
