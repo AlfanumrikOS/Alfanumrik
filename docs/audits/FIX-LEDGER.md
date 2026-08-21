@@ -1,6 +1,8 @@
 # Fix Ledger — live-integrity audit of `shktyoxqhundlvkiwguu` (2026-08-20)
 
-**Single source of truth for the repair program.** One row per finding, 40 rows.
+**Single source of truth for the repair program.** One row per finding — 42 rows as of
+2026-08-21. This count drifts as findings are added; re-count the `DB-` rows rather than
+trusting it.
 
 ## How to read this file
 
@@ -20,7 +22,8 @@
 - **Status vocabulary:** `NOT-STARTED` / `IN-PROGRESS` / `FIXED-UNVERIFIED` / `VERIFIED` /
   `WONT-FIX`.
 - **`Wave` is populated only for the rows that have entered the repair program — currently
-  DB-2, DB-22 and DB-40, all `Wave = 1`, applied 2026-08-20.** Every other row carries `—`
+  DB-1, DB-2, DB-22 and DB-40, all `Wave = 1`, applied 2026-08-20 (DB-2, DB-22, DB-40) and
+  2026-08-21 (DB-1).** Every other row carries `—`
   because no wave has been assigned to it, not because a wave plan exists that excludes it:
   there is still no forward wave plan. Wave 1 is a label applied retrospectively to work already
   done, not a schedule. Do not backfill waves speculatively; assign a wave only when the work is
@@ -40,7 +43,7 @@
 
 | ID | Severity | Wave | Status | Detection query | Before | After | Verified-by | Migration |
 |---|---|---|---|---|---|---|---|---|
-| **DB-1** — 7 SECURITY DEFINER views anon-readable, RLS bypassed (incl. `v_secret_rotation_health` leaking most-overdue secret name; `v_my_consent_status` has no owner filter) | P0 | — | NOT-STARTED | `get_advisors(security)` → count of `security_definer_view` | 7 | — | — | — |
+| **DB-1** — 7 SECURITY DEFINER-behaving views held `GRANT ALL` to `anon` + `authenticated`, RLS bypassed — a **write** exposure, not only a read one. The ACL was `arwdDxtm` = all eight privileges (INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN), not SELECT. Read leak confirmed behaviorally under `SET LOCAL ROLE anon`: `v_xp_ledger_drift` → 14 live student UUIDs with real XP balances (max 12,825); `v_secret_rotation_health` → `total_secrets = 7`; `v_backup_health_summary` → backup posture. Two of the seven are auto-updatable (`pg_relation_is_updatable = 28`, no INSTEAD OF triggers, no rules): `question_bank_student_safe` (body is `FROM question_bank;` with no WHERE, all 18,765 rows, resolving as owner `postgres` which has `rolbypassrls = true`) and `v_my_consent_status` — composing to an apparent unfiltered anonymous INSERT/UPDATE/DELETE path into the entire production question bank, bypassing RLS. **The write path was never confirmed open** — testing it pre-apply would have required DML on production — but it was confirmed **closed** post-apply (`DELETE … as anon` → `42501`). **Two corrections to this row's earlier description.** (a) `v_my_consent_status` DOES have an owner filter — `pg_get_viewdef` shows `WHERE (guardian_id IN (SELECT g.id FROM guardians g WHERE g.auth_user_id = auth.uid())) AND revoked_at IS NULL` — so it returned **0 rows to anon**, not a full consent dump; its real defect is narrower: `security_invoker` is unset, so it resolves as owner `postgres` and bypasses all 5 RLS policies on `parental_consent` for any JWT holder, which this migration deliberately did NOT do. (b) `v_secret_rotation_health` leaked `total_secrets = 7`, **not** the most-overdue secret *name* — that column is NULL (see DB-42) | P0 | 1 | FIXED-UNVERIFIED | `BEGIN; SET LOCAL ROLE anon; SELECT has_table_privilege('public.<view>','SELECT') …; ROLLBACK;` across all 7 views, and ideally all 8 privilege types (INSERT/SELECT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER/MAINTAIN), repeated under `SET LOCAL ROLE authenticated`. **Do NOT detect this row with `get_advisors(security)` → `security_definer_view` count** (its former detection query): that advisor fires on `security_invoker` being *unset*, which migration `20260821082059` deliberately did not change, so **the advisor still reports 7 after the fix** — by design, not because the row is un-fixed. Setting `security_invoker` is separate, tracked work (it changes view resolution from owner to caller privileges, a behaviour change for the service-role and SECURITY DEFINER-function readers; needs its own change set and review chain) | 7 | `anon` + `authenticated` aclitems removed from all 7 views. relacl `{postgres=arwdDxtm,anon=arwdDxtm,authenticated=arwdDxtm,service_role=arwdDxtm}` → `{postgres=arwdDxtm,service_role=arwdDxtm}`. 14/14 behavioral denials (7 anon + 7 authenticated), all SQLSTATE `42501`. `DELETE FROM question_bank_student_safe` as anon → `42501`. `service_role` reads all 7 unchanged; `question_bank` still 18,765 rows | applied 2026-08-21, ledger version `20260821082059` — pending independent verification | `supabase/migrations/20260821082059_restrict_secdef_views_to_service_role.sql` (rollback: `docs/runbooks/20260821082059_restrict_secdef_views_to_service_role.DOWN.sql`) |
 | **DB-2** — `coupons` fully enumerable by anon (`coupons_read`, roles `{public}`, qual `is_active = true`) | P0 | 1 | FIXED-UNVERIFIED | `SELECT * FROM pg_policies WHERE tablename='coupons'` | 4 of 4 coupons anon-visible (re-confirmed live 2026-08-20 15:14 UTC pre-fix, behaviorally under `SET LOCAL ROLE anon`) | 0 policies on `public.coupons`; anon-visible rows 4 → 0 (RLS enabled, zero policies = deny-all for non-BYPASSRLS roles) | applied 2026-08-20, ledger version `20260820152908` — pending independent verification | `supabase/migrations/20260820152908_lock_down_coupons_read_and_bound_discount.sql` (rollback: `docs/runbooks/20260820152908_lock_down_coupons_read_and_bound_discount.DOWN.sql`) |
 | **DB-3** — XP ledger drift: `students.xp_total` ≠ Σ `xp_transactions` | P0 | — | NOT-STARTED | `SELECT count(*) FROM v_xp_ledger_drift` | 14 (of 68 students) | — | — | — |
 | **DB-4** — 102 Edge Functions deployed vs ~47 on disk; 3 rival `rag-answer-v3/v4/v5` all hand-deployed 2026-08-17/18 | P0 | — | NOT-STARTED | `list_edge_functions` | 102 deployed | — | — | — |
@@ -82,6 +85,7 @@
 | **DB-33** — IRT never calibrated despite nightly cron | P1 | — | NOT-STARTED | `irt_theta` / `irt_theta_se` distribution | 471 of 478 at defaults (0.0 / 1.0) | — | — | — |
 | **DB-34** — `question_bank.embedding` 100% NULL; queue pending since 2026-08-01 with zero worker attempts | P1 | — | NOT-STARTED | embedding null count + queue state | 18,765 rows / 0 embeddings; 18,750 pending, max(attempts)=0 | — | — | — |
 | **DB-35** — `get_learning_source` declares `p_grade integer` (P5 violation) and is SECURITY DEFINER with no `search_path` | P1 | — | NOT-STARTED | `pg_get_functiondef` | 1 of 75 grade-taking functions integer-typed | — | — | — |
+| **DB-41** — `question_bank` base table still exposes the answer key on every serving path; the safe view was built and never wired up. `question_bank_student_safe` (migration `20260806000004:14`) hard-NULLs `correct_answer_index`, `correct_answer_text` and `solution_steps` and is a genuinely correct safe projection — but it has **zero callers**. Every question-serving surface still reads the base `question_bank` table directly: web `(student)/pyq/page.tsx:66,79`, `(student)/quiz/page.tsx:907,954`, `(student)/mock-exam/page.tsx:126,144`; API `/api/diagnostic/start:295,503`, `/api/diagnostic/complete:193`; mobile `pyq_repository.dart:34,50`, `quiz_repository.dart:104`. Migration `20260814000000`'s own header lists "re-point PYQ/mobile" as outstanding work. So the answer-key protection that was built is not in effect on any serving path | P1 | — | NOT-STARTED | grep for `.from('question_bank')` across `apps/host`, `packages`, `mobile/lib` vs `.from('question_bank_student_safe')` (currently 0) | 0 surfaces use the safe view; all serving paths read the base table | — | — | — |
 
 ---
 
@@ -93,6 +97,7 @@
 | **DB-37** — `scripts/check-config-parity.sh` resolves both config paths from the wrong cwd, exits 1 with no message, invoked by nothing. Configs currently agree; 12 of 19 constants covered by no test (incl. `PROMPT_REV`, `MODEL_ROUTE_REV`) | P2 | — | NOT-STARTED | read script + diff both configs | 0 CI invocations; 7 of 19 constants tested | — | — | — |
 | **DB-38** — `flag-posture-canary` uses a closed ~40-name watch list against 84 declared flags, so it structurally cannot report an undeclared enabled flag — this is why DB-15 went undetected | P2 | — | NOT-STARTED | read `route.ts:143-144` + registry count | 40 watched vs 84 declared | — | — | — |
 | **DB-39** — REG-314 claims `config-parity.test.ts` verifies `diagram_spec_v1` template parity; that test checks 7 numeric constants and never inspects `REGISTERED_PROMPT_TEMPLATES` | P2 | — | NOT-STARTED | read test + catalog entry | claim unsupported | — | — | — |
+| **DB-42** — `v_secret_rotation_health.most_overdue_secret` lacks the `environment` filter its siblings have. Four of the five column subqueries filter `environment = 'production'`; the `most_overdue_secret` subquery does not, so it would surface secret names from **every** environment. It returns NULL today only because `last_rotated_at` / `created_at_estimate` / `rotation_interval` are unpopulated on all 7 `secret_inventory` rows — i.e. it goes live the moment the rotation ledger is used for its intended purpose. The view is no longer anon-readable as of `20260821082059`, so the exposure is now service-role-only; this is a correctness defect in the view body, which that migration deliberately did not touch | P2 | — | NOT-STARTED | `pg_get_viewdef('public.v_secret_rotation_health')` — compare the `most_overdue_secret` subquery's WHERE clause against the other four | most_overdue_secret subquery has no environment filter; `most_overdue_secret IS NULL` (rotation timestamps unpopulated); `total_secrets = 7` | — | — | — |
 
 ---
 
@@ -158,10 +163,11 @@
   depend on the current `authenticated` table grants. Revoking grants wholesale will break
   them. DB-12's fix must either convert these to SECURITY DEFINER with a pinned `search_path`
   or carve out targeted grants — decide that before writing the revoke migration, not after.
-- **No forward wave plan exists.** The three rows carrying `Wave = 1` — DB-2, DB-22 and DB-40
-  — were labelled retrospectively after being fixed on 2026-08-20; every other row carries
-  `Wave = —` because no wave has been assigned to it. Sequencing has not been decided and must
-  not be inferred from the P0/P1/P2 ordering here — severity is impact, not schedule.
+- **No forward wave plan exists.** The four rows carrying `Wave = 1` — DB-1, DB-2, DB-22 and
+  DB-40 — were labelled retrospectively after being fixed on 2026-08-20 (DB-2, DB-22, DB-40)
+  and 2026-08-21 (DB-1); every other row carries `Wave = —` because no wave has been assigned
+  to it. Sequencing has not been decided and must not be inferred from the P0/P1/P2 ordering
+  here — severity is impact, not schedule.
 - **`VALIDATE CONSTRAINT` outstanding on `coupons`.** `coupons_discount_value_bounds` was added
   `NOT VALID` because `FOXY100` (flat 10000) violates it and changing that row's `discount_value`
   was outside the fix's scope. It enforces on all future INSERTs and on any UPDATE of an existing
