@@ -1,0 +1,238 @@
+-- Migration: 20260821061915_revoke_public_execute_quiz_serving_rpcs.sql
+-- Purpose: Remove the PUBLIC EXECUTE grant from the five SECURITY DEFINER quiz-serving RPCs,
+--          closing the anonymous (`anon`, i.e. the browser-shipped NEXT_PUBLIC anon key) path
+--          to the quiz answer key, and re-assert EXECUTE for `authenticated` + `service_role`.
+--
+-- FILENAME / LEDGER NOTE (RESOLVED 2026-08-21): `apply_migration` stamps its own wall-clock
+-- ledger version at apply time rather than honouring a file's version prefix. This file was
+-- authored as 20260821000100; when applied to production `shktyoxqhundlvkiwguu` the ledger
+-- stamped 20260821061915. BOTH this file and its DOWN partner in docs/runbooks/ were renamed to
+-- that version, so the filename and `supabase_migrations.schema_migrations` now AGREE and the
+-- pair stays discoverable under one version. The ledger records what actually happened; the
+-- authored filename did not. Same reconciliation as
+-- 20260820152908_lock_down_coupons_read_and_bound_discount.sql.
+--
+-- ============================================================================
+-- THE DEFECT
+-- ============================================================================
+-- Five overloads serve quiz questions. State captured read-only from production
+-- `shktyoxqhundlvkiwguu` on 2026-08-21:
+--
+--   public.select_quiz_questions_rag(p_student_id uuid, p_subject text, p_grade text,
+--       p_chapter_number integer, p_count integer, p_difficulty_mode text,
+--       p_question_types text[], p_query_embedding public.vector)
+--   public.select_quiz_questions_v2(p_student_id uuid, p_subject text, p_grade text,
+--       p_chapter_number integer, p_count integer, p_difficulty_mode text,
+--       p_question_types text[])
+--   public.get_quiz_questions(p_subject text, p_grade text, p_count integer,
+--       p_difficulty integer)
+--   public.get_quiz_questions(p_subject text, p_grade text, p_count integer,
+--       p_difficulty integer, p_chapter_number integer)
+--   public.start_quiz_session(p_student_id uuid, p_question_ids uuid[])
+--
+-- All five are owned by `postgres`, all five carry `proconfig = search_path=public`, and all
+-- five carry the BYTE-IDENTICAL ACL:
+--
+--     {=X/postgres,postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}
+--
+-- The leading `=X/postgres` aclitem — the one with an EMPTY GRANTEE — IS the PUBLIC grant.
+-- Decoded per overload via `aclexplode`: PUBLIC yes, postgres yes, authenticated yes
+-- (EXPLICIT, its own aclitem), service_role yes, and `anon` has NO EXPLICIT ENTRY AT ALL.
+--
+-- Three facts compose into the defect:
+--
+--   1. FOUR OF THE FIVE EMIT `correct_answer_index` IN THEIR OUTBOUND PAYLOAD. The returned
+--      rows carry the answer key alongside the question text and options. (The per-overload
+--      breakdown is in the audit referenced at the foot of this header.)
+--   2. ALL FIVE ARE SECURITY DEFINER. They execute as their owner `postgres`, so they are
+--      RLS-EXEMPT: no row-level rule on `question_bank` or anything downstream constrains what
+--      they return. Whatever the body selects, the caller receives.
+--   3. `anon` CAN EXECUTE ALL FIVE TODAY. Not inferred from the catalogue — verified
+--      BEHAVIOURALLY: `has_function_privilege` evaluated under `SET LOCAL ROLE anon` returned
+--      TRUE for all five. `anon` is NOT a member of `authenticated`, and `anon` holds no
+--      explicit aclitem on any of them, so its EXECUTE derives SOLELY from the PUBLIC grant.
+--
+-- Consequence: a holder of the public anon key — which ships in the browser bundle and in the
+-- Flutter app, and requires no login — can call these RPCs and receive the quiz answer key.
+-- That is an anonymous path to the answer key. Removing the PUBLIC grant removes `anon`'s only
+-- source of EXECUTE and closes it.
+--
+-- ============================================================================
+-- SCOPE DISCIPLINE — THIS IS GRANT-LAYER ONLY
+-- ============================================================================
+-- This migration contains 10 statements and nothing else: 5 revocations of EXECUTE from PUBLIC
+-- and 5 matching EXECUTE grants. IT DOES NOT ALTER ANY FUNCTION BODY. There is no definition
+-- statement of any kind here, no table change, and no row-level rule change. Function bodies
+-- are OUT OF SCOPE by design.
+--
+-- That is a deliberate limit, not an oversight. The deeper defect — that these payloads carry
+-- `correct_answer_index` at all, and that the server-side P6 filter which should strip it is
+-- not being applied — is a BEHAVIOUR CHANGE. It alters what every logged-in caller receives, so
+-- it needs its own change set, its own tests, and its own review chain. Doing it here would
+-- couple a reversible one-line privilege fix to an irreversible payload change and make this
+-- migration unsafe to roll back independently.
+--
+-- Removing `correct_answer_index` from the payloads and restoring the server-side P6 filter is
+-- tracked separately:  docs/audits/2026-08-20-answer-key-serving-chain-risk.md
+--
+-- After this migration the answer key is STILL EMITTED — but only to callers who have
+-- authenticated. That is a strict improvement, and it is the whole of what is claimed here.
+--
+-- ============================================================================
+-- WHY THE EXECUTE GRANTS ARE HERE EVEN THOUGH THEY ARE NO-OPS TODAY
+-- ============================================================================
+-- Each revocation below is paired with an EXECUTE grant to `authenticated, service_role`. On
+-- the captured production state those grants change NOTHING: the catalogue already shows an
+-- explicit `authenticated=X/postgres` aclitem and an explicit `service_role=X/postgres` aclitem
+-- on all five, INDEPENDENT of the PUBLIC entry. Removing PUBLIC therefore does not disturb
+-- logged-in callers, and the pairing is belt-and-braces.
+--
+-- They are included anyway because a migration must be SELF-SUFFICIENT. Replayed against an
+-- environment whose grant chain differs from production — a fresh CI project, a new staging, a
+-- DR restore — a bare revocation could leave these RPCs executable by nobody but the owner and
+-- silently break every quiz. The paired grant makes the intended END STATE explicit rather than
+-- dependent on what happened to already be true.
+--
+-- WORTH STATING PLAINLY: those `authenticated` and `service_role` grants exist in the live
+-- catalogue but appear in NO MIGRATION FILE IN THIS REPO. They were applied out-of-band. This
+-- is the same on-disk-does-not-equal-deployed pattern this repo already documents for Edge
+-- Functions (docs/runbooks/edge-function-drift-report.md), reappearing in the privilege layer.
+-- After this migration, they are in a file.
+--
+-- ============================================================================
+-- PRIOR ART — THIS IS NOT NEW INTENT, IT IS A REPAIR OF A SILENT NO-OP
+-- ============================================================================
+-- All five of these overloads were ALREADY targeted in May 2026:
+--
+--     supabase/migrations/20260515000002_security_hardening_secdef_anon_searchpath_rls_view.sql
+--         :200  get_quiz_questions (4-arg)          REVOKE EXECUTE ... FROM anon
+--         :201  get_quiz_questions (5-arg)          REVOKE EXECUTE ... FROM anon
+--         :219  select_quiz_questions_rag           REVOKE EXECUTE ... FROM anon
+--         :220  select_quiz_questions_v2            REVOKE EXECUTE ... FROM anon
+--         :221  start_quiz_session                  REVOKE EXECUTE ... FROM anon
+--
+-- That migration was a SILENT NO-OP against this defect, and the reason is a Postgres semantic
+-- that is easy to get wrong: REVOKING A PRIVILEGE FROM A ROLE DOES NOT REMOVE A PUBLIC GRANT.
+-- `anon` never held an explicit aclitem to revoke — it inherited EXECUTE from PUBLIC — so those
+-- five statements deleted nothing, raised no error, produced no warning, and left the ACL
+-- byte-identical. The migration read as authoritative hardening and closed zero exposure. Three
+-- months later, `has_function_privilege` under `SET LOCAL ROLE anon` still returns true for all
+-- five.
+--
+-- This migration does what that one INTENDED. The intent has been reviewed and accepted since
+-- May; only the mechanism was wrong.
+--
+-- Note a second latent trap in that same file, because it is the same failure mode: it spells
+-- the vector argument as bare `vector`, which resolves only under a session search_path that
+-- includes the extension schema. Every signature below spells it `public.vector` so it resolves
+-- regardless of session search_path. A signature that fails to match an overload does not
+-- error — Postgres simply finds no such function, or matches a different one.
+--
+-- ============================================================================
+-- LATENT RE-OPENING HAZARD  ***  READ BEFORE RECREATING ANY OF THESE FIVE  ***
+-- ============================================================================
+-- `pg_default_acl` carries an entry for role `postgres` on FUNCTIONS in schema `public`:
+--
+--     {postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}
+--
+-- Read what that says: it GRANTS EXECUTE TO `anon` BY DEFAULT, and it does not revoke PUBLIC.
+-- Default ACLs are applied AT OBJECT CREATION TIME, so:
+--
+--   * A definition statement that REPLACES an existing function in place (CREATE OR REPLACE)
+--     PRESERVES the existing ACL. The revocations below therefore SURVIVE an in-place
+--     redefinition. Good.
+--   * But a DROP FUNCTION followed by a fresh CREATE FUNCTION, executed as `postgres`, creates
+--     a NEW object, which picks up the default ACL and SILENTLY RE-GRANTS EXECUTE TO `anon` AND
+--     TO PUBLIC. No error. No warning. No diff in the function body. The privilege regression is
+--     invisible in code review because it is not in the code.
+--
+-- ANY FUTURE MIGRATION THAT RECREATES ONE OF THESE FIVE VIA DROP-THEN-CREATE MUST RE-ASSERT THE
+-- REVOCATIONS BELOW IN THE SAME FILE. Treat that as mandatory, not advisory.
+--
+-- RECOMMENDED FOLLOW-UP (not done here): a regression pin asserting that `anon` holds NO EXECUTE
+-- on these five — behavioural, via `has_function_privilege` under `SET LOCAL ROLE anon`, exactly
+-- as the defect was verified. A file-shape assertion is not enough; the May migration proves
+-- that reading the repo tells you nothing about the live privilege.
+--
+-- ============================================================================
+-- PRECONDITION EVIDENCE — NO PRE-LOGIN CALLER BREAKS
+-- ============================================================================
+-- Removing a PUBLIC grant is load-bearing, so every caller reachable with the client anon key
+-- was enumerated first. All of them are behind an authentication gate ALREADY:
+--
+--   * `/quiz` — apps/host/src/app/(student)/quiz/page.tsx. Guarded at `:428`
+--     (`router.replace('/login')`) and again at `:890` (`if (isLoading || !student) return`).
+--     No unauthenticated render path reaches an RPC call.
+--   * `/api/v2/quiz/start` — `authorizeRequest(request, 'quiz.attempt')` at `:60`, before any
+--     database work. The route's client is anon-key + the CALLER'S JWT, so the RPC executes with
+--     an authenticated identity; `authenticated` retains EXECUTE below.
+--   * Mobile (Flutter) — `app_router.dart:60-66` applies a GLOBAL redirect to `/login` whenever
+--     `session == null`. No screen that calls these RPCs is reachable without a session.
+--   * `packages/lib/src/domains/quiz.ts` — HAS NO PRODUCTION CALLERS. It is not on any live path
+--     and cannot break one.
+--   * `/diagnostic` — CALLS NONE OF THE FIVE. It queries `question_bank` directly through
+--     `getSupabaseAdmin()` (service role, BYPASSRLS, unaffected by any grant here) after
+--     `authorizeRequest(..., 'diagnostic.attempt')`. Named explicitly because it is the surface
+--     most likely to be ASSUMED anonymous; it is not, and it is not a caller either way.
+--   * NO PUBLIC DEMO, SAMPLER, TRIAL, OR MARKETING SURFACE calls any of the five. There is no
+--     "try a quiz without signing up" path to regress.
+--
+-- `service_role` is separately granted below and is BYPASSRLS regardless, so every server-side
+-- caller is untouched. The only caller class this migration removes is the one that has no
+-- identity — which is the entire point.
+--
+-- ============================================================================
+-- ROLLBACK
+-- ============================================================================
+-- DOWN migration — restores the captured ACL exactly, derived from `aclexplode` rather than
+-- hand-written:
+--     docs/runbooks/20260821061915_revoke_public_execute_quiz_serving_rpcs.DOWN.sql
+--
+-- The DOWN file is deliberately NOT in `supabase/migrations/`. `supabase db push` applies every
+-- file in that directory in version order, so a down-migration parked there would re-open the
+-- anonymous path to the answer key on the very next deploy. Rolling back must be a conscious,
+-- hand-run act. It restores GRANTS, never behaviour, and never anything a caller did in the
+-- interim.
+--
+-- Ledger: docs/audits/FIX-LEDGER.md
+-- Audit:  docs/audits/2026-08-20-answer-key-serving-chain-risk.md
+
+BEGIN;
+
+-- ---------------------------------------------------------------------------
+-- 1. select_quiz_questions_rag
+--    `public.vector` is spelled schema-qualified on purpose: bare `vector`
+--    resolves only when the session search_path includes the extension schema,
+--    and a signature that fails to resolve is a silent miss, not an error.
+-- ---------------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.select_quiz_questions_rag(p_student_id uuid, p_subject text, p_grade text, p_chapter_number integer, p_count integer, p_difficulty_mode text, p_question_types text[], p_query_embedding public.vector) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.select_quiz_questions_rag(p_student_id uuid, p_subject text, p_grade text, p_chapter_number integer, p_count integer, p_difficulty_mode text, p_question_types text[], p_query_embedding public.vector) TO authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 2. select_quiz_questions_v2
+-- ---------------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.select_quiz_questions_v2(p_student_id uuid, p_subject text, p_grade text, p_chapter_number integer, p_count integer, p_difficulty_mode text, p_question_types text[]) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.select_quiz_questions_v2(p_student_id uuid, p_subject text, p_grade text, p_chapter_number integer, p_count integer, p_difficulty_mode text, p_question_types text[]) TO authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 3. get_quiz_questions — 4-ARG OVERLOAD.
+--    A DISTINCT OBJECT from statement 4. Both overloads must be named
+--    separately: a privilege statement targets exactly one signature, so
+--    revoking the 4-arg form leaves the 5-arg form fully open.
+-- ---------------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.get_quiz_questions(p_subject text, p_grade text, p_count integer, p_difficulty integer) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.get_quiz_questions(p_subject text, p_grade text, p_count integer, p_difficulty integer) TO authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 4. get_quiz_questions — 5-ARG OVERLOAD (trailing p_chapter_number integer).
+-- ---------------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.get_quiz_questions(p_subject text, p_grade text, p_count integer, p_difficulty integer, p_chapter_number integer) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.get_quiz_questions(p_subject text, p_grade text, p_count integer, p_difficulty integer, p_chapter_number integer) TO authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 5. start_quiz_session
+-- ---------------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.start_quiz_session(p_student_id uuid, p_question_ids uuid[]) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.start_quiz_session(p_student_id uuid, p_question_ids uuid[]) TO authenticated, service_role;
+
+COMMIT;
