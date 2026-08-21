@@ -29,70 +29,82 @@
 #     prod `SUPABASE_ACCESS_TOKEN` is never used here (it cannot authorize
 #     against the staging org and previously caused `Unauthorized`).
 #   - --include-all is safe because all migrations in this repo are
-#     idempotent per CLAUDE.md product invariants
+#     idempotent per CLAUDE.md product invariants, and it is REQUIRED here to
+#     replay the ~26-migration staging backlog — see the dedicated
+#     `--include-all` block below before touching it
 #   - Failure does NOT block production deploy (this workflow is staging-only),
 #     but it DOES block ci.yml's `Integration Tests (live DB)` job (same
 #     `staging-db-push` concurrency group, same STAGING project) — which gates
 #     the CI Gate every PR needs to merge to main, so a wedged staging ledger
 #     transitively blocks getting anything to production.
 #
-# 2026-08-20 incident — one-time staging ledger repair (2 hardcoded versions):
-#   Every run since before 2026-08-20 aborted pre-flight with "Remote
-#   migration versions not found in local migrations directory", naming
-#   20260814000023 and 20260814000024. Neither file exists on `main` or in
-#   `_legacy/`. Root cause (two independent, unrelated abandoned branches that
-#   were each applied to staging out-of-band before being rewritten/dropped):
-#     - 20260814000023 (keyless_question_serving_and_server_side_p6) came from
-#       commit 145eed3e7 on the unmerged branch
-#       Alfanumrik/alfanumrik-e2e-fix-d9bca6 (PR #1524). Commit cbd86866
-#       (#1529) already recovered 5 of that commit's 6 renumbered files
-#       (20260814000018..000022) into `main` as the record of what was
-#       already applied to PRODUCTION — but explicitly stopped at 000022;
-#       000023 was never recovered, so no file for it exists anywhere on
-#       `main`. It reached STAGING's ledger (this project only) via a preview
-#       apply of that branch that predates the recovery/abandonment.
-#     - 20260814000024 (reconcile_subjects_allowed_with_plan_reality) came
-#       from commit 717265e6 ("...three superseded pins", 2026-08-11), whose
-#       branch was squash-merged with different final content — the commit's
-#       own title says this migration was superseded/dropped during that PR's
-#       iteration. Same mechanism: a preview/staging apply ran before the
-#       squash, so the version landed in staging's ledger with no surviving
-#       file.
-#   Neither version is present in PRODUCTION's ledger (cbd86866's recovery
-#   scope was 18..22 only, confirmed by that commit's own "ALREADY APPLIED"
-#   claim never mentioning 000023 or 000024) — this repair targets STAGING
-#   ONLY and intentionally does not touch prod.
-#   Remediation: `supabase migration repair --status reverted` for exactly
-#   these two hardcoded versions, run before `db push`, per the CLI's own
-#   suggested fix and the identical pattern already used for a 2026-06-28
-#   PROD ghost-migration incident (see `schema-reproducibility-fix.yml`'s
-#   `repair-prod-drift` job / docs/runbooks/schema-reproducibility-fix.md).
-#   This is METADATA-ONLY: it deletes the two ledger rows from
-#   `supabase_migrations.schema_migrations` (confirmed via the CLI binary's
-#   own embedded SQL: `--status reverted` issues
-#   `DELETE FROM supabase_migrations.schema_migrations WHERE version = ANY($1)`)
-#   — it does not touch any table, column, or data, and it never re-applies
-#   the SQL those two ghost versions once ran (there is no local file to
-#   apply). It is intentionally NOT a generic auto-healer: only these two
-#   hardcoded 2026-08-20-incident versions are named, so a genuine FUTURE
-#   drift (an unrelated orphan version) will still abort the push and be
-#   visible, not silently swallowed.
-#   DECISION: leave this step in permanently — do not schedule its removal.
-#   Idempotent by construction — DELETE on an absent row is a no-op
-#   (confirmed above via the CLI binary's own embedded SQL) — so once
-#   staging's ledger is clean, every future run of this step costs one
-#   no-op DELETE and changes nothing. It is also narrowly scoped: only
-#   these two hardcoded 2026-08-20-incident versions are named, so it can
-#   never mask a genuine FUTURE orphan-ledger drift — an unrelated future
-#   ghost version will still name itself in the CLI's pre-flight error and
-#   abort the push exactly as it did here, visibly, not silently. A
-#   "delete once confirmed clean" alternative was considered and rejected:
-#   it trades a permanently-safe no-op for a manual follow-up with no
-#   forcing function to ever get done, for a saving of zero risk (the step
-#   already can't hide a different incident's drift). If a *future*
-#   incident hits this same symptom with different version numbers, add a
-#   new dated step for those versions rather than editing the two hardcoded
-#   here — don't widen this into a generic auto-healer.
+# Staging ledger repair — one orphaned catch-up row (1 hardcoded version):
+#   With connectivity fixed (staging DB password rotated; `db push` now
+#   connects AND authenticates over the aws-1 pooler — see the 2026-08-21
+#   block below), a single orphaned ledger row is the sole remaining blocker.
+#   `db push` aborts pre-flight with "Remote migration versions not found in
+#   local migrations directory", naming 20260820153007, and prints its own
+#   suggested fix: `supabase migration repair --status reverted 20260820153007`.
+#   That version sits in STAGING's `supabase_migrations.schema_migrations`
+#   with no corresponding file anywhere in `supabase/migrations/`, so the CLI
+#   refuses to proceed.
+#
+#   INVESTIGATED BEFORE ERASING — we did not delete a row we had not read.
+#   The ledger's `statements` column for 20260820153007 holds a single `DO`
+#   block named
+#   `verify_quiz_rag_gate_telemetry_ac3_gls_and_collapse_catchup_row`.
+#   End to end it: inserts test fixtures, calls `select_quiz_questions_rag`
+#   TWICE to assert its telemetry, checks three `get_learning_source`
+#   validation pins, then deletes every fixture it created. Verb scan over
+#   the full body: ZERO `CREATE`, `ALTER`, `DROP`, `GRANT`, `REVOKE`,
+#   `TRUNCATE`. Residual fixtures left behind: 0.
+#   CLASSIFICATION: THROWAWAY. It creates no schema object, so there is
+#   nothing to preserve — "recovering" it as a migration file would add a
+#   file that asserts and then cleans up after itself, not one that builds
+#   anything. Erasing its ledger row loses no schema and no data.
+#
+#   Regression check (i.e. what a wrongly-erased DDL row would have broken):
+#   no DDL against the money tables, `coupons`, the five quiz RPCs, or the
+#   seven SECURITY DEFINER views. `select_quiz_questions_rag` appears only as
+#   a CALLER inside the DO block, never as a definition target. `md5(prosrc)`
+#   for both `select_quiz_questions_rag` and `get_learning_source` is
+#   BYTE-IDENTICAL between staging and production — the function bodies this
+#   block exercised are unchanged on both sides, so nothing it touched drifted.
+#
+#   Self-referential detail worth recording: this row's own last statement
+#   deleted its PREDECESSOR's ghost row (20260820152519) so that nothing
+#   would be left orphaned — and then left ITSELF orphaned, since a migration
+#   cannot delete the ledger row the CLI writes for it after its statements
+#   finish. That is why exactly one orphan remains rather than two.
+#
+#   SUPERSEDES the earlier 2026-08-20 repair: this step previously reverted
+#   20260814000023 and 20260814000024. Both were CONFIRMED live against
+#   staging as ALREADY ABSENT from `supabase_migrations.schema_migrations`,
+#   so those two arguments were a verified no-op fighting a closed incident.
+#   They are REPLACED, not appended — letting dead versions accumulate turns
+#   a narrow, auditable repair into an unreadable list nobody can tell is
+#   still load-bearing. Their full incident trace (two unrelated abandoned
+#   branches, each applied to staging out-of-band before being
+#   rewritten/dropped, neither ever present in PRODUCTION's ledger) is
+#   preserved in git history — see this file at commit 4036f20cb.
+#
+#   This repair is STAGING ONLY and METADATA ONLY: `--status reverted` issues
+#   `DELETE FROM supabase_migrations.schema_migrations WHERE version = ANY($1)`
+#   (confirmed from the CLI binary's own embedded SQL) — it touches no table,
+#   no column and no data, and it never re-runs the SQL the ghost version
+#   once ran (there is no local file to apply). PRODUCTION's ledger is not
+#   touched by this workflow at all. Same remediation pattern as the
+#   2026-06-28 PROD ghost-migration incident (see
+#   `schema-reproducibility-fix.yml`'s `repair-prod-drift` job /
+#   docs/runbooks/schema-reproducibility-fix.md).
+#   Idempotent by construction — DELETE on an absent row is a no-op — so once
+#   staging's ledger is clean, every future run of this step costs one no-op
+#   DELETE and changes nothing. It is intentionally NOT a generic
+#   auto-healer: only this ONE hardcoded version is named, so a genuine
+#   FUTURE orphan will still name itself in the CLI's pre-flight error and
+#   abort the push visibly rather than be silently swallowed. If a future
+#   incident hits this same symptom with a different version number, add a
+#   new dated step for it rather than widening this one.
 #
 # 2026-08-21 incident — IPv6-only direct host vs IPv4-only runners
 # (this is why both DB steps now use `--db-url` against the Supavisor
@@ -155,16 +167,15 @@
 #   `migrations` job and is NOT fixed by this change. It needs the same
 #   treatment separately.
 #
-# 2026-08-21 — the ledger-repair step above is now a VERIFIED NO-OP.
-#   Confirmed live against staging: versions 20260814000023 and
-#   20260814000024 are already ABSENT from
-#   `supabase_migrations.schema_migrations`, so the repair now deletes
-#   nothing on every run. This note changes no behavior: the step is kept
-#   as-is here purely to keep this connectivity fix a minimal diff. It
-#   should be removed in a separate, dedicated change — which supersedes,
-#   on this point only, the "leave this step in permanently — do not
-#   schedule its removal" DECISION recorded above (that decision was made
-#   before the ledger was confirmed clean).
+# Why `--include-all` on `db push` is load-bearing RIGHT NOW (not cosmetic):
+#   Staging is roughly 26 migrations behind `main` — the sync has been wedged
+#   since 2026-08-20, first by the IPv6 connectivity failure above and then
+#   by the orphaned ledger row. Without `--include-all`, `db push` applies
+#   only migrations NEWER than the last recorded remote version, which would
+#   skip most of that backlog and leave staging silently half-migrated —
+#   precisely the drift this workflow exists to prevent. Once the ledger
+#   repair unblocks the push, `--include-all` is what makes the whole backlog
+#   actually replay. Do NOT drop it to "tidy up" the command.
 
 name: Sync Migrations to Staging
 
@@ -215,7 +226,7 @@ jobs:
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
-      - name: One-time staging ledger repair (2026-08-20 incident — see file header)
+      - name: Staging ledger repair — drop orphaned catch-up row 20260820153007
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
@@ -229,14 +240,24 @@ jobs:
           echo "::add-mask::$ENC_PW"
           DB_URL="postgresql://postgres.${STAGING_REF}:${ENC_PW}@aws-1-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
           echo "::add-mask::$DB_URL"
-          # Hardcoded, exactly these two versions — not a generic orphan-healer.
-          # See the file header for the full incident trace. Idempotent:
-          # `--status reverted` DELETEs the ledger row(s); deleting an absent
-          # row is a no-op, so this is safe to run on every invocation.
-          # (As of 2026-08-21 both rows are confirmed already absent — this is
-          # now a verified no-op, kept only to keep the connectivity fix minimal.)
+          # Hardcoded, exactly this ONE version — not a generic orphan-healer.
+          # 20260820153007 is a THROWAWAY verification DO block
+          # (verify_quiz_rag_gate_telemetry_ac3_gls_and_collapse_catchup_row).
+          # It was READ before being erased: it inserts fixtures, asserts
+          # select_quiz_questions_rag telemetry + three get_learning_source
+          # pins, then deletes every fixture — ZERO CREATE/ALTER/DROP/GRANT/
+          # REVOKE/TRUNCATE, so it built no schema object and there is nothing
+          # to preserve as a migration file. It deleted its predecessor's ghost
+          # row and then orphaned itself. Full trace + the regression check (no
+          # DDL on the money tables, coupons, the five quiz RPCs or the seven
+          # SECDEF views) is in the file header.
+          # This REPLACES the two 2026-08-20 versions, which were confirmed
+          # already absent from the ledger — removed as dead rather than left
+          # to accumulate. Idempotent: `--status reverted` DELETEs the ledger
+          # row; deleting an absent row is a no-op, so this is safe to run on
+          # every invocation.
           rc=0
-          supabase migration repair --db-url "$DB_URL" --status reverted 20260814000023 20260814000024 || rc=$?
+          supabase migration repair --db-url "$DB_URL" --status reverted 20260820153007 || rc=$?
           if [ "$rc" -ne 0 ]; then
             echo "::error title=Staging ledger repair failed to connect or run::Could not reach staging over the IPv4 Supavisor pooler (aws-1-ap-south-1.pooler.supabase.com:5432). Two likely causes: (a) SUPABASE_STAGING_PROJECT_REF is not the tenant on aws-1 — Supabase may have re-sharded this project; re-probe BOTH aws-0- and aws-1-ap-south-1.pooler.supabase.com with a Postgres StartupMessage using user=postgres.<ref> (the wrong shard answers XX000 ENOTFOUND 'tenant or user not found', the right one advances to a SASL/SCRAM challenge). (b) Network restrictions on the staging Supabase project are blocking the GitHub runner egress IP. Do NOT switch to the direct db.<ref>.supabase.co host — it is IPv6-only and the runners have no IPv6."
             exit "$rc"
