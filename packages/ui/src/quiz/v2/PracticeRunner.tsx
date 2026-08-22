@@ -61,7 +61,11 @@ export interface PracticeRunnerQuestion {
   questionText: string;
   questionTextHi: string | null;
   chapterNumber: number;
-  bloomLevel: string;
+  /** `question_bank.bloom_level` VERBATIM — a NULLABLE column. Declared
+   *  non-null here until 2026-08-11, which was untrue at runtime; the lie let
+   *  the resume payload "safely" default a NULL bloom and diverge a resumed
+   *  session's error classification from an identical fresh one. */
+  bloomLevel: string | null;
   hint?: string | null;
 }
 

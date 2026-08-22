@@ -126,7 +126,6 @@ export async function POST(request: NextRequest) {
         ...(body.action === 'upgrade_plan' ? { plan: body.plan } : {}),
       },
       ip,
-      actorUserId: auth.userId,
     });
 
     return NextResponse.json({ success: true, action: body.action, affected: body.ids.length });

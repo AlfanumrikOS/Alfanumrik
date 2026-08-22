@@ -47,9 +47,6 @@ const CHROME = {
     loading: 'Loading your progress...',
     score: 'Score',
     date: 'Date',
-    errorTitle: "Couldn't load your progress",
-    errorBody: 'Something went wrong. Your data is safe — please try again.',
-    retry: 'Retry',
   },
   hi: {
     title: 'मेरी प्रगति',
@@ -61,9 +58,6 @@ const CHROME = {
     loading: 'आपकी प्रगति लोड हो रही है...',
     score: 'स्कोर',
     date: 'तारीख',
-    errorTitle: 'प्रगति लोड नहीं हो सकी',
-    errorBody: 'कुछ गलत हो गया। आपका डेटा सुरक्षित है — फिर से कोशिश करें।',
-    retry: 'फिर से कोशिश करो',
   },
 } as const;
 
@@ -73,44 +67,18 @@ export default function EngagementDashboardPage() {
   const { isHi } = useAuth();
   const chrome = isHi ? CHROME.hi : CHROME.en;
 
-  const { data, error, isLoading, mutate } = useSWR<EngagementSnapshot>(
+  const { data, isLoading } = useSWR<EngagementSnapshot>(
     '/api/student/engagement',
     fetcher,
     { refreshInterval: 60000 }
   );
 
-  if (isLoading) {
+  if (isLoading || !data) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-orange-500 border-t-transparent mx-auto mb-3" />
-          <p style={{ color: 'var(--text-3)' }}>{chrome.loading}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Fetch failure — was previously indistinguishable from `isLoading` (both
-  // took the loading branch), so a failed request spun the loader forever
-  // instead of ever surfacing an honest error state.
-  if (error || !data) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh] px-6">
-        <div className="text-center max-w-sm" role="alert">
-          <span className="text-4xl block mb-3" role="img" aria-label="Fox">🦊</span>
-          <h2 className="text-lg font-bold mb-2" style={{ color: 'var(--text-1)' }}>
-            {chrome.errorTitle}
-          </h2>
-          <p className="text-sm mb-5" style={{ color: 'var(--text-3)' }}>
-            {chrome.errorBody}
-          </p>
-          <button
-            onClick={() => mutate()}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-on-accent"
-            style={{ background: 'var(--accent-warm-strong)' }}
-          >
-            🔄 {chrome.retry}
-          </button>
+          <p className="text-gray-500">{chrome.loading}</p>
         </div>
       </div>
     );
@@ -118,14 +86,14 @@ export default function EngagementDashboardPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-      <h1 className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>
+      <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">
         {chrome.title}
       </h1>
 
       {/* XP & Streak row — stacks on narrow mobile, side-by-side on wider */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-          <h2 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-3)' }}>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-900">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
             {chrome.xp}
           </h2>
           {/* data.xp.total is students.total_xp verbatim. The ring recomputes
@@ -135,8 +103,8 @@ export default function EngagementDashboardPage() {
               localizes the level name (P7), which the previous ring did not. */}
           <XPProgressRing totalXp={data.xp.total} size="lg" isHi={isHi} />
         </div>
-        <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-          <h2 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-3)' }}>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-900">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
             {chrome.streak}
           </h2>
           <StreakFlame
@@ -148,8 +116,8 @@ export default function EngagementDashboardPage() {
 
       {/* Subject Mastery */}
       {data.subjectMastery.length > 0 && (
-        <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-          <h2 className="text-xs font-semibold uppercase tracking-wide mb-4" style={{ color: 'var(--text-3)' }}>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-900">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
             {chrome.mastery}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -161,22 +129,21 @@ export default function EngagementDashboardPage() {
 
       {/* Recent Quizzes */}
       {data.recentQuizzes.length > 0 && (
-        <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-          <h2 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-3)' }}>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-900">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
             {chrome.recentQuizzes}
           </h2>
           <div className="space-y-2">
             {data.recentQuizzes.slice(0, 10).map((q, idx) => (
               <div
                 key={idx}
-                className="flex items-center justify-between py-1.5 border-b last:border-0"
-                style={{ borderColor: 'var(--border)' }}
+                className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-gray-800 last:border-0"
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-sm capitalize" style={{ color: 'var(--text-2)' }}>
+                  <span className="text-sm capitalize text-gray-700 dark:text-gray-300">
                     {q.subject}
                   </span>
-                  <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                  <span className="text-xs text-gray-400">
                     {new Date(q.date).toLocaleDateString()}
                   </span>
                 </div>
@@ -199,7 +166,7 @@ export default function EngagementDashboardPage() {
 
       {/* Empty state */}
       {data.subjectMastery.length === 0 && data.recentQuizzes.length === 0 && (
-        <div className="text-center py-12" style={{ color: 'var(--text-3)' }}>
+        <div className="text-center py-12 text-gray-500">
           <p className="text-lg">{chrome.noData}</p>
         </div>
       )}

@@ -127,16 +127,16 @@ describe('TodaysMission — queue block states', () => {
     expect(screen.queryByTestId('mission-primary-action')).toBeNull();
   });
 
-  it('empty (data null after load): renders the actionable empty card with a /today CTA, not a blank collapse', async () => {
+  it('empty (data null after load): renders the actionable empty card with a /learn CTA, not a blank collapse', async () => {
     mockQueueState = { data: null, isLoading: false, error: null, mutate: mockMutate };
     await renderMission();
 
     const card = screen.getByTestId('mission-empty-state');
     expect(card).toBeInTheDocument();
-    // Actionable CTA exists and routes to /today.
+    // Actionable CTA exists and routes to /learn.
     const cta = within(card).getByTestId('mission-empty-cta');
     fireEvent.click(cta);
-    expect(mockPush).toHaveBeenCalledWith('/today');
+    expect(mockPush).toHaveBeenCalledWith('/learn');
     // Empty (not error) → no retry control.
     expect(within(card).queryByTestId('mission-empty-retry')).toBeNull();
     // Skeleton and queue items absent.

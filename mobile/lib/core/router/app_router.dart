@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../constants/pyq_years.dart';
 import '../../ui/screens/auth/login_screen.dart';
 import '../../ui/screens/auth/signup_screen.dart';
 import '../../ui/screens/dashboard/dashboard_screen.dart';
@@ -237,12 +238,19 @@ final routerProvider = Provider<GoRouter>((ref) {
             },
           ),
           // Phase 6 sub-phase 5 (Assignments): `/quiz` now optionally reads
-          // query parameters (`subject`, `count`, `chapter`, `from`,
-          // `assignmentId`) so a deep link from the Assignments screen can
-          // auto-start the right quiz — mirrors the web's
-          // `/quiz?subject=&count=&chapter=&from=assignment&assignmentId=`.
+          // query parameters (`subject`, `count`, `chapter`, `year`, `from`,
+          // `assignmentId`) so a deep link from the Assignments screen or the
+          // PYQ launcher can auto-start the right quiz — mirrors the web's
+          // `/quiz?subject=&count=&chapter=&year=&from=assignment&assignmentId=`.
           // A bare `/quiz` push (no query params) behaves EXACTLY as before
           // (manual subject picker).
+          //
+          // `year` is the PYQ board-paper hint from the `/pyq` launcher. It is
+          // validated HERE — the single place a year enters the app from
+          // outside — so a hostile or stale deep link (`?year=3`, `?year=1970`,
+          // `?year=abc`) can never reach a question filter. Out-of-range input
+          // degrades to a normal in-scope quiz rather than an error, matching
+          // the web's `isPyqYear` guard on the same param.
           GoRoute(
             path: '/quiz',
             pageBuilder: (context, state) {
@@ -254,6 +262,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   initialSubject: qp['subject'],
                   initialChapter: qp['chapter'],
                   initialCount: int.tryParse(qp['count'] ?? ''),
+                  initialBoardYear: parsePyqYear(qp['year']),
                   assignmentId: (assignmentId != null && assignmentId.isNotEmpty)
                       ? assignmentId
                       : null,
@@ -318,10 +327,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/challenge',
         builder: (context, state) => const DailyChallengeScreen(),
       ),
-      // PYQ (Previous Year Questions) — mobile parity for
-      // src/app/(student)/pyq/page.tsx. Shares question_bank directly
-      // (year-tagged, falling back to ungapped bank questions) — confirmed
-      // NOT wired to the exam_papers/mock-test system.
+      // PYQ (Previous Year Questions) — a LAUNCHER, not a quiz runtime.
+      // Mobile parity for `apps/host/src/app/(student)/pyq/page.tsx` as of
+      // fa01f7e32. It picks a subject + board year and pushes
+      // `/quiz?subject=&year=&mode=practice&count=`, so the attempt is graded
+      // and persisted by the canonical engine above (server shuffle -> P3 ->
+      // atomic submit). It reads no questions and no answer key of its own.
+      //
+      // The previous comment here ("shares question_bank directly ... NOT
+      // wired to the exam_papers/mock-test system") described the retired
+      // second runtime and is no longer true of either platform.
       GoRoute(
         path: '/pyq',
         builder: (context, state) => const PyqScreen(),

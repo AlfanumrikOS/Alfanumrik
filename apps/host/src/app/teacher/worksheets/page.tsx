@@ -4,10 +4,9 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useTeacherAllowedSubjects } from '@alfanumrik/lib/useTeacherAllowedSubjects';
-import { supabase } from '@alfanumrik/lib/supabase';
 import { VALID_GRADES } from '@alfanumrik/lib/identity';
 import { posthogCapture } from '@alfanumrik/lib/posthog-client';
-import { shuffle } from '@alfanumrik/lib/shuffle';
+import { EmptyState, Skeleton } from '@alfanumrik/ui/ui/primitives';
 import { TeacherDataError } from '../_components/TeacherDataError';
 
 // ============================================================
@@ -48,7 +47,11 @@ interface GeneratedQuestion {
   answer?: string;
 }
 
-// No hardcoded question bank -- questions are fetched from the question_bank table.
+// No hardcoded question bank -- questions are fetched from the question_bank
+// table VIA THE SERVER. See `fetchQuestionsFromBank` below.
+
+/** Deny reasons the server can return for an otherwise well-formed request. */
+type BankDenyCode = 'out_of_scope' | 'teacher_profile_required';
 
 /**
  * Result of the question_bank read.
@@ -61,13 +64,31 @@ interface GeneratedQuestion {
  * no questions" and answers by generating a worksheet made entirely of
  * DEFAULT_BANK placeholders ("Sample MCQ question for this topic. (a) Option A
  * …"). The teacher then PRINTS and hands that out. Failure and genuine-empty
- * must therefore be different values.
+ * must therefore be different values. A DENIED read is a third value again —
+ * it is neither transient nor empty, and retrying it will never help.
  */
 type QuestionBankRead =
   | { status: 'ok'; questions: GeneratedQuestion[] }
   | { status: 'empty' }
+  | { status: 'denied'; code: BankDenyCode }
   | { status: 'error'; message: string };
 
+/**
+ * Fetch worksheet questions AND their answer key from the server.
+ *
+ * This function used to query `question_bank` directly from the browser and
+ * select `correct_answer_index` under the caller's own role. Students, parents
+ * and teachers all authenticate as the same `authenticated` Postgres role, so
+ * that column could not be protected by RLS or a column ACL while this call
+ * site existed. The read now lives behind
+ * `GET /api/teacher/worksheets/answer-key`, gated by
+ * `authorizeRequest(request, 'worksheet.create')` plus a server-side
+ * (subject, grade) scope check. NOTHING on this page selects
+ * `correct_answer_index` any more.
+ *
+ * The returned question objects are shaped exactly as before, so the printed
+ * worksheet and answer key are unchanged.
+ */
 async function fetchQuestionsFromBank(
   subject: string,
   grade: string,
@@ -75,53 +96,31 @@ async function fetchQuestionsFromBank(
   difficulty?: string,
 ): Promise<QuestionBankRead> {
   try {
-    let query = supabase
-      .from('question_bank')
-      .select('question_text, options, correct_answer_index, explanation, difficulty, bloom_level')
-      .eq('subject', subject)
-      .eq('grade', grade)
-      .eq('is_active', true)
-      .limit(count * 3);
+    const params = new URLSearchParams({ subject, grade, count: String(count) });
+    if (difficulty) params.set('difficulty', difficulty);
 
-    if (difficulty) {
-      const difficultyNum = difficulty === 'easy' ? 1 : difficulty === 'medium' ? 2 : 3;
-      query = query.eq('difficulty', difficultyNum);
+    const res = await fetch(`/api/teacher/worksheets/answer-key?${params.toString()}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+
+    const body = await res.json().catch(() => null) as
+      | { success?: boolean; error?: string; code?: string; data?: { questions?: GeneratedQuestion[] } }
+      | null;
+
+    if (res.status === 403 && (body?.code === 'out_of_scope' || body?.code === 'teacher_profile_required')) {
+      return { status: 'denied', code: body.code };
     }
 
-    const { data, error } = await query;
-    if (error) return { status: 'error', message: error.message };
-    if (!data || data.length === 0) return { status: 'empty' };
+    if (!res.ok || !body?.success) {
+      return { status: 'error', message: body?.error || `HTTP ${res.status}` };
+    }
 
-    // Shuffle and take requested count.
-    // Fisher-Yates via the canonical `shuffle` helper: the old
-    // `.sort(() => Math.random() - 0.5)` comparator is non-transitive, so it is
-    // not a shuffle at all — it leaves the array heavily biased toward the order
-    // the query returned. Because we immediately `.slice(0, count)`, that bias
-    // decided WHICH questions a teacher's worksheet got. `shuffle` is
-    // non-mutating, so we reassign rather than rely on an in-place side effect.
-    const shuffled = shuffle(data).slice(0, count);
-    return {
-      status: 'ok',
-      questions: shuffled.map(q => {
-        const opts = Array.isArray(q.options)
-          ? q.options
-          : typeof q.options === 'string'
-            ? JSON.parse(q.options)
-            : [];
-        return {
-          type: 'MCQ',
-          question:
-            q.question_text +
-            '\n' +
-            (opts as string[]).map((o: string, i: number) => `(${String.fromCharCode(97 + i)}) ${o}`).join('  '),
-          answer: opts[q.correct_answer_index] || 'See explanation',
-          explanation: q.explanation || '',
-        };
-      }),
-    };
+    const questions = body.data?.questions ?? [];
+    if (questions.length === 0) return { status: 'empty' };
+    return { status: 'ok', questions };
   } catch (e) {
-    // Reachable for a malformed `options` JSON payload. Still a failure, not
-    // an empty bank.
+    // Network failure / aborted request. Still a failure, not an empty bank.
     return { status: 'error', message: e instanceof Error ? e.message : 'question_bank read failed' };
   }
 }
@@ -170,6 +169,11 @@ export default function TeacherWorksheetsPage() {
   // The question_bank READ failed (as opposed to returning nothing). We stop
   // rather than silently print a worksheet of DEFAULT_BANK placeholders.
   const [bankReadError, setBankReadError] = useState('');
+  // The server REFUSED the read for this (subject, grade) — the caller has no
+  // active teacher profile, or the pair is outside the classes they teach.
+  // Distinct from `bankReadError`: retrying cannot fix it, so we offer the
+  // action that can (edit the subjects/grades on the teacher profile).
+  const [bankDenyCode, setBankDenyCode] = useState<BankDenyCode | null>(null);
 
   useEffect(() => {
     if (!authLoading && (!isLoggedIn || (activeRole !== 'teacher' && !teacher))) router.replace('/login');
@@ -191,6 +195,7 @@ export default function TeacherWorksheetsPage() {
     setIsGenerating(true);
     setPoolExhausted(false);
     setBankReadError('');
+    setBankDenyCode(null);
     let placeholdersUsed = 0;
 
     // Fetch questions from the question_bank table
@@ -200,6 +205,24 @@ export default function TeacherWorksheetsPage() {
       questionCount,
       difficulty.toLowerCase(),
     );
+
+    // A DENIED read is neither a failure nor an empty bank. Falling through
+    // would hand the teacher a full sheet of DEFAULT_BANK placeholders for
+    // content they are not scoped to; showing the retry banner would invite
+    // them to retry something that can never succeed.
+    if (bankRead.status === 'denied') {
+      setBankDenyCode(bankRead.code);
+      setIsGenerating(false);
+      posthogCapture('teacher_worksheets_load_failed', {
+        teacher_id_present: Boolean(teacher?.id),
+        subject,
+        grade,
+        requested_count: questionCount,
+        placeholders_used: 0,
+        reason: `question_bank_${bankRead.code}`,
+      });
+      return;
+    }
 
     // A FAILED read is not an empty bank. Falling through here would print a
     // worksheet whose every question is a DEFAULT_BANK placeholder, with only
@@ -450,13 +473,85 @@ export default function TeacherWorksheetsPage() {
               <button onClick={generateWorksheet} disabled={selectedTypes.length === 0 || isGenerating}
                 style={{
                   width: '100%', padding: '12px', borderRadius: 12, border: 'none',
+                  // WCAG 2.5.8 / DD-16: pinned inline so the computed box cannot
+                  // drift with font-size or line-height inheritance.
+                  minHeight: 44,
                   background: selectedTypes.length > 0 && !isGenerating ? 'var(--surface-accent)' : '#d1d5db',
                   // DD-16: #fff on the disabled #d1d5db fill is 1.51:1 (invisible).
                   color: selectedTypes.length > 0 && !isGenerating ? 'var(--on-surface-accent)' : 'var(--text-2)',
-                  fontSize: 14, fontWeight: 700, cursor: selectedTypes.length > 0 && !isGenerating ? 'pointer' : 'not-allowed',
+                  fontSize: 16, fontWeight: 700, cursor: selectedTypes.length > 0 && !isGenerating ? 'pointer' : 'not-allowed',
                 }}>
                 {isGenerating ? tt(isHi, 'Generating...', 'बना रहे हैं...') : tt(isHi, 'Generate Worksheet', 'वर्कशीट बनाएं')}
               </button>
+
+              {/* LOADING. The answer key is now a server round-trip rather than
+                  a same-origin PostgREST call, so the wait is visible: show the
+                  shape of what is coming instead of only relabelling the
+                  button. Skeletons are aria-hidden, so the live region beside
+                  them carries the accessible announcement. */}
+              {isGenerating && (
+                <div style={{ marginTop: 16 }} data-testid="worksheets-loading">
+                  <div role="status" aria-live="polite" style={{ fontSize: 16, color: 'var(--text-2)', marginBottom: 10 }}>
+                    {tt(isHi, 'Building your worksheet…', 'आपकी वर्कशीट बनाई जा रही है…')}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <Skeleton className="h-5 w-2/3" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-5/6" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </div>
+                </div>
+              )}
+
+              {/* DENIED. The server refused this (subject, grade) for this
+                  teacher. Retrying cannot help, so we deliberately do NOT show
+                  the retry banner — we point at the profile screen that CAN
+                  change the answer. */}
+              {bankDenyCode && !isGenerating && (
+                <div style={{ marginTop: 12 }} data-testid="worksheets-bank-denied">
+                  <EmptyState
+                    role="alert"
+                    compact
+                    icon="🔒"
+                    title={
+                      bankDenyCode === 'teacher_profile_required'
+                        ? tt(isHi, 'Teacher account required', 'शिक्षक खाता आवश्यक है')
+                        : tt(isHi, 'Outside the classes you teach', 'आप जो कक्षाएं पढ़ाते हैं, उनसे बाहर')
+                    }
+                    description={
+                      bankDenyCode === 'teacher_profile_required'
+                        ? tt(
+                            isHi,
+                            'Answer keys are available to active teacher accounts only. Please contact your school admin.',
+                            'उत्तर कुंजी केवल सक्रिय शिक्षक खातों के लिए उपलब्ध है। कृपया अपने स्कूल एडमिन से संपर्क करें।',
+                          )
+                        : tt(
+                            isHi,
+                            'Answer keys are limited to the subjects and grades on your teacher profile. Add this subject or grade to generate a worksheet for it.',
+                            'उत्तर कुंजी आपकी शिक्षक प्रोफ़ाइल के विषयों और कक्षाओं तक सीमित है। इसके लिए वर्कशीट बनाने हेतु यह विषय या कक्षा जोड़ें।',
+                          )
+                    }
+                    action={
+                      bankDenyCode === 'out_of_scope' ? (
+                        <button
+                          type="button"
+                          onClick={() => router.push('/teacher/profile')}
+                          style={{
+                            minHeight: 44, minWidth: 44,
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            padding: '0 18px', borderRadius: 10,
+                            border: '1px solid var(--surface-accent)',
+                            background: 'transparent', color: 'var(--surface-accent)',
+                            fontSize: 16, fontWeight: 600, cursor: 'pointer',
+                          }}
+                        >
+                          {tt(isHi, 'Edit my subjects', 'मेरे विषय संपादित करें')}
+                        </button>
+                      ) : undefined
+                    }
+                  />
+                </div>
+              )}
 
               {/* question_bank READ failure. Distinct from the "no questions
                   for this grade/subject" path below, which still produces the
@@ -525,6 +620,29 @@ export default function TeacherWorksheetsPage() {
                   {questionSource === 'db' ? tt(isHi, 'Questions from CBSE bank', 'CBSE बैंक से प्रश्न') : tt(isHi, 'Sample questions', 'नमूना प्रश्न')}
                 </span>
               )}
+            </div>
+          )}
+
+          {/* EMPTY. The server answered successfully with ZERO questions for
+              this (subject, grade, difficulty) — the CBSE bank genuinely has
+              nothing here, so every printed question below is a placeholder.
+              Kept out of `isPrintView` so the printed sheet is byte-identical
+              to what it was before. */}
+          {!isPrintView && questionSource === 'fallback' && (
+            <div
+              style={{ background: '#fff', borderRadius: 12, border: '1px solid var(--surface-2)', marginBottom: 16 }}
+              data-testid="worksheets-bank-empty"
+            >
+              <EmptyState
+                compact
+                icon="📭"
+                title={tt(isHi, 'No CBSE-bank questions yet', 'अभी CBSE-बैंक प्रश्न नहीं हैं')}
+                description={tt(
+                  isHi,
+                  'The question bank has nothing for this subject, grade and difficulty yet, so the sheet below uses sample questions. Try another difficulty or grade for bank-backed questions.',
+                  'इस विषय, कक्षा और कठिनाई के लिए प्रश्न बैंक में अभी कुछ नहीं है, इसलिए नीचे की शीट नमूना प्रश्नों का उपयोग करती है। बैंक-आधारित प्रश्नों के लिए दूसरी कठिनाई या कक्षा आज़माएं।',
+                )}
+              />
             </div>
           )}
 

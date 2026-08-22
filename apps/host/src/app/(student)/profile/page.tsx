@@ -1212,11 +1212,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="rounded-2xl p-4 text-center border bg-gray-50/40" style={{ borderColor: 'var(--border)' }}>
                   <div className="text-3xl font-black text-green-600">{quizStats.avgScore}%</div>
-                  {/* Deliberately distinct label from the "Accuracy" tile above
-                      (snapshot.avg_score, server-weighted): this is a client-side
-                      unweighted mean of per-session score_percent — a related but
-                      different figure, so it must never read the same as Accuracy. */}
-                  <div className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'औसत क्विज़ स्कोर' : 'Avg Quiz Score'}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider mt-1 text-[var(--text-3)]">{isHi ? 'औसत स्कोर' : 'Avg Score'}</div>
                 </div>
                 <div className="rounded-2xl p-4 text-center border bg-gray-50/40" style={{ borderColor: 'var(--border)' }}>
                   <div className="text-3xl font-black text-orange-600">{quizStats.bestScore}%</div>

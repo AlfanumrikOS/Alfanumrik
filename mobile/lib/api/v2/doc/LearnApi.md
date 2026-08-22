@@ -18,7 +18,7 @@ Method | HTTP request | Description
 
 Concept content for a subject + chapter
 
-Returns the ordered NCERT chapter prose (markdown + source attribution) for a subject + chapter. Reuses fetchChapterContent (rag_content_chunks read used by /learn). An unknown `subject` is a 400 UNKNOWN_SUBJECT — the 404 NO_CONTENT response is reserved for a KNOWN subject whose chapter genuinely has no content. Requires study_plan.view.
+Returns the ordered NCERT chapter prose (markdown + source attribution) for a subject + chapter. Reuses fetchChapterContent (rag_content_chunks read used by /learn). Requires study_plan.view.
 
 ### Example
 ```dart
@@ -29,7 +29,7 @@ import 'package:alfanumrik_api_v2/api.dart';
 //defaultApiClient.getAuthentication<ApiKeyAuth>('cookieAuth').apiKeyPrefix = 'Bearer';
 
 final api = AlfanumrikApiV2().getLearnApi();
-final String subject = science; // String | Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes.
+final String subject = science; // String | 
 final String grade = grade_example; // String | 
 final int chapter = 3; // int | 
 
@@ -45,7 +45,7 @@ try {
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
- **subject** | **String**| Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes. | 
+ **subject** | **String**|  | 
  **grade** | **String**|  | 
  **chapter** | **int**|  | 
 
@@ -69,7 +69,7 @@ Name | Type | Description  | Notes
 
 Curriculum tree (subjects → chapters → topics)
 
-Returns the plan-gated curriculum tree the mobile Learn screen needs. Reuses get_available_subjects (plan/grade/stream gating) + curriculum_topics. An unknown `subject` filter is a 400 UNKNOWN_SUBJECT (never an empty-success 200 — that shape is reserved for a student who genuinely has zero subjects and sent no filter). Requires study_plan.view.
+Returns the plan-gated curriculum tree the mobile Learn screen needs. Reuses get_available_subjects (plan/grade/stream gating) + curriculum_topics. Requires study_plan.view.
 
 ### Example
 ```dart
@@ -80,7 +80,7 @@ import 'package:alfanumrik_api_v2/api.dart';
 //defaultApiClient.getAuthentication<ApiKeyAuth>('cookieAuth').apiKeyPrefix = 'Bearer';
 
 final api = AlfanumrikApiV2().getLearnApi();
-final String subject = math; // String | Optional filter. Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes (locked subjects included — they are valid filter values and render with is_locked).
+final String subject = subject_example; // String | 
 
 try {
     final response = api.getLearnCurriculum(subject);
@@ -94,7 +94,7 @@ try {
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
- **subject** | **String**| Optional filter. Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes (locked subjects included — they are valid filter values and render with is_locked). | [optional] 
+ **subject** | **String**|  | [optional] 
 
 ### Return type
 

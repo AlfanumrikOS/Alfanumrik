@@ -21,17 +21,9 @@ describe('admin-ui/DetailDrawer', () => {
   });
 
   it('calls onClose when Escape pressed', () => {
-    // DetailDrawer is built on the shared overlay foundation's useEscapeKey
-    // (packages/ui/src/ui/primitives/overlay/useEscapeKey.ts), which listens
-    // on `document` (capture phase) so stacked overlays close top-first via
-    // the overlay stack — the same as Dialog/Drawer/BottomSheet. A real
-    // keydown targets the focused element and bubbles/captures through
-    // document, so dispatching on `document` here matches real usage more
-    // closely than the previous window-targeted dispatch (an artifact of the
-    // old hand-rolled `window.addEventListener` implementation).
     const onClose = vi.fn();
     render(<DetailDrawer open={true} onClose={onClose} title="x">y</DetailDrawer>);
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

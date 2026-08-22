@@ -73,17 +73,10 @@ export async function GET(request: NextRequest) {
   // docs/superpowers/plans/2026-07-02-xc3-systemic-rls-defense-in-depth.md §4.
   const supabase = await createSupabaseRouteClient(request);
 
-  // 1. Read the goal from the students table.
-  //    NOTE: this used to also select `class_id`. **`students` has no class_id
-  //    column** (verified against the baseline schema; stated in-repo at
-  //    `supabase/migrations/20260504200100_stem_lab_badges.sql:499`), so
-  //    PostgREST rejected the whole SELECT with "column students.class_id does
-  //    not exist" — `fetchError` was always set and this route always answered
-  //    404 `student_not_found`. Class membership is resolved from
-  //    `class_students` below, which is where it actually lives.
+  // 1. Read goal and class_id from students table.
   const { data: student, error: fetchError } = await supabase
     .from('students')
-    .select('id, academic_goal')
+    .select('id, academic_goal, class_id')
     .eq('id', studentId)
     .single();
 
@@ -108,10 +101,10 @@ export async function GET(request: NextRequest) {
   let intercepted = false;
 
   if (flagEnabled) {
-    // Resolve the student's class from `class_students` — the only place class
-    // membership exists.
-    let classId: string | null = null;
-    {
+    // Resolve student's class_id
+    let classId: string | null = student.class_id || null;
+
+    if (!classId) {
       const { data: cs } = await supabase
         .from('class_students')
         .select('class_id')

@@ -18,22 +18,7 @@ export interface AllowedChapter {
   // Optional — v2 RPC exposes verified_question_count; legacy RPC exposes
   // ncert_page_start/end/total_questions/has_concepts. Kept optional so the
   // hook works against either shape.
-  //
-  // BADGE GUIDANCE (Decision A option 3, tiered verification, 2026-08-14):
-  //   verified_question_count — "an agent proved this against NCERT". This is
-  //     a READINESS signal, not a servability one, and badging with it is what
-  //     made the picker advertise questions the quiz could not deliver. Kept
-  //     for back-compat; do not use it for a student-facing count.
-  //   practice_ready_count — questions the practice/daily-quiz path can
-  //     actually serve. USE THIS for the chapter badge.
-  //   exam_ready_count — additionally cleared by a human SME; what the
-  //     mock-test path can draw on. Use on exam/mock surfaces only.
-  // All three may be undefined against a database predating migration
-  // 20260814000014. Treat undefined as "unknown" and fall back to the previous
-  // rendering — never render undefined as 0.
   verified_question_count?: number;
-  practice_ready_count?: number;
-  exam_ready_count?: number;
   ncert_page_start?: number | null;
   ncert_page_end?: number | null;
   total_questions?: number;
@@ -55,8 +40,6 @@ interface RawChapterRow {
   title?: string;
   title_hi?: string | null;
   verified_question_count?: number;
-  practice_ready_count?: number;
-  exam_ready_count?: number;
   ncert_page_start?: number | null;
   ncert_page_end?: number | null;
   total_questions?: number;
@@ -80,8 +63,6 @@ const fetcher = async (url: string): Promise<{ chapters: AllowedChapter[] }> => 
     title: c.chapter_title ?? c.title ?? `Chapter ${c.chapter_number}`,
     title_hi: c.chapter_title_hi ?? c.title_hi ?? null,
     verified_question_count: c.verified_question_count,
-    practice_ready_count: c.practice_ready_count,
-    exam_ready_count: c.exam_ready_count,
     ncert_page_start: c.ncert_page_start ?? null,
     ncert_page_end: c.ncert_page_end ?? null,
     total_questions: c.total_questions,

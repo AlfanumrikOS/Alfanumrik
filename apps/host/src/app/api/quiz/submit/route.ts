@@ -20,27 +20,16 @@
  *   400 → missing/invalid Idempotency-Key, validation error
  *   401 → unauthenticated
  *   403 → quiz.attempt missing OR studentId in body != JWT's student_id
- *         OR the RPC's SECURITY DEFINER ownership guard denied the caller →
- *         { code: 'STUDENT_OWNERSHIP_DENIED' }. Shares SQLSTATE P0001 with
- *         session_not_started, so it is discriminated by message and MUST be
- *         checked first — see rpc-error-classification.ts.
  *   409 → P0001 session_not_started → client should restart the quiz
- *   500 → PERMANENT RPC failure (SQLSTATE 42501 / 42883 / 23514) →
- *         { code: 'RPC_PERMANENT', retryable: false }. Retrying with the same
- *         Idempotency-Key can NEVER succeed; the client must stop (but must NOT
- *         discard the attempt — see rpc-error-classification.ts).
- *   503 → transient RPC failure → { code: 'RPC_FAILED', retryable: true };
- *         client should retry with same Idempotency-Key
- *
- * Transport (both supported)
- *   The RPC runs on `createSupabaseRouteClient(request)`: `Authorization:
- *   Bearer <jwt>` (mobile) is forwarded to PostgREST under the anon key, and
- *   cookie-session callers (web) fall through to `createSupabaseServerClient()`.
- *   RLS is enforced on both paths; the service-role key is never used for the
- *   RPC call.
+ *   503 → transient RPC failure → client should retry with same Idempotency-Key
  *
  * Idempotency model
- *   - Idempotency-Key is persisted in `quiz_sessions.idempotency_key` (per-student
+ *   - R9: the GRADING key is the request's `sessionId`, never the client's
+ *     header value. The header stays required + UUID-validated (it is a client
+ *     retry token) but the server binds grading to the session so that one
+ *     session can only ever be graded once — see
+ *     packages/lib/src/quiz/idempotency.ts for the full rationale.
+ *   - That key is persisted in `quiz_sessions.idempotency_key` (per-student
  *     unique partial index). The RPC short-circuits on replay and returns the
  *     cached score.
  *   - On a unique-violation race (two concurrent retries arriving simultaneously),
@@ -60,7 +49,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
-import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
+import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { logger } from '@alfanumrik/lib/logger';
@@ -68,19 +57,7 @@ import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { capture as posthogCapture } from '@alfanumrik/lib/posthog/server';
 import { validateBody } from '@alfanumrik/lib/validation';
 import { runQuizSubmitSideEffects } from '@alfanumrik/lib/quiz/submit-side-effects';
-import {
-  authTransportLabel,
-  isPermanentRpcFailure,
-  isOwnershipGuardDenial,
-  OWNERSHIP_DENIED_CODE,
-  OWNERSHIP_DENIED_MESSAGE,
-  OWNERSHIP_DENIED_OPS_CATEGORY,
-  OWNERSHIP_DENIED_OPS_MESSAGE,
-  RPC_PERMANENT_CODE,
-  RPC_PERMANENT_MESSAGE,
-  RPC_TRANSIENT_CODE,
-  RPC_TRANSIENT_MESSAGE,
-} from '@alfanumrik/lib/quiz/rpc-error-classification';
+import { resolveGradingIdempotencyKey } from '@alfanumrik/lib/quiz/idempotency';
 
 // ─── Body schema ────────────────────────────────────────────────────────────
 
@@ -161,6 +138,18 @@ export async function POST(request: NextRequest) {
   }
   const body = validation.data;
 
+  // ── 3b. R9 — bind the GRADING key to the session, not to the client ───
+  // The header above is a client-chosen retry token; it is NOT allowed to
+  // choose which key grades this quiz. `quiz_sessions_idempotency_key_uniq`
+  // is UNIQUE on (student_id, idempotency_key), so two different client keys
+  // for one session would be two legal rows → two gradings → DOUBLE XP (P2),
+  // and the resume route's already-submitted gate (which looks the SESSION ID
+  // up in that same column) would stop matching, making a graded session
+  // resumable again. `sessionId` is required by submitBodySchema, so from here
+  // the grading key IS the session id. Rationale for ignoring rather than
+  // rejecting a mismatch (live mobile clients) is in the helper's doc block.
+  const gradingKey = resolveGradingIdempotencyKey(body.sessionId, idempotencyKey);
+
   // ── 4. Cross-check JWT's student_id matches body.studentId ────────────
   // Defense-in-depth: RLS on quiz_session_shuffles would also reject this.
   const admin = getSupabaseAdmin();
@@ -210,7 +199,7 @@ export async function POST(request: NextRequest) {
         session_id: body.sessionId,
         flag_state: 'off',
       },
-      `quiz_server_submit_passthrough:${body.sessionId}:${idempotencyKey}`,
+      `quiz_server_submit_passthrough:${body.sessionId}:${gradingKey}`,
     ).catch(() => { /* never throw from telemetry */ });
   }
 
@@ -225,17 +214,7 @@ export async function POST(request: NextRequest) {
 
   // Use a JWT-bound supabase client so SECURITY DEFINER's auth.uid() check
   // sees the calling student. This is required for the RPC's ownership guard.
-  //
-  // BOTH transports are handled: `createSupabaseRouteClient` forwards an
-  // `Authorization: Bearer <jwt>` (mobile) to PostgREST under the anon key, and
-  // falls back to the cookie session client (`createSupabaseServerClient`) for
-  // web callers. RLS is enforced on both paths; the service-role key is never
-  // used. This comment used to sit above the COOKIE-ONLY client — the intent
-  // was always right, the code never matched it, and every Bearer caller
-  // therefore reached PostgREST as role `anon`. `submit_quiz_results_v2` is
-  // granted only to `authenticated, service_role`, so mobile submissions raised
-  // SQLSTATE 42501 and were reported as a transient 503 (P0, 2026-08-12).
-  const supabaseUser = await createSupabaseRouteClient(request);
+  const supabaseUser = await createSupabaseServerClient();
 
   // ── 7. Call submit_quiz_results_v2 with idempotency key ───────────────
   let rpcData: QuizV2Result | null = null;
@@ -250,7 +229,8 @@ export async function POST(request: NextRequest) {
       p_chapter: body.chapter ?? null,
       p_responses: rpcResponses,
       p_time: body.totalTimeSeconds,
-      p_idempotency_key: idempotencyKey,
+      // R9: the SESSION id, never the client header. See step 3b.
+      p_idempotency_key: gradingKey,
     });
     rpcData = (data ?? null) as QuizV2Result | null;
     rpcErr = error
@@ -263,72 +243,7 @@ export async function POST(request: NextRequest) {
   // ── 8. Translate RPC errors per contract ──────────────────────────────
   if (rpcErr) {
     const msg = rpcErr.message || '';
-
-    // P0001 (a) — the SECURITY DEFINER OWNERSHIP-GUARD denial. MUST be tested
-    // BEFORE the session_not_started branch below: a bare `RAISE EXCEPTION` in
-    // PL/pgSQL is SQLSTATE P0001, so the guard's
-    // 'Access denied: caller does not own student %' and the RPC's routine
-    // 'session_not_started' arrive with the SAME code. Ordering is the only
-    // thing separating them; the message test is exact, so a legitimate
-    // session_not_started can never fall in here.
-    //
-    // Previously this collapsed into the 409 below, which answered a genuine
-    // cross-student submission with "session not started, please restart" and
-    // emitted no security signal at all. It is now its own 403 + its own
-    // ops_events row.
-    if (isOwnershipGuardDenial(rpcErr)) {
-      logger.error('quiz.submit: RPC ownership guard denied', {
-        error: new Error('ownership_guard_denied'),
-        sessionId: body.sessionId,
-        studentId: body.studentId,
-        authUserId: auth.userId,
-      });
-      // AWAITED, unlike the sibling RPC-failure event below which is `void`ed.
-      // A serverless invocation can be torn down as soon as the response is
-      // returned, so a fire-and-forget write is a write that may never land —
-      // acceptable for a scoring-failure metric, not for the only record that a
-      // cross-student attempt happened. This path is by definition rare and
-      // abnormal, so the added latency costs nothing real. logOpsEvent never
-      // throws (DB failures degrade to console.warn), so awaiting cannot turn a
-      // 403 into a 500.
-      await logOpsEvent({
-        category: OWNERSHIP_DENIED_OPS_CATEGORY,
-        severity: 'error',
-        source: 'api/quiz/submit/route.ts',
-        message: OWNERSHIP_DENIED_OPS_MESSAGE,
-        subjectType: 'student',
-        subjectId: body.studentId,
-        context: {
-          // Server-side forensic correlation only. The raw RPC message is NOT
-          // logged: it interpolates the same student id already carried in
-          // `student_id`, so it would add nothing but a second copy.
-          rpc_code: rpcErr.code ?? null,
-          guard: 'student_ownership',
-          session_id: body.sessionId,
-          student_id: body.studentId,
-          auth_user_id: auth.userId,
-          // Which transport the denied caller used. Must be the SAME test the
-          // route client applies (`startsWith('Bearer ')`) — a `Basic` header is
-          // NOT a Bearer caller, and mislabelling it here would send a forensic
-          // investigation after the wrong client.
-          transport: authTransportLabel(request),
-        },
-      });
-      // 403, no `hint`, no `retryable`. The mobile drain classifies 4xx →
-      // discard, which is the correct disposition for an attempt the caller is
-      // not entitled to make. P13: no identifier and no SQL text in the body.
-      return NextResponse.json(
-        {
-          success: false,
-          error: OWNERSHIP_DENIED_MESSAGE,
-          code: OWNERSHIP_DENIED_CODE,
-        },
-        { status: 403 },
-      );
-    }
-
-    // P0001 (b) — session_not_started branch raised inside the RPC. Normal,
-    // expected client state; response is unchanged byte-for-byte.
+    // P0001 — session_not_started branch raised inside the RPC.
     if (msg.startsWith('session_not_started') || rpcErr.code === 'P0001') {
       return NextResponse.json(
         {
@@ -355,7 +270,9 @@ export async function POST(request: NextRequest) {
         .from('quiz_sessions')
         .select('id, total_questions, correct_answers, score_percent, score')
         .eq('student_id', body.studentId)
-        .eq('idempotency_key', idempotencyKey)
+        // R9: must be the SAME key the INSERT raced on, else the cached row is
+        // never found and a genuine retry 503s instead of replaying.
+        .eq('idempotency_key', gradingKey)
         .maybeSingle();
 
       if (cached.data) {
@@ -376,60 +293,29 @@ export async function POST(request: NextRequest) {
       // Otherwise fall through to 503 — the cached row is on its way.
     }
 
-    // PERMANENT vs TRANSIENT. A missing grant (42501), a missing/undeployed RPC
-    // (42883 / PGRST202) or a CHECK violation (23514) can NEVER be resolved by
-    // replaying the same request with the same Idempotency-Key — reporting them
-    // as a transient 503 made the Flutter drain queue retry forever. See
-    // src/lib/quiz/rpc-error-classification.ts for the full rationale.
-    const permanent = isPermanentRpcFailure(rpcErr);
-
-    // Ops is paged for BOTH classes at severity `error` — a permanent failure is
-    // strictly more urgent, so it keeps (and flags) the same page.
+    // Any other RPC failure → 503 so the client retries with the same key.
     logger.error('quiz.submit: RPC failed', {
       error: new Error(rpcErr.message),
       sessionId: body.sessionId,
       studentId: body.studentId,
-      permanent,
     });
     void logOpsEvent({
       category: 'quiz',
       severity: 'error',
       source: 'api/quiz/submit/route.ts',
-      message: permanent
-        ? 'submit_quiz_results_v2_failed_permanent'
-        : 'submit_quiz_results_v2_failed',
+      message: 'submit_quiz_results_v2_failed',
       context: {
         rpc_error: rpcErr.message,
         rpc_code: rpcErr.code ?? null,
-        failure_class: permanent ? 'permanent' : 'transient',
         session_id: body.sessionId,
         student_id: body.studentId,
       },
     });
-
-    if (permanent) {
-      // 500 (NOT 4xx): the mobile drain classifies `4xx → discard`, and
-      // discarding would throw away the student's real attempt. `retryable:
-      // false` is the machine-readable signal that lets the client stop
-      // retrying WITHOUT losing the data. The message never says "retry".
-      return NextResponse.json(
-        {
-          success: false,
-          error: RPC_PERMANENT_MESSAGE,
-          code: RPC_PERMANENT_CODE,
-          retryable: false,
-        },
-        { status: 500 },
-      );
-    }
-
-    // Genuine transient → 503 so the client retries with the same key.
     return NextResponse.json(
       {
         success: false,
-        error: RPC_TRANSIENT_MESSAGE,
-        code: RPC_TRANSIENT_CODE,
-        retryable: true,
+        error: 'Temporary scoring failure — retry with same Idempotency-Key',
+        code: 'RPC_FAILED',
       },
       { status: 503 },
     );
@@ -437,12 +323,7 @@ export async function POST(request: NextRequest) {
 
   if (!rpcData) {
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Empty response from scoring engine',
-        code: 'EMPTY_RESPONSE',
-        retryable: true,
-      },
+      { success: false, error: 'Empty response from scoring engine', code: 'EMPTY_RESPONSE' },
       { status: 503 },
     );
   }

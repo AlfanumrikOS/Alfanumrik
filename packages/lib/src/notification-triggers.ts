@@ -5,11 +5,9 @@
  * All functions are fire-and-forget: they catch their own errors and never
  * throw, so callers do not need try/catch.
  *
- * P7 (Bilingual): Every notification stores English copy in top-level
- * `message`/`body` (both NOT NULL / required by the `notifications` table)
- * and Hindi copy NESTED under `data.body_hi` (there is no top-level
- * body_hi/title_hi/message_hi column). The recipient_type is 'guardian' per
- * the schema used by daily-cron.
+ * P7 (Bilingual): Every notification stores English body in `body` and
+ * Hindi body in `body_hi`. The recipient_type is 'guardian' per the schema
+ * used by daily-cron.
  *
  * P13 (Privacy): Student names and guardian phone numbers are never logged.
  * Only opaque IDs and aggregate/scalar values appear in log output.
@@ -104,15 +102,8 @@ interface NotificationRow {
   recipient_id: string;
   type: string;
   title: string;
-  /** NOT NULL in the `notifications` table — always set (mirrors `body`). */
-  message: string;
   body: string;
-  /**
-   * Hindi copy lives NESTED under data.body_hi / data.title_hi / data.message_hi
-   * (P7) — the `notifications` table has NO top-level body_hi/title_hi/message_hi
-   * column. See the RemediationNotificationRow producers below for the
-   * verified-working reference shape.
-   */
+  body_hi: string;
   data: Record<string, unknown>;
   is_read: boolean;
   created_at: string;
@@ -147,30 +138,25 @@ export async function onQuizCompleted(
       if (!guardian?.id) continue;
       if (!isNotificationEnabled(guardian.notification_preferences, 'quiz_result')) continue;
 
-      {
-        const bodyEn = `Your child scored ${score}% on ${subject} (${correctAnswers}/${totalQuestions} correct) and earned +${xpEarned} XP.`;
-        const bodyHi = `आपके बच्चे ने ${subject} में ${score}% अंक प्राप्त किए (${correctAnswers}/${totalQuestions} सही) और +${xpEarned} XP अर्जित किए।`;
-        rows.push({
-          recipient_type: 'guardian',
-          recipient_id: guardian.id,
-          type: 'quiz_result',
-          title: `Quiz completed: ${subject}`,
-          message: bodyEn,
-          body: bodyEn,
-          data: {
-            student_id: studentId,
-            subject,
-            score,
-            xp_earned: xpEarned,
-            total_questions: totalQuestions,
-            correct_answers: correctAnswers,
-            trigger: 'quiz_completed',
-            body_hi: bodyHi,
-          },
-          is_read: false,
-          created_at: now,
-        });
-      }
+      rows.push({
+        recipient_type: 'guardian',
+        recipient_id: guardian.id,
+        type: 'quiz_result',
+        title: `Quiz completed: ${subject}`,
+        body: `Your child scored ${score}% on ${subject} (${correctAnswers}/${totalQuestions} correct) and earned +${xpEarned} XP.`,
+        body_hi: `आपके बच्चे ने ${subject} में ${score}% अंक प्राप्त किए (${correctAnswers}/${totalQuestions} सही) और +${xpEarned} XP अर्जित किए।`,
+        data: {
+          student_id: studentId,
+          subject,
+          score,
+          xp_earned: xpEarned,
+          total_questions: totalQuestions,
+          correct_answers: correctAnswers,
+          trigger: 'quiz_completed',
+        },
+        is_read: false,
+        created_at: now,
+      });
     }
 
     if (rows.length === 0) return;
@@ -223,27 +209,22 @@ export async function onLowAccuracy(
       if (!guardian?.id) continue;
       if (!isNotificationEnabled(guardian.notification_preferences, 'daily_progress')) continue;
 
-      {
-        const bodyEn = `Your child scored ${accuracy}% accuracy in ${subject} recently. Extra practice in this topic would help.`;
-        const bodyHi = `आपके बच्चे की ${subject} में हाल ही में ${accuracy}% सटीकता रही। इस विषय में अतिरिक्त अभ्यास सहायक होगा।`;
-        rows.push({
-          recipient_type: 'guardian',
-          recipient_id: guardian.id,
-          type: 'daily_progress',
-          title: `Low accuracy in ${subject}`,
-          message: bodyEn,
-          body: bodyEn,
-          data: {
-            student_id: studentId,
-            subject,
-            accuracy,
-            trigger: 'low_accuracy',
-            body_hi: bodyHi,
-          },
-          is_read: false,
-          created_at: now,
-        });
-      }
+      rows.push({
+        recipient_type: 'guardian',
+        recipient_id: guardian.id,
+        type: 'daily_progress',
+        title: `Low accuracy in ${subject}`,
+        body: `Your child scored ${accuracy}% accuracy in ${subject} recently. Extra practice in this topic would help.`,
+        body_hi: `आपके बच्चे की ${subject} में हाल ही में ${accuracy}% सटीकता रही। इस विषय में अतिरिक्त अभ्यास सहायक होगा।`,
+        data: {
+          student_id: studentId,
+          subject,
+          accuracy,
+          trigger: 'low_accuracy',
+        },
+        is_read: false,
+        created_at: now,
+      });
     }
 
     if (rows.length === 0) return;
@@ -291,25 +272,20 @@ export async function onStreakBroken(studentId: string): Promise<void> {
       if (!guardian?.id) continue;
       if (!isNotificationEnabled(guardian.notification_preferences, 'streak_risk')) continue;
 
-      {
-        const bodyEn = 'Your child missed their daily study session and their streak has been reset. Encourage them to start a new streak today!';
-        const bodyHi = 'आपके बच्चे ने अपना दैनिक अध्ययन सत्र छोड़ दिया और उनकी स्ट्रीक रीसेट हो गई है। उन्हें आज नई स्ट्रीक शुरू करने के लिए प्रोत्साहित करें!';
-        rows.push({
-          recipient_type: 'guardian',
-          recipient_id: guardian.id,
-          type: 'streak_risk',
-          title: 'Study streak broken',
-          message: bodyEn,
-          body: bodyEn,
-          data: {
-            student_id: studentId,
-            trigger: 'streak_broken',
-            body_hi: bodyHi,
-          },
-          is_read: false,
-          created_at: now,
-        });
-      }
+      rows.push({
+        recipient_type: 'guardian',
+        recipient_id: guardian.id,
+        type: 'streak_risk',
+        title: 'Study streak broken',
+        body: 'Your child missed their daily study session and their streak has been reset. Encourage them to start a new streak today!',
+        body_hi: 'आपके बच्चे ने अपना दैनिक अध्ययन सत्र छोड़ दिया और उनकी स्ट्रीक रीसेट हो गई है। उन्हें आज नई स्ट्रीक शुरू करने के लिए प्रोत्साहित करें!',
+        data: {
+          student_id: studentId,
+          trigger: 'streak_broken',
+        },
+        is_read: false,
+        created_at: now,
+      });
     }
 
     if (rows.length === 0) return;
@@ -362,29 +338,24 @@ export async function onWeeklyDigest(
       if (!guardian?.id) continue;
       if (!isNotificationEnabled(guardian.notification_preferences, 'parent_daily_report')) continue;
 
-      {
-        const bodyEn = `This week: ${quizzesCompleted} quiz${quizzesCompleted !== 1 ? 'zes' : ''} completed, average score ${avgScore}%, +${xpEarned} XP earned, ${streakDays}-day streak.`;
-        const bodyHi = `इस सप्ताह: ${quizzesCompleted} क्विज़ पूरी${quizzesCompleted !== 1 ? 'ं' : ''}, औसत अंक ${avgScore}%, +${xpEarned} XP अर्जित, ${streakDays} दिन की स्ट्रीक।`;
-        rows.push({
-          recipient_type: 'guardian',
-          recipient_id: guardian.id,
-          type: 'parent_daily_report',
-          title: 'Weekly learning summary',
-          message: bodyEn,
-          body: bodyEn,
-          data: {
-            student_id: studentId,
-            quizzes_completed: quizzesCompleted,
-            avg_score: avgScore,
-            xp_earned: xpEarned,
-            streak_days: streakDays,
-            trigger: 'weekly_digest',
-            body_hi: bodyHi,
-          },
-          is_read: false,
-          created_at: now,
-        });
-      }
+      rows.push({
+        recipient_type: 'guardian',
+        recipient_id: guardian.id,
+        type: 'parent_daily_report',
+        title: 'Weekly learning summary',
+        body: `This week: ${quizzesCompleted} quiz${quizzesCompleted !== 1 ? 'zes' : ''} completed, average score ${avgScore}%, +${xpEarned} XP earned, ${streakDays}-day streak.`,
+        body_hi: `इस सप्ताह: ${quizzesCompleted} क्विज़ पूरी${quizzesCompleted !== 1 ? 'ं' : ''}, औसत अंक ${avgScore}%, +${xpEarned} XP अर्जित, ${streakDays} दिन की स्ट्रीक।`,
+        data: {
+          student_id: studentId,
+          quizzes_completed: quizzesCompleted,
+          avg_score: avgScore,
+          xp_earned: xpEarned,
+          streak_days: streakDays,
+          trigger: 'weekly_digest',
+        },
+        is_read: false,
+        created_at: now,
+      });
     }
 
     if (rows.length === 0) return;
@@ -422,10 +393,7 @@ export async function onWeeklyDigest(
 //   - top-level `message` (NOT NULL in prod) + `body` carry the English copy;
 //   - Hindi copy lives in `data.title_hi` / `data.body_hi` / `data.message_hi`
 //     (P7 — the notifications table has NO top-level body_hi column; the older
-//     triggers above this section were fixed to the same nested shape after a
-//     SEV1 audit found they previously set a nonexistent top-level body_hi
-//     column and omitted the NOT-NULL `message` column, silently failing
-//     every insert);
+//     triggers above that set a top-level body_hi predate that verification);
 //   - deterministic `idempotency_key` + upsert on
 //     (recipient_id, type, idempotency_key) with ignoreDuplicates so cron
 //     retries never duplicate rows (migration 20260505100100);
@@ -1317,8 +1285,7 @@ export async function onConcentrationReescalated(
  * linked guardians (parent_achievement). Guardian rows are filtered by the
  * 'achievement' notification preference (defaults true if not set).
  *
- * P7: every row carries `message`/`body` (English, top-level, NOT NULL) and
- * data.body_hi (Hindi, nested — no top-level body_hi column).
+ * P7: every row carries both `body` (English) and `body_hi` (Hindi).
  * P13: data fields contain studentId, numbers, and trigger string only — no PII.
  */
 export async function onLevelUp(
@@ -1335,25 +1302,20 @@ export async function onLevelUp(
     const rows: NotificationRow[] = [];
 
     // Student notification
-    {
-      const studentBodyEn = `You reached Level ${newLevel}: ${levelNameEn}. Keep going!`;
-      const studentBodyHi = `आपने स्तर ${newLevel} पार किया: ${levelNameHi}। बढ़ते रहें!`;
-      rows.push({
-        recipient_type: 'student',
-        recipient_id: studentId,
-        type: 'achievement',
-        title: `🎉 Level Up! You are now ${levelNameEn}`,
-        message: studentBodyEn,
-        body: studentBodyEn,
-        data: {
-          trigger: 'level_up',
-          new_level: newLevel,
-          body_hi: studentBodyHi,
-        },
-        is_read: false,
-        created_at: now,
-      });
-    }
+    rows.push({
+      recipient_type: 'student',
+      recipient_id: studentId,
+      type: 'achievement',
+      title: `🎉 Level Up! You are now ${levelNameEn}`,
+      body: `You reached Level ${newLevel}: ${levelNameEn}. Keep going!`,
+      body_hi: `आपने स्तर ${newLevel} पार किया: ${levelNameHi}। बढ़ते रहें!`,
+      data: {
+        trigger: 'level_up',
+        new_level: newLevel,
+      },
+      is_read: false,
+      created_at: now,
+    });
 
     // Guardian fanout
     const guardians = await getApprovedGuardians(studentId);
@@ -1363,20 +1325,17 @@ export async function onLevelUp(
       if (!guardian?.id) continue;
       if (!isNotificationEnabled(guardian.notification_preferences, 'achievement')) continue;
 
-      const guardianBodyEn = `Your child just reached Level ${newLevel}: ${levelNameEn} on Alfanumrik! 🎉`;
-      const guardianBodyHi = `आपके बच्चे ने Alfanumrik पर स्तर ${newLevel}: ${levelNameHi} प्राप्त किया! 🎉`;
       rows.push({
         recipient_type: 'guardian',
         recipient_id: guardian.id,
         type: 'parent_achievement',
         title: `🌟 ${levelNameEn}!`,
-        message: guardianBodyEn,
-        body: guardianBodyEn,
+        body: `Your child just reached Level ${newLevel}: ${levelNameEn} on Alfanumrik! 🎉`,
+        body_hi: `आपके बच्चे ने Alfanumrik पर स्तर ${newLevel}: ${levelNameHi} प्राप्त किया! 🎉`,
         data: {
           student_id: studentId,
           trigger: 'level_up',
           new_level: newLevel,
-          body_hi: guardianBodyHi,
         },
         is_read: false,
         created_at: now,
@@ -1414,8 +1373,7 @@ export async function onLevelUp(
  * to all approved linked guardians. Guardian rows are filtered by the
  * 'parent_digest' notification preference (defaults true if not set).
  *
- * P7: every row carries `message`/`body` (English, top-level, NOT NULL) and
- * data.body_hi (Hindi, nested — no top-level body_hi column).
+ * P7: every row carries both `body` (English) and `body_hi` (Hindi).
  * P13: data fields contain studentId, subject string, numbers, and trigger only.
  */
 export async function onChapterComplete(
@@ -1431,26 +1389,21 @@ export async function onChapterComplete(
     const rows: NotificationRow[] = [];
 
     // Student notification
-    {
-      const studentBodyEn = `You completed a chapter in ${subject} and earned +${xpEarned} XP!`;
-      const studentBodyHi = `${subject} में अध्याय पूरा किया और +${xpEarned} XP अर्जित किए!`;
-      rows.push({
-        recipient_type: 'student',
-        recipient_id: studentId,
-        type: 'achievement',
-        title: `📖 Chapter Complete!`,
-        message: studentBodyEn,
-        body: studentBodyEn,
-        data: {
-          trigger: 'chapter_complete',
-          subject,
-          xp_earned: xpEarned,
-          body_hi: studentBodyHi,
-        },
-        is_read: false,
-        created_at: now,
-      });
-    }
+    rows.push({
+      recipient_type: 'student',
+      recipient_id: studentId,
+      type: 'achievement',
+      title: `📖 Chapter Complete!`,
+      body: `You completed a chapter in ${subject} and earned +${xpEarned} XP!`,
+      body_hi: `${subject} में अध्याय पूरा किया और +${xpEarned} XP अर्जित किए!`,
+      data: {
+        trigger: 'chapter_complete',
+        subject,
+        xp_earned: xpEarned,
+      },
+      is_read: false,
+      created_at: now,
+    });
 
     // Guardian fanout
     const guardians = await getApprovedGuardians(studentId);
@@ -1460,21 +1413,18 @@ export async function onChapterComplete(
       if (!guardian?.id) continue;
       if (!isNotificationEnabled(guardian.notification_preferences, 'parent_digest')) continue;
 
-      const guardianBodyEn = `Your child completed a chapter in ${subject} today and earned +${xpEarned} XP.`;
-      const guardianBodyHi = `आपके बच्चे ने आज ${subject} में एक अध्याय पूरा किया और +${xpEarned} XP अर्जित किए।`;
       rows.push({
         recipient_type: 'guardian',
         recipient_id: guardian.id,
         type: 'parent_digest',
         title: `📚 Chapter completed in ${subject}`,
-        message: guardianBodyEn,
-        body: guardianBodyEn,
+        body: `Your child completed a chapter in ${subject} today and earned +${xpEarned} XP.`,
+        body_hi: `आपके बच्चे ने आज ${subject} में एक अध्याय पूरा किया और +${xpEarned} XP अर्जित किए।`,
         data: {
           student_id: studentId,
           trigger: 'chapter_complete',
           subject,
           xp_earned: xpEarned,
-          body_hi: guardianBodyHi,
         },
         is_read: false,
         created_at: now,
@@ -1514,8 +1464,7 @@ export async function onChapterComplete(
  * to all approved linked guardians. Guardian rows are filtered by the
  * 'streak_milestone' notification preference (defaults true if not set).
  *
- * P7: every row carries `message`/`body` (English, top-level, NOT NULL) and
- * data.body_hi (Hindi, nested — no top-level body_hi column).
+ * P7: every row carries both `body` (English) and `body_hi` (Hindi).
  * P13: data fields contain studentId, numbers, and trigger string only — no PII.
  */
 export async function onStreakMilestone(
@@ -1531,26 +1480,21 @@ export async function onStreakMilestone(
     const rows: NotificationRow[] = [];
 
     // Student notification
-    {
-      const studentBodyEn = `Amazing! You have a ${days}-day learning streak and earned ${coinsAwarded} Foxy Coins!`;
-      const studentBodyHi = `शानदार! आपकी ${days} दिन की पढ़ाई की स्ट्रीक है और ${coinsAwarded} फॉक्सी कॉइन मिले!`;
-      rows.push({
-        recipient_type: 'student',
-        recipient_id: studentId,
-        type: 'achievement',
-        title: `🔥 ${days}-Day Streak!`,
-        message: studentBodyEn,
-        body: studentBodyEn,
-        data: {
-          trigger: 'streak_milestone',
-          streak_days: days,
-          coins_awarded: coinsAwarded,
-          body_hi: studentBodyHi,
-        },
-        is_read: false,
-        created_at: now,
-      });
-    }
+    rows.push({
+      recipient_type: 'student',
+      recipient_id: studentId,
+      type: 'achievement',
+      title: `🔥 ${days}-Day Streak!`,
+      body: `Amazing! You have a ${days}-day learning streak and earned ${coinsAwarded} Foxy Coins!`,
+      body_hi: `शानदार! आपकी ${days} दिन की पढ़ाई की स्ट्रीक है और ${coinsAwarded} फॉक्सी कॉइन मिले!`,
+      data: {
+        trigger: 'streak_milestone',
+        streak_days: days,
+        coins_awarded: coinsAwarded,
+      },
+      is_read: false,
+      created_at: now,
+    });
 
     // Guardian fanout
     const guardians = await getApprovedGuardians(studentId);
@@ -1560,21 +1504,18 @@ export async function onStreakMilestone(
       if (!guardian?.id) continue;
       if (!isNotificationEnabled(guardian.notification_preferences, 'streak_milestone')) continue;
 
-      const guardianBodyEn = `Your child has maintained a ${days}-day learning streak on Alfanumrik! 🔥`;
-      const guardianBodyHi = `आपके बच्चे ने Alfanumrik पर ${days} दिन की पढ़ाई की लकीर बनाए रखी है! 🔥`;
       rows.push({
         recipient_type: 'guardian',
         recipient_id: guardian.id,
         type: 'parent_achievement',
         title: `🔥 ${days}-Day Streak!`,
-        message: guardianBodyEn,
-        body: guardianBodyEn,
+        body: `Your child has maintained a ${days}-day learning streak on Alfanumrik! 🔥`,
+        body_hi: `आपके बच्चे ने Alfanumrik पर ${days} दिन की पढ़ाई की लकीर बनाए रखी है! 🔥`,
         data: {
           student_id: studentId,
           trigger: 'streak_milestone',
           streak_days: days,
           coins_awarded: coinsAwarded,
-          body_hi: guardianBodyHi,
         },
         is_read: false,
         created_at: now,
@@ -1630,27 +1571,22 @@ export async function onMasteryMilestone(
       if (!guardian?.id) continue;
       if (!isNotificationEnabled(guardian.notification_preferences, 'achievement')) continue;
 
-      {
-        const bodyEn = `Your child has reached ${masteryLevel}% mastery in "${concept}". Great progress!`;
-        const bodyHi = `आपके बच्चे ने "${concept}" में ${masteryLevel}% महारत हासिल कर ली है। शानदार प्रगति!`;
-        rows.push({
-          recipient_type: 'guardian',
-          recipient_id: guardian.id,
-          type: 'achievement',
-          title: `Mastery milestone: ${concept}`,
-          message: bodyEn,
-          body: bodyEn,
-          data: {
-            student_id: studentId,
-            concept,
-            mastery_level: masteryLevel,
-            trigger: 'mastery_milestone',
-            body_hi: bodyHi,
-          },
-          is_read: false,
-          created_at: now,
-        });
-      }
+      rows.push({
+        recipient_type: 'guardian',
+        recipient_id: guardian.id,
+        type: 'achievement',
+        title: `Mastery milestone: ${concept}`,
+        body: `Your child has reached ${masteryLevel}% mastery in "${concept}". Great progress!`,
+        body_hi: `आपके बच्चे ने "${concept}" में ${masteryLevel}% महारत हासिल कर ली है। शानदार प्रगति!`,
+        data: {
+          student_id: studentId,
+          concept,
+          mastery_level: masteryLevel,
+          trigger: 'mastery_milestone',
+        },
+        is_read: false,
+        created_at: now,
+      });
     }
 
     if (rows.length === 0) return;

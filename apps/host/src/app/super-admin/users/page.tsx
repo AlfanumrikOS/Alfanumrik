@@ -7,11 +7,6 @@ import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { DataTable, type Column, DetailDrawer, StatusBadge } from '@alfanumrik/ui/admin-ui';
 import { toast } from '@alfanumrik/ui/ui/toast';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
-import { useAuth } from '@alfanumrik/lib/AuthContext';
-import ConfirmActionDialog from './_components/ConfirmActionDialog';
-import EditProfileForm from './_components/EditProfileForm';
-import UserSessionsPanel from './_components/UserSessionsPanel';
-import AdminTierPanel from './_components/AdminTierPanel';
 
 interface UserRecord {
   id: string; auth_user_id: string; name: string; email: string; role: string;
@@ -27,7 +22,6 @@ const PAGE_LIMIT = 50;
 
 function UsersContent() {
   const { apiFetch } = useAdmin();
-  const { isHi } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -46,24 +40,6 @@ function UsersContent() {
   const [assignUserId, setAssignUserId] = useState('');
   const [assignRoleName, setAssignRoleName] = useState('');
   const [showRolePanel, setShowRolePanel] = useState(false);
-  const [revokeConfirmId, setRevokeConfirmId] = useState<string | null>(null);
-  const [revoking, setRevoking] = useState(false);
-
-  // Admin tier (admin_users.admin_level)
-  const [showAdminTierPanel, setShowAdminTierPanel] = useState(false);
-
-  // Ban/unban — Ban is destructive and confirm-gated; Unban is corrective.
-  const [banBusyId, setBanBusyId] = useState<string | null>(null);
-  const [banConfirmUser, setBanConfirmUser] = useState<UserRecord | null>(null);
-
-  // Password reset (support route)
-  const [resettingPassword, setResettingPassword] = useState(false);
-
-  // Force logout — lifted to the page (not owned by UserSessionsPanel) so
-  // its confirm dialog survives closing the drawer. See UserSessionsPanel.tsx
-  // header comment for the z-index reasoning.
-  const [forceLogoutTarget, setForceLogoutTarget] = useState<UserRecord | null>(null);
-  const [forceLoggingOut, setForceLoggingOut] = useState(false);
 
   // Test account
   const [showTestForm, setShowTestForm] = useState(false);
@@ -97,52 +73,13 @@ function UsersContent() {
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => { if (showRolePanel) fetchRoles(); }, [showRolePanel, fetchRoles]);
 
-  // Executes the is_active flip. Unban calls this directly (corrective,
-  // no confirm needed); Ban routes through requestBanToggle → the confirm
-  // dialog → this executor.
-  const executeToggle = async (user: UserRecord) => {
+  const toggleUser = async (user: UserRecord) => {
     const table = user.role === 'teacher' ? 'teachers' : user.role === 'parent' ? 'guardians' : 'students';
-    const wasActive = user.is_active !== false;
-    setBanBusyId(user.id);
-    try {
-      const res = await apiFetch('/api/super-admin/users', {
-        method: 'PATCH',
-        body: JSON.stringify({ user_id: user.id, table, updates: { is_active: !user.is_active } }),
-      });
-      if (!res.ok) {
-        const d = await readAdminJson<{ error?: string }>(res).catch(() => ({}) as { error?: string });
-        toast.error(d.error || (isHi ? 'बदलाव विफल रहा' : 'Update failed'));
-        return;
-      }
-      toast.success(
-        wasActive
-          ? (isHi ? 'उपयोगकर्ता को बैन किया गया' : 'User banned')
-          : (isHi ? 'उपयोगकर्ता को अनबैन किया गया' : 'User unbanned'),
-      );
-      setSelectedUser((prev) => (prev && prev.id === user.id ? { ...prev, is_active: !user.is_active } : prev));
-      fetchUsers();
-    } catch {
-      toast.error(isHi ? 'नेटवर्क त्रुटि — बदलाव सहेजा नहीं गया।' : 'Network error — the change was not saved.');
-    } finally {
-      setBanBusyId(null);
-      setBanConfirmUser(null);
-    }
-  };
-
-  /**
-   * Entry point for the Ban/Unban control — Ban (destructive) is
-   * confirm-gated. Closes the drawer first: the shared `Dialog` primitive
-   * paints below DetailDrawer's hardcoded z-index (see
-   * UserSessionsPanel.tsx header comment), so a confirm opened while the
-   * drawer is visible would be invisibly occluded by it.
-   */
-  const requestBanToggle = (user: UserRecord) => {
-    if (user.is_active !== false) {
-      setSelectedUser(null);
-      setBanConfirmUser(user);
-    } else {
-      executeToggle(user);
-    }
+    await apiFetch('/api/super-admin/users', {
+      method: 'PATCH',
+      body: JSON.stringify({ user_id: user.id, table, updates: { is_active: !user.is_active } }),
+    });
+    fetchUsers();
   };
 
   const assignRole = async () => {
@@ -157,89 +94,10 @@ function UsersContent() {
     }
   };
 
-  // See requestBanToggle's comment — the drawer is closed first so this
-  // dialog can never be occluded by it if both happen to be open at once.
-  const requestRevokeRole = (userRoleId: string) => {
-    setSelectedUser(null);
-    setRevokeConfirmId(userRoleId);
-  };
-
-  const confirmRevokeRole = async () => {
-    if (!revokeConfirmId) return;
-    setRevoking(true);
-    try {
-      const res = await apiFetch('/api/super-admin/roles', { method: 'DELETE', body: JSON.stringify({ user_role_id: revokeConfirmId }) });
-      if (!res.ok) {
-        const d = await readAdminJson<{ error?: string }>(res).catch(() => ({}) as { error?: string });
-        toast.error(d.error || (isHi ? 'निरस्त करना विफल रहा' : 'Revoke failed'));
-        return;
-      }
-      toast.success(isHi ? 'भूमिका निरस्त की गई' : 'Role revoked');
-      fetchRoles();
-    } catch {
-      toast.error(isHi ? 'नेटवर्क त्रुटि — बदलाव सहेजा नहीं गया।' : 'Network error — the change was not saved.');
-    } finally {
-      setRevoking(false);
-      setRevokeConfirmId(null);
-    }
-  };
-
-  /** Password reset — POST /api/super-admin/support { action: 'reset_password', email }. */
-  const resetPassword = async (user: UserRecord) => {
-    if (!user.email) { toast.error(isHi ? 'कोई ईमेल उपलब्ध नहीं है' : 'No email available'); return; }
-    setResettingPassword(true);
-    try {
-      const res = await apiFetch('/api/super-admin/support', {
-        method: 'POST',
-        body: JSON.stringify({ action: 'reset_password', email: user.email }),
-      });
-      const d = await readAdminJson<{ success?: boolean; message?: string; error?: string }>(res).catch(() => ({}) as { success?: boolean; message?: string; error?: string });
-      if (!res.ok) {
-        toast.error(d.error || (isHi ? 'पासवर्ड रीसेट विफल रहा' : 'Password reset failed'));
-        return;
-      }
-      toast.success(d.message || (isHi ? 'पासवर्ड रीसेट ईमेल भेज दिया गया' : 'Password reset email sent'));
-    } catch {
-      toast.error(isHi ? 'नेटवर्क त्रुटि — अनुरोध विफल हुआ।' : 'Network error — the request failed.');
-    } finally {
-      setResettingPassword(false);
-    }
-  };
-
-  /**
-   * Force logout — POST /api/super-admin/sessions { user_id: auth_user_id }.
-   * Closes the drawer first (see requestBanToggle's comment) so the confirm
-   * dialog is never occluded by it.
-   */
-  const requestForceLogout = (user: UserRecord) => {
-    setSelectedUser(null);
-    setForceLogoutTarget(user);
-  };
-
-  const confirmForceLogout = async () => {
-    if (!forceLogoutTarget?.auth_user_id) return;
-    setForceLoggingOut(true);
-    try {
-      const res = await apiFetch('/api/super-admin/sessions', {
-        method: 'POST',
-        body: JSON.stringify({ user_id: forceLogoutTarget.auth_user_id }),
-      });
-      const d = await readAdminJson<{ sessions_revoked?: number; error?: string }>(res).catch(() => ({}) as { sessions_revoked?: number; error?: string });
-      if (!res.ok) {
-        toast.error(d.error || (isHi ? 'फ़ोर्स लॉगआउट विफल रहा' : 'Force logout failed'));
-        return;
-      }
-      toast.success(
-        isHi
-          ? `${d.sessions_revoked ?? 0} सत्र रद्द किए गए — उपयोगकर्ता हर जगह से साइन आउट हो गया।`
-          : `${d.sessions_revoked ?? 0} session(s) revoked — the user is signed out everywhere.`,
-      );
-    } catch {
-      toast.error(isHi ? 'नेटवर्क त्रुटि — बदलाव सहेजा नहीं गया।' : 'Network error — the change was not saved.');
-    } finally {
-      setForceLoggingOut(false);
-      setForceLogoutTarget(null);
-    }
+  const revokeRole = async (userRoleId: string) => {
+    if (!confirm('Revoke this role assignment?')) return;
+    await apiFetch('/api/super-admin/roles', { method: 'DELETE', body: JSON.stringify({ user_role_id: userRoleId }) });
+    fetchRoles();
   };
 
   const createTestAccount = async () => {
@@ -296,10 +154,8 @@ function UsersContent() {
     { key: 'created_at', label: 'Joined', render: r => <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</span> },
     { key: '_actions', label: 'Actions', sortable: false, render: r => (
       <button
-        onClick={e => { e.stopPropagation(); requestBanToggle(r); }}
-        disabled={banBusyId === r.id}
-        aria-busy={banBusyId === r.id}
-        className={`${actionBtnBase} ${r.is_active !== false ? 'border-danger text-danger' : 'border-success text-success'} disabled:cursor-not-allowed disabled:opacity-50`}
+        onClick={e => { e.stopPropagation(); toggleUser(r); }}
+        className={`${actionBtnBase} ${r.is_active !== false ? 'border-danger text-danger' : 'border-success text-success'}`}
       >
         {r.is_active !== false ? 'Ban' : 'Unban'}
       </button>
@@ -322,16 +178,8 @@ function UsersContent() {
           <button onClick={() => setShowRolePanel(!showRolePanel)} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">
             {showRolePanel ? 'Hide Roles' : 'Manage Roles'}
           </button>
-          <button onClick={() => setShowAdminTierPanel(!showAdminTierPanel)} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">
-            {showAdminTierPanel ? (isHi ? 'एडमिन स्तर छिपाएं' : 'Hide Admin Tier') : (isHi ? 'एडमिन स्तर' : 'Admin Tier')}
-          </button>
         </div>
       </div>
-
-      {/* Admin Tier Panel — table:'admin_users', updates:{ admin_level } via PATCH */}
-      {showAdminTierPanel && (
-        <AdminTierPanel apiFetch={apiFetch} isHi={isHi} onBeforeConfirmOpen={() => setSelectedUser(null)} />
-      )}
 
       {/* Test Account Form */}
       {showTestForm && (
@@ -419,34 +267,13 @@ function UsersContent() {
                     <td className="border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground"><StatusBadge label={ur.is_active ? 'Active' : 'Inactive'} variant={ur.is_active ? 'success' : 'neutral'} /></td>
                     <td className="border-b border-surface-3 px-3.5 py-2.5 text-xs text-foreground">{ur.created_at ? new Date(ur.created_at).toLocaleDateString() : '—'}</td>
                     <td className="border-b border-surface-3 px-3.5 py-2.5 text-[13px] text-foreground">
-                      <button
-                        onClick={() => requestRevokeRole(ur.id)}
-                        disabled={revoking && revokeConfirmId === ur.id}
-                        className={`${actionBtnBase} border-danger text-danger disabled:cursor-not-allowed disabled:opacity-50`}
-                      >
-                        Revoke
-                      </button>
+                      <button onClick={() => revokeRole(ur.id)} className={`${actionBtnBase} border-danger text-danger`}>Revoke</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-
-          <ConfirmActionDialog
-            open={!!revokeConfirmId}
-            onClose={() => setRevokeConfirmId(null)}
-            onConfirm={confirmRevokeRole}
-            isHi={isHi}
-            titleEn="Revoke this role assignment?"
-            titleHi="इस भूमिका असाइनमेंट को निरस्त करें?"
-            descriptionEn="The user immediately loses the permissions granted by this role."
-            descriptionHi="उपयोगकर्ता इस भूमिका द्वारा दी गई अनुमतियां तुरंत खो देगा।"
-            confirmEn="Revoke"
-            confirmHi="निरस्त करें"
-            destructive
-            loading={revoking}
-          />
         </div>
       )}
 
@@ -578,50 +405,12 @@ function UsersContent() {
               )}
             </div>
 
-            {/* Edit Profile — students only. teachers/guardians only allow
-                is_active per the PATCH route's allowedFields map, which the
-                Ban/Unban control below already covers. */}
-            {selectedUser.role === 'student' && (
-              <EditProfileForm
-                userId={selectedUser.id}
-                grade={selectedUser.grade}
-                board={selectedUser.board}
-                subscriptionPlan={selectedUser.subscription_plan}
-                apiFetch={apiFetch}
-                isHi={isHi}
-                onSaved={(updates) => {
-                  setSelectedUser((prev) => (prev ? { ...prev, ...updates } : prev));
-                  setUsers((prev) => prev.map((u) => (u.id === selectedUser.id ? { ...u, ...updates } : u)));
-                }}
-              />
-            )}
-
-            {/* Active sessions + force logout (confirm dialog lives at page level — see requestForceLogout) */}
-            {selectedUser.auth_user_id && (
-              <UserSessionsPanel
-                authUserId={selectedUser.auth_user_id}
-                apiFetch={apiFetch}
-                isHi={isHi}
-                onRequestForceLogout={() => requestForceLogout(selectedUser)}
-              />
-            )}
-
-            <div className="mb-5 flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => requestBanToggle(selectedUser)}
-                disabled={banBusyId === selectedUser.id}
-                aria-busy={banBusyId === selectedUser.id}
-                className={`rounded-md border bg-transparent px-4 py-2 text-xs font-medium hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50 ${selectedUser.is_active !== false ? 'border-danger text-danger' : 'border-success text-success'}`}
+                onClick={() => { toggleUser(selectedUser); setSelectedUser(null); }}
+                className={`rounded-md border bg-transparent px-4 py-2 text-xs font-medium hover:bg-surface-2 ${selectedUser.is_active !== false ? 'border-danger text-danger' : 'border-success text-success'}`}
               >
                 {selectedUser.is_active !== false ? 'Ban User' : 'Unban User'}
-              </button>
-              <button
-                onClick={() => resetPassword(selectedUser)}
-                disabled={resettingPassword || !selectedUser.email}
-                aria-busy={resettingPassword}
-                className="rounded-md border border-surface-3 bg-transparent px-4 py-2 text-xs font-medium text-foreground hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isHi ? 'पासवर्ड रीसेट भेजें' : 'Send Password Reset'}
               </button>
             </div>
 
@@ -640,39 +429,6 @@ function UsersContent() {
           </div>
         )}
       </DetailDrawer>
-
-      {/* Ban confirmation — Ban is destructive (locks the user out); Unban is corrective and skips this. */}
-      <ConfirmActionDialog
-        open={!!banConfirmUser}
-        onClose={() => setBanConfirmUser(null)}
-        onConfirm={() => banConfirmUser && executeToggle(banConfirmUser)}
-        isHi={isHi}
-        titleEn={`Ban ${banConfirmUser?.name || 'this user'}?`}
-        titleHi={`${banConfirmUser?.name || 'इस उपयोगकर्ता'} को बैन करें?`}
-        descriptionEn="The user immediately loses access to their account until unbanned."
-        descriptionHi="जब तक अनबैन नहीं किया जाता, उपयोगकर्ता तुरंत अपने खाते तक पहुंच खो देगा।"
-        confirmEn="Ban User"
-        confirmHi="उपयोगकर्ता को बैन करें"
-        destructive
-        loading={banBusyId === banConfirmUser?.id}
-      />
-
-      {/* Force logout confirmation — state lives at the page level (not
-          inside UserSessionsPanel) so it survives the drawer being closed. */}
-      <ConfirmActionDialog
-        open={!!forceLogoutTarget}
-        onClose={() => setForceLogoutTarget(null)}
-        onConfirm={confirmForceLogout}
-        isHi={isHi}
-        titleEn={`Force logout ${forceLogoutTarget?.name || 'this user'}?`}
-        titleHi={`${forceLogoutTarget?.name || 'इस उपयोगकर्ता'} को फ़ोर्स लॉगआउट करें?`}
-        descriptionEn="This revokes all active sessions and signs the user out on every device immediately."
-        descriptionHi="यह सभी सक्रिय सत्र रद्द कर देगा और उपयोगकर्ता को तुरंत हर डिवाइस से साइन आउट कर देगा।"
-        confirmEn="Force Logout"
-        confirmHi="फ़ोर्स लॉगआउट करें"
-        destructive
-        loading={forceLoggingOut}
-      />
     </div>
   );
 }

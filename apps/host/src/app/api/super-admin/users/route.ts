@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeOperator, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '@alfanumrik/lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '@alfanumrik/lib/admin-auth';
 import { validateBody, zUuid, zGrade } from '@alfanumrik/lib/validation';
 import { z } from 'zod';
 import { VALID_ROLES, ROLE_ALIASES } from '@alfanumrik/lib/identity';
 
-// Phase 1 pilot migration off authorizeAdmin() (2026-08-16, Mission Control
-// overhaul) — see apps/host/src/app/api/super-admin/sessions/route.ts for the
-// full rationale. authorizeOperator() enforces the same 'support'/'super_admin'
-// floors below, resolved from RBAC instead of admin_users.admin_level directly.
-
 export async function GET(request: NextRequest) {
-  // Read-only listing — explicit `support` floor (any active operator passes).
-  const auth = await authorizeOperator(request, 'support');
+  // Read-only listing — explicit `support` floor (any active admin row passes).
+  const auth = await authorizeAdmin(request, 'support');
   if (!auth.authorized) return auth.response;
 
   try {
@@ -58,7 +53,7 @@ export async function PATCH(request: NextRequest) {
   // Suspend/restore/plan-change/admin-level changes — high blast radius.
   // Plus school_admins reassignment and admin_users mutation, both of which
   // can grant privileged access. super_admin only.
-  const auth = await authorizeOperator(request, 'super_admin');
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   try {

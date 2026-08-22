@@ -20,15 +20,9 @@
  *   - `subject_content_readiness_daily`               (existing view)
  *   - `cbse_syllabus_rag_diagnostic`                  (existing view)
  *
- * Order (2026-08-12, E2E P2-5 fix): `resolveCommandCenterContext` runs FIRST —
- * unauthenticated/unauthorized callers get its 401/403 unchanged, matching the
- * sibling routes (`overview`, `classes-at-risk`, `teacher-engagement`). Only
- * for an AUTHORIZED school admin does the `ff_school_pulse_v1` flag gate run:
- * when the flag is OFF the route returns `{ success: true, data: null,
- * gated: true }` with HTTP 200 (never 500; ops toggles the flag mid-flight and
- * authorized callers must fail-soft render). Previously the flag gate ran
- * before auth, so with the flag OFF every anonymous caller got a 200 — the
- * denial was invisible to monitoring and the 401/403 path was dead code.
+ * Gated by `ff_school_pulse_v1` — when the flag is OFF the route returns
+ * `{ success: true, data: null, gated: true }` with HTTP 200 (never 500;
+ * ops toggles the flag mid-flight and callers must fail-soft render).
  *
  * P13: aggregate counts + view rows only — no per-student PII.
  */
@@ -128,20 +122,9 @@ interface LeadershipPayload {
 
 export async function GET(request: NextRequest) {
   try {
-    // ── 0. Authorize + resolve school context (P9 + JWT client + school_id) ──
-    // MUST run before the flag gate (P2-5): the fail-soft 200 {gated:true} is
-    // a contract for AUTHORIZED school admins only. Anonymous / unauthorized
-    // callers get the resolver's 401/403 unchanged, same as the sibling
-    // command-center routes.
-    const resolved = await resolveCommandCenterContext(request, ROUTE);
-    if (!resolved.ok) return resolved.response;
-    const { supabase, schoolId } = resolved.ctx;
-
-    // ── 1. Flag gate (fail-soft, authorized callers only) ────────
+    // ── 0. Flag gate (fail-soft) ─────────────────────────────────
     // Read the flag with no context (institution scoping happens naturally via
     // the school_admins row; the flag itself is a global OFF/ON at Phase 5).
-    // Cache-Control stays `private, max-age=30`: the response is now always
-    // per-authorized-caller, so a private short-TTL cache remains appropriate.
     const enabled = await isFeatureEnabled(FLAG).catch(() => false);
     if (!enabled) {
       return NextResponse.json(
@@ -149,6 +132,11 @@ export async function GET(request: NextRequest) {
         { status: 200, headers: { 'Cache-Control': 'private, max-age=30' } },
       );
     }
+
+    // ── 1. Authorize + resolve school context (P9 + JWT client + school_id) ──
+    const resolved = await resolveCommandCenterContext(request, ROUTE);
+    if (!resolved.ok) return resolved.response;
+    const { supabase, schoolId } = resolved.ctx;
 
     // ── 2. Parallel RPC + view reads ─────────────────────────────
     const [

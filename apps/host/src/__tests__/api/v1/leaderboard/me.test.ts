@@ -44,25 +44,15 @@ let _rpcResult: { data: unknown; error: { message: string } | null } = {
   error: null,
 };
 
-/** performance_scores rows for the CALLER (own data — never peers). */
-let _perfResult: {
-  data: Array<{ overall_score: number }> | null;
-  error: { message: string } | null;
-} = { data: [{ overall_score: 80 }, { overall_score: 90 }], error: null };
-
 const fakeAdmin = {
   from: (_table: string) => ({
     select: () => ({
-      // `.eq()` terminates two different chains here:
-      //   students          → .is().limit().maybeSingle()
-      //   performance_scores→ awaited directly (hence the `then`)
       eq: () => ({
         is: () => ({
           limit: () => ({
             maybeSingle: async () => _studentLookup,
           }),
         }),
-        then: (resolve: (v: unknown) => unknown) => resolve(_perfResult),
       }),
     }),
   }),
@@ -90,7 +80,6 @@ beforeEach(() => {
     permissions: ['leaderboard.view'],
   });
   _studentLookup = { data: { id: STUDENT_ID }, error: null };
-  _perfResult = { data: [{ overall_score: 80 }, { overall_score: 90 }], error: null };
   _rpcResult = {
     data: {
       student_id: STUDENT_ID,
@@ -156,24 +145,6 @@ describe('GET /api/v1/leaderboard/me', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.rank).toBeNull();
-  });
-
-  // The caller's OWN Performance Score lives here (private, per-caller), NOT on
-  // the public /api/v1/leaderboard board. The page used to compute it for every
-  // student from the browser against own-row-only RLS tables, which returned a
-  // single row and awarded the caller rank #1.
-  it('returns the caller own performance score (mean of overall_score) + level', async () => {
-    const res = await invoke('http://localhost/api/v1/leaderboard/me');
-    const body = await res.json();
-    expect(body.data.performance_score).toBe(85);
-    expect(typeof body.data.level_name).toBe('string');
-  });
-
-  it('performance score is null (never 0) when the caller has no scored subjects', async () => {
-    _perfResult = { data: [], error: null };
-    const body = await (await invoke('http://localhost/api/v1/leaderboard/me')).json();
-    expect(body.data.performance_score).toBeNull();
-    expect(body.data.level_name).toBeNull();
   });
 
   it('derives band from percentile when RPC omits it', async () => {

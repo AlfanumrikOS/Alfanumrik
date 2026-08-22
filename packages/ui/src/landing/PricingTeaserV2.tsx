@@ -38,7 +38,7 @@ const PLANS: Plan[] = [
     features: [
       { en: '5 Foxy chats a day', hi: 'प्रतिदिन 5 फ़ॉक्सी चैट' },
       { en: '5 quizzes a day', hi: 'प्रतिदिन 5 क्विज़' },
-      { en: '2 subjects of your choice', hi: 'अपनी पसंद के 2 विषय' },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल' },
       { en: 'Progress reports', hi: 'प्रगति रिपोर्ट' },
       { en: 'Spaced repetition', hi: 'अंतराल-पुनरावृत्ति' },
     ],
@@ -50,15 +50,15 @@ const PLANS: Plan[] = [
   {
     lblEn: 'Plan ii · Starter',
     lblHi: 'योजना ii · स्टार्टर',
-    titleEn: 'More chats, more subjects.',
-    titleHi: 'ज़्यादा चैट, ज़्यादा विषय।',
+    titleEn: 'More chats, more quizzes.',
+    titleHi: 'ज़्यादा चैट, ज़्यादा क्विज़।',
     subEn: 'For the family getting serious.',
     subHi: 'गंभीर होते परिवारों के लिए।',
     price: <>₹<em>{PRICING.starter.monthly}</em><small>/mo</small></>,
     features: [
       { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: '20 quizzes a day', hi: 'प्रतिदिन 20 क्विज़' },
-      { en: '4 subjects', hi: '4 विषय' },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल' },
       { en: 'STEM Lab access', hi: 'STEM लैब पहुँच' },
       { en: 'Progress reports + spaced revision', hi: 'प्रगति रिपोर्ट + दोहराव' },
     ],
@@ -78,7 +78,7 @@ const PLANS: Plan[] = [
     features: [
       { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: 'Unlimited quizzes', hi: 'असीमित क्विज़' },
-      { en: 'All subjects, grades 6—12', hi: 'सभी विषय, कक्षा 6—12' },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल' },
       { en: 'STEM Lab + parent dashboard', hi: 'STEM लैब + अभिभावक डैशबोर्ड' },
       { en: 'Daily plan + spaced revision', hi: 'दैनिक योजना + दोहराव' },
     ],
@@ -101,7 +101,7 @@ const PLANS: Plan[] = [
     features: [
       { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: 'Unlimited quizzes', hi: 'असीमित क्विज़' },
-      { en: 'All subjects, grades 6—12', hi: 'सभी विषय, कक्षा 6—12' },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल' },
       { en: 'STEM Lab + priority support', hi: 'STEM लैब + प्राथमिकता सहायता' },
       { en: 'Everything in Pro', hi: 'प्रो की सब सुविधाएँ' },
     ],

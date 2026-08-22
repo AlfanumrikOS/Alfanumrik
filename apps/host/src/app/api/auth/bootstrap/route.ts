@@ -19,24 +19,6 @@
  *   phone?: string,           // for parents
  *   link_code?: string,       // for parents
  * }
- *
- * Ordering contract (2026-08-12, E2E P1-4 fix):
- *   1. Authenticate (cookie session, Bearer fallback).
- *   2. Parse the body ONCE and validate `role` — BEFORE the in-memory dedup
- *      map and BEFORE the Redis idempotency lock. A garbage role gets 400
- *      INVALID_ROLE without burning the 30s Redis TTL, so a subsequent good
- *      call is never deduplicated against a rejected one. (Previously a
- *      dedup short-circuit answered 200 before validation ever ran, so an
- *      invalid role was rejected on a fresh profile but accepted on an
- *      existing one.)
- *   3. Dedup short-circuits (in-memory, then Redis).
- *   4. handleBootstrap (name + role-specific validation, RPC, response).
- *
- * Role-echo contract (2026-08-12, E2E P1-4 fix): the response `role` and
- * `redirect` are DB-truth on every path that did not just create the profile.
- * An already-bootstrapped student posting {"role":"institution_admin"} gets
- * back role:'student', redirect:'/dashboard' — never the client-supplied
- * elevation (the frontend routes on this echo).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -56,7 +38,6 @@ import {
   type ValidRole,
 } from '@alfanumrik/lib/identity';
 import { acquireIdempotencyLock, releaseIdempotencyLock } from '@alfanumrik/lib/redis';
-import { resolveIdentity } from '@alfanumrik/lib/identity/onboarding';
 
 // Dedup guard: prevent concurrent bootstrap calls for the same user.
 // The bootstrap_user_profile RPC is idempotent (ON CONFLICT), but concurrent
@@ -107,30 +88,6 @@ async function resolveAuthUser(
   return null;
 }
 
-/**
- * Resolve the caller's ACTUAL role from the profile tables (DB truth).
- *
- * Uses the same `resolveIdentity` ladder as GET /api/auth/onboarding-status
- * (institution_admin → teacher → parent → student). Runs on the admin client
- * (server-side read; bootstrap already uses it for the RPC).
- *
- * Returns null when no profile exists yet (fresh signup mid-bootstrap) or the
- * lookup fails — callers fall back to the VALIDATED request role. Never
- * throws (P15: a role-echo read hiccup must never break the funnel).
- */
-async function resolveDbRole(authUserId: string): Promise<ValidRole | null> {
-  try {
-    const admin = getSupabaseAdmin();
-    const identity = await resolveIdentity(admin, authUserId);
-    return identity.detectedRole;
-  } catch (err) {
-    logger.warn('[Bootstrap] DB role resolution failed; falling back to request role', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
     // 1. Authenticate: cookie session first, Bearer-token fallback (M3)
@@ -143,42 +100,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Parse the body ONCE and validate the role BEFORE any dedup
-    // short-circuit (P1-4). The body stream is single-read, so the parsed
-    // body is passed down into handleBootstrap (which no longer parses).
-    // Neither 400 below acquires the Redis lock — a garbage first call must
-    // not burn the 30s TTL for the subsequent good one.
-    let body: Record<string, unknown>;
-    try {
-      body = await request.json();
-    } catch {
-      return NextResponse.json(
-        { success: false, error: 'Invalid request body', code: 'INVALID_BODY' },
-        { status: 400 }
-      );
-    }
-
-    const role = body.role;
-    if (!role || !isValidRole(role)) {
-      // The check validates against the full VALID_ROLES set — which includes
-      // institution_admin — so the message lists them dynamically rather than
-      // hard-coding "student, teacher, or parent" (which misleadingly implied
-      // institution_admin was invalid). This client-facing route is primarily
-      // exercised by the student/teacher/parent AuthContext fallback; school
-      // admins are bootstrapped server-side via ensureSchoolAdminOnboarding on
-      // the auth callback/confirm routes, but institution_admin is a valid role
-      // and is accepted here too.
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}.`,
-          code: 'INVALID_ROLE',
-        },
-        { status: 400 }
-      );
-    }
-
-    // 3. Dedup: if a bootstrap is already in progress for this user, await it
+    // Dedup: if a bootstrap is already in progress for this user, await it
     // Layer 1: In-memory dedup (same Vercel instance)
     const existingPromise = pendingBootstraps.get(user.id);
     if (existingPromise) {
@@ -191,24 +113,10 @@ export async function POST(request: NextRequest) {
     const isFirstBootstrap = await acquireIdempotencyLock(`bootstrap:${user.id}`, 30);
     if (!isFirstBootstrap) {
       logger.warn('[Bootstrap] duplicate bootstrap blocked by Redis', { userId: user.id });
-      // Best available truth without defeating the dedup's fast-answer purpose:
-      // one read of the profile tables. If a profile exists, echo what the user
-      // ACTUALLY is; if genuinely unresolvable mid-bootstrap (the concurrent
-      // first call hasn't committed yet) fall back to the VALIDATED request
-      // role — never 'unknown', and never a privileged redirect the DB doesn't
-      // back beyond what isValidRole() admitted.
-      const dedupRole: ValidRole = (await resolveDbRole(user.id)) ?? role;
-      return NextResponse.json({
-        success: true,
-        data: {
-          status: 'deduplicated',
-          role: dedupRole,
-          redirect: getRoleDestination(dedupRole),
-        },
-      });
+      return NextResponse.json({ success: true, data: { status: 'deduplicated', role: 'unknown', redirect: '/dashboard' } });
     }
 
-    const bootstrapPromise = handleBootstrap(request, user, body, role);
+    const bootstrapPromise = handleBootstrap(request, user);
     pendingBootstraps.set(user.id, bootstrapPromise);
     try {
       return await bootstrapPromise;
@@ -231,16 +139,41 @@ export async function POST(request: NextRequest) {
 async function handleBootstrap(
   request: NextRequest,
   user: { id: string; email?: string },
-  // Body is parsed ONCE in POST (the request stream is single-read) and the
-  // role is already validated there — before the dedup short-circuits (P1-4).
-  body: Record<string, unknown>,
-  role: ValidRole,
 ): Promise<NextResponse> {
   try {
-    // 2. Validate the remaining request fields (role + body-parse errors are
-    // rejected in POST, before any idempotency lock is taken).
+    // 2. Parse and validate request body
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: 'Invalid request body', code: 'INVALID_BODY' },
+        { status: 400 }
+      );
+    }
+
+    const role = body.role as string;
     const name =
       typeof body.name === 'string' ? sanitizeText(body.name.trim()) : '';
+
+    if (!role || !isValidRole(role)) {
+      // The check validates against the full VALID_ROLES set — which includes
+      // institution_admin — so the message lists them dynamically rather than
+      // hard-coding "student, teacher, or parent" (which misleadingly implied
+      // institution_admin was invalid). This client-facing route is primarily
+      // exercised by the student/teacher/parent AuthContext fallback; school
+      // admins are bootstrapped server-side via ensureSchoolAdminOnboarding on
+      // the auth callback/confirm routes, but institution_admin is a valid role
+      // and is accepted here too.
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}.`,
+          code: 'INVALID_ROLE',
+        },
+        { status: 400 }
+      );
+    }
 
     if (!name || name.length < 2) {
       return NextResponse.json(
@@ -527,29 +460,15 @@ async function handleBootstrap(
       }
     }
 
-    // 5. Determine the role to echo (P1-4: never mirror a client-supplied
-    // elevation back as routing truth).
-    //   - Fresh 'success': the request role IS the DB role — the RPC just
-    //     created the profile with it. Keep this path byte-identical.
-    //   - Idempotent 'already_completed': the profile predates this request,
-    //     so re-read what the user ACTUALLY is via resolveIdentity (same
-    //     ladder as /api/auth/onboarding-status). Only if detection yields
-    //     null (transient read failure) do we fall back to the validated
-    //     request role — P15: the funnel must never break on a read hiccup.
-    let responseRole: ValidRole = role;
-    if (result?.status === 'already_completed') {
-      const dbRole = await resolveDbRole(user.id);
-      if (dbRole) responseRole = dbRole;
-    }
-
-    const destination = getRoleDestination(responseRole);
+    // 5. Determine redirect destination based on role
+    const destination = getRoleDestination(role);
 
     return NextResponse.json({
       success: true,
       data: {
         status: result?.status || 'success',
         profile_id: result?.profile_id,
-        role: responseRole,
+        role,
         redirect: destination,
       },
     });

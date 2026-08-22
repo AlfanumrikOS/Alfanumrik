@@ -4,7 +4,6 @@
 
 // ignore_for_file: unused_element
 import 'package:built_collection/built_collection.dart';
-import 'package:built_value/json_object.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -14,24 +13,15 @@ part 'error_response.g.dart';
 ///
 /// Properties:
 /// * [code] 
-/// * [details] - OPTIONAL machine-readable, code-specific detail payload. For code `subject_not_allowed` (403) and `UNKNOWN_SUBJECT` (400) the shape is `SubjectNotAllowedDetails` ({ subject, reason, allowed }). Absent on every other error response.
 /// * [error] 
-/// * [retryable] 
 /// * [success] 
 @BuiltValue()
 abstract class ErrorResponse implements Built<ErrorResponse, ErrorResponseBuilder> {
   @BuiltValueField(wireName: r'code')
   String? get code;
 
-  /// OPTIONAL machine-readable, code-specific detail payload. For code `subject_not_allowed` (403) and `UNKNOWN_SUBJECT` (400) the shape is `SubjectNotAllowedDetails` ({ subject, reason, allowed }). Absent on every other error response.
-  @BuiltValueField(wireName: r'details')
-  BuiltMap<String, JsonObject?>? get details;
-
   @BuiltValueField(wireName: r'error')
   String get error;
-
-  @BuiltValueField(wireName: r'retryable')
-  bool? get retryable;
 
   @BuiltValueField(wireName: r'success')
   ErrorResponseSuccessEnum get success;
@@ -67,25 +57,11 @@ class _$ErrorResponseSerializer implements PrimitiveSerializer<ErrorResponse> {
         specifiedType: const FullType(String),
       );
     }
-    if (object.details != null) {
-      yield r'details';
-      yield serializers.serialize(
-        object.details,
-        specifiedType: const FullType(BuiltMap, [FullType(String), FullType.nullable(JsonObject)]),
-      );
-    }
     yield r'error';
     yield serializers.serialize(
       object.error,
       specifiedType: const FullType(String),
     );
-    if (object.retryable != null) {
-      yield r'retryable';
-      yield serializers.serialize(
-        object.retryable,
-        specifiedType: const FullType(bool),
-      );
-    }
     yield r'success';
     yield serializers.serialize(
       object.success,
@@ -121,26 +97,12 @@ class _$ErrorResponseSerializer implements PrimitiveSerializer<ErrorResponse> {
           ) as String;
           result.code = valueDes;
           break;
-        case r'details':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType(BuiltMap, [FullType(String), FullType.nullable(JsonObject)]),
-          ) as BuiltMap<String, JsonObject?>;
-          result.details.replace(valueDes);
-          break;
         case r'error':
           final valueDes = serializers.deserialize(
             value,
             specifiedType: const FullType(String),
           ) as String;
           result.error = valueDes;
-          break;
-        case r'retryable':
-          final valueDes = serializers.deserialize(
-            value,
-            specifiedType: const FullType(bool),
-          ) as bool;
-          result.retryable = valueDes;
           break;
         case r'success':
           final valueDes = serializers.deserialize(

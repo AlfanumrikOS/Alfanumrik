@@ -33,35 +33,11 @@ import { logger } from '@alfanumrik/lib/logger';
 
 export const runtime = 'nodejs';
 
-// Response contract of available_chapters_for_student_subject_v2.
-//
-// The two *_ready_count fields are added by migration 20260814000014
-// (Decision A option 3, tiered verification) and are OPTIONAL here on purpose:
-// this route must keep working against a database where that migration has not
-// been applied yet, in which case the RPC returns the original four columns and
-// these come back undefined. Callers must treat `undefined` as "unknown" and
-// fall back to their previous rendering — never as zero.
-//
-//   verified_question_count  UNCHANGED. verification_state = 'verified' only.
-//                            An agent proved this against NCERT. NOT a
-//                            servability signal — do not badge with it.
-//   practice_ready_count     Questions the practice / daily-quiz path can
-//                            actually serve today (Tier-0 floor). This is the
-//                            honest "how many questions do I get" number.
-//   exam_ready_count         practice floor AND the human SME gate
-//                            (is_verified) that mock tests still enforce.
-//                            Chapter-level upper bound: mock papers assemble at
-//                            subject scope with an extra source_type filter, so
-//                            > 0 does not guarantee a paper can be filled, but
-//                            0 does reliably mean "nothing here can appear in a
-//                            mock test".
 interface ChapterV2Row {
   chapter_number: number;
   chapter_title: string;
   chapter_title_hi: string | null;
   verified_question_count: number;
-  practice_ready_count?: number;
-  exam_ready_count?: number;
 }
 
 interface ChapterResponse {
@@ -69,8 +45,6 @@ interface ChapterResponse {
   chapter_title: string;
   chapter_title_hi: string | null;
   verified_question_count: number;
-  practice_ready_count?: number;
-  exam_ready_count?: number;
 }
 
 export async function GET(request: Request) {
@@ -136,10 +110,6 @@ export async function GET(request: Request) {
       chapter_title: r.chapter_title,
       chapter_title_hi: r.chapter_title_hi,
       verified_question_count: r.verified_question_count,
-      // Passed through verbatim. `undefined` (pre-migration DB) serialises away
-      // rather than becoming 0 — see the contract note above.
-      practice_ready_count: r.practice_ready_count,
-      exam_ready_count: r.exam_ready_count,
     }));
 
     return NextResponse.json({ chapters });

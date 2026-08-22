@@ -17,19 +17,11 @@
  * cross-checked against the JWT's resolved student (403 on mismatch). The RPC
  * runs under a JWT-bound client so its SECURITY DEFINER auth.uid() guard sees
  * the calling student.
- *
- * Transport (both supported): the RPC runs on `createSupabaseRouteClient(request)`,
- * which forwards `Authorization: Bearer <jwt>` (the ONLY transport the Flutter app
- * uses) to PostgREST under the anon key and falls back to the cookie session client
- * for web. RLS enforced on both paths; the service-role key is never used for the
- * RPC. See the long note at the call site for why the previous cookie-only client
- * both disarmed the RPC's ownership guard for mobile and left START one anon-revoke
- * away from the 2026-08-12 submit P0.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
-import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
+import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { logger } from '@alfanumrik/lib/logger';
 import { validateBody } from '@alfanumrik/lib/validation';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
@@ -72,11 +64,6 @@ export const POST = withRoute(async (request: NextRequest) => {
     const { studentId, questionIds } = validation.data;
 
     // 3. Cross-check JWT's student matches body.studentId (defense-in-depth).
-    // Service-role ON PURPOSE: this reads the `students` row that maps the
-    // caller's auth_user_id → student id BEFORE we know which student the
-    // caller is, which is exactly the lookup RLS cannot help with. It selects
-    // one non-PII column (`id`) keyed by the caller's OWN auth id, and its only
-    // effect is to REFUSE requests. Kept on the admin client deliberately.
     const admin = getSupabaseAdmin();
     const { data: studentRow } = await admin
       .from('students')
@@ -97,34 +84,7 @@ export const POST = withRoute(async (request: NextRequest) => {
     }
 
     // 4. Call start_quiz_session verbatim under a JWT-bound client.
-    //
-    // BOTH transports are handled: `createSupabaseRouteClient` forwards an
-    // `Authorization: Bearer <jwt>` (mobile) to PostgREST under the anon key,
-    // and falls back to the cookie session client (`createSupabaseServerClient`)
-    // for web callers. RLS is enforced on both paths; the service-role key is
-    // never used for the RPC.
-    //
-    // This was the COOKIE-ONLY client, which is the same shape as the
-    // 2026-08-12 quiz-submit P0 — two ways:
-    //
-    //  1. DEFENSE-IN-DEPTH LOSS (today). `start_quiz_session` is SECURITY
-    //     DEFINER and opens with `IF auth.uid() IS NOT NULL AND NOT EXISTS
-    //     (... students ...)` — the guard is SKIPPED when auth.uid() is NULL so
-    //     that service-role/cron callers still work. Bearer callers arrived as
-    //     `anon` with auth.uid() NULL, so the ownership guard was skipped for
-    //     EVERY mobile caller. Access was still refused by the route-layer 403
-    //     above, so this was never a live cross-student hole — but the DB-level
-    //     half of the check was doing nothing.
-    //
-    //  2. LATENT BREAKAGE (tomorrow). It only worked at all because
-    //     `start_quiz_session` still carries a residual PUBLIC EXECUTE grant:
-    //     the `REVOKE EXECUTE ... FROM anon` in migration 20260515000002 is a
-    //     silent no-op while PUBLIC grants the same privilege. The anon-
-    //     revocation campaign (cf. 20260813000006, which does `REVOKE ALL ...
-    //     FROM PUBLIC`) removes that, and quiz START would then break for every
-    //     mobile user exactly as submit did. Start is the direct predecessor in
-    //     the funnel — a student cannot submit a quiz they cannot start.
-    const supabaseUser = await createSupabaseRouteClient(request);
+    const supabaseUser = await createSupabaseServerClient();
     let session: ServerQuizSession | null = null;
     try {
       const { data, error } = await supabaseUser.rpc('start_quiz_session', {

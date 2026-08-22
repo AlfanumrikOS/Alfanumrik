@@ -9,9 +9,6 @@
     "packages/*",
     "eslint-plugin-alfanumrik"
   ],
-  "//dependencies": {
-    "@supabase/supabase-js": "KEEP RANGE-IDENTICAL TO apps/host/package.json. This root entry exists only so the workspace-less repo-root scripts/ and eval/ TypeScript can resolve `@supabase/supabase-js` (npm run type-check:scripts). It is NOT a client dependency -- but npm hoists ONE copy for the whole workspace, so the range written HERE decides which version apps/host BUNDLES INTO THE BROWSER. Declaring ^2.112.2 here floated the hoisted copy 2.108.2 -> 2.112.2, which added +5.4 kB gz of @supabase/auth-js and +2.9 kB gz of @supabase/realtime-js to the shared first-paint chunks and breached the P10 per-page ratchet on /(student)/quiz and /contact (PR #1520). Before bumping either range, bump BOTH together and re-run `npm run build && node scripts/check-bundle-size.mjs`."
-  },
   "scripts": {
     "dev": "npm run dev -w apps/host",
     "build": "npm run build -w apps/host",
@@ -42,11 +39,6 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/node": "^22.20.1",
-    "dependency-cruiser": "^18.1.1",
-    "supabase": "^2.113.0",
-    "vitest": "^4.1.10"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.108.2"
+    "dependency-cruiser": "^18.1.1"
   }
 }

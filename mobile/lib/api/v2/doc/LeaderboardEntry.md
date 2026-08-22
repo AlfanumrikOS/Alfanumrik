@@ -8,12 +8,12 @@ import 'package:alfanumrik_api_v2/api.dart';
 ## Properties
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**avatarUrl** | **String** | Always null (not emitted by get_leaderboard). | 
-**city** | **String** | Always null (P13 — not exposed for peers). | 
+**avatarUrl** | **String** |  | 
+**city** | **String** |  | 
 **grade** | **String** |  | 
 **name** | **String** |  | 
 **rank** | **int** |  | 
-**school** | **String** | Always null (P13 — not exposed for peers). | 
+**school** | **String** |  | 
 **streak** | **int** |  | 
 **studentId** | **String** |  | 
 **totalXp** | **int** |  | 

@@ -17,7 +17,6 @@
  */
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
-import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { buildRhythmQueue } from '@alfanumrik/lib/learn/build-rhythm-queue';
@@ -26,17 +25,10 @@ import { cacheFetchAsync, CACHE_TTL, cacheInvalidatePrefixAsync } from '@alfanum
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request) {
-  // Bearer-AWARE, RLS-respecting client. The cookie-only
-  // createSupabaseServerClient() NULLs auth.uid() for `Authorization: Bearer`
-  // callers (the entire Flutter app), so every RLS-scoped read inside
-  // buildRhythmQueue denied and the student lookup returned null → a spurious
-  // 404 no_student_profile. createSupabaseRouteClient forwards the caller's JWT
-  // under the anon key on the Bearer path and delegates to the cookie client
-  // for web. Never service-role; RLS enforced on both paths.
-  const supabase = await createSupabaseRouteClient(request);
+export async function GET(_request: Request) {
+  const supabase = await createSupabaseServerClient();
 
-  const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
+  const auth = await authorizeRequest(_request, 'study_plan.view', { requireStudentId: true });
   if (!auth.authorized || !auth.userId) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
@@ -61,24 +53,21 @@ export async function GET(request: Request) {
   // (P13: per-student data must never be shared). This is a server cache, NOT a
   // CDN/`s-maxage` header — Vercel's edge does not vary by auth, so a public
   // cache would leak one student's queue to another. This handler has no writes
-  // (all reads + read RPCs), so it is safe to cache.
-  //
-  // ONLY REAL RESULTS ARE CACHED. The previous implementation stored a
-  // `{ __noProfile: true }` SENTINEL for a failed student lookup, which pinned
-  // the 404 for that user for the whole TTL. Combined with the cookie-only
-  // client above, a SINGLE Bearer request was enough to poison the key and 404
-  // the student's dashboard even after the client bug was fixed. Now a null
-  // build is returned as `null`: `cacheGetAsync` cannot distinguish a stored
-  // null from a cache miss, so the next request re-runs the build instead of
-  // being pinned. (Same idiom as /api/learner/scheduled's "return null to skip
-  // caching" — do not re-introduce a truthy sentinel here.)
+  // (all reads + read RPCs), so it is safe to cache. The 404 "no profile" path
+  // stays OUTSIDE the cache via a sentinel so a transient lookup miss is never
+  // pinned.
   const dayKey = Math.floor(Date.now() / 86_400_000);
-  let queue: unknown | null;
+  let cached: unknown;
   try {
-    queue = await cacheFetchAsync<unknown | null>(
+    cached = await cacheFetchAsync<unknown>(
       `rhythm:today:${userId}:${dayKey}`,
       CACHE_TTL.USER,
-      async () => (await buildRhythmQueue(supabase, userId)) ?? null,
+      async () => {
+        const built = await buildRhythmQueue(supabase, userId);
+        // A null build (missing profile) is wrapped in a sentinel so the 404
+        // branch is reproduced on cache hits without caching a transient miss.
+        return built ?? { __noProfile: true };
+      },
     );
   } catch (err) {
     // Transient student-lookup failure — surfaced as 500, never cached.
@@ -88,10 +77,10 @@ export async function GET(request: Request) {
     });
     return NextResponse.json({ error: 'student_lookup_failed' }, { status: 500 });
   }
-  if (!queue) {
+  if (cached && (cached as { __noProfile?: boolean }).__noProfile) {
     return NextResponse.json({ error: 'no_student_profile' }, { status: 404 });
   }
-  return NextResponse.json(queue, {
+  return NextResponse.json(cached, {
     headers: { 'Cache-Control': 'private, max-age=0, must-revalidate' },
   });
 }
@@ -108,33 +97,6 @@ export async function GET(request: Request) {
  * No body required. Returns { ok: true } on success.
  */
 export async function POST(_request: Request) {
-  // DELIBERATELY still the cookie client — but NOT because Bearer is impossible
-  // here. An earlier revision of this comment claimed `supabase.auth.getUser()`
-  // "cannot work on a stateless Bearer client built with persistSession: false".
-  // That is FALSE, and the false version is the dangerous one to leave behind:
-  // it reads as a technical constraint and would steer a future change away from
-  // the one-line fix. Verified in the installed SDK (2026-08-12):
-  //   • supabase-js sets `hasCustomAuthorizationHeader: true` whenever
-  //     `global.headers` carries an authorization key — which is exactly what
-  //     createSupabaseRouteClient() does on the Bearer path
-  //     (@supabase/supabase-js/dist/index.cjs, _initSupabaseAuthClient).
-  //   • auth-js's _getUser() short-circuits its "no session" bail on that flag
-  //     and issues GET /user with the forwarded header intact
-  //     (@supabase/auth-js/dist/main/GoTrueClient.js `_getUser`, and
-  //     lib/fetch.js, which only overwrites Authorization when a jwt arg is
-  //     passed).
-  // So `getUser()` WOULD resolve the Bearer caller. The real reason POST is
-  // unchanged is SCOPE: this P0 is about restoring RLS identity on read/submit
-  // paths, and changing POST's auth semantics pulls in a backend/frontend/
-  // testing review chain for a handler whose only caller today is web
-  // (quiz/page.tsx post-submit cache-bust).
-  //
-  // Security posture while it stays cookie-only: FAIL-CLOSED. A Bearer-only
-  // caller gets 401; the sole capability is invalidating the caller's OWN cache
-  // prefix, keyed by the getUser()-verified id, so no cross-student
-  // invalidation is reachable. Blast radius of the gap is a <=30s stale rhythm
-  // queue on mobile (CACHE_TTL.USER = 30_000 ms, packages/lib/src/cache.ts).
-  // Follow-up: move to authorizeRequest() or createSupabaseRouteClient().
   const supabase = await createSupabaseServerClient();
   const { data: userResult, error: userErr } = await supabase.auth.getUser();
   if (userErr || !userResult?.user) {

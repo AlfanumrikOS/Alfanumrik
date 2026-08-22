@@ -34,7 +34,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { authorizeRequest, type AuthorizationResult } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
+import { getGuardianByAuthUserId } from '@alfanumrik/lib/domains/identity';
+import { listChildrenForGuardian } from '@alfanumrik/lib/domains/relationship';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { checkRateLimit, type RateLimitStore } from '@alfanumrik/lib/rate-limiter';
@@ -42,14 +45,41 @@ import {
   SUPPORT_TICKET_CATEGORIES,
   validateTicketReference,
 } from '@alfanumrik/lib/support/ticket-categories';
-// Ownership scoping is shared with the detail route so the two can never drift
-// apart again (the detail route used to omit the user_role half — see _lib).
-import {
-  applyTicketOwnershipScope,
-  authorizeTicketRequest,
-  resolveGuardianChildStudentIds,
-  resolveTicketScope,
-} from '../_lib/ticket-auth';
+
+/**
+ * Authorize a support-ticket request. Tries 'foxy.chat' (student/teacher),
+ * then 'child.view_progress' (parent). Returns the first successful result,
+ * or the foxy.chat error response when neither passes (so an unauthenticated
+ * caller still gets a clean 401).
+ */
+async function authorizeTicketRequest(
+  request: NextRequest,
+): Promise<{ auth: AuthorizationResult; isGuardianPath: boolean }> {
+  const foxy = await authorizeRequest(request, 'foxy.chat');
+  if (foxy.authorized) return { auth: foxy, isGuardianPath: false };
+
+  const parent = await authorizeRequest(request, 'child.view_progress');
+  if (parent.authorized) return { auth: parent, isGuardianPath: true };
+
+  // Neither permission held. Prefer the parent error when the caller IS
+  // authenticated but unauthorized (403); otherwise the foxy 401.
+  return {
+    auth: foxy.userId ? parent : foxy,
+    isGuardianPath: false,
+  };
+}
+
+/**
+ * Resolve the set of student_ids a guardian is linked to (active links only).
+ * Returns [] when the caller is not a guardian or has no active links.
+ */
+async function resolveGuardianChildStudentIds(authUserId: string): Promise<string[]> {
+  const guardianRes = await getGuardianByAuthUserId(authUserId);
+  if (!guardianRes.ok || !guardianRes.data) return [];
+  const childrenRes = await listChildrenForGuardian(authUserId);
+  if (!childrenRes.ok) return [];
+  return childrenRes.data.map((c) => c.studentId);
+}
 
 // ── Rate limiter: 5 tickets / 24h / user ──────────────────────────────
 const TICKET_RATE_STORE: RateLimitStore = new Map();
@@ -241,27 +271,35 @@ export async function GET(request: NextRequest) {
 
   // Build the ticket query scoped to the caller:
   //   - parent : tickets anchored to their linked children + user_role='parent'
-  //   - student: tickets anchored to their own student_id + user_role='student'
+  //   - student: tickets anchored to their own student_id
   //   - teacher: no student anchor → empty list (needs created_by_user_id; TODO)
-  // Both halves (student_id AND user_role) come from resolveTicketScope so the
-  // detail route enforces the identical boundary (P13).
-  const scope = await resolveTicketScope(auth, isGuardianPath);
-  if (!scope.ok) {
-    // No anchor: guardian with no linked child, or teacher / profile-less user.
-    return NextResponse.json({
-      success: true,
-      data: { tickets: [], total: 0, page, page_size: pageSize },
+  let query = supabaseAdmin
+    .from('support_tickets')
+    .select('id, subject, category, priority, status, created_at, updated_at, resolved_at', {
+      count: 'exact',
     });
-  }
 
-  const query = applyTicketOwnershipScope(
-    supabaseAdmin
-      .from('support_tickets')
-      .select('id, subject, category, priority, status, created_at, updated_at, resolved_at', {
-        count: 'exact',
-      }),
-    scope,
-  );
+  if (isGuardianPath) {
+    const childIds = await resolveGuardianChildStudentIds(auth.userId!);
+    if (childIds.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: { tickets: [], total: 0, page, page_size: pageSize },
+      });
+    }
+    // Only the guardian's OWN tickets (user_role='parent'), never the
+    // child's own tickets — keeps the parent/student views isolated (P13).
+    query = query.in('student_id', childIds).eq('user_role', 'parent');
+  } else {
+    if (!auth.studentId) {
+      // Teacher / other non-student role — no listable anchor yet.
+      return NextResponse.json({
+        success: true,
+        data: { tickets: [], total: 0, page, page_size: pageSize },
+      });
+    }
+    query = query.eq('student_id', auth.studentId).eq('user_role', 'student');
+  }
 
   const { data, error, count } = await query
     .order('created_at', { ascending: false })

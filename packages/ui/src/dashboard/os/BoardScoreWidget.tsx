@@ -6,8 +6,9 @@
  * Fetches the student's latest board_score_predictions from GET /api/board-score
  * and renders:
  *   - A circular gauge showing the SELECTED subject's predicted % (W3 D1/A:
- *     scoped to one subject so ring, confidence band, and coverage bar share a
- *     single denominator), powered by <StatRing>
+ *     scoped to one subject so the ring and the coverage bar share a single
+ *     denominator), powered by <StatRing>. The confidence band that used to sit
+ *     in this stack is no longer rendered — see the `T` label table (R5).
  *   - Subject tabs (when multiple subjects exist)
  *   - Coverage progress bar
  *   - A single "View analysis" disclosure (collapsed by default, 2026-08-06
@@ -173,7 +174,12 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
     title:         isHi ? 'बोर्ड स्कोर™'              : 'BoardScore™',
     subtitle:      isHi ? 'CBSE बोर्ड परीक्षा पूर्वानुमान' : 'CBSE Board Exam Prediction',
     predicted:     isHi ? 'अनुमानित अंक'               : 'Predicted Marks',
-    confidence:    isHi ? 'विश्वास सीमा'                : 'Confidence Band',
+    // R5 (2026-08-11) — `confidence` ("Confidence Band" / "विश्वास सीमा", rendered
+    // as `72–86%`) was REMOVED, not renamed. It is a statistical interval on an
+    // internal prediction; a Class 6-12 student cannot study differently because
+    // the band is wide. The `confidence_band_low/high` fields still arrive on the
+    // prediction and still drive the low-coverage warning below, which says
+    // something actionable ("practise more to improve accuracy").
     coverage:      isHi ? 'कवरेज'                      : 'Coverage',
     chapters:      isHi ? 'अध्याय'                     : 'chapters',
     chapterBd:     isHi ? 'अध्याय-वार विश्लेषण'        : 'Chapter Breakdown',
@@ -311,8 +317,9 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
   // aggregate (Σpredicted / Σmax across ALL subjects) stacked directly above a
   // per-subject confidence band + coverage bar — a mixed-denominator stack that
   // read as one fact. Now the gauge uses the `sel` row's own engine-emitted
-  // predicted_pct and marks, so ring / confidence band / coverage bar all share
-  // ONE denominator (the selected subject).
+  // predicted_pct and marks, so ring and coverage bar share ONE denominator
+  // (the selected subject). The confidence band was removed from the stack
+  // entirely by R5; the fix it was part of is unaffected.
   const gaugeValue = Math.round(sel.predicted_pct);
   const subjectMax = sel.max_score;
   const subjectLabel = sel.subject_label || sel.subject_code;
@@ -400,12 +407,6 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
             )}
           </div>
           <p className="text-fluid-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{T.predicted}</p>
-          <p className="text-fluid-xs mt-1.5 font-medium" style={{ color: 'var(--text-3)' }}>
-            {T.confidence}:{' '}
-            <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-              {Math.round(sel.confidence_band_low)}–{Math.round(sel.confidence_band_high)}%
-            </span>
-          </p>
           {sel.coverage_pct < 60 && (
             <p className="text-fluid-xs mt-1 font-semibold" style={{ color: WARM }}>
               {T.lowCoverage}

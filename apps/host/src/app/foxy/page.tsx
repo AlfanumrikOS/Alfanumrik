@@ -2153,12 +2153,6 @@ function FoxyExperience() {
               onSetCollapsedAbove={setCollapsedAbove}
               activeSubject={activeSubject}
               cfgColor={cfg.color}
-              grade={studentGrade}
-              chapterNumber={
-                Number.isInteger(Number(activeTopic?.chapter_number)) && Number(activeTopic?.chapter_number) > 0
-                  ? Number(activeTopic.chapter_number)
-                  : undefined
-              }
               studentName={student?.name}
               isHi={isHi}
               ttsSupported={ttsSupported}

@@ -39,43 +39,28 @@ let _selectResult: { data: unknown; error: unknown; count?: number } = {
   error: null,
   count: 0,
 };
-/** Result for `support_ticket_replies` reads (separate table from the ticket). */
-let _repliesResult: { data: unknown; error: unknown } = { data: [], error: null };
 let _selectFilters: Record<string, unknown> = {};
-/** Filters applied to the `support_ticket_replies` query, keyed by column. */
-let _replyFilters: Record<string, unknown> = {};
 
 vi.mock('@alfanumrik/lib/supabase-admin', () => {
-  // Table-aware select chain: ticket reads resolve `_selectResult`, reply reads
-  // resolve `_repliesResult`, and each records its own filters so a test can
-  // assert on both the ownership scope and the is_internal guard.
-  const buildSelectChain = (table: string) => {
-    const isReplies = table === 'support_ticket_replies';
-    const filters = isReplies ? () => _replyFilters : () => _selectFilters;
-    const result = () => (isReplies ? _repliesResult : _selectResult);
+  const buildSelectChain = () => {
     const chain: Record<string, unknown> = {
       eq: (col: string, val: unknown) => {
-        filters()[col] = val;
-        return chain;
-      },
-      in: (col: string, vals: unknown) => {
-        filters()[col] = vals;
+        _selectFilters[col] = val;
         return chain;
       },
       order: () => chain,
-      limit: () => Promise.resolve(result()),
-      range: () => Promise.resolve(result()),
-      maybeSingle: () => Promise.resolve(result()),
-      single: () => Promise.resolve(result()),
-      then: (onFulfilled: (v: ReturnType<typeof result>) => unknown) =>
-        Promise.resolve(result()).then(onFulfilled),
+      range: () => Promise.resolve(_selectResult),
+      maybeSingle: () => Promise.resolve(_selectResult),
+      single: () => Promise.resolve(_selectResult),
+      then: (onFulfilled: (v: typeof _selectResult) => unknown) =>
+        Promise.resolve(_selectResult).then(onFulfilled),
     };
     return chain;
   };
 
   return {
     supabaseAdmin: {
-      from: (table: string) => ({
+      from: (_table: string) => ({
         insert: (row: Record<string, unknown>) => {
           _insertCaptured = row;
           return {
@@ -84,8 +69,7 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
             }),
           };
         },
-        update: () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
-        select: () => buildSelectChain(table),
+        select: () => buildSelectChain(),
       }),
     },
   };
@@ -153,8 +137,6 @@ beforeEach(async () => {
   };
   _selectResult = { data: [], error: null, count: 0 };
   _selectFilters = {};
-  _repliesResult = { data: [], error: null };
-  _replyFilters = {};
   _opsEventsCalls.length = 0;
   unauthorized();
 });
@@ -333,12 +315,7 @@ describe('GET /api/support/tickets', () => {
     const body = await res.json();
     expect(body.data.tickets).toHaveLength(1);
     expect(body.data.total).toBe(1);
-    // Scope is TWO columns, not one: student_id AND the caller's role anchor.
-    // Filtering on student_id alone let a student read a ticket their PARENT
-    // filed about them (parent tickets are anchored to the child's student_id
-    // with user_role='parent').
-    expect(_selectFilters.student_id).toEqual(['stu-list']);
-    expect(_selectFilters.user_role).toBe('student');
+    expect(_selectFilters.student_id).toBe('stu-list');
   });
 
   it('returns 500 when DB select fails', async () => {
@@ -387,10 +364,9 @@ describe('GET /api/support/tickets/[id]', () => {
     _selectResult = { data: null, error: null };
     const res = await callGet(validUuid);
     expect(res.status).toBe(404);
-    // Confirm we filtered by id AND student_id AND user_role
+    // Confirm we filtered by both id AND student_id
     expect(_selectFilters.id).toBe(validUuid);
-    expect(_selectFilters.student_id).toEqual(['stu-owner']);
-    expect(_selectFilters.user_role).toBe('student');
+    expect(_selectFilters.student_id).toBe('stu-owner');
   });
 
   it('returns the ticket when the caller owns it', async () => {
@@ -417,39 +393,7 @@ describe('GET /api/support/tickets/[id]', () => {
     expect(body.data.ticket.id).toBe(validUuid);
     // student_id must NOT leak in the response
     expect(body.data.ticket.student_id).toBeUndefined();
-    // replies are now real rows (empty thread here)
+    // forward-compat replies field
     expect(body.data.replies).toEqual([]);
-    // The service-role client bypasses RLS, so the route MUST filter internal
-    // operator notes out itself — the policy is a backstop, not the guard.
-    expect(_replyFilters.ticket_id).toBe(validUuid);
-    expect(_replyFilters.is_internal).toBe(false);
-  });
-
-  it('never returns internal operator notes or author_user_id', async () => {
-    authorizedAs({ studentId: 'stu-owner' });
-    _selectResult = {
-      data: { id: validUuid, subject: 'mine', message: 'desc', status: 'open' },
-      error: null,
-    };
-    // The DB would already have excluded internal rows via the is_internal
-    // filter; what this asserts is the response PROJECTION — the route selects
-    // four columns only, so author_user_id can never ride along.
-    _repliesResult = {
-      data: [
-        {
-          id: 'r-1',
-          author_role: 'operator',
-          body: 'We refunded the order.',
-          created_at: '2026-08-11T10:00:00Z',
-        },
-      ],
-      error: null,
-    };
-    const res = await callGet(validUuid);
-    const body = await res.json();
-    expect(body.data.replies).toHaveLength(1);
-    expect(body.data.replies[0].author_user_id).toBeUndefined();
-    expect(body.data.replies[0].is_internal).toBeUndefined();
-    expect(_replyFilters.is_internal).toBe(false);
   });
 });

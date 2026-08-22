@@ -36,31 +36,16 @@ import { NextRequest } from 'next/server';
  * holds the sibling is permitted), and (b) a denied authorizeRequest result
  * propagates as the route's 401/403 response (a caller WITHOUT the permission
  * is rejected). This pins the gate, not the business logic.
- *
- * 2026-08-16 addendum (P9 defense-in-depth on /api/v1/admin/roles, ops Gate 5
- * finding — see migration 20260816000010_admin_role_scope_out_role_manage.sql
- * and the dedicated test file v1-admin-roles-privilege-escalation-gate.test.ts):
- * GET/POST/PATCH /api/v1/admin/roles now ALSO call
- * authorizeOperator(request, 'super_admin') before the role.manage check
- * below. It is mocked here to always permit, so this file continues to pin
- * ONLY the RBAC role.manage layer (unchanged meaning) — the operator-tier
- * layer and the "admin-tier caller is rejected end-to-end" scenario are
- * covered by the dedicated file instead.
  */
 
 const _authorizeImpl = vi.fn();
 const _logAuditImpl = vi.fn();
 const _invalidateImpl = vi.fn();
-const _authorizeOperatorImpl = vi.fn();
 
 vi.mock('@alfanumrik/lib/rbac', () => ({
   authorizeRequest: (...args: unknown[]) => _authorizeImpl(...args),
   logAudit: (...args: unknown[]) => _logAuditImpl(...args),
   invalidateForSecurityEvent: (...args: unknown[]) => _invalidateImpl(...args),
-}));
-
-vi.mock('@alfanumrik/lib/admin-auth', () => ({
-  authorizeOperator: (...args: unknown[]) => _authorizeOperatorImpl(...args),
 }));
 
 vi.mock('@alfanumrik/lib/logger', () => ({
@@ -164,17 +149,6 @@ beforeEach(() => {
   _tableResults = new Map();
   _defaultResult = { data: null, error: null };
   _rpcResults = new Map();
-  // Default: operator-tier gate always permits, so every describe block
-  // below (including the non-role.manage routes, which don't call
-  // authorizeOperator at all) is unaffected by this mock's presence.
-  _authorizeOperatorImpl.mockResolvedValue({
-    authorized: true,
-    userId: 'auth-1',
-    adminId: 'auth-1',
-    email: 'op@x.com',
-    name: 'Op',
-    adminLevel: 'super_admin',
-  });
 });
 
 // =============================================================================

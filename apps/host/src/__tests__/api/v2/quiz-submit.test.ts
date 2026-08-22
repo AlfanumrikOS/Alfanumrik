@@ -260,8 +260,21 @@ describe('POST /api/v2/quiz/submit — RPC parity (mirrors /api/quiz/submit)', (
         { question_id: QUESTION_ID, selected_displayed_index: 2, time_spent: 7 },
       ],
       p_time: 42,
-      p_idempotency_key: IDEMPOTENCY_KEY,
+      // R9 (2026-08-11): the grading key is the SESSION id, NOT the client's
+      // Idempotency-Key header (which is still required + UUID-validated, but
+      // is now only a client retry token). This line previously asserted
+      // `IDEMPOTENCY_KEY` and so pinned the defect: an unbound client key made
+      // two different keys on one session two legal rows under
+      // `quiz_sessions_idempotency_key_uniq` → two gradings → double XP (P2),
+      // and broke the resume / `/today` already-graded gates that look the
+      // SESSION ID up in `quiz_sessions.idempotency_key`. Mobile keeps sending
+      // its own key (it mints one before the session exists) and is unaffected
+      // — the server simply ignores it for grading. Behavioural proof:
+      // src/__tests__/api/quiz-submit-session-bound-idempotency.test.ts.
+      p_idempotency_key: SESSION_ID,
     });
+    // Explicit: the header value never reaches the RPC.
+    expect(args.p_idempotency_key).not.toBe(IDEMPOTENCY_KEY);
   });
 
   it('returns RPC score/xp VERBATIM (no recompute) in the /v2 envelope', async () => {

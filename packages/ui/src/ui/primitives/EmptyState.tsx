@@ -10,6 +10,13 @@ import { cn } from '@alfanumrik/lib/utils';
    icon/illustration slot + title + description + optional action.
    All copy comes from props (bilingual-safe, P7). role=status so the
    empty condition is announced to assistive tech.
+
+   `role` override (2026-08-11): the same layout is also the right shape for
+   an HONEST-FAILURE state ("we couldn't load this"), which is not a status —
+   something on screen is wrong and WCAG 4.1.3 wants it announced
+   assertively. Rather than fork a near-identical component, callers may pass
+   role="alert". Default is unchanged ('status'), so every existing call site
+   is byte-identical.
    ═══════════════════════════════════════════════════════════════ */
 
 export interface EmptyStateProps {
@@ -21,13 +28,18 @@ export interface EmptyStateProps {
   action?: ReactNode;
   /** Tighter padding for inline / in-card use. */
   compact?: boolean;
+  /**
+   * Live-region role. 'status' (default) for a genuine empty; 'alert' when
+   * this instance is reporting a FAILURE rather than an absence.
+   */
+  role?: 'status' | 'alert';
   className?: string;
 }
 
-export function EmptyState({ icon, title, description, action, compact = false, className }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action, compact = false, role = 'status', className }: EmptyStateProps) {
   return (
     <div
-      role="status"
+      role={role}
       className={cn(
         'flex flex-col items-center text-center',
         compact ? 'gap-2 px-4 py-6' : 'gap-3 px-6 py-12',

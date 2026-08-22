@@ -27,12 +27,20 @@ const STATS: Stat[] = [
     ctxEn: 'on the standard 21-day usage survey',
     ctxHi: '21-दिवसीय उपयोग सर्वेक्षण के आधार पर',
   },
+  // CATALOGUE-CLAIM FIX (2026-08-12): this tile read "16" over
+  // "subjects · grades 6—12", with a supporting list naming English, Hindi,
+  // Social, Sanskrit and Computer. `subjects.is_active` is true for exactly
+  // five codes — math, science, physics, chemistry, biology — so both the count
+  // and five of the seven names were false. /welcome renders V3 by default but
+  // this V2 tree is the live `?v=2` rollback path, so it is reachable copy, not
+  // dead code. The tile now leads with the grade range, which is true, and the
+  // supporting line states the catalogue honestly.
   {
-    num: <>16</>,
-    lblEn: 'subjects · grades 6—12',
-    lblHi: 'विषय · कक्षा 6—12',
-    ctxEn: 'English, Hindi, Maths, Science, Social, Sanskrit, Computer',
-    ctxHi: 'अंग्रेज़ी, हिन्दी, गणित, विज्ञान, सामाजिक, संस्कृत, कंप्यूटर',
+    num: <>6–12</>,
+    lblEn: 'grades · Maths & Science',
+    lblHi: 'कक्षाएँ · गणित और विज्ञान',
+    ctxEn: 'the whole catalogue — Maths and Science, covered properly',
+    ctxHi: 'यही पूरा catalogue — गणित और विज्ञान, ठीक से पढ़ाए गए',
   },
   {
     num: <>₹<em>0</em></>,

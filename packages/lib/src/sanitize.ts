@@ -9,43 +9,10 @@
  * Prevents: XSS, SQL injection, path traversal, oversized payloads
  */
 
-/**
- * Strip HTML-tag-shaped spans in LINEAR time.
- *
- * Behavioural twin of the former `.replace(/<[^>]*>/g, '')`, which was
- * O(n²) on adversarial input like `'<'.repeat(n)` (CodeQL
- * js/polynomial-redos: every `<` restarted a scan to end-of-string looking
- * for `>`). Reachable with user input via /api/auth/bootstrap `body.name`,
- * so the quadratic regex was a real DoS vector.
- *
- * Preserved semantics (pinned by sanitize.test.ts):
- *   - Each span from a `<` to the NEXT `>` (inclusive) is removed,
- *     scanning left to right, non-overlapping — so `<a<b>` is removed
- *     whole, and `<<x>>` drops `<<x>` but keeps the trailing `>`.
- *   - An unclosed `<...` tail is KEPT verbatim by this pass; the
- *     dangerous-char pass in sanitizeText strips its `<` afterwards.
- */
-function stripTags(input: string): string {
-  let out = '';
-  let cursor = 0;
-  for (;;) {
-    const lt = input.indexOf('<', cursor);
-    if (lt === -1) {
-      return out + input.slice(cursor);
-    }
-    out += input.slice(cursor, lt);
-    const gt = input.indexOf('>', lt + 1);
-    if (gt === -1) {
-      // No '>' anywhere after this '<' — the regex kept the tail too.
-      return out + input.slice(lt);
-    }
-    cursor = gt + 1;
-  }
-}
-
 /** Strip HTML tags and dangerous characters from user-provided strings */
 export function sanitizeText(input: string, maxLength = 1000): string {
-  return stripTags(input)              // Strip HTML tags (linear-time scan)
+  return input
+    .replace(/<[^>]*>/g, '')           // Strip HTML tags
     .replace(/[<>"'`;(){}]/g, '')      // Remove dangerous chars
     .replace(/\\/g, '')                // Remove backslashes
     .trim()

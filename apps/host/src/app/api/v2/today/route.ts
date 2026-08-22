@@ -36,7 +36,7 @@
  */
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
+import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import {
   authorizeRequest,
@@ -150,19 +150,10 @@ export const GET = withRoute(async (request: Request) => {
     // Self → RLS-respecting client + caller's auth user. View-as → service-role
     // client keyed to the TARGET's auth user (P8); the caller's own identity is
     // never substituted into the state reads.
-    //
-    // The SELF branch uses the Bearer-AWARE route client. The cookie-only
-    // createSupabaseServerClient() NULLed auth.uid() for `Authorization: Bearer`
-    // callers (the entire Flutter app), so the state builder's RLS reads denied
-    // and this route answered a spurious 404 no_student_profile. Still RLS-
-    // scoped on both transports — never service-role. The VIEW-AS branch is
-    // unchanged: it must stay on the admin client because it reads the TARGET
-    // student's rows, which the caller's own JWT can never see under RLS; that
-    // path's boundary is canAccessStudent + hasAnyPermission above.
     let stateClient: SupabaseClient;
     let targetUserId = callerId;
     if (isSelf) {
-      stateClient = await createSupabaseRouteClient(request);
+      stateClient = await createSupabaseServerClient();
     } else {
       stateClient = admin;
       const { data: target, error: targetErr } = await admin
@@ -218,7 +209,6 @@ export const GET = withRoute(async (request: Request) => {
         dueReviewCount: 0,
         attemptedQuizToday: false,
         inProgressLessons: [],
-        completedLessons: [],
         pendingTeacherRemediation: null,
       };
     }

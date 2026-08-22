@@ -56,46 +56,21 @@ export const TONE_VAR: Record<Tone, string> = {
 };
 
 /**
- * Fill to use for a SOLID tone chip. Paired 1:1 with TONE_SOLID_FG below —
- * always read the two together, never mix a fill from here with a foreground
- * from somewhere else.
- *
- * Light-luminance tones (neutral, success, warning, info) keep their base hue
- * and take INK text. The two tones that carry a LIGHT foreground use their
- * darkened stop rather than the raw hue, because #FFFFFF does not clear AA on
- * the raw hue:
- *   #fff on bare --danger #DC2626 = 4.83:1 (passes, but only just)
- *   #fff on bare --primary/--orange #E8581C = 3.59:1 — FAILS
- * That second pair was the shipped default for `<Badge tone="brand"
- * variant="solid">`, i.e. the exact DD-16 bug living inside the canonical
- * primitive. Repointed to the strong stops (2026-08-15):
- *   #fff on --danger-strong #B91C1C = 6.47:1
- *   #fff on --accent-warm-strong #C2440F = 5.09:1 (the AA-verified CTA stop)
- */
-export const TONE_SOLID_FILL: Record<Tone, string> = {
-  neutral: 'var(--text-3)',
-  success: 'var(--success)',
-  warning: 'var(--warning)',
-  info: 'var(--info)',
-  danger: 'var(--danger-strong)',
-  brand: 'var(--accent-warm-strong)',
-};
-
-/**
- * Foreground to place ON the matching TONE_SOLID_FILL so text clears WCAG AA.
+ * Foreground to place ON a SOLID tone fill so text clears WCAG AA.
  * Light-luminance tones (warning gold, neutral) take ink; the darker
- * saturated tones take the paired on-accent token. Warning NEVER renders
- * gold-as-text (design-system.md §2, §8 "no warning-gold-as-text").
+ * saturated tones take white. Warning NEVER renders gold-as-text
+ * (design-system.md §2, §8 "no warning-gold-as-text").
  *
- * `--on-accent` (#FFFFFF, design-system.md §8.1) replaces the bare `white`
- * keyword here so the light foreground travels with its verified surface
- * rather than being an unpaired literal — this is the DD-12 repoint.
+ * NOTE: the design system has no dedicated `--on-accent` / `--fg-on-primary`
+ * token (flagged for Phase 2 follow-up). The CSS `white` keyword is used
+ * here as the on-accent foreground — it is NOT a hex literal, and the §8
+ * contrast table explicitly validates #FFFFFF on the primary CTA.
  */
 export const TONE_SOLID_FG: Record<Tone, string> = {
   neutral: 'var(--text-1)',
   success: 'var(--text-1)',
   warning: 'var(--text-1)',
   info: 'var(--text-1)',
-  danger: 'var(--on-accent)',
-  brand: 'var(--on-accent)',
+  danger: 'white',
+  brand: 'white',
 };

@@ -95,7 +95,8 @@
       "evidence": [
         "QuizResponse.shuffle_map",
         "quiz page shuffle_map pushes",
-        "Our spec says 5"
+        "client fabricated a shuffle_map (P1)",
+        "values.filter((v) => v !== 'null')"
       ]
     },
     {

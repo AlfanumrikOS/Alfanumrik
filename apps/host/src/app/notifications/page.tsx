@@ -25,10 +25,6 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   parent_cheer: { icon: '👏', color: '#EC4899', label: 'From Family', labelHi: 'परिवार से' },
   achievement: { icon: '🏅', color: '#F5A623', label: 'Achievement', labelHi: 'उपलब्धि' },
   quiz_result: { icon: '⚡', color: '#D97706', label: 'Quiz', labelHi: 'क्विज़' },
-  // Support ticket owner notifications (operator reply / resolution) — En in
-  // title/body; Hindi rides data.title_hi / data.body_hi per the house pattern.
-  support_ticket_reply: { icon: '💬', color: '#0891B2', label: 'Support', labelHi: 'सहायता' },
-  support_ticket_resolved: { icon: '✅', color: '#16A34A', label: 'Support', labelHi: 'सहायता' },
   // Phase A Loop A — adaptive remediation (En in title/body; Hindi rides
   // data.title_hi / data.body_hi per the house pattern — rendered below).
   remediation_assigned: { icon: '🦊', color: '#E8581C', label: 'Extra Practice', labelHi: 'अतिरिक्त अभ्यास' },

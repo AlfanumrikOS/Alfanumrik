@@ -212,18 +212,9 @@ function ChapterGrid({
       </p>
       {chapters.map((ch) => {
         const displayTitle = (isHi && ch.title_hi) ? ch.title_hi : ch.title;
-        // Question count = `practice_ready_count` (what the practice path can
-        // actually serve), NOT `verified_question_count` (a readiness signal
-        // that advertised questions the quiz could not deliver — SEV1 #12) and
-        // NOT `total_questions` (every row in the bank regardless of whether
-        // it can be served; also never returned by /api/student/chapters).
-        //
-        // `undefined` = the tiered-count migration isn't live on this database
-        // = UNKNOWN, which is not zero. The typeof guard keeps unknown from
-        // collapsing to "0 questions"; unknown and zero both render no count
-        // rather than a wrong one.
-        const practiceReady = ch.practice_ready_count;
-        const hasQuestions = typeof practiceReady === 'number' && practiceReady > 0;
+        const hasQuestions =
+          (ch.verified_question_count ?? 0) > 0 || (ch.total_questions ?? 0) > 0;
+        const questionCount = ch.verified_question_count ?? ch.total_questions ?? 0;
 
         return (
           <button
@@ -261,7 +252,7 @@ function ChapterGrid({
                   <>
                     <span>·</span>
                     <span>
-                      {practiceReady} {isHi ? 'प्रश्न' : 'questions'}
+                      {questionCount} {isHi ? 'प्रश्न' : 'questions'}
                     </span>
                   </>
                 )}

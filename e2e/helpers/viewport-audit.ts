@@ -484,8 +484,5 @@ export async function countLaidOutTiers(page: Page): Promise<number> {
   });
 }
 
-/** The primary slots, in the order the product contract fixes. */
-// `learn` left the primary bar in the 2026-08-19 Today consolidation; /today
-// does that job now. The /learn route still resolves and is still deep-linked
-// to — it simply owns no slot.
-export const EXPECTED_SLOT_ORDER = ['today', 'practice', 'progress', 'more'] as const;
+/** The five primary slots, in the order the product contract fixes. */
+export const EXPECTED_SLOT_ORDER = ['today', 'learn', 'practice', 'progress', 'more'] as const;

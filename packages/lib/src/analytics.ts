@@ -143,6 +143,51 @@ type AnalyticsEvent = {
   teacher_class_created: { grade: string };
   hpc_viewed: Record<string, never>;
 
+  // ── /today — the default student route (Phase 4, 2026-08-11) ──
+  // Before this, /today emitted ZERO events: there was no way to tell whether
+  // the surface worked, so there was no evidence on which to ramp its flag.
+  //
+  // P13: every property below is a closed-vocabulary enum or a count. No
+  // student id, no name, no subject *title*, no chapter title, no deep-link
+  // URL (a deep link carries subject+chapter, which is learner state).
+  //
+  // `reason` is the resolver's MACHINE reason (`todays_zpd`,
+  // `decay_above_threshold`, …), deliberately NOT the learner-facing phrase —
+  // analytics wants the branch identity, and the student copy is a lossy
+  // 12→6 mapping. That machine string never reaches a student; see
+  // `today/copy.ts`.
+  today_viewed: {
+    /** resolver branch from TodayResponse.meta.branch */
+    branch: string;
+    primary_type: string;
+    primary_reason: string;
+    /** how many activities the plan block rendered (0-3) */
+    plan_count: number;
+    /** which reminder, if any, won the single reminder slot */
+    reminder: 'exam' | 'streak' | 'unread' | 'none';
+  };
+  today_primary_cta_clicked: { type: string; reason: string };
+  today_plan_item_clicked: { type: string; reason: string; rank: number };
+  /** Foxy entry at the foot of the surface. `has_subject` tells us whether the
+   *  entry carried context from the primary recommendation. */
+  today_foxy_clicked: { has_subject: boolean };
+  today_reminder_clicked: { reminder: 'exam' | 'unread' };
+  // STATE-LEVEL TELEMETRY. The repo had none anywhere before this: a student
+  // hitting the error or empty branch was invisible. Emitted once per state
+  // entry, never on re-render.
+  today_state_shown: {
+    state:
+      | 'loading'
+      | 'error'
+      | 'empty'
+      | 'insufficient_evidence'
+      | 'stale'
+      | 'offline'
+      | 'locked'
+      | 'complete';
+  };
+  today_retry_clicked: { state: 'error' | 'offline' };
+
   // Retention events
   daily_return: { streak_days: number };
   session_duration: { seconds: number; pages_visited: number };

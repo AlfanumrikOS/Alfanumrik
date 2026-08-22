@@ -276,73 +276,15 @@ describe('One Experience V3 selected-school RPC predeploy migration', () => {
       expect(selectedSchoolIntegrationJob).toContain(assertion);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // SUPERSEDED PIN (2026-08-11). Read this before "restoring" the old one.
-    //
-    // What was pinned here from 2026-08-07 (409123b5) until 2026-08-11:
-    //     expect(selectedSchoolIntegrationJob).toContain(
-    //       "if: ${{ github.event_name != 'pull_request' }}");
-    //     expect(ciGateJob).not.toContain('- selected-school-rpc-integration');
-    // i.e. "this job skips on PRs and is NOT a ci-gate need". Its stated
-    // rationale was: "the repository ruleset enforces it directly, so
-    // ci-gate's needs list only carries the 7 always-run jobs."
-    //
-    // THAT PREMISE IS FALSE. Verified live against the repository on
-    // 2026-08-11:
-    //     gh api repos/AlfanumrikOS/Alfanumrik/rulesets/20528052
-    //   -> required_status_checks contexts are exactly:
-    //        "Secret Scanning", "Lint, Type-check & Test",
-    //        "Production Build", "CodeQL Analysis"
-    // "Selected-School RPC Migration Integration (local PG17)" is not in that
-    // list. Neither is "CI Gate". So after 409123b5 this job was enforced by
-    // NOTHING on a pull request: it did not run, and no required context stood
-    // in for it. The same commit did this to protected-flag-migration-guard,
-    // foxy-alignment and gen-mol-matrix, and made ci-gate itself PR-skipped.
-    //
-    // Two independent pieces of in-repo evidence that the skip was a mistake
-    // rather than a design, both of which became dead code the moment it
-    // landed: (1) this job's `Detect selected-school migration inputs` step
-    // still branches on `EVENT_NAME == "pull_request"` to pick
-    // `github.event.pull_request.base.sha`; (2) ci-gate still carries its
-    // `SAME_REPOSITORY_PR` / fork-skip accounting, which only ever executes on
-    // a pull_request event.
-    //
-    // Observed cost: PR #1514 was 100% green, merged, and turned main red on
-    // the next push because foxy-alignment had never run against it (#1517 was
-    // the repair). A green PR that is not evidence about main is not a gate.
-    //
-    // The old pin's PURPOSE — "a future edit cannot silently un-gate the
-    // migration integration" — is preserved and made STRICTLY STRONGER below:
-    // the job must run on pull_request AND push, and be aggregated by ci-gate
-    // on both. The old rationale's one legitimate half (runner cost) is now
-    // pinned directly, as the step-level paths filter that keeps a PR run
-    // cheap, rather than by deleting the signal from PRs altogether.
-    // ─────────────────────────────────────────────────────────────────────
-
-    // (1) No job-level event skip. Anchored to the YAML key at job indent so a
-    //     comment quoting the old expression can never satisfy it.
-    expect(selectedSchoolIntegrationJob).not.toMatch(
-      /^ {4}if: \$\{\{ github\.event_name != 'pull_request' \}\}$/m,
-    );
-    // (2) ci-gate aggregates it — as a `needs` entry AND in the gate script's
-    //     `required` array. Both are required: a `needs` entry that is not in
-    //     `required` is not enforced, and a `required` entry that is not in
-    //     `needs` reads as `undefined` and would fail open on the lookup.
-    expect(ciGateJob).toContain('      - selected-school-rpc-integration');
-    expect(ciGateJob).toContain("'selected-school-rpc-integration'");
-    // (3) ci-gate itself must run on every event, or (2) is decorative.
-    expect(ciGateJob).toContain('if: ${{ always() }}');
-    expect(ciGateJob).not.toMatch(/^ {4}if:.*github\.event_name != 'pull_request'/m);
-    // (4) Cost containment — the only defensible half of the 2026-08-07
-    //     rationale. The 30-minute PG17 path must stay behind the step-level
-    //     paths filter, so a PR touching none of the 4 watched inputs costs a
-    //     checkout plus one `git diff`. Removing this filter would make every
-    //     PR pay 30 minutes and would re-create the pressure that motivated
-    //     the skip.
+    // Post-2026-08-07 perf contract (409123b5): the selected-school
+    // integration job skips on PRs and is NOT a ci-gate need anymore — the
+    // repository ruleset enforces it directly, so ci-gate's needs list only
+    // carries the 7 always-run jobs. Pin the new shape so a future edit cannot
+    // silently un-gate the migration integration on push.
     expect(selectedSchoolIntegrationJob).toContain(
-      "if: steps.selected_rpc_changes.outputs.changed == 'true'",
+      "if: ${{ github.event_name != 'pull_request' }}",
     );
-    expect(selectedSchoolIntegrationJob).toContain('PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}');
+    expect(ciGateJob).not.toContain('- selected-school-rpc-integration');
     expect(ciGateJob).not.toContain('migration-reproducibility');
   });
 });

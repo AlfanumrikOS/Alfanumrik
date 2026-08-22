@@ -251,14 +251,6 @@ const STUDENT_COLUMNS =
  * Look up a student by auth_user_id. Returns null (not an error) when no
  * student profile exists for the account — e.g. users who signed up as
  * teacher/parent, or users mid-onboarding.
- *
- * SERVICE-ROLE twin of the RLS-scoped
- * `apps/host/src/modules/learners/infrastructure/supabase-learner-repository.ts`
- * (`findByAuthUserId`), which duplicates this mapper, `STUDENT_COLUMNS` and the P5
- * grade coercion on purpose (different projection, different client). This function
- * uses `supabaseAdmin`, so every consuming route needs an entry in
- * `scripts/admin-client-allowlist.json`; NEW user-facing read paths should prefer the
- * RLS-scoped repository. That file records what a consolidation must do.
  */
 export async function getStudentByAuthUserId(
   authUserId: string

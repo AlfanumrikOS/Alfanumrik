@@ -26,8 +26,8 @@ import {
  * rendered by three tier components, and nothing pinned the result. The
  * properties below are the product contract; each is silent when broken:
  *
- *   1. FOUR primary slots, in the order Today · Practice · Progress · More,
- *      at every breakpoint.
+ *   1. FIVE primary slots, in the order Today · Learn · Practice · Progress ·
+ *      More, at every breakpoint.
  *   2. Tier boundaries: bottom bar <= 767, tablet rail 768-1023, sidebar >=
  *      1024. EXACTLY ONE tier laid out at any width — two would put two
  *      navigation landmarks in the accessibility tree and duplicate every
@@ -36,7 +36,7 @@ import {
  *      defect nav-config's TODAY FLAG CONTRACT records as having been measured
  *      at 360px before `altHrefs` existed; two is what a per-item
  *      `isNavItemActive` loop produces on /quiz.
- *   4. The primaries are NEVER also rows in the More sheet.
+ *   4. The five primaries are NEVER also rows in the More sheet.
  *
  * ── Why in a browser, when there is also a unit test ─────────────────────
  * `apps/host/src/__tests__/components/navigation/student-primary-nav-contract.test.ts`
@@ -44,10 +44,10 @@ import {
  * browser buys nothing. It cannot reach any of the four properties above,
  * because every one of them is a fact about layout or about the rendered
  * accessibility tree: which tier a media query displays, how many
- * `aria-current` attributes survive into the document, whether the slots fit
+ * `aria-current` attributes survive into the document, whether five slots fit
  * at 360px. The two layers are deliberately disjoint, not duplicated.
  *
- * ── Cross-browser ───────────────────────────────────────────────────────
+ * ── Cross-browser ────────────────────────────────────────────────────────
  * This file is the SUBSET that also runs on Firefox and WebKit (see
  * `playwright.config.ts`). It was chosen for that because it is the file
  * whose assertions are most likely to differ per engine: the tier switch is a
@@ -271,12 +271,12 @@ test.describe('navigation tiers — exactly one navigation at every width', () =
 });
 
 /* ═══════════════════════════════════════════════════════════════════════
- * 2. Four slots, one fixed order — in the two tiers that render slots
+ * 2. Five slots, one fixed order — in the two tiers that render slots
  * ═══════════════════════════════════════════════════════════════════════ */
 
-test.describe('primary slots — four, in order, at every breakpoint that renders them', () => {
+test.describe('primary slots — five, in order, at every breakpoint that renders them', () => {
   // The sidebar projects the same destinations into grouped sections rather
-  // than `data-slot` buttons, so slot-order is asserted on the two tiers
+  // than five `data-slot` buttons, so slot-order is asserted on the two tiers
   // that carry it; sidebar label/icon parity is pinned in the unit contract.
   for (const { width, height } of [
     { width: 360, height: 800 },
@@ -285,7 +285,7 @@ test.describe('primary slots — four, in order, at every breakpoint that render
     { width: 768, height: 1024 },
     { width: 1023, height: 800 },
   ]) {
-    test(`exactly four slots in the declared order at ${width}px`, async ({ page }) => {
+    test(`exactly five slots in the declared order at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height });
       await gotoWithNav(page, '/dashboard');
 
@@ -309,7 +309,7 @@ test.describe('primary slots — four, in order, at every breakpoint that render
     const undersized = nav.slotBoxes.filter((b) => b.width < 44 || b.height < 44);
     expect(
       undersized,
-      'Four slots must share a 360px row and still clear the 44px tap floor (4 x 44 = 176px, so ' +
+      'Five slots must share a 360px row and still clear the 44px tap floor (5 x 44 = 220px, so ' +
         `there is room). Undersized as rendered:\n${undersized
           .map((b) => `  ${b.slot}: ${b.width}x${b.height}`)
           .join('\n')}`,
@@ -330,6 +330,7 @@ test.describe('current-page signalling', () => {
    */
   const CURRENT_CASES: Array<{ route: string; slot: string; why: string }> = [
     { route: '/dashboard', slot: 'today', why: 'TODAY FLAG CONTRACT — /today redirects here while ff_today_home_v1 is OFF' },
+    { route: '/learn', slot: 'learn', why: 'exact primary destination' },
     { route: '/progress', slot: 'progress', why: 'exact primary destination' },
     { route: '/quiz', slot: 'practice', why: 'PRACTICE FLAG CONTRACT — /practice redirects here while ff_practice_os_v1 is OFF' },
   ];
@@ -387,7 +388,7 @@ test.describe('current-page signalling', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════
- * 4. The primaries are never inside the More sheet
+ * 4. The five primaries are never inside the More sheet
  * ═══════════════════════════════════════════════════════════════════════ */
 
 test.describe('More sheet — overflow only', () => {
@@ -407,7 +408,7 @@ test.describe('More sheet — overflow only', () => {
       // The sheet's rows are buttons carrying the item's visible label. A
       // primary destination reappearing here is one route in two places at the
       // same breakpoint — the IA-law violation nav-config records twice.
-      for (const label of ['Today', 'Practice', 'Progress']) {
+      for (const label of ['Today', 'Learn', 'Practice', 'Progress']) {
         await expect(
           sheet.getByRole('button', { name: label, exact: true }),
           `"${label}" is a PRIMARY slot but also appears as a row in the More sheet. One ` +
@@ -472,7 +473,7 @@ test.describe('Hindi labels in the new navigation', () => {
       ).toBeVisible({ timeout: 30_000 });
 
       const nav = await measureNavState(page);
-      expect(nav.slotOrder, 'the slots must survive the language switch').toEqual([
+      expect(nav.slotOrder, 'the five slots must survive the language switch').toEqual([
         ...EXPECTED_SLOT_ORDER,
       ]);
 
@@ -540,39 +541,38 @@ test.describe('deep links and history', () => {
     // components stay mounted across it by design.
     const currentSlot = async () => (await measureNavState(page)).currentControls.map((c) => c.slot);
 
-    await slot(page, 'practice').click();
-    await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/\/(practice|quiz)(\?|$)/);
-    await expect.poll(currentSlot, { timeout: 30_000 }).toEqual(['practice']);
+    await slot(page, 'learn').click();
+    await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/\/learn(\?|$)/);
+    await expect.poll(currentSlot, { timeout: 30_000 }).toEqual(['learn']);
 
     await slot(page, 'progress').click();
     await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/\/progress(\?|$)/);
     await expect.poll(currentSlot, { timeout: 30_000 }).toEqual(['progress']);
 
     await page.goBack();
-    await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/\/(practice|quiz)(\?|$)/);
+    await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/\/learn(\?|$)/);
     await expect
       .poll(currentSlot, {
         timeout: 30_000,
         message:
-          'After browser Back the URL returned to the practice destination but the navigation ' +
-          'still highlights a different slot. The nav components stay mounted across client-side ' +
-          'route changes, so a stale marker here means the active state is not derived from the ' +
-          'live pathname.',
+          'After browser Back the URL returned to /learn but the navigation still highlights a ' +
+          'different slot. The nav components stay mounted across client-side route changes, so ' +
+          'a stale marker here means the active state is not derived from the live pathname.',
       })
-      .toEqual(['practice']);
+      .toEqual(['learn']);
 
     await page.goBack();
     await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/\/dashboard(\?|$)/);
     await expect.poll(currentSlot, { timeout: 30_000 }).toEqual(['today']);
 
     await page.goForward();
-    await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/\/(practice|quiz)(\?|$)/);
+    await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/\/learn(\?|$)/);
     await expect
       .poll(currentSlot, {
         timeout: 30_000,
         message: 'Browser Forward restored the URL but not the current-slot marker.',
       })
-      .toEqual(['practice']);
+      .toEqual(['learn']);
   });
 
   test('the More sheet closes on Escape and returns focus to a live control', async ({ page }) => {

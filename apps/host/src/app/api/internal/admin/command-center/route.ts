@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       if (d in sparkline) sparkline[d]++;
     }
 
-    logAdminAction({ action: 'view_command_center', entity_type: 'dashboard', ip, actorUserId: auth.userId });
+    logAdminAction({ action: 'view_command_center', entity_type: 'dashboard', ip });
 
     return NextResponse.json({
       totals: {

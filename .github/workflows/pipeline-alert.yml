@@ -53,15 +53,6 @@ on:
       # REG-130: this string must byte-match e2e-nightly.yml's `name:`
       # (em dash included).
       - "E2E Nightly — Alfanumrik"
-      # Added 2026-08-11: the content-gap detector is the ONLY automated warning
-      # that the question bank is going empty, and every question generator on
-      # this platform is manual-only. It was hard-suspended 2026-07-11 and the
-      # blind spot went unnoticed for a month — precisely because nothing
-      # watched it. It runs report-only by default (repo variable
-      # CONTENT_GAP_MODE), so it concludes `failure` ONLY on a detector outage
-      # or, once CONTENT_GAP_MODE=escalate, a catastrophic content gap. This
-      # string must byte-match content-quality-nightly.yml's `name:`.
-      - "Content Quality — Nightly"
     types: [completed]
     branches: [main]
 
@@ -112,8 +103,6 @@ jobs:
               HINT="The nightly full E2E suite (~342 tests) is RED on main. PR CI no longer runs this suite by default (opt-in via the e2e-full label), so this nightly is the ONLY scheduled full-suite safety net — a user-facing flow may be broken on main, or the staging build/fixtures drifted. Triage before further regressions accumulate unseen; re-run on demand via workflow_dispatch." ;;
             "CI — Alfanumrik")
               HINT="Main is red: the merge quality gate is broken and Deploy Production will not get a green build to ship." ;;
-            "Content Quality — Nightly")
-              HINT="The content-gap detector is red. This is EITHER a detector outage (missing/expired Supabase reporting credential — the scan then reports nothing and content health is UNKNOWN, not healthy) OR a catastrophic content gap (a subject/grade pair at 0 RAG chunks AND 0 questions). Every question generator on this platform is manual-only, so a real gap cannot self-heal. Open the run artifact 'content-quality-<run_id>' for the per-pair table, then follow docs/runbooks/content-gap-detection.md. Do NOT silence this by re-suspending the workflow — that is how the previous month-long blind spot happened." ;;
             *)
               HINT="Main-branch pipeline failure — investigate before the next deploy." ;;
           esac

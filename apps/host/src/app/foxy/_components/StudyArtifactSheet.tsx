@@ -39,6 +39,7 @@ import {
   type ArtifactState,
 } from '../_lib/study-artifacts';
 import { diagramSpecToFoxyResponse } from '../_lib/diagram-to-foxy-block';
+import { BLOOM_CONFIG } from '@alfanumrik/lib/cognitive-engine';
 
 const LoadingState = dynamic(
   () => import('@alfanumrik/ui/foxy/LoadingState').then((m) => ({ default: m.LoadingState })),
@@ -266,17 +267,25 @@ function LessonBody({
             >
               <span aria-hidden="true">{SECTION_ICON[s.kind] ?? '📘'}</span>
               <span className="min-w-0 flex-1">{heading}</span>
-              {/* Bloom's is a technical term — never translated (P7). */}
-              {s.bloomLevel && (
+              {/* "Bloom's" is a permitted technical term (P7), but the raw enum
+                  TOKEN is not: this used to render the machine value verbatim
+                  (`analyze`, `evaluate`) and put `Bloom's: analyze` in the
+                  tooltip — untranslated in Hindi either way. Render the
+                  canonical bilingual label from BLOOM_CONFIG instead. */}
+              {s.bloomLevel && BLOOM_CONFIG[s.bloomLevel] && (
                 <span
-                  className="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                  className="shrink-0 text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded"
                   style={{
                     background: `color-mix(in srgb, ${accentColor} 12%, transparent)`,
                     color: accentColor,
                   }}
-                  title={`Bloom's: ${s.bloomLevel}`}
+                  title={isHi
+                    ? BLOOM_CONFIG[s.bloomLevel].descriptionHi
+                    : BLOOM_CONFIG[s.bloomLevel].description}
                 >
-                  {s.bloomLevel}
+                  {isHi
+                    ? BLOOM_CONFIG[s.bloomLevel].labelHi
+                    : BLOOM_CONFIG[s.bloomLevel].label}
                 </span>
               )}
             </h4>

@@ -5,9 +5,13 @@ import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 
 /**
  * SubjectStep — during onboarding, lets the student pick their subjects within
- * the subjects the subjects service says they're allowed. Enforces a plan-based
- * `max_subjects` cap: once reached, additional subjects are disabled with a live
- * counter. Uses the plan fallback map if the service doesn't ship a cap.
+ * the subjects the subjects service says they're allowed.
+ *
+ * It still HONOURS a `max_subjects` cap when one is supplied (disabling further
+ * picks with a live counter), but no B2C plan supplies one any more: every plan
+ * has `max_subjects` NULL since migration 20260814000018, so `maxSubjects` is
+ * null and the counter reads a plain "N selected". The cap branch is retained
+ * for a future server-supplied limit, not for the four consumer tiers.
  */
 
 interface SubjectStepProps {
@@ -20,10 +24,26 @@ interface SubjectStepProps {
   maxSubjects: number | null;
 }
 
-// Fallback map used when the caller can't yet read max_subjects from the server.
+/**
+ * Fallback map used when the caller can't yet read max_subjects from the server.
+ *
+ * ALL NULL SINCE 2026-08-11, AND THAT IS THE POINT. This map read
+ * `free: 2, starter: 4` while `subscription_plans.max_subjects` IS NULL on all
+ * four plans (migration 20260814000018) — so a free student picking subjects in
+ * onboarding was disabled at 2 and shown "Plan limit reached — upgrade to add
+ * more subjects" for a limit the server does not enforce. The fallback must
+ * mirror the DB, and the DB caps nothing.
+ *
+ * This is the CONSERVATIVE direction only when it matches the server: the real
+ * cap still lives server-side (`/api/student/preferences` surfaces the RPC's
+ * `max_subjects_exceeded`), so nothing is over-granted by removing a stale
+ * client guess.
+ *
+ * Pinned by apps/host/src/__tests__/plan-subject-count-copy-guard.test.ts.
+ */
 export const PLAN_SUBJECT_CAPS: Record<string, number | null> = {
-  free: 2,
-  starter: 4,
+  free: null,
+  starter: null,
   pro: null,
   unlimited: null,
 };
@@ -111,9 +131,14 @@ export default function SubjectStep({
 
       {capReached && (
         <p className="mt-3 text-[11px] text-[var(--text-3)] text-center">
+          {/* No longer an upsell. The old copy read "upgrade to add more
+              subjects", promising a subject unlock that no paid plan actually
+              grants (every plan already has every subject). This branch only
+              renders if a server-supplied cap exists, so it now just states
+              the fact. */}
           {isHi
-            ? 'योजना की सीमा तक पहुँच गए — अपग्रेड करने के बाद और जोड़ सकते हैं'
-            : 'Plan limit reached — upgrade to add more subjects'}
+            ? 'आपने अपनी योजना की अधिकतम सीमा चुन ली है'
+            : 'You have selected the maximum for your plan'}
         </p>
       )}
 

@@ -28,7 +28,7 @@ import type {
   RiskAlert,
   StudentMasteryReport,
 } from '@alfanumrik/lib/types';
-import type { GradingQueueItem } from '@alfanumrik/lib/teacher/types';
+import type { GradingQueueItem } from '@/app/teacher/GradingQueue';
 
 // OS SWR config for the teacher surfaces (mirrors swr.tsx DEFAULT_CONFIG).
 const TEACHER_SWR_CONFIG: SWRConfiguration = {

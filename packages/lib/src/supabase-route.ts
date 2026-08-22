@@ -9,13 +9,9 @@
  * sends NO Supabase auth cookie. With the cookie-only client, PostgREST sees no
  * user → `auth.uid()` is NULL → every RLS SELECT policy denies → mobile callers
  * get empty/404 responses. This is exactly why `/api/student/daily-plan` was
- * DEFERRED off the admin→server migration ledger by REG-218 — a deferral since
- * DISCHARGED by REG-220, which migrated that route onto this helper.
- *
- * Current adopters (as of 2026-08-11), not a bound — expect this list to grow:
- * `/api/student/daily-plan` (REG-220) and `/api/v2/student/profile`. The latter
- * was migrated off the service-role client and pruned from the admin-client
- * allowlist (`scripts/admin-client-allowlist.json`, 268 → 267).
+ * DEFERRED off the admin→server migration ledger (see regression catalog
+ * REG-218 deferrals table). This helper is the Phase 2 enabler that unblocks
+ * those Bearer-called routes — it is NOT wired into any route in this change.
  *
  * ── SECURITY MODEL (read before editing) ─────────────────────────────────────
  * RLS is ENFORCED in BOTH code paths. This helper can NEVER bypass RLS:

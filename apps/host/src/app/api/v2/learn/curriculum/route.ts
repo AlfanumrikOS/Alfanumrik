@@ -75,29 +75,9 @@ export const GET = withRoute(async (request: NextRequest) => {
     }
     let subjectRows = (subjData ?? []) as AvailableSubjectRow[];
     if (subjectFilter) {
-      const matched = subjectRows.filter((s) => s.code === subjectFilter);
-      if (matched.length === 0) {
-        // P2-7c: an unknown subject (display name "Mathematics", garbage, or a
-        // code outside this student's tree) must NOT return the empty-success
-        // shape — 200 {subjects: []} is indistinguishable from "this grade has
-        // no curriculum loaded", the symptom of a content-integrity incident.
-        // Name the bad value and the valid codes. Locked subjects are valid
-        // filter values (they render with is_locked), so `allowed` lists ALL
-        // the student's subject codes, not just unlocked ones.
-        const allowed = subjectRows.map((s) => s.code);
-        return v2Error(
-          `Unknown subject '${subjectFilter}' — subject must be one of this student's subject codes: ${allowed.join(', ')}`,
-          400,
-          'UNKNOWN_SUBJECT',
-          undefined,
-          { subject: subjectFilter, reason: 'unknown_subject', allowed },
-        );
-      }
-      subjectRows = matched;
+      subjectRows = subjectRows.filter((s) => s.code === subjectFilter);
     }
     if (subjectRows.length === 0) {
-      // A student with zero subjects and NO filter is a real state (e.g. a
-      // fresh profile before subject setup) — empty success, not an error.
       return v2Success({ schemaVersion: 1 as const, grade, subjects: [] });
     }
 

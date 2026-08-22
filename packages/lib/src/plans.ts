@@ -6,6 +6,17 @@
  *
  * Source of truth for plan code: students.subscription_plan
  * Values: 'free' | 'starter' | 'pro' | 'unlimited' | null
+ *
+ * SUBJECTS ARE NOT A PLAN DIFFERENTIATOR (corrected 2026-08-11).
+ * Migration 20260814000018 set `subscription_plans.max_subjects` to NULL on all
+ * four plans and seeded `plan_subject_access` with all five subject codes
+ * (math, science, physics, chemistry, biology) for every plan — free included.
+ * The product teaches Mathematics and Science only: grades 6-10 see Maths +
+ * Science, grades 11-12 see Maths + Physics/Chemistry/Biology presented as one
+ * "Science" group. The benefit lists below therefore carry the SAME subject
+ * line on every tier. The real ladder is depth: Foxy chats/day, quizzes/day,
+ * STEM Lab, analytics, and support.
+ * Pinned by apps/host/src/__tests__/plan-subject-count-copy-guard.test.ts.
  */
 
 export interface PlanConfig {
@@ -34,8 +45,8 @@ export const PLANS: Record<string, PlanConfig> = {
     gradient: 'linear-gradient(135deg, #64748B, #94A3B8)',
     tagline: 'Start your learning journey',
     taglineHi: 'अपनी सीखने की यात्रा शुरू करें',
-    benefits: ['5 Foxy chats/day', '5 quizzes/day', '2 subjects'],
-    benefitsHi: ['5 फॉक्सी चैट/दिन', '5 क्विज़/दिन', '2 विषय'],
+    benefits: ['5 Foxy chats/day', '5 quizzes/day', 'Maths & Science included'],
+    benefitsHi: ['5 फॉक्सी चैट/दिन', '5 क्विज़/दिन', 'गणित और विज्ञान शामिल'],
     tier: 0,
     nextPlan: 'starter',
     nextPlanLabel: 'Upgrade to Starter →',
@@ -49,8 +60,8 @@ export const PLANS: Record<string, PlanConfig> = {
     gradient: 'linear-gradient(135deg, #E8581C, #F59E0B)',
     tagline: 'More learning, more growth',
     taglineHi: 'और सीखो, और बढ़ो',
-    benefits: ['Unlimited Foxy chats', '20 quizzes/day', '4 subjects', 'STEM Lab'],
-    benefitsHi: ['असीमित Foxy चैट', '20 क्विज़/दिन', '4 विषय', 'STEM लैब'],
+    benefits: ['Unlimited Foxy chats', '20 quizzes/day', 'Maths & Science included', 'STEM Lab'],
+    benefitsHi: ['असीमित Foxy चैट', '20 क्विज़/दिन', 'गणित और विज्ञान शामिल', 'STEM लैब'],
     tier: 1,
     nextPlan: 'pro',
     nextPlanLabel: 'Upgrade to Pro →',
@@ -64,8 +75,8 @@ export const PLANS: Record<string, PlanConfig> = {
     gradient: 'linear-gradient(135deg, #7C3AED, #A855F7)',
     tagline: 'The complete learning experience',
     taglineHi: 'संपूर्ण सीखने का अनुभव',
-    benefits: ['Unlimited Foxy chats', 'Unlimited quizzes', 'All subjects', 'STEM Lab', 'Advanced analytics'],
-    benefitsHi: ['असीमित Foxy चैट', 'असीमित क्विज़', 'सभी विषय', 'STEM लैब', 'उन्नत विश्लेषण'],
+    benefits: ['Unlimited Foxy chats', 'Unlimited quizzes', 'Maths & Science included', 'STEM Lab', 'Advanced analytics'],
+    benefitsHi: ['असीमित Foxy चैट', 'असीमित क्विज़', 'गणित और विज्ञान शामिल', 'STEM लैब', 'उन्नत विश्लेषण'],
     tier: 2,
     nextPlan: 'unlimited',
     nextPlanLabel: 'Upgrade to Unlimited →',
@@ -79,8 +90,8 @@ export const PLANS: Record<string, PlanConfig> = {
     gradient: 'linear-gradient(135deg, #0891B2, #06B6D4)',
     tagline: 'No limits. Maximum results.',
     taglineHi: 'कोई सीमा नहीं। अधिकतम परिणाम।',
-    benefits: ['Unlimited Foxy chats', 'Unlimited quizzes', 'All subjects', 'STEM Lab', 'Priority support'],
-    benefitsHi: ['असीमित चैट', 'असीमित क्विज़', 'सभी विषय', 'STEM लैब', 'प्राथमिकता सहायता'],
+    benefits: ['Unlimited Foxy chats', 'Unlimited quizzes', 'Maths & Science included', 'STEM Lab', 'Priority support'],
+    benefitsHi: ['असीमित चैट', 'असीमित क्विज़', 'गणित और विज्ञान शामिल', 'STEM लैब', 'प्राथमिकता सहायता'],
     tier: 3,
     nextPlan: null,
     nextPlanLabel: null,

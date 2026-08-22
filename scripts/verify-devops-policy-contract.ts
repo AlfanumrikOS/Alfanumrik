@@ -109,14 +109,7 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
       id: 'runbook-current-date',
       label: 'deployment runbook is current',
       file: 'DEPLOYMENT_RUNBOOK.md',
-      // Bumped in lockstep with a real runbook revision — this literal is the
-      // mechanism that forces the header date forward when deployment policy
-      // changes, so it MUST be updated together with the doc, never to make a
-      // red check green. 2026-07-11 -> 2026-08-11: documented the two bounded
-      // exceptions to the exact-SHA release assertion (identical-tree no-op
-      // and Vercel intentionally-skipped build) and corrected the false claim
-      // that `CI Gate` is a required status check.
-      pass: includesAll('**Last updated:** 2026-08-11'),
+      pass: includesAll('**Last updated:** 2026-07-11'),
       failure: 'DEPLOYMENT_RUNBOOK.md must carry the current DevOps update date.',
     },
     {
@@ -196,52 +189,16 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
       id: 'manual-only-containment',
       label: 'broken schedules stay suspended',
       file: '.github/workflows/mesh-cron.yml',
-      pass: (text) => workflowDispatchOnly(text)
-        && includesAll('Agent mesh execution is suspended in Phase 0', 'enabled=false', "if: needs.gate.outputs.enabled == 'true'", 'environment: agent-mesh-break-glass')(text)
-        && !text.includes('eval npm')
-        && !text.includes('inputs.goal_override'),
-      failure: 'The agent mesh cron must remain hard-suspended in Phase 0.',
-    },
-    {
-      // 2026-08-11: the content-quality nightly used to be pinned to the SAME
-      // blanket "workflow_dispatch-only + refuse everything" shape as mesh-cron,
-      // by the check above. That shape was over-broad for this workflow and had
-      // a real cost: it switched off the ONLY automated detector that warns the
-      // question bank is going empty, on a platform where every question
-      // generator is manual-only. The blind spot ran for a month.
-      //
-      // The hazard b66c25c3b actually closed was narrower than "no schedule": a
-      // credentialed job reachable from `workflow_dispatch` on an ARBITRARY ref,
-      // i.e. arbitrary branch-controlled script content executing with the
-      // production Supabase credential. This check now pins that precise
-      // property instead, which is strictly more targeted than the blanket ban:
-      //
-      //   1. no trigger may expose the credential to a contributor-chosen ref
-      //      (`pull_request`/`pull_request_target` are forbidden outright);
-      //   2. the credentialed job carries an explicit main-only ref guard, so a
-      //      dispatch from any other ref skips it rather than running it;
-      //   3. the job still runs inside the protected `production-ops`
-      //      environment.
-      //
-      // Relaxing any of the three re-opens the original hole. Deleting the
-      // schedule re-creates the blind spot. Both are regressions.
-      id: 'content-scan-main-only-containment',
-      label: 'credentialed content scan is scheduled but main-only',
-      file: '.github/workflows/content-quality-nightly.yml',
       pass: (text) => {
-        const triggers = triggerKeys(text).slice().sort();
-        return JSON.stringify(triggers) === JSON.stringify(['schedule', 'workflow_dispatch'])
-          && includesAll(
-            "if: github.ref == 'refs/heads/main'",
-            'environment: production-ops',
-          )(text)
-          && excludesAll('pull_request:', 'pull_request_target:')(text);
+        const content = readFileSync(repoPath('.github/workflows/content-quality-nightly.yml'), 'utf8');
+        return workflowDispatchOnly(text)
+          && workflowDispatchOnly(content)
+          && includesAll('Agent mesh execution is suspended in Phase 0', 'enabled=false', "if: needs.gate.outputs.enabled == 'true'", 'environment: agent-mesh-break-glass')(text)
+          && !text.includes('eval npm')
+          && !text.includes('inputs.goal_override')
+          && includesAll('Credentialed content-quality execution is suspended in Phase 0', 'enabled=false', "if: needs.gate.outputs.enabled == 'true'", 'environment: production-ops')(content);
       },
-      failure:
-        'The credentialed content scan must stay schedule+dispatch only, guarded by an explicit '
-        + "`if: github.ref == 'refs/heads/main'` ref check, and run in the protected production-ops "
-        + 'environment. Never expose its Supabase credential to a contributor-chosen ref, and never '
-        + 'delete its schedule (that is the question-bank-going-empty detector).',
+      failure: 'Mesh and credentialed content scans must remain hard-suspended in Phase 0.',
     },
     {
       id: 'production-cron-break-glass',
@@ -406,120 +363,17 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
         return /permissions:\r?\n  contents: read/.test(text)
           && includesAll(
             'name: CI Gate',
-            // ─────────────────────────────────────────────────────────────
-            // SUPERSEDES P2-16 (409123b5, 2026-08-07), reverted 2026-08-11.
-            //
-            // P2-16 pinned `if: ${{ always() && github.event_name !=
-            // 'pull_request' }}` here, justified as: "the repository ruleset
-            // enforces the 7 required checks directly, so freeing the gate
-            // (and the 4 non-PR jobs it consumed) on PRs is a deliberate
-            // runner-pressure cut."
-            //
-            // The premise is false. Verified live 2026-08-11 via
-            // `gh api repos/AlfanumrikOS/Alfanumrik/rulesets/20528052`: the
-            // required contexts are exactly "Secret Scanning",
-            // "Lint, Type-check & Test", "Production Build" and
-            // "CodeQL Analysis" — four, not seven, and NOT the aggregate
-            // gate. So on a pull request the gate did not run and nothing
-            // stood in for it; selected-school-rpc-integration,
-            // protected-flag-migration-guard, foxy-alignment and
-            // gen-mol-matrix were unenforced pre-merge. PR #1514 merged
-            // green and turned main red on the next push (repair: #1517).
-            //
-            // The pin was also self-contradictory: the literals directly
-            // below (`SAME_REPOSITORY_PR`, and what was then the fork-skip
-            // accounting — since generalised into the expectedSkips lane
-            // pinned further down) exist to handle pull_request events, and
-            // were unreachable for the whole time the gate was push-only.
-            //
-            // This check's own label — "CI exposes aggregate gate" — is
-            // better served by a gate that runs on every event. Pinning
-            // `always()` on its own is strictly stronger than the old
-            // conjunction: it keeps the terminal/aggregate posture on main
-            // AND restores it on PRs.
-            'if: ${{ always() }}',
+            // P2-16 (409123b5, 2026-08-07): ci-gate now skips PR events — the
+            // repository ruleset enforces the 7 required checks directly, so
+            // freeing the gate (and the 4 non-PR jobs it consumed) on PRs is a
+            // deliberate runner-pressure cut. It still runs on `always()`
+            // semantics for pushes, so the aggregate/terminal gate posture is
+            // unchanged on main.
+            "if: ${{ always() && github.event_name != 'pull_request' }}",
             'SAME_REPOSITORY_PR',
-            // ─────────────────────────────────────────────────────────────
-            // EXPECTED-SKIP ACCOUNTING — spelling updated 2026-08-12.
-            //
-            // This slot used to pin one literal:
-            //   forkSkips.push('integration-tests', 'e2e-critical-paths')
-            // That single call encoded a fork-PR-only view of the world and
-            // no longer exists in ci.yml. It was replaced because the shape
-            // it pinned carried two defects, and these three literals exist
-            // to keep both of them out:
-            //
-            // 1. workflow_dispatch could NEVER pass the gate. Under the old
-            //    shape `integration-tests` stayed in `required` on every
-            //    event, but its own `if:` (same-repo PR || push) makes it
-            //    SKIPPED on a manual dispatch — so the gate read
-            //    skipped !== 'success' and exited 1 with every other job
-            //    green. Not flaky: structurally unpassable there.
-            // 2. `e2e-critical-paths` sat in the gate's `needs` but on
-            //    NEITHER list for push and workflow_dispatch, so on those
-            //    events its result was read by nobody. A dependency that is
-            //    declared and then never inspected is indistinguishable
-            //    from one that always passes.
-            //
-            // The replacement classifies PER EVENT: every job in `needs`
-            // lands in exactly one of `required` (must be 'success') or
-            // `expectedSkips` (must be EXACTLY 'skipped'). That is strictly
-            // stronger than what was pinned before — nothing is unchecked,
-            // and nothing is forgiven for failing, because a job that RAN
-            // and FAILED is never 'skipped'.
-            //
-            // Both conditional jobs are pinned INDIVIDUALLY rather than as
-            // one combined literal: the generalised form builds the list
-            // across two independent if/else branches, so a single combined
-            // assertion could be satisfied while one whole branch was
-            // deleted — silently dropping that job back to unchecked with
-            // this check still green.
-            //
-            // The third literal is the load-bearing one. Populating
-            // `expectedSkips` proves nothing unless the list is READ; a
-            // check that only proved the array was built would be exactly
-            // the hole described in (2), just relocated. It pins the
-            // reconciliation into `failures` AND the exact comparison
-            // (`!== 'skipped'`). Dropping the line so the array is built and
-            // discarded, or relaxing the comparison to a truthiness test,
-            // turns the entire expected-skip lane into a no-op.
-            // ─────────────────────────────────────────────────────────────
-            "expectedSkips.push('integration-tests')",
-            "expectedSkips.push('e2e-critical-paths')",
-            "failures.push(...expectedSkips.filter((job) => needs[job]?.result !== 'skipped'));",
+            "forkSkips.push('integration-tests', 'e2e-critical-paths')",
             'process.exit(1)',
           )(gate)
-          // The event skip must not come back by any spelling. `always()`
-          // above is a substring of the old conjunction, so without this the
-          // check would pass on a reintroduced PR skip.
-          && !/^ {4}if:.*github\.event_name != 'pull_request'/m.test(gate)
-          // Same reasoning applied to the superseded accounting itself: the
-          // three literals above are all positive, so re-adding
-          // `required.splice(required.indexOf('integration-tests'), 1)`
-          // alongside them would satisfy this check while restoring the
-          // mutation-based shape. That shape is the direct cause of both
-          // defects above — it removes a job from `required` at runtime
-          // instead of classifying it, which is why `e2e-critical-paths`
-          // ended up on no list at all for push/dispatch. Classification, not
-          // mutation, is the invariant.
-          //
-          // Scoped to `gate` and to the literal `required.splice(` on
-          // purpose. Verified 2026-08-12: ci.yml contains exactly one match
-          // for "splice" anywhere — the word "spliced" in a shell-quoting
-          // comment at line ~2424, far outside the ci-gate block and not a
-          // match for this literal — so this guard has no false positive to
-          // trip on today.
-          && !gate.includes('required.splice(')
-          // Restored 2026-08-11: the four governance jobs 409123b5 dropped
-          // must be BOTH declared dependencies and members of the gate
-          // script's `required` array. A `needs` entry missing from
-          // `required` is unenforced; a `required` entry missing from `needs`
-          // resolves to undefined and fails on lookup. Requiring both means
-          // the gate aggregates the identical job set on a PR and on the push
-          // that merges it — the only condition under which a green PR is
-          // evidence that main will stay green.
-          && ['selected-school-rpc-integration', 'protected-flag-migration-guard', 'foxy-alignment', 'gen-mol-matrix']
-            .every((job) => gate.includes(`      - ${job}`) && gate.includes(`'${job}'`))
           && includesAll('Trusted integration job requires', 'exit 1')(mappingEntryBlock(text, 'integration-tests', 2))
           && mappingEntryBlock(text, 'health-check', 2) === ''
           && includesAll('POLL_WINDOW_SECONDS=600', 'while [ "$SECONDS" -lt "$DEADLINE" ]; do', 'EXPECTED_SHA=', "b.ok===true&&b.status==='healthy'", "b.version?.git_sha||''")(deployHealth)

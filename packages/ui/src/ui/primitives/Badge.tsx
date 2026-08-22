@@ -2,7 +2,7 @@
 
 import { type HTMLAttributes, type ReactNode } from 'react';
 import { cn } from '@alfanumrik/lib/utils';
-import { TONE_VAR, TONE_SOLID_FILL, TONE_SOLID_FG, type Tone } from './tokens';
+import { TONE_VAR, TONE_SOLID_FG, type Tone } from './tokens';
 
 /* ═══════════════════════════════════════════════════════════════
    Badge — canonical primitive (Phase 2 Batch A)
@@ -31,10 +31,7 @@ export function Badge({ tone = 'neutral', variant = 'soft', icon, className, chi
 
   const style =
     variant === 'solid'
-      ? // Fill and foreground are a verified PAIR (tokens.ts) — danger/brand
-        // take their darkened stop so the light foreground clears AA. Using
-        // the raw `toneVar` here put #fff on --orange at 3.59:1.
-        { backgroundColor: TONE_SOLID_FILL[tone], color: TONE_SOLID_FG[tone] }
+      ? { backgroundColor: toneVar, color: TONE_SOLID_FG[tone] }
       : {
           // Pale tint mixed with the opaque surface so text stays crisp;
           // ink foreground guarantees AA on every tone.

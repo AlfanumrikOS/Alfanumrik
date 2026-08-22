@@ -22,13 +22,6 @@ const authorizeAdmin = vi.fn();
 
 vi.mock('@alfanumrik/lib/admin-auth', () => ({
   authorizeAdmin: (...args: unknown[]) => authorizeAdmin(...args),
-  // PATCH /api/super-admin/users migrated to authorizeOperator() (Phase 1
-  // pilot, 2026-08-16 Mission Control overhaul). Forwards to the SAME mock
-  // fn so every existing authorizeAdmin.mockResolvedValue(...)/assertion
-  // below keeps working unchanged — this file pins the gate (which function
-  // is called with which required level), not which auth function name the
-  // route imports.
-  authorizeOperator: (...args: unknown[]) => authorizeAdmin(...args),
   logAdminAudit: vi.fn().mockResolvedValue(undefined),
   isValidUUID: (s: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s),

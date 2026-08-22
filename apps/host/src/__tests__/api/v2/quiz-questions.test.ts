@@ -5,15 +5,6 @@
  * grade-mismatch (403), the questions RPC (select_quiz_questions_rag) reuse,
  * insufficient_questions_in_scope (422), envelope shape (schemaVersion 1,
  * questions[]), and P6 — correct_answer_index is NEVER returned.
- *
- * 2026-08-12 E2E batch pins:
- *   - P2-7a: the subject-governance 403 names the SUBJECT + carries structured
- *     details { subject, reason, allowed } (the old message interpolated the
- *     'grade'|'plan' cause enum — "Subject not allowed: grade" named a
- *     different, valid query param).
- *   - P2-7b: governance-RPC outage FAILS CLOSED (503
- *     SUBJECT_GOVERNANCE_UNAVAILABLE, retryable:true) — questions are never
- *     served ungated.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -22,10 +13,9 @@ vi.mock('@alfanumrik/lib/rbac', () => ({ authorizeRequest: (...a: unknown[]) => 
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-// Subject governance — controllable per test (beforeEach defaults it to ok).
-const _validateSubjectImpl = vi.fn();
+// Subject governance always allows in these tests.
 vi.mock('@alfanumrik/lib/subjects', () => ({
-  validateSubjectWrite: (...a: unknown[]) => _validateSubjectImpl(...a),
+  validateSubjectWrite: vi.fn().mockResolvedValue({ ok: true }),
 }));
 // Whole-subject shortfall telemetry (spec §3.6) — asserted on directly below.
 const _logOpsEventImpl = vi.fn().mockResolvedValue(undefined);
@@ -41,7 +31,6 @@ let _student: { data: { id: string; grade: string } | null; error: unknown } = {
   error: null,
 };
 let _rpcResults: Record<string, { data: unknown; error: unknown }> = {};
-let _rpcCalls: string[] = [];
 
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => ({
@@ -52,10 +41,7 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
       chain.maybeSingle = () => Promise.resolve(_student);
       return chain;
     },
-    rpc: (name: string) => {
-      _rpcCalls.push(name);
-      return Promise.resolve(_rpcResults[name] ?? { data: [], error: null });
-    },
+    rpc: (name: string) => Promise.resolve(_rpcResults[name] ?? { data: [], error: null }),
   }),
 }));
 
@@ -95,10 +81,8 @@ let GET: any;
 beforeEach(async () => {
   vi.clearAllMocks();
   setAuthorized();
-  _validateSubjectImpl.mockResolvedValue({ ok: true });
   _student = { data: { id: STUDENT_A, grade: '9' }, error: null };
   _rpcResults = {};
-  _rpcCalls = [];
   GET = (await import('@/app/api/v2/quiz/questions/route')).GET;
 });
 
@@ -166,103 +150,6 @@ describe('GET /api/v2/quiz/questions', () => {
     const res = await GET(url({ subject: 'math', grade: '9', count: '5', chapter: '99' }));
     expect(res.status).toBe(422);
     expect((await res.json()).code).toBe('INVALID_ACADEMIC_SCOPE');
-  });
-
-  // ── Subject validation (2026-08-12 E2E batch: P2-7a + P2-7b) ─────────────
-  describe('subject governance (P2-7a structured 403, P2-7b fail-closed 503)', () => {
-    it('returns a structured 403 naming the SUBJECT — not the reason enum — with details {subject, reason, allowed}', async () => {
-      // Production shape: ?subject=Mathematics (display name, not a code) →
-      // validateSubjectWrite rejects with reason 'grade'. The OLD message
-      // interpolated the cause enum: "Subject not allowed: grade" — naming
-      // `grade`, a real and valid query param on this route.
-      _validateSubjectImpl.mockResolvedValue({
-        ok: false,
-        error: { code: 'subject_not_allowed', subject: 'Mathematics', reason: 'grade', allowed: ['math', 'science'] },
-      });
-      const res = await GET(url({ subject: 'Mathematics', grade: '9', count: '5' }));
-      expect(res.status).toBe(403);
-      const body = await res.json();
-      expect(body.success).toBe(false);
-      expect(body.code).toBe('subject_not_allowed');
-      // The message names the rejected SUBJECT value…
-      expect(body.error).toContain("'Mathematics'");
-      // …and is never the old wrong-variable shape.
-      expect(body.error).not.toBe('Subject not allowed: grade');
-      // Structured shape mirrors PATCH /api/student/profile's validator output.
-      expect(body.details).toEqual({
-        subject: 'Mathematics',
-        reason: 'grade',
-        allowed: ['math', 'science'],
-      });
-    });
-
-    it('returns the plan-locked variant (reason: plan) with the allowed codes', async () => {
-      _validateSubjectImpl.mockResolvedValue({
-        ok: false,
-        error: { code: 'subject_not_allowed', subject: 'sanskrit', reason: 'plan', allowed: ['math'] },
-      });
-      const res = await GET(url({ subject: 'sanskrit', grade: '9', count: '5' }));
-      expect(res.status).toBe(403);
-      const body = await res.json();
-      expect(body.code).toBe('subject_not_allowed');
-      expect(body.error).toContain("'sanskrit'");
-      expect(body.error).toContain('plan');
-      expect(body.details).toEqual({ subject: 'sanskrit', reason: 'plan', allowed: ['math'] });
-    });
-
-    it('FAILS CLOSED with 503 SUBJECT_GOVERNANCE_UNAVAILABLE (retryable:true) when the governance RPC throws', async () => {
-      // The old catch swallowed this and served questions UNGATED. The
-      // get_available_subjects RPC ships in the baseline migration, so a
-      // throw is a real outage — never a "migrations not applied" state.
-      _validateSubjectImpl.mockRejectedValue(new Error('governance rpc down'));
-      _rpcResults['select_quiz_questions_rag'] = { data: [ragRow()], error: null };
-      const res = await GET(url({ subject: 'math', grade: '9', count: '5' }));
-      expect(res.status).toBe(503);
-      const body = await res.json();
-      expect(body.success).toBe(false);
-      expect(body.code).toBe('SUBJECT_GOVERNANCE_UNAVAILABLE');
-      expect(body.retryable).toBe(true);
-      // Fail CLOSED: the questions RPC must never have been reached.
-      expect(_rpcCalls).not.toContain('select_quiz_questions_rag');
-      expect(JSON.stringify(body)).not.toContain('question_id');
-    });
-
-    it('fail-closed is TOTAL over throw shapes: a non-Error throw is still 503, never ungated questions', async () => {
-      // Direction pin (REG-391 style): the property is "ANY governance
-      // failure → closed", not "an Error instance → closed". A rejected
-      // string is the classic shape a refactor drops (err instanceof Error
-      // narrowing) — it must land in the same catch, same 503, same
-      // never-reached questions RPC.
-      // eslint-disable-next-line prefer-promise-reject-errors
-      _validateSubjectImpl.mockImplementation(() => Promise.reject('ETIMEDOUT'));
-      _rpcResults['select_quiz_questions_rag'] = { data: [ragRow()], error: null };
-      const res = await GET(url({ subject: 'math', grade: '9', count: '5' }));
-      expect(res.status).toBe(503);
-      const body = await res.json();
-      expect(body.code).toBe('SUBJECT_GOVERNANCE_UNAVAILABLE');
-      expect(body.retryable).toBe(true);
-      expect(_rpcCalls).not.toContain('select_quiz_questions_rag');
-      expect(JSON.stringify(body)).not.toContain('question_id');
-    });
-
-    it('keeps DENIAL and OUTAGE distinct: the 403 governance rejection never carries retryable:true and never reaches the questions RPC', async () => {
-      // The outage 503 invites a retry (retryable:true). The denial 403 must
-      // NOT — a client that retries a plan/grade denial loops forever, and a
-      // denial misclassified as transient hides the real "upgrade / fix the
-      // code" action. v2Error omits `retryable` entirely on this path.
-      _validateSubjectImpl.mockResolvedValue({
-        ok: false,
-        error: { code: 'subject_not_allowed', subject: 'sanskrit', reason: 'plan', allowed: ['math'] },
-      });
-      _rpcResults['select_quiz_questions_rag'] = { data: [ragRow()], error: null };
-      const res = await GET(url({ subject: 'sanskrit', grade: '9', count: '5' }));
-      expect(res.status).toBe(403);
-      const body = await res.json();
-      expect(body).not.toHaveProperty('retryable');
-      // A denial is as fail-closed as an outage: no question data escapes.
-      expect(_rpcCalls).not.toContain('select_quiz_questions_rag');
-      expect(JSON.stringify(body)).not.toContain('question_id');
-    });
   });
 
   // ── Whole-subject shortfall telemetry (spec §3.6) ─────────────────────────

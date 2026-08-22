@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase.from('schools').insert(fields).select().single();
     if (error) throw error;
 
-    await logAdminAction({ action: 'create_school', entity_type: 'school', entity_id: data.id, details: { name: fields.name }, ip, actorUserId: auth.userId });
+    await logAdminAction({ action: 'create_school', entity_type: 'school', entity_id: data.id, details: { name: fields.name }, ip });
     return NextResponse.json({ success: true, data });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });

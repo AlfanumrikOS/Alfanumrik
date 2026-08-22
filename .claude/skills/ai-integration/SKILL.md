@@ -13,7 +13,7 @@ Patterns for the AI-powered features. Reference when modifying foxy-tutor, ncert
 ## AI Edge Functions
 | Function | Model | Purpose | Daily Limit |
 |---|---|---|---|
-| `foxy-tutor` *(retired 2026-07-01 — active surface is the Next.js route `apps/host/src/app/api/foxy/route.ts`, backed by `grounded-answer`)* | OpenAI-primary (`gpt-4o-mini`→`gpt-4o`), Claude Haiku/Sonnet fallback — CEO-approved 2026-08-02 swap; `MODEL_FALLBACK_ORDER` in `supabase/functions/grounded-answer/config.ts`, rollback path behind `ff_foxy_openai_primary_rollout_v1` | Conversational tutoring (6 modes) | Per plan: 5/30/unlimited |
+| `foxy-tutor` | Claude Haiku | Conversational tutoring (6 modes) | Per plan: 5/30/unlimited |
 | `ncert-solver` | Claude Haiku | Step-by-step NCERT solutions | Shared with foxy |
 | `quiz-generator` | None (algorithmic) | Adaptive question selection | No limit |
 | `cme-engine` | None (algorithmic) | BKT/IRT mastery computation | No limit |
