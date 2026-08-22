@@ -1,0 +1,191 @@
+-- DOWN migration for:
+--   supabase/migrations/20260821121122_create_v_xp_ledger_drift_and_reassert_view_revokes.sql
+--
+-- Reverses the UP migration's two effects: restores `GRANT ALL` to `anon` and `authenticated` on
+-- the SIX PRE-EXISTING views, and — ONLY IF YOU DELIBERATELY UNCOMMENT IT — drops the seventh
+-- view, `public.v_xp_ledger_drift`, which the UP created.
+--
+-- FILENAME / LEDGER NOTE (RESOLVED 2026-08-21): `apply_migration` stamps its own wall-clock
+-- ledger version at apply time rather than honouring a file's version prefix. This pair was
+-- AUTHORED as 20260821140000; when the UP was applied to production `shktyoxqhundlvkiwguu` on
+-- 2026-08-21 the ledger stamped 20260821121122 (name
+-- `create_v_xp_ledger_drift_and_reassert_view_revokes`). BOTH files were RENAMED TO MATCH THE
+-- LEDGER — the ledger was never repaired to match the files — so the filenames and
+-- `supabase_migrations.schema_migrations` now AGREE and the pair stays discoverable under one
+-- version. The ledger records what actually happened; the authored filename did not.
+--
+-- NOTE THE SORT DIRECTION: the stamped 20260821121122 sorts BEFORE the authored 20260821140000,
+-- so an unreconciled UP file would have read as still unapplied to `supabase db push` and been
+-- re-run — harmless, because the UP is idempotent and was a verified no-op on production, but a
+-- standing false signal. Same reconciliation as
+-- 20260821082059_restrict_secdef_views_to_service_role.sql.
+--
+-- ============================================================================
+-- *** THIS FILE RESTORES A KNOWN-VULNERABLE STATE ***
+-- *** INCLUDING ANONYMOUS INSERT / UPDATE / DELETE ON TWO AUTO-UPDATABLE VIEWS ***
+-- ============================================================================
+-- Do not run this casually. Read this header in full first.
+--
+-- The ACL being restored is `arwdDxtm`, which is NOT SELECT. It decodes to INSERT, SELECT,
+-- UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN — the complete set, i.e. `GRANT ALL`.
+-- Every `GRANT ALL ... TO anon, authenticated` below hands back all eight privileges.
+--
+-- All these views are owned by `postgres` with `security_invoker` UNSET, so they resolve as
+-- their owner and are RLS-EXEMPT (`postgres` has `rolbypassrls = true`). Two are auto-updatable
+-- (`pg_relation_is_updatable = 28`; no INSTEAD OF triggers, no rules) —
+-- `question_bank_student_safe` and `v_my_consent_status` — so restoring their write privileges
+-- to `anon` restores an apparent unauthenticated, RLS-bypassing write path. For
+-- `question_bank_student_safe` that path reaches the ENTIRE production question bank (body is
+-- `FROM question_bank` with no WHERE; 18,765 rows at capture). That path was NOT tested —
+-- testing it would have required DML against production — so its reachability is unconfirmed,
+-- which is a reason for MORE caution here, not less.
+--
+-- Running this file also re-leaks `v_xp_ledger_drift` (14 live student UUIDs with real XP
+-- balances, max 12,825) and `v_secret_rotation_health` (`total_secrets = 7`) to unauthenticated
+-- callers. The anon key ships in the browser bundle and in the Flutter app.
+--
+-- ============================================================================
+-- *** READ THIS BEFORE TOUCHING THE `DROP VIEW` LINE ***
+-- ============================================================================
+-- The UP migration CREATED `public.v_xp_ledger_drift` on staging. A strict inverse would drop
+-- it. THE DROP IS THEREFORE PRESENT BELOW BUT COMMENTED OUT BY DEFAULT, AND MUST STAY THAT WAY
+-- UNLESS YOU HAVE CONSCIOUSLY DECIDED OTHERWISE.
+--
+-- WHY:
+--
+--   ON PRODUCTION `shktyoxqhundlvkiwguu`, THAT LINE WOULD DELETE A LIVE OBJECT.
+--   `v_xp_ledger_drift` existed on production BEFORE the UP migration ran — the UP's
+--   `CREATE OR REPLACE VIEW` merely replaced it in place with its own verbatim definition. So on
+--   production the view is NOT something the UP introduced, and dropping it is NOT a rollback:
+--   it is the destruction of a pre-existing production object that the UP did not create.
+--
+--   It is also load-bearing. DB-3's detection query in docs/audits/FIX-LEDGER.md:48 is literally
+--   `SELECT count(*) FROM v_xp_ledger_drift`. Dropping the view BREAKS THE ONLY MEASUREMENT OF
+--   AN OPEN P0 — XP ledger drift affecting 14 of 68 students. The drift does not go away; only
+--   our ability to see it does. That is strictly worse than the state before the UP ran.
+--
+-- DECISION RULE:
+--
+--   * ROLLING BACK PRODUCTION  -> LEAVE THE `DROP VIEW` LINE COMMENTED. Never run it there.
+--     The view predates this migration on that project.
+--   * ROLLING BACK STAGING     -> the view genuinely is new there, so dropping it is a true
+--     inverse. Even so, prefer to LEAVE IT IN PLACE: it is a detection view with no writers, it
+--     leaks nothing once the revokes above are in force, and keeping it is what makes staging
+--     reproduce production. Uncomment only if you specifically need staging to be
+--     view-free again.
+--   * IF YOU UNCOMMENT IT, CONFIRM WHICH DATABASE YOU ARE CONNECTED TO FIRST:
+--         SELECT current_database(), inet_server_addr();
+--
+-- ============================================================================
+-- WHY THIS FILE IS NOT IN supabase/migrations/
+-- ============================================================================
+-- `supabase db push` applies EVERY file in `supabase/migrations/` in version order. A
+-- down-migration living there would be applied AUTOMATICALLY on the next deploy and would
+-- SILENTLY RE-OPEN this exposure — including the anon WRITE grants on the two auto-updatable
+-- views — with no operator decision, no incident, and no signal that anything had changed. If
+-- the `DROP VIEW` line were also uncommented, that same automatic push would delete a live
+-- production object and break DB-3's detection query.
+--
+-- It therefore lives in `docs/runbooks/` and is NEVER auto-applied. Rolling back is a conscious,
+-- hand-run act:
+--
+--     psql "$DATABASE_URL" -f docs/runbooks/20260821121122_create_v_xp_ledger_drift_and_reassert_view_revokes.DOWN.sql
+--
+-- Do not move this file into `supabase/migrations/`.
+--
+-- ============================================================================
+-- LIMITS OF THIS ROLLBACK
+-- ============================================================================
+-- 1. IT RESTORES GRANTS, NOT DATA. Everything here is privilege-layer (plus the optional DROP).
+--    It does not recreate, alter, or reference any base table, any row-level policy, or any row.
+--    If rows were written, deleted, or corrupted through one of these views while the UP was in
+--    effect, or before it, nothing below replays or reverses them.
+-- 2. IT DOES NOT REPAIR XP DRIFT. The UP made drift VISIBLE on staging; it repaired nothing.
+--    This file makes it invisible again if you drop the view. The 14 drifting students are
+--    unaffected either way.
+-- 3. IT IS BREAK-GLASS ONLY. Use it only if the UP is found to break a legitimate caller that
+--    could not be enumerated beforehand. PREFER THE NARROWER REMEDY: route the broken caller
+--    through the service-role client (BYPASSRLS, needs no grant), or grant back exactly the one
+--    privilege on the one view that broke. Restoring `GRANT ALL` to `anon` on six views should
+--    be the last option, not the first — if only one view broke, edit this file down to that
+--    one statement before running it.
+-- 4. IT ASSUMES THE SIX VIEWS STILL EXIST UNDER THESE EXACT NAMES. If any has since been dropped
+--    or renamed, the corresponding statement will FAIL. That is intentional: a privilege
+--    statement that cannot resolve its target must raise, not be silently skipped. (This is the
+--    same 42P01 class of failure the UP migration exists to fix — see its header.)
+-- 5. IT DOES NOT REVOKE FROM `service_role`. The UP's `GRANT SELECT ON v_backup_health_summary
+--    TO service_role` was a no-op re-assertion of an existing privilege. Revoking it here would
+--    break the one real application reader (`packages/lib/src/data-platform.ts:94` ->
+--    `/api/super-admin/governance/health`), a service-role caller. It is left alone.
+-- 6. IT DOES NOT TOUCH `postgres` (the owner, never revoked from), `reloptions`
+--    (`security_invoker` was never set), or any `pg_default_acl` entry.
+--
+-- UP migration:
+--   supabase/migrations/20260821121122_create_v_xp_ledger_drift_and_reassert_view_revokes.sql
+-- Ledger: docs/audits/FIX-LEDGER.md  (DB-1; DB-3 for the drift; DB-12 for the default-privileges
+--         root cause)
+
+BEGIN;
+
+-- ---------------------------------------------------------------------------
+-- 1. question_bank_student_safe (18,765 rows at capture)
+--    THIS IS THE MOST DANGEROUS LINE IN THE FILE. The view is auto-updatable
+--    and its body is `FROM question_bank` with no WHERE, resolving as owner
+--    `postgres` (rolbypassrls). Restoring ALL to `anon` restores an apparent
+--    unauthenticated INSERT/UPDATE/DELETE path into the whole question bank.
+-- ---------------------------------------------------------------------------
+GRANT ALL ON public.question_bank_student_safe   TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 2. v_analytics_freshness_status (0 rows at capture)
+-- ---------------------------------------------------------------------------
+GRANT ALL ON public.v_analytics_freshness_status TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 3. v_backup_health_summary (1 row at capture) — discloses backup posture.
+-- ---------------------------------------------------------------------------
+GRANT ALL ON public.v_backup_health_summary      TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 4. v_my_consent_status (0 rows at capture)
+--    Also auto-updatable. Its read side is bounded by an `auth.uid()` qual
+--    against an empty table, but the write grant is not bounded by that.
+-- ---------------------------------------------------------------------------
+GRANT ALL ON public.v_my_consent_status          TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 5. v_queue_health (1 row at capture)
+-- ---------------------------------------------------------------------------
+GRANT ALL ON public.v_queue_health               TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 6. v_secret_rotation_health (1 row at capture) — discloses total_secrets = 7.
+-- ---------------------------------------------------------------------------
+GRANT ALL ON public.v_secret_rotation_health     TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 7. v_xp_ledger_drift — DELIBERATELY OMITTED FROM THE GRANTS ABOVE.
+--
+--    There is no `GRANT ALL ON public.v_xp_ledger_drift TO anon, authenticated`
+--    in this file, and that is intentional, not an oversight. Restoring anon
+--    read on this view re-leaks 14 live student UUIDs with real XP balances,
+--    and it is the ONE view in the set that has no pre-UP `anon` grant worth
+--    reproducing on staging (it did not exist there at all). If you have a
+--    concrete reason to restore it, add the statement by hand and record why.
+--
+--    THE DROP BELOW IS COMMENTED OUT ON PURPOSE. See the
+--    "READ THIS BEFORE TOUCHING THE `DROP VIEW` LINE" section above.
+--
+--    On PRODUCTION this view PREDATES the UP migration — the UP only replaced
+--    it in place. Dropping it there is NOT a rollback; it destroys a live
+--    object the UP did not create, and it breaks DB-3's detection query
+--    (`SELECT count(*) FROM v_xp_ledger_drift`, FIX-LEDGER.md:48), which is the
+--    only measurement of an open P0 affecting 14 of 68 students.
+--
+--    Uncomment ONLY after confirming you are connected to STAGING and that you
+--    specifically want the view gone:
+--        SELECT current_database(), inet_server_addr();
+-- ---------------------------------------------------------------------------
+-- DROP VIEW IF EXISTS public.v_xp_ledger_drift;
+
+COMMIT;

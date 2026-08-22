@@ -200,6 +200,24 @@ const AUDIT_DENY_ALL = ['mass_gen_log', 'school_subscriptions'];
 // CAVEAT: this bucket rests on service_role carrying BYPASSRLS (Supabase default).
 // The zero-client-ref claims come from static analysis of apps/, packages/ and
 // mobile/ at the time of the migration; they were not independently re-audited.
+// 2026-08-20 coupon-catalogue lockdown (migration
+// 20260820152908_lock_down_coupons_read_and_bound_discount.sql): `coupons` became
+// RLS-on-but-ZERO-policy when its sole policy `coupons_read` was dropped and deliberately
+// NOT replaced. That policy was roles `{public}` / cmd SELECT / qual `(is_active = true)`,
+// and in Postgres `public` includes `anon` -- so any holder of the browser anon key could
+// enumerate every coupon `code`, `discount_type` and `discount_value`. The qual filtered
+// nothing: all 4 rows were `is_active = true`, and a predicate true for 100% of rows is not
+// a boundary. Note the asymmetry it closed -- `subscription_plans` (the prices) was already
+// gated to `{authenticated}`, so the DISCOUNTS were strictly MORE exposed than the PRICES
+// they discount. Coupon validation must route through `service_role` ONLY: the server takes
+// a candidate code and returns a verdict, never handing the client a catalogue to shop the
+// largest one from. Read side verified empty before the drop -- a repo-wide grep for the
+// identifier hits only the generated `apps/host/src/types/database.types.ts`, and zero DB
+// functions reference it (`pg_proc.prosrc` scan). Reviewed 2026-08-20 (architect); applied
+// to production and verified live post-apply: 0 policies on `public.coupons`,
+// `relrowsecurity = true`, anon-visible rows 4 -> 0. Rollback is deliberately NOT in
+// supabase/migrations/ (a DOWN file there would re-open the leak on the next `db push`):
+//   docs/runbooks/20260820152908_lock_down_coupons_read_and_bound_discount.DOWN.sql
 const SERVICE_ROLE_ONLY_TABLES = [
   'agent_prompts',
   'agent_runs',
@@ -216,6 +234,7 @@ const SERVICE_ROLE_ONLY_TABLES = [
   'assessments',
   'chapter_asset_inventory',
   'contract_number_sequences',
+  'coupons',
   'cycle_evaluations',
   'cycles',
   'dive_artifacts',

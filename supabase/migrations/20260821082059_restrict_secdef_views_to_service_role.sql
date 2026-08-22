@@ -1,0 +1,282 @@
+-- Migration: 20260821082059_restrict_secdef_views_to_service_role.sql
+-- Purpose: Remove `anon` and `authenticated` privileges from seven SECURITY DEFINER-behaving
+--          views in schema `public`, closing an anonymous, RLS-bypassing read path to live
+--          student XP data and operational-security posture — and, on two auto-updatable views,
+--          an anonymous write path — and re-assert SELECT for `service_role` on the one view
+--          with a real application reader.
+--
+-- FILENAME / LEDGER NOTE (RESOLVED 2026-08-21): `apply_migration` stamps its own wall-clock
+-- ledger version at apply time rather than honouring a file's version prefix. This file was
+-- AUTHORED as 20260821120000; when applied to production `shktyoxqhundlvkiwguu` on 2026-08-21 the
+-- ledger stamped 20260821082059 (name `restrict_secdef_views_to_service_role`). BOTH this file
+-- and its DOWN partner in docs/runbooks/ were RENAMED TO MATCH THE LEDGER — the ledger was never
+-- repaired to match the file — so the filename and `supabase_migrations.schema_migrations` now
+-- AGREE and the pair stays discoverable under one version. The ledger records what actually
+-- happened; the authored filename did not.
+--
+-- NOTE THE SORT DIRECTION: the stamped 20260821082059 sorts BEFORE the authored 20260821120000.
+-- Left unreconciled, `supabase db push` would have read the higher-numbered file as still
+-- unapplied and re-run it — harmless, because every statement below is idempotent, but a standing
+-- false signal. Renaming DOWN to the stamped version is what closes it. Same reconciliation as
+-- 20260821061915_revoke_public_execute_quiz_serving_rpcs.sql and
+-- 20260820152908_lock_down_coupons_read_and_bound_discount.sql.
+--
+-- ============================================================================
+-- THE DEFECT
+-- ============================================================================
+-- Seven views in schema `public` behave as SECURITY DEFINER and are readable by `anon`. State
+-- captured read-only from production `shktyoxqhundlvkiwguu` on 2026-08-21:
+--
+--   public.question_bank_student_safe      18,765 rows
+--   public.v_analytics_freshness_status         0 rows
+--   public.v_backup_health_summary              1 row
+--   public.v_my_consent_status                  0 rows
+--   public.v_queue_health                       1 row
+--   public.v_secret_rotation_health             1 row
+--   public.v_xp_ledger_drift                   14 rows
+--
+-- All seven have `relkind = 'v'`, owner `postgres`, and `reloptions` IS NULL — meaning
+-- `security_invoker` is UNSET, so each resolves with the privileges of its OWNER. `postgres` has
+-- `rolbypassrls = true`. All ten underlying base tables have RLS ENABLED with policies. Every one
+-- of those policies is bypassed when the table is reached through these views.
+--
+-- All seven carry a BYTE-IDENTICAL ACL:
+--
+--     {postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,
+--      authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}
+--
+-- Verified BEHAVIOURALLY under `SET LOCAL ROLE anon`, not merely read from the catalogue:
+--
+--   * `v_xp_ledger_drift` returns 14 live student UUIDs with real XP balances (max 12,825).
+--   * `v_secret_rotation_health` discloses `total_secrets = 7` — the shape of the secret
+--     inventory to an unauthenticated caller.
+--   * `v_backup_health_summary` discloses backup posture.
+--
+-- The anon key ships in the browser bundle and in the Flutter app and requires no login. This is
+-- therefore an anonymous path to live student data and to operational-security posture.
+--
+-- ============================================================================
+-- *** THIS IS A WRITE EXPOSURE, NOT JUST A READ ONE ***
+-- ============================================================================
+-- Read `arwdDxtm` carefully. It is NOT `r` (SELECT). It decodes to INSERT, SELECT, UPDATE,
+-- DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN — all eight privileges, i.e. `GRANT ALL`.
+-- `anon` holds every one of them on every one of the seven views.
+--
+-- Two of the seven are AUTO-UPDATABLE — `pg_relation_is_updatable = 28`, with no INSTEAD OF
+-- triggers and no rules, so PostgreSQL rewrites DML on the view straight through to the base
+-- table:
+--
+--   * `public.question_bank_student_safe` — its body is `FROM question_bank;` with NO WHERE
+--     CLAUSE, covering all 18,765 rows, and it resolves as owner `postgres`, which is
+--     `rolbypassrls = true`. That composes to an APPARENT UNFILTERED ANONYMOUS
+--     INSERT/UPDATE/DELETE PATH INTO THE ENTIRE PRODUCTION QUESTION BANK, bypassing RLS.
+--   * `public.v_my_consent_status` — the same structural property, but bounded by its
+--     `auth.uid()` qual against a table that is currently empty.
+--
+-- *** NOT TESTED. *** Confirming that path would have required executing DML against production,
+-- which was out of bounds for a read-only capture. So its exact reachability is UNCONFIRMED. That
+-- is a reason to close it faster, not a reason to discount it.
+--
+-- THIS IS WHY EVERY STATEMENT BELOW IS `REVOKE ALL` AND NOT `REVOKE SELECT`. A `REVOKE SELECT`
+-- would close the verified read leak and leave the unverified write path fully open — the worst
+-- of both, because the audit would read as closed.
+--
+-- ============================================================================
+-- WHY `FROM PUBLIC` ALONE WOULD HAVE BEEN A SILENT NO-OP
+-- ============================================================================
+-- THERE IS NO PUBLIC GRANT ON ANY OF THESE SEVEN VIEWS. `aclexplode` returned ZERO rows with
+-- `grantee = 0` across all 224 ACL entries. `anon`'s access is its OWN EXPLICIT ACLITEM
+-- (`anon=arwdDxtm/postgres`).
+--
+-- So a migration written as `REVOKE ALL ... FROM PUBLIC` would have removed nothing, raised no
+-- error, produced no warning, left the ACL byte-identical, and read in review as authoritative
+-- hardening while closing zero exposure. That is exactly the failure mode documented in
+-- 20260821061915_revoke_public_execute_quiz_serving_rpcs.sql — the same trap, inverted. Here the
+-- privilege is EXPLICIT and PUBLIC is absent; there it was PUBLIC-derived and the explicit revoke
+-- was the no-op. Naming the wrong grantee fails silently in BOTH directions.
+--
+-- `PUBLIC` is still named in every statement below, purely for DEFENCE IN DEPTH: it costs
+-- nothing, and it makes the intended end state explicit if this file is ever replayed against an
+-- environment whose grant chain differs from production (a fresh CI project, a new staging, a DR
+-- restore).
+--
+-- ROOT CAUSE — AND WHY THIS MIGRATION DOES NOT FIX IT.  The `anon` and `authenticated` grants are
+-- not hand-written anywhere. They are INHERITED AT CREATION TIME from a default-privileges rule
+-- in the baseline:
+--
+--     supabase/migrations/00000000000000_baseline_from_prod.sql:22640-22643
+--       ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public"
+--         GRANT ALL ON TABLES TO "postgres";
+--         GRANT ALL ON TABLES TO "anon";            <-- :22641
+--         GRANT ALL ON TABLES TO "authenticated";   <-- :22642
+--         GRANT ALL ON TABLES TO "service_role";
+--
+-- `ON TABLES` covers views. That default is STILL IN FORCE. Therefore:
+--
+--   *** ANY NEW VIEW CREATED IN SCHEMA `public` BY `postgres` INHERITS `GRANT ALL` TO `anon`. ***
+--
+-- This migration is a ONE-TIME GRANT FIX ON SEVEN NAMED OBJECTS. It does not prevent the eighth.
+-- It also does not survive a DROP-then-CREATE of any of these seven: an in-place
+-- `CREATE OR REPLACE VIEW` PRESERVES the ACL (so these revocations survive it), but a fresh
+-- CREATE after a DROP creates a NEW object that picks the default ACL back up and SILENTLY
+-- RE-GRANTS ALL TO `anon` — no error, no warning, no diff in the view body, invisible in code
+-- review because it is not in the code.
+--
+-- ANY FUTURE MIGRATION THAT RECREATES ONE OF THESE SEVEN VIA DROP-THEN-CREATE MUST RE-ASSERT THE
+-- REVOCATIONS BELOW IN THE SAME FILE. Treat that as mandatory, not advisory. The durable fix —
+-- narrowing or removing the `ALTER DEFAULT PRIVILEGES ... TO anon` rule — is schema-wide, affects
+-- every table in `public`, and is tracked as its own item (DB-12 in docs/audits/FIX-LEDGER.md,
+-- which records `anon` holding INSERT/UPDATE/DELETE/TRUNCATE on 419 tables). It is NOT attempted
+-- here.
+--
+-- ============================================================================
+-- CLASSIFICATION EVIDENCE — ALL SEVEN LAND ON SERVICE-ROLE-ONLY
+-- ============================================================================
+-- Every application reader of all seven views was enumerated by EXHAUSTIVE GREP, not assumed.
+-- Result: exactly ONE application reader exists across all seven.
+--
+--   * `v_backup_health_summary` — read at `packages/lib/src/data-platform.ts:94`
+--     (`supabaseAdmin.from('v_backup_health_summary')`), whose only caller is
+--     `apps/host/src/app/api/super-admin/governance/health/route.ts:17`. That route uses the
+--     SERVICE-ROLE client and is gated by `authorizeAdmin(request, 'support')`. Service role is
+--     BYPASSRLS and is not reduced by this migration, so this reader is UNAFFECTED. The
+--     `GRANT SELECT ... TO service_role` at the foot of this file re-asserts its privilege
+--     explicitly so the migration is self-sufficient on a fresh environment rather than
+--     dependent on what happened to already be true.
+--
+--   * THE OTHER SIX HAVE NO APPLICATION READERS AT ALL. Not one call site in `apps/`,
+--     `packages/`, `supabase/functions/`, `scripts/`, or `mobile/`.
+--
+-- Three of the six are read by SECURITY DEFINER functions whose EXECUTE is `service_role`-only,
+-- so they too are unaffected:
+--
+--   * `check_queue_slos()`              — supabase/migrations/20260806000010:86  (v_queue_health)
+--   * `detect_stale_analytics()`        — supabase/migrations/20260806000011:104
+--                                         (v_analytics_freshness_status)
+--   * `run_daily_backup_health_check()` — supabase/migrations/20260806000007:169
+--                                         (v_backup_health_summary)
+--
+-- No caller in any class — browser, mobile, Edge Function, cron, or admin route — reaches any of
+-- these seven views with the `anon` or the `authenticated` role. The only caller class this
+-- migration removes is the one with no legitimate need, which is the entire point.
+--
+-- ============================================================================
+-- `question_bank_student_safe` SPECIFICALLY — WHY IT IS RESTRICTED ANYWAY
+-- ============================================================================
+-- Its READ PROJECTION IS GENUINELY SAFE, and this must be said plainly so nobody later "fixes" a
+-- leak that does not exist. `correct_answer_index`, `correct_answer_text`, and `solution_steps`
+-- are HARD-NULLED in the view body (supabase/migrations/20260806000004:14 onward). Zero of the
+-- 18,765 rows return a non-null value in any of those three columns, verified under
+-- `SET LOCAL ROLE anon`. The view does exactly what its name promises on the read side.
+--
+-- It is restricted here NOT because the read leaks, but because:
+--   1. It carries the auto-updatable, RLS-bypassing WRITE path described above, into the entire
+--      production question bank; and
+--   2. It has ZERO CALLERS. It was built (20260806000004) and NEVER WIRED UP. Every
+--      question-serving surface in the product still reads the BASE `question_bank` table
+--      directly. Nothing regresses when `anon` and `authenticated` lose access to it.
+--
+-- The safe-read view being unused is itself a finding — the answer-key protection it was built to
+-- provide is not in effect on any serving path — but that is a separate change with its own
+-- review chain, not this one.
+--
+-- ============================================================================
+-- DELIBERATELY NOT DONE HERE — FLAGGED, NOT FIXED
+-- ============================================================================
+-- SCOPE DISCIPLINE: this migration is EIGHT GRANT STATEMENTS AND NOTHING ELSE. There is no
+-- `ALTER VIEW`, no `CREATE OR REPLACE VIEW`, no `security_invoker` setting, no view body change,
+-- and no DDL of any kind. That is a deliberate limit:
+--
+--   1. NO `security_invoker = true` IS SET ON ANY OF THE SEVEN. Setting it would change how every
+--      view RESOLVES — from owner privileges to caller privileges — which is a BEHAVIOUR CHANGE
+--      affecting the service-role and SECURITY DEFINER-function readers enumerated above. It
+--      needs its own change set, its own tests, and its own review chain. Coupling it to a
+--      reversible grant fix would make this migration unsafe to roll back independently.
+--   2. NO VIEW BODY IS REWRITTEN.
+--
+-- ON `v_my_consent_status` SPECIFICALLY — CORRECTING THE LEDGER. DB-1 in
+-- docs/audits/FIX-LEDGER.md records that this view "has no owner filter". THAT IS WRONG. It DOES
+-- carry one:
+--
+--     guardian_id IN (SELECT g.id FROM guardians g WHERE g.auth_user_id = auth.uid())
+--       AND revoked_at IS NULL
+--
+-- so it returns 0 rows to `anon` today. Its REAL defect is different and narrower: because
+-- `security_invoker` is unset, the view resolves as `postgres` and BYPASSES RLS for any caller
+-- holding a JWT — the `auth.uid()` qual constrains which guardian's rows are returned, but the
+-- row-level policies on the base table are not consulted at all. Fixing that requires
+-- `security_invoker`, which is item 1 above and is NOT done here.
+--
+-- ============================================================================
+-- ROLLBACK
+-- ============================================================================
+-- DOWN migration — restores the captured ACL exactly:
+--     docs/runbooks/20260821082059_restrict_secdef_views_to_service_role.DOWN.sql
+--
+-- The DOWN file is deliberately NOT in `supabase/migrations/`. `supabase db push` applies every
+-- file in that directory in version order, so a down-migration parked there would re-open this
+-- exposure — including the anon write grants — on the very next deploy, with no operator
+-- decision. Rolling back must be a conscious, hand-run act. It restores GRANTS, never data, and
+-- never anything a caller did in the interim.
+--
+-- RECOMMENDED FOLLOW-UP (not done here): a regression pin asserting that `anon` holds NO
+-- privilege on these seven views — BEHAVIOURAL, via `has_table_privilege` under
+-- `SET LOCAL ROLE anon` across all eight privilege types, exactly as the defect was verified. A
+-- file-shape assertion is not enough: the May 2026 hardening migration proves that reading the
+-- repo tells you nothing about the live privilege state.
+--
+-- Ledger: docs/audits/FIX-LEDGER.md  (DB-1; related: DB-3 for the XP drift the leaked view
+--         reports, DB-12 for the schema-wide default-privileges root cause)
+
+BEGIN;
+
+-- ---------------------------------------------------------------------------
+-- REVOKE ALL, not REVOKE SELECT: the captured `arwdDxtm` is all eight
+-- privileges, and two of these views are auto-updatable. See the WRITE
+-- EXPOSURE section above.
+--
+-- `PUBLIC` is named for defence in depth only — no PUBLIC entry existed at
+-- capture. `anon` and `authenticated` are the grantees that actually hold
+-- these privileges. `postgres` (owner) and `service_role` are untouched.
+-- ---------------------------------------------------------------------------
+
+-- 1. question_bank_student_safe — 18,765 rows; auto-updatable; zero callers.
+REVOKE ALL ON public.question_bank_student_safe   FROM PUBLIC, anon, authenticated;
+
+-- 2. v_analytics_freshness_status — 0 rows; read only by detect_stale_analytics() (service_role).
+REVOKE ALL ON public.v_analytics_freshness_status FROM PUBLIC, anon, authenticated;
+
+-- 3. v_backup_health_summary — 1 row; the ONLY view with an application reader, and that reader
+--    is service-role (re-asserted at statement 8).
+REVOKE ALL ON public.v_backup_health_summary      FROM PUBLIC, anon, authenticated;
+
+-- 4. v_my_consent_status — 0 rows; auto-updatable; DOES carry an auth.uid() owner filter.
+REVOKE ALL ON public.v_my_consent_status          FROM PUBLIC, anon, authenticated;
+
+-- 5. v_queue_health — 1 row; read only by check_queue_slos() (service_role).
+REVOKE ALL ON public.v_queue_health               FROM PUBLIC, anon, authenticated;
+
+-- 6. v_secret_rotation_health — 1 row; disclosed total_secrets = 7 to anon.
+REVOKE ALL ON public.v_secret_rotation_health     FROM PUBLIC, anon, authenticated;
+
+-- 7. v_xp_ledger_drift — 14 rows; leaked 14 live student UUIDs with real XP balances to anon.
+REVOKE ALL ON public.v_xp_ledger_drift            FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 8. Re-assert SELECT for the one real application reader.
+--    This is a NO-OP against the captured production state: `service_role`
+--    already holds an explicit `service_role=arwdDxtm/postgres` aclitem,
+--    independent of anything revoked above. It is included so the migration is
+--    SELF-SUFFICIENT — replayed against a fresh CI project, a new staging, or a
+--    DR restore whose grant chain differs, a bare revocation could otherwise
+--    leave /api/super-admin/governance/health unable to read this view. The
+--    paired grant makes the intended END STATE explicit rather than dependent
+--    on what happened to already be true.
+--
+--    SELECT only, deliberately: the reader is read-only
+--    (`packages/lib/src/data-platform.ts:94` → `.select('*').single()`), so
+--    nothing needs write privileges on a health-summary view.
+-- ---------------------------------------------------------------------------
+GRANT SELECT ON public.v_backup_health_summary TO service_role;
+
+COMMIT;

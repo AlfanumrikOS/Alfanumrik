@@ -1,0 +1,214 @@
+-- Migration: 20260820152908_lock_down_coupons_read_and_bound_discount.sql
+-- Purpose: Close the anon-readable coupon catalogue on public.coupons, deactivate the one
+--          coupon whose face value exceeds every price in the catalogue, and add a bounding
+--          CHECK on discount_value so no future coupon can be written above that ceiling.
+--
+-- LEDGER RECONCILIATION: applied to production via `apply_migration` on 2026-08-20, which
+-- assigned ledger version 20260820152908 rather than this file's original filename version
+-- 20260820150000. This file was renamed to match the ledger rather than the ledger being
+-- repaired to match the file — the ledger records what actually happened.
+--
+-- ============================================================================
+-- THE DEFECT  (FIX-LEDGER DB-2, P0)
+-- ============================================================================
+-- `public.coupons` carries exactly one policy, captured verbatim from production on
+-- 2026-08-20 15:14 UTC:
+--
+--     policyname `coupons_read` | permissive PERMISSIVE | roles `{public}` | cmd SELECT
+--     qual `(is_active = true)` | with_check NULL
+--
+-- Two things make this a full disclosure of the coupon catalogue:
+--
+--   1. The grantee is `{public}`. In Postgres `public` is the implicit role that every other
+--      role is a member of, and that includes `anon` — the role attached to the
+--      NEXT_PUBLIC_SUPABASE_ANON_KEY that ships in the browser bundle and in the Flutter app.
+--      No login is required to exercise this policy.
+--   2. The qual `(is_active = true)` FILTERS NOTHING in the present data. All 4 coupon rows
+--      have `is_active = true`, so the predicate is satisfied by every row in the table. A
+--      predicate that is true for 100% of rows is not a security boundary; it only looks
+--      like one.
+--
+-- Consequence: any holder of the public anon key can `GET /rest/v1/coupons?select=*` and
+-- enumerate every coupon's `code`, `discount_type`, `discount_value`, `max_uses`,
+-- `current_uses`, `valid_plans`, `min_amount` and `expires_at` — i.e. the complete discount
+-- catalogue, including codes that were never publicly announced.
+--
+-- NOTE THE ASYMMETRY, because it is the sharpest statement of how wrong this is:
+-- `subscription_plans` — the prices themselves — is gated to `{authenticated}`. So the
+-- DISCOUNTS were strictly MORE exposed than the PRICES they discount. A stranger could not
+-- read what a plan costs, but could read every code that reduces that cost.
+--
+-- ============================================================================
+-- EVIDENCE THAT NO LEGITIMATE READER BREAKS
+-- ============================================================================
+-- Dropping the only SELECT policy on a table is a load-bearing act, so the read side was
+-- enumerated exhaustively before writing this migration:
+--
+--   * ZERO application code reads `coupons`. A repo-wide grep for the identifier hits exactly
+--     one file, and it is a generated artifact, not a caller:
+--         apps/host/src/types/database.types.ts   (generated Supabase types)
+--     No page, component, API route, Edge Function, cron worker, or Flutter repository
+--     queries this table.
+--   * ZERO database functions reference it. A scan of `pg_proc.prosrc` across the database
+--     returns no function mentioning `coupons`. No RPC, trigger, or view depends on the read
+--     path being open.
+--   * `current_uses = 0` on all 4 coupons. Not one coupon has ever been redeemed.
+--   * All 68 `student_subscriptions` rows have `coupon_code IS NULL` AND
+--     `discount_applied = 0`. No live subscription was ever priced through a coupon.
+--   * Independently corroborated by the July certification audit:
+--         docs/audit/2026-07-02-certification/reports/06-business-rules-certification-report.md:18
+--         ("Coupon logic | Not implemented")
+--
+-- The feature is unbuilt. The table is data at rest with an open front door and no consumer.
+--
+-- `service_role` is BYPASSRLS, so it is untouched by any policy change here. Whenever coupon
+-- redemption IS built, server-side validation through the service-role client keeps working
+-- exactly as it would have; this migration removes nothing that server code relies on.
+--
+-- ============================================================================
+-- THIS REMOVES READ FOR `authenticated` TOO — DELIBERATELY
+-- ============================================================================
+-- Because the dropped policy's role list is `{public}` and not `{anon}`, dropping it removes
+-- coupon SELECT for LOGGED-IN users as well as anonymous ones. That is intended, not
+-- collateral damage. There is no client-side use for the coupon catalogue: a client that can
+-- list coupons can also shop for the largest one. Coupon validation must route through
+-- SERVICE-ROLE ONLY — the server takes a candidate code, validates it, and returns a verdict.
+-- It never hands the client the catalogue to choose from.
+--
+-- After this migration `public.coupons` has ZERO policies while RLS remains enabled
+-- (captured state: `relrowsecurity = true`, `relforcerowsecurity = false`, owner postgres).
+-- Under RLS, a table with no permissive policy denies all access to non-BYPASSRLS roles.
+-- That is the intended end state, and it is why no replacement policy is created here.
+--
+-- ============================================================================
+-- WHY FOXY100 IS DEACTIVATED  (FIX-LEDGER DB-22, P1)
+-- ============================================================================
+-- Captured plan prices (monthly / yearly):
+--     free 0/0 | starter 299/2399 | pro 699/5599 | unlimited 1099/8799
+--
+-- FOXY100 is `discount_type = 'flat'`, `discount_value = 10000`, with
+-- `valid_plans = {pro,unlimited}`. Against its OWN valid_plans that flat 10000 is:
+--     10000 / 1099 =  9.10x  the unlimited monthly price
+--     10000 /  699 = 14.31x  the pro monthly price
+-- and it exceeds every price in the catalogue on every billing period — the largest price
+-- anywhere in `subscription_plans` is 8799 (unlimited yearly), and 10000 > 8799. There is no
+-- plan and no billing period this coupon does not fully consume, with change left over.
+--
+-- It is also EXPIRED: `expires_at` = 2026-04-30, nearly four months before this migration,
+-- yet `is_active` is still `true`. Expiry and activity are independent columns here and
+-- nothing reconciles them, so an expired coupon stays "active" forever unless a human flips
+-- the flag. This statement flips it.
+--
+-- The UPDATE is keyed on `code = 'FOXY100'` and NOT on an id, on purpose: `code` is the
+-- business identifier, it is UNIQUE (`coupons_code_key`), and it is the value a reader of
+-- this migration can verify against the captured state without a UUID lookup. It touches
+-- exactly one row and leaves LAUNCH50, FRIEND20 and SCHOOL30 untouched.
+--
+-- ============================================================================
+-- THE CHECK BOUND — AND ITS STALENESS RISK
+-- ============================================================================
+-- The table currently has ZERO CHECK constraints (only `coupons_pkey PRIMARY KEY (id)` and
+-- `coupons_code_key UNIQUE (code)` exist), which is why a 10000 flat discount could be
+-- written in the first place. The new constraint asserts, per discount type:
+--     discount_value > 0                                  -- no zero or negative discounts
+--     percent -> discount_value <= 100                    -- a percentage cannot exceed 100
+--     flat    -> discount_value <= 8799                   -- cannot exceed the dearest plan
+--
+-- 8799 = max(subscription_plans.price_yearly) = the unlimited yearly price.
+--
+-- ** STATIC MIRROR WARNING — READ BEFORE CHANGING PRICES. ** A CHECK constraint cannot
+-- contain a subquery, so 8799 CANNOT be derived from `subscription_plans` at evaluation
+-- time. It is hard-coded here as a STATIC MIRROR of a value owned by ANOTHER TABLE, and it
+-- WILL GO STALE the moment prices rise: raise the unlimited yearly price above 8799 and this
+-- constraint begins rejecting legitimate flat coupons worth less than a plan.
+--     SOURCE OF TRUTH TO RE-CHECK: `subscription_plans.price_yearly` (take the MAX).
+-- Any pricing change must revisit this bound in the same change set.
+--
+-- The OR-form has a second, deliberate effect worth stating explicitly rather than leaving as
+-- a side effect: since every branch of the OR pins `discount_type` to a literal, the
+-- constraint IMPLICITLY RESTRICTS `discount_type` TO EXACTLY {'percent','flat'}. Any other
+-- value fails both branches and is rejected. All 4 current rows are already 'percent' or
+-- 'flat', so this changes no existing data — but it is an ADDED CONSTRAINT on the column, not
+-- merely an observation about it. A future third discount type must extend this CHECK.
+--
+-- ============================================================================
+-- WHY `NOT VALID`
+-- ============================================================================
+-- FOXY100 (flat 10000) VIOLATES the bound. A normal, validating `ADD CONSTRAINT` scans the
+-- whole table and would therefore FAIL outright unless FOXY100's `discount_value` were first
+-- altered — and rewriting a coupon's face value is a pricing decision outside this fix's
+-- scope. `NOT VALID` skips only the retroactive scan of existing rows; it does NOT weaken
+-- going-forward enforcement:
+--     * every future INSERT is checked, and
+--     * every UPDATE OF AN EXISTING ROW is checked.
+-- That second property is the one that matters here: it means the constraint ACTIVELY BLOCKS
+-- FOXY100 FROM BEING REACTIVATED. Any UPDATE touching that row must bring its
+-- `discount_value` within bounds to succeed, so the row cannot be flipped back to
+-- `is_active = true` while still carrying an out-of-bounds value.
+--
+-- FOLLOW-UP (tracked, not done here): once FOXY100's `discount_value` is resolved to a
+-- correct figure or the row is removed, run
+--     ALTER TABLE public.coupons VALIDATE CONSTRAINT coupons_discount_value_bounds;
+-- to convert the constraint to fully validated and close the retroactive gap.
+--
+-- ============================================================================
+-- NOT FIXED HERE — FLAGGED ONLY
+-- ============================================================================
+-- Two more coupons are expired-but-still-`is_active = true`, the same defect class as
+-- FOXY100:
+--     LAUNCH50  (percent 50, expires_at 2026-05-31, is_active true)
+--     SCHOOL30  (percent 30, expires_at 2026-06-30, is_active true)
+-- They are DELIBERATELY OUT OF SCOPE. Neither is part of the ledger entry being fixed here
+-- (DB-22 is specifically the flat-10000 over-value coupon), both sit within the
+-- percent <= 100 bound so neither is a value defect, and after this migration neither is
+-- readable by any client anyway. They are left as-is so this migration's blast radius stays
+-- exactly one row. The durable fix for the class is redemption-time expiry enforcement plus a
+-- reconciliation job — separate work, separate change set.
+--
+-- ============================================================================
+-- ROLLBACK
+-- ============================================================================
+-- DOWN migration — reverses all three statements in reverse order and recreates
+-- `coupons_read` verbatim from the capture above:
+--     docs/runbooks/20260820152908_lock_down_coupons_read_and_bound_discount.DOWN.sql
+--
+-- The DOWN file is deliberately NOT in `supabase/migrations/`. `supabase db push` applies
+-- every file in that directory in version order, so a down-migration parked there would
+-- silently re-open this leak on the very next deploy. Rolling back must be a conscious,
+-- hand-run act.
+--
+-- Rollback restores ACCESS RULES and the one `is_active` flag — never any row written in the
+-- interim.
+--
+-- Ledger: docs/audits/FIX-LEDGER.md — DB-2  (coupons fully enumerable by anon, P0)
+--                                     DB-22 (unbounded / over-value flat coupon, P1)
+
+BEGIN;
+
+-- ---------------------------------------------------------------------------
+-- 1. DB-2: drop the anon-readable policy. Leaves public.coupons with zero
+--    policies and RLS still enabled => deny-all for every non-BYPASSRLS role.
+-- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS coupons_read ON public.coupons;
+
+-- ---------------------------------------------------------------------------
+-- 2. DB-22: deactivate the expired, over-value coupon. Keyed on the UNIQUE
+--    business identifier `code`; touches exactly one row.
+-- ---------------------------------------------------------------------------
+UPDATE public.coupons SET is_active = false WHERE code = 'FOXY100';
+
+-- ---------------------------------------------------------------------------
+-- 3. DB-22: bound discount_value per discount_type. NOT VALID — FOXY100 still
+--    violates it, and NOT VALID is what lets the constraint exist (and block
+--    FOXY100's reactivation) without rewriting that row's value.
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.coupons
+  ADD CONSTRAINT coupons_discount_value_bounds CHECK (
+    discount_value > 0
+    AND (
+      (discount_type = 'percent' AND discount_value <= 100)
+      OR (discount_type = 'flat' AND discount_value <= 8799)
+    )
+  ) NOT VALID;
+
+COMMIT;

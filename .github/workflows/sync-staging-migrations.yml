@@ -9,7 +9,7 @@
 #   or "constraint missing" errors against changes that are live on prod.
 #
 # What this does:
-#   Runs `supabase db push --linked --include-all` against the STAGING
+#   Runs `supabase db push --db-url … --include-all` against the STAGING
 #   project, applying any pending migrations from `supabase/migrations/`.
 #   Idempotent — only applies what's missing in
 #   `supabase_migrations.schema_migrations`. Does NOT replace baseline,
@@ -29,8 +29,153 @@
 #     prod `SUPABASE_ACCESS_TOKEN` is never used here (it cannot authorize
 #     against the staging org and previously caused `Unauthorized`).
 #   - --include-all is safe because all migrations in this repo are
-#     idempotent per CLAUDE.md product invariants
-#   - Failure does NOT block production deploy (this workflow is staging-only)
+#     idempotent per CLAUDE.md product invariants, and it is REQUIRED here to
+#     replay the ~26-migration staging backlog — see the dedicated
+#     `--include-all` block below before touching it
+#   - Failure does NOT block production deploy (this workflow is staging-only),
+#     but it DOES block ci.yml's `Integration Tests (live DB)` job (same
+#     `staging-db-push` concurrency group, same STAGING project) — which gates
+#     the CI Gate every PR needs to merge to main, so a wedged staging ledger
+#     transitively blocks getting anything to production.
+#
+# Staging ledger repair — one orphaned catch-up row (1 hardcoded version):
+#   With connectivity fixed (staging DB password rotated; `db push` now
+#   connects AND authenticates over the aws-1 pooler — see the 2026-08-21
+#   block below), a single orphaned ledger row is the sole remaining blocker.
+#   `db push` aborts pre-flight with "Remote migration versions not found in
+#   local migrations directory", naming 20260820153007, and prints its own
+#   suggested fix: `supabase migration repair --status reverted 20260820153007`.
+#   That version sits in STAGING's `supabase_migrations.schema_migrations`
+#   with no corresponding file anywhere in `supabase/migrations/`, so the CLI
+#   refuses to proceed.
+#
+#   INVESTIGATED BEFORE ERASING — we did not delete a row we had not read.
+#   The ledger's `statements` column for 20260820153007 holds a single `DO`
+#   block named
+#   `verify_quiz_rag_gate_telemetry_ac3_gls_and_collapse_catchup_row`.
+#   End to end it: inserts test fixtures, calls `select_quiz_questions_rag`
+#   TWICE to assert its telemetry, checks three `get_learning_source`
+#   validation pins, then deletes every fixture it created. Verb scan over
+#   the full body: ZERO `CREATE`, `ALTER`, `DROP`, `GRANT`, `REVOKE`,
+#   `TRUNCATE`. Residual fixtures left behind: 0.
+#   CLASSIFICATION: THROWAWAY. It creates no schema object, so there is
+#   nothing to preserve — "recovering" it as a migration file would add a
+#   file that asserts and then cleans up after itself, not one that builds
+#   anything. Erasing its ledger row loses no schema and no data.
+#
+#   Regression check (i.e. what a wrongly-erased DDL row would have broken):
+#   no DDL against the money tables, `coupons`, the five quiz RPCs, or the
+#   seven SECURITY DEFINER views. `select_quiz_questions_rag` appears only as
+#   a CALLER inside the DO block, never as a definition target. `md5(prosrc)`
+#   for both `select_quiz_questions_rag` and `get_learning_source` is
+#   BYTE-IDENTICAL between staging and production — the function bodies this
+#   block exercised are unchanged on both sides, so nothing it touched drifted.
+#
+#   Self-referential detail worth recording: this row's own last statement
+#   deleted its PREDECESSOR's ghost row (20260820152519) so that nothing
+#   would be left orphaned — and then left ITSELF orphaned, since a migration
+#   cannot delete the ledger row the CLI writes for it after its statements
+#   finish. That is why exactly one orphan remains rather than two.
+#
+#   SUPERSEDES the earlier 2026-08-20 repair: this step previously reverted
+#   20260814000023 and 20260814000024. Both were CONFIRMED live against
+#   staging as ALREADY ABSENT from `supabase_migrations.schema_migrations`,
+#   so those two arguments were a verified no-op fighting a closed incident.
+#   They are REPLACED, not appended — letting dead versions accumulate turns
+#   a narrow, auditable repair into an unreadable list nobody can tell is
+#   still load-bearing. Their full incident trace (two unrelated abandoned
+#   branches, each applied to staging out-of-band before being
+#   rewritten/dropped, neither ever present in PRODUCTION's ledger) is
+#   preserved in git history — see this file at commit 4036f20cb.
+#
+#   This repair is STAGING ONLY and METADATA ONLY: `--status reverted` issues
+#   `DELETE FROM supabase_migrations.schema_migrations WHERE version = ANY($1)`
+#   (confirmed from the CLI binary's own embedded SQL) — it touches no table,
+#   no column and no data, and it never re-runs the SQL the ghost version
+#   once ran (there is no local file to apply). PRODUCTION's ledger is not
+#   touched by this workflow at all. Same remediation pattern as the
+#   2026-06-28 PROD ghost-migration incident (see
+#   `schema-reproducibility-fix.yml`'s `repair-prod-drift` job /
+#   docs/runbooks/schema-reproducibility-fix.md).
+#   Idempotent by construction — DELETE on an absent row is a no-op — so once
+#   staging's ledger is clean, every future run of this step costs one no-op
+#   DELETE and changes nothing. It is intentionally NOT a generic
+#   auto-healer: only this ONE hardcoded version is named, so a genuine
+#   FUTURE orphan will still name itself in the CLI's pre-flight error and
+#   abort the push visibly rather than be silently swallowed. If a future
+#   incident hits this same symptom with a different version number, add a
+#   new dated step for it rather than widening this one.
+#
+# 2026-08-21 incident — IPv6-only direct host vs IPv4-only runners
+# (this is why both DB steps now use `--db-url` against the Supavisor
+# pooler instead of `supabase link` + the direct `db.<ref>.supabase.co` host):
+#   Symptom: every run since 2026-08-20 05:49Z failed (last green 2026-08-16)
+#   with `failed to connect to postgres: effect/sql/SqlError: PgClient:
+#   Failed to connect` — AFTER the CLI had already printed "Finished
+#   supabase link.". That split is the whole diagnosis: `link` talks to the
+#   IPv4 Management API and succeeds; the subsequent direct Postgres dial is
+#   a raw TCP connect and is what fails.
+#   Root cause (NOT migrations, NOT a repo change, NOT an outage):
+#     - The staging direct host `db.<staging-ref>.supabase.co` resolves
+#       IPv6-ONLY (AAAA `2406:da1a:6b0:f619:…`; an A query returns only SOA).
+#     - GitHub `ubuntu-latest` runners have NO IPv6. There is no route, so
+#       the dial dies at the TCP layer with a message that says nothing
+#       about address families.
+#     - Staging itself was `ACTIVE_HEALTHY` with 114 days uptime throughout.
+#     - An upstream Supabase CLI release changed connection routing between
+#       08-16 and 08-20 (previously the CLI reached the DB over a path that
+#       tolerated this; it now dials the direct host). Nothing in this repo
+#       changed to cause it — which is why bisecting `supabase/migrations/**`
+#       would have found nothing.
+#   Fix: build a Supavisor pooler URL and pass it as `--db-url`. The pooler
+#   hostname has A records (IPv4) and therefore works from the runners.
+#   Every component below was empirically probed — do NOT "simplify" one:
+#     - HOST `aws-1-ap-south-1.pooler.supabase.com`, *not* `aws-0`. Verified
+#       by sending a Postgres StartupMessage with
+#       `user=postgres.<staging-ref>`: aws-0 rejects with
+#       `XX000 (ENOTFOUND) tenant or user not found`, aws-1 advances to a
+#       SASL/SCRAM auth challenge. A records 13.200.110.68 / 3.109.171.244 /
+#       3.111.225.200; no AAAA. Supabase can re-shard tenants between
+#       aws-N hosts — if this starts failing with ENOTFOUND, re-probe both.
+#     - USERNAME `postgres.<PROJECT_REF>` (literal `postgres`, a dot, then
+#       the bare ref). Supavisor uses this to route to the tenant; a bare
+#       `postgres` does not work through the pooler.
+#     - PORT 5432 = SESSION mode, *not* 6543 (transaction mode). `db push`
+#       and `migration repair` REQUIRE session mode: the CLI's migration
+#       mutex is a session-scoped advisory lock, and `SET` session settings,
+#       prepared statements and temp tables do not survive between statements
+#       in transaction mode. Both ports accept the tenant, so choosing 6543
+#       fails later and far less obviously.
+#     - `sslmode=require`, *not* `verify-full`: the pooler's certificate
+#       fails default chain validation (`SELF_SIGNED_CERT_IN_CHAIN`).
+#       `require` still encrypts; it skips CA-chain verification.
+#     - The password MUST be percent-encoded before being embedded in the
+#       URI (the CLI's own `--db-url` help says so) — an unencoded
+#       `@ : / # ?` silently corrupts the URI and misparses the host.
+#     - `--db-url` needs neither `supabase link` nor `SUPABASE_ACCESS_TOKEN`.
+#       The `SUPABASE_ACCESS_TOKEN` env entries below are left in place
+#       deliberately: harmless, and removing them widens the diff.
+#     - `--include-all` is retained. Without it, `db push` applies only
+#       migrations newer than the last recorded remote version.
+#   The composed URL embeds the DB password, so every step masks it with
+#   `::add-mask::` BEFORE the URL is used. Never `echo` it unmasked.
+#   Each step also fail-closes with a legible `::error::` (naming the two
+#   plausible causes: wrong tenant/shard, or network restrictions on the
+#   staging project) while preserving the real exit code — the step still
+#   fails, it just no longer fails cryptically.
+#   OUT OF SCOPE HERE: `deploy-staging.yml` has the identical bug in its
+#   `migrations` job and is NOT fixed by this change. It needs the same
+#   treatment separately.
+#
+# Why `--include-all` on `db push` is load-bearing RIGHT NOW (not cosmetic):
+#   Staging is roughly 26 migrations behind `main` — the sync has been wedged
+#   since 2026-08-20, first by the IPv6 connectivity failure above and then
+#   by the orphaned ledger row. Without `--include-all`, `db push` applies
+#   only migrations NEWER than the last recorded remote version, which would
+#   skip most of that backlog and leave staging silently half-migrated —
+#   precisely the drift this workflow exists to prevent. Once the ledger
+#   repair unblocks the push, `--include-all` is what makes the whole backlog
+#   actually replay. Do NOT drop it to "tidy up" the command.
 
 name: Sync Migrations to Staging
 
@@ -50,6 +195,16 @@ concurrency:
   group: staging-db-push
   cancel-in-progress: false   # never cancel a migration push mid-flight
 
+env:
+  # Pinned, not `latest`: an unpinned CLI silently changing its pre-flight
+  # reconciliation behavior between runs is a reproducibility risk independent
+  # of the 2026-08-20 incident below (the previous green run of this workflow
+  # was #261 on 2026-08-16; nothing in `supabase/migrations/**` changed in a
+  # way that should have newly triggered "Remote migration versions not found"
+  # between then and now). Matches the version already pinned in `ci.yml` and
+  # `deploy-production.yml`'s `SUPABASE_CLI_VERSION` — bump all three together.
+  SUPABASE_CLI_VERSION: '2.109.1'
+
 jobs:
   push-migrations:
     name: Apply pending migrations to staging
@@ -60,7 +215,44 @@ jobs:
 
       - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Staging ledger repair — drop orphaned catch-up row 20260820153007
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+          STAGING_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          # IPv4 Supavisor pooler URL — see the 2026-08-21 header block for why
+          # aws-1 / port 5432 / sslmode=require / percent-encoded password are
+          # each load-bearing. Ref comes from the secret, never hardcoded.
+          ENC_PW=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')
+          echo "::add-mask::$ENC_PW"
+          DB_URL="postgresql://postgres.${STAGING_REF}:${ENC_PW}@aws-1-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
+          echo "::add-mask::$DB_URL"
+          # Hardcoded, exactly this ONE version — not a generic orphan-healer.
+          # 20260820153007 is a THROWAWAY verification DO block
+          # (verify_quiz_rag_gate_telemetry_ac3_gls_and_collapse_catchup_row).
+          # It was READ before being erased: it inserts fixtures, asserts
+          # select_quiz_questions_rag telemetry + three get_learning_source
+          # pins, then deletes every fixture — ZERO CREATE/ALTER/DROP/GRANT/
+          # REVOKE/TRUNCATE, so it built no schema object and there is nothing
+          # to preserve as a migration file. It deleted its predecessor's ghost
+          # row and then orphaned itself. Full trace + the regression check (no
+          # DDL on the money tables, coupons, the five quiz RPCs or the seven
+          # SECDEF views) is in the file header.
+          # This REPLACES the two 2026-08-20 versions, which were confirmed
+          # already absent from the ledger — removed as dead rather than left
+          # to accumulate. Idempotent: `--status reverted` DELETEs the ledger
+          # row; deleting an absent row is a no-op, so this is safe to run on
+          # every invocation.
+          rc=0
+          supabase migration repair --db-url "$DB_URL" --status reverted 20260820153007 || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Staging ledger repair failed to connect or run::Could not reach staging over the IPv4 Supavisor pooler (aws-1-ap-south-1.pooler.supabase.com:5432). Two likely causes: (a) SUPABASE_STAGING_PROJECT_REF is not the tenant on aws-1 — Supabase may have re-sharded this project; re-probe BOTH aws-0- and aws-1-ap-south-1.pooler.supabase.com with a Postgres StartupMessage using user=postgres.<ref> (the wrong shard answers XX000 ENOTFOUND 'tenant or user not found', the right one advances to a SASL/SCRAM challenge). (b) Network restrictions on the staging Supabase project are blocking the GitHub runner egress IP. Do NOT switch to the direct db.<ref>.supabase.co host — it is IPv6-only and the runners have no IPv6."
+            exit "$rc"
+          fi
 
       - name: Push migrations to staging Supabase
         env:
@@ -69,9 +261,24 @@ jobs:
           # staging token — the prod token returns Unauthorized here.
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_STAGING_DB_PASSWORD }}
+          STAGING_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
         run: |
-          supabase link --project-ref ${{ secrets.SUPABASE_STAGING_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
-          supabase db push --linked --include-all
+          set -euo pipefail
+          # Same IPv4 Supavisor pooler URL as the repair step above; `--db-url`
+          # replaces `supabase link` + `--linked` entirely (no link, no access
+          # token needed). `--include-all` is retained deliberately — without it
+          # `db push` only applies migrations after the last recorded remote
+          # version. See the 2026-08-21 header block.
+          ENC_PW=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["SUPABASE_DB_PASSWORD"], safe=""))')
+          echo "::add-mask::$ENC_PW"
+          DB_URL="postgresql://postgres.${STAGING_REF}:${ENC_PW}@aws-1-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"
+          echo "::add-mask::$DB_URL"
+          rc=0
+          supabase db push --db-url "$DB_URL" --include-all || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Staging migration push failed::supabase db push failed against the IPv4 Supavisor pooler (aws-1-ap-south-1.pooler.supabase.com:5432). If this is a CONNECTION failure, two likely causes: (a) SUPABASE_STAGING_PROJECT_REF is not the tenant on aws-1 — Supabase may have re-sharded this project; re-probe BOTH aws-0- and aws-1-ap-south-1.pooler.supabase.com with a Postgres StartupMessage using user=postgres.<ref> (the wrong shard answers XX000 ENOTFOUND 'tenant or user not found', the right one advances to a SASL/SCRAM challenge). (b) Network restrictions on the staging Supabase project are blocking the GitHub runner egress IP. Do NOT switch to the direct db.<ref>.supabase.co host — it is IPv6-only and the runners have no IPv6. If instead the SQL itself failed, read the CLI output above: that is a real migration error, not a connectivity problem."
+            exit "$rc"
+          fi
 
       - name: Summary
         if: always()

@@ -342,7 +342,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: quality
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 10
 
@@ -433,52 +433,239 @@ jobs:
   # deploys reported green. Both paths now end in the SAME read-only
   # migration-history parity check, so out-of-band drift is surfaced HERE, on
   # the release that follows it, instead of being silently tolerated.
+  #
+  # WHY THE PUSH IS NOW PARITY-DRIVEN, NOT DIFF-DRIVEN (2026-08-22): the push
+  # used to be gated SOLELY on `git diff HEAD~1 HEAD -- supabase/migrations/`.
+  # That heuristic answers "did the tip commit carry SQL?", which is NOT the
+  # question the job needs answered — the question is "is the production ledger
+  # missing anything this repo has committed?". The two diverge the moment a
+  # migration-bearing merge fails to deploy, and when they diverge the job
+  # DEADLOCKS:
+  #
+  #   1. Merge e195c72b1 committed 20260821070000. Its CI was red (a ratchet
+  #      test), the Quality Gate below correctly blocked the deploy, and
+  #      `db push` never ran.
+  #   2. The next merge, 8ca6c69c0, touched no SQL. `HEAD~1 HEAD` was empty, so
+  #      the push was SKIPPED.
+  #   3. But the parity check compares the FULL committed set against the FULL
+  #      ledger, so it still failed: 613 committed vs 612 in the ledger, missing
+  #      20260821070000.
+  #   4. No future commit re-triggers the diff, because no future commit will
+  #      ever contain a file that landed in step 1. Production stays blocked,
+  #      and the job summary contradicts itself — "migrations changed: false;
+  #      versions in this release: none" printed by the same job whose parity
+  #      check is failing on a named version.
+  #
+  # The trigger and the check now read ONE source of truth: the remote ledger.
+  # `ledger-probe` runs .github/scripts/verify-migration-ledger.sh READ-ONLY
+  # before the push and reports the delta in both directions; the push fires on
+  # a non-empty committed-but-unapplied delta no matter what the tip diff says;
+  # and the SAME script then runs UNCONDITIONALLY as the post-push assertion, so
+  # a green push must still leave the two ledgers in parity. The tip diff is
+  # RETAINED as the other arm of an OR (it is the only signal available before
+  # touching the database, and it is what names "the versions this push
+  # introduced" in the release record) but it is no longer the sole gate.
   migrations:
     name: Apply Database Migrations
     runs-on: ubuntu-latest
     needs: [production-verification-gate, quality, pre-deploy-checklist]
     environment: production
     outputs:
+      # NOTE: as of 2026-08-22 `changed` means "this job touched the database
+      # plane" (tip diff OR ledger drift), not "the tip commit carried SQL", and
+      # `versions` is the UNION of both. The widening is load-bearing for the
+      # auto-rollback suppression in health-check — see the migration-diff step.
       production_migrations_changed: ${{ steps.migration-diff.outputs.changed }}
       production_migration_versions: ${{ steps.migration-diff.outputs.versions }}
       migration_parity: ${{ steps.parity.outputs.migration_parity }}
       migration_target_environment: ${{ steps.parity.outputs.target_environment }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
-      - name: Detect migration changes
-        id: migration-diff
-        run: |
-          MIGRATION_FILES=$(git diff --name-only HEAD~1 HEAD -- 'supabase/migrations/' || true)
-          # 14-digit versions carried by THIS release, used to bind the release
-          # record to the migration set. Top-level only — `_legacy/` is out of
-          # scope for `supabase db push`, mirroring how scripts/lint-migrations.js
-          # scopes the chain.
-          VERSIONS=$(printf '%s\n' "$MIGRATION_FILES" \
-            | sed -nE 's#^supabase/migrations/([0-9]{14})_[^/]*\.sql$#\1#p' \
-            | sort -u | paste -sd, -)
-          echo "versions=${VERSIONS}" >> "$GITHUB_OUTPUT"
-          if [ -n "$MIGRATION_FILES" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "### Production migrations detected" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            echo "$MIGRATION_FILES" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "| Production migrations | None in this push; db push skipped, migration-history parity still verified below |" >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      # Unconditional: the parity check below runs on BOTH the changed and the
-      # unchanged path, so the CLI must always be present.
+      # Unconditional: the pre-push ledger probe AND the post-push parity
+      # assertion both talk to the remote database on EVERY path, so the CLI
+      # must always be present.
       - uses: supabase/setup-cli@v2
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
+      # MOVED AHEAD OF THE PUSH (2026-08-22). psql is what reads the ledger, and
+      # the ledger is now what DECIDES whether to push — so psql has to exist
+      # before that decision, not merely before the post-push assertion.
+      - name: Ensure psql is available
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends postgresql-client
+          fi
+
+      # ── PRE-PUSH LEDGER PROBE (READ-ONLY) ────────────────────────────────
+      # Runs THE SAME .github/scripts/verify-migration-ledger.sh that asserts
+      # parity after the push. That reuse is the entire point of this step: the
+      # trigger and the check read one source of truth, so it is structurally
+      # impossible for the job to decide "nothing to push" on one definition of
+      # the migration set and then fail on another. Re-implementing the set
+      # comparison here would recreate exactly the two-definitions bug the
+      # script's own header documents (the `awk -F'|' … v=$2` tautology that
+      # printed parity forever while 8 versions were missing).
+      #
+      # This step never renders a verdict. It cannot fail the job for drift —
+      # drift here is an INPUT to the push decision, and the push is the remedy.
+      # The verdict is the unconditional parity step after the push.
+      #
+      # It DOES fail the job when the probe cannot establish database state at
+      # all (unreadable ledger, wrong/forbidden project ref, empty scan). That
+      # is not "no drift", and pushing blindly against an unknown database is
+      # worse than stopping — so that branch is fail-closed.
+      - name: Probe migration-ledger delta (read-only, pre-push)
+        id: ledger-probe
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          EXPECTED_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          FORBIDDEN_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          ENV_LABEL: production
+          LC_ALL: C
+        run: |
+          echo "drift=false" >> "$GITHUB_OUTPUT"
+          echo "pending_versions=" >> "$GITHUB_OUTPUT"
+          echo "orphan_versions=" >> "$GITHUB_OUTPUT"
+
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
+
+          PROBE_LOG="$(mktemp)"
+          trap 'rm -f "$PROBE_LOG"' EXIT
+
+          # GITHUB_STEP_SUMMARY is blanked for this invocation only (the script
+          # no-ops its summary writes when it is empty), so the job summary
+          # carries the POST-push verdict and not a pre-push drift that the push
+          # is about to remedy.
+          set +e
+          GITHUB_STEP_SUMMARY='' bash .github/scripts/verify-migration-ledger.sh >"$PROBE_LOG" 2>&1
+          PROBE_RC=$?
+          set -e
+
+          # De-escalate the script's ::error:: annotations to plain text: they
+          # are findings, not this step's verdict.
+          sed -e 's/^::error:://' -e 's/^/  [ledger-probe] /' "$PROBE_LOG"
+
+          if [ "$PROBE_RC" -eq 0 ]; then
+            echo "Ledger probe: the committed set already equals the production ledger."
+            exit 0
+          fi
+
+          # Extract both delta directions from the script's own report. This
+          # parse feeds the TRIGGER and the release record. It can only cause a
+          # push or a hard failure — never a silent skip — because the
+          # authoritative pass/fail is the parity step below, which re-runs this
+          # same script and is not gated on anything computed here.
+          delta() {
+            awk -v want="$1" '
+              /^::error::Committed but NOT in the/           { mode = "pending"; next }
+              /^::error::In the .* ledger but NOT committed/ { mode = "orphan";  next }
+              /^::error::/                                   { mode = "";       next }
+              mode == want && $0 ~ /^  [0-9]+$/ && length($1) == 14 { print $1 }
+            ' "$PROBE_LOG" | sort -u | paste -sd, -
+          }
+          PENDING="$(delta pending)"
+          ORPHAN="$(delta orphan)"
+
+          if [ -z "$PENDING" ] && [ -z "$ORPHAN" ]; then
+            echo "::error::The migration-ledger probe failed (exit ${PROBE_RC}) WITHOUT reporting a delta — the ledger could not be read, the linked project ref was wrong or forbidden, or a scan came back empty. That is not 'no drift'; the database state for this release is unknown. Refusing to push. See the [ledger-probe] lines above."
+            exit 1
+          fi
+
+          echo "drift=true" >> "$GITHUB_OUTPUT"
+          echo "pending_versions=${PENDING}" >> "$GITHUB_OUTPUT"
+          echo "orphan_versions=${ORPHAN}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$PENDING" ]; then
+            echo "::notice::Committed but NOT yet in the production ledger: ${PENDING}. This alone triggers the push below, regardless of what HEAD~1..HEAD touched."
+          fi
+          if [ -n "$ORPHAN" ]; then
+            echo "::warning::In the production ledger but NOT committed: ${ORPHAN}. A push cannot reconcile REMOTE-only versions (the CLI aborts on them), so this direction does not by itself trigger one; the unconditional parity step below will fail this job and print the recovery procedure."
+          fi
+
+      # ── SIGNAL FUSION ────────────────────────────────────────────────────
+      # Runs AFTER the probe so it can fold BOTH triggers into the single pair
+      # of outputs the rest of this workflow already consumes.
+      #
+      # `changed` no longer means "HEAD~1..HEAD touched SQL". It now means
+      # "this job is going to touch the database plane":
+      #     tip diff carried SQL   OR   the ledger is missing committed versions.
+      # That widening is REQUIRED, not cosmetic. The auto-rollback step in
+      # health-check suppresses web-only Vercel rollback when
+      # production_migrations_changed == 'true'. Had this output stayed
+      # diff-only, a drift-triggered push would apply schema to production while
+      # the rollback guard still believed the release was web-only — and would
+      # roll the app back UNDER the schema this job had just applied.
+      #
+      # `versions` is the union for the same reason: the GitHub release record
+      # and the completion-gate audit line must name the versions this release
+      # actually applied. The diff-only derivation is what printed the
+      # self-contradicting "migrations changed: false; versions in this release:
+      # none" on the deploy whose parity check was failing on 20260821070000.
+      - name: Detect migration changes
+        id: migration-diff
+        env:
+          DRIFT_PENDING: ${{ steps.ledger-probe.outputs.pending_versions }}
+          DRIFT_ORPHAN: ${{ steps.ledger-probe.outputs.orphan_versions }}
+        run: |
+          MIGRATION_FILES=$(git diff --name-only HEAD~1 HEAD -- 'supabase/migrations/' || true)
+          # 14-digit versions carried by THIS push. Top-level only — `_legacy/`
+          # is out of scope for `supabase db push`, mirroring how
+          # scripts/lint-migrations.js scopes the chain and how
+          # .github/scripts/verify-migration-ledger.sh scopes its local scan.
+          TIP_VERSIONS=$(printf '%s\n' "$MIGRATION_FILES" \
+            | sed -nE 's#^supabase/migrations/([0-9]{14})_[^/]*\.sql$#\1#p' \
+            | sort -u | paste -sd, -)
+
+          TIP_CHANGED=false
+          if [ -n "$MIGRATION_FILES" ]; then TIP_CHANGED=true; fi
+
+          CHANGED=false
+          if [ "$TIP_CHANGED" = "true" ] || [ -n "$DRIFT_PENDING" ]; then CHANGED=true; fi
+
+          VERSIONS=$(printf '%s\n%s\n' "$TIP_VERSIONS" "$DRIFT_PENDING" \
+            | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)
+
+          echo "tip_changed=${TIP_CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "changed=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "versions=${VERSIONS}" >> "$GITHUB_OUTPUT"
+
+          if [ "$TIP_CHANGED" = "true" ]; then
+            echo "### Production migrations in this push (HEAD~1..HEAD)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "$MIGRATION_FILES" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Migrations in this push (HEAD~1..HEAD) | None — the pre-push ledger probe, not this diff, decides whether a push is required; migration-history parity is verified below either way |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "| Database plane touched by this release | \`${CHANGED}\` (tip diff \`${TIP_CHANGED}\`, ledger-pending \`${DRIFT_PENDING:-none}\`) |"
+            echo "| Migration versions this release applies | \`${VERSIONS:-none}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$DRIFT_ORPHAN" ]; then
+            echo "| Remote-only ledger versions | \`${DRIFT_ORPHAN}\` — a push cannot reconcile these; the parity step below will fail this job |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # ── PUSH ─────────────────────────────────────────────────────────────
+      # Two independent triggers, ORed. `steps.migration-diff.outputs.changed`
+      # is ALREADY the union of both (see the step above), so either arm alone
+      # is sufficient; the ledger arm is spelled out a second time here so the
+      # parity-driven trigger is visible in the condition itself and cannot be
+      # "simplified" back into a pure diff gate without someone deleting it.
+      #
+      # `--include-all` is what lets the CLI apply committed files that sort
+      # BELOW the newest remote version — required for the stranded-version case
+      # this gate exists to clear, and for the deliberately backdated
+      # 20260821070000. It does NOT reconcile remote-only versions.
       - name: Push migrations to production
-        if: steps.migration-diff.outputs.changed == 'true'
+        if: >-
+          ${{ steps.migration-diff.outputs.changed == 'true'
+          || steps.ledger-probe.outputs.pending_versions != '' }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -487,106 +674,73 @@ jobs:
           supabase db push --linked --include-all
 
       # ── Migration-history parity check (runs on BOTH paths) ──
-      # READ-ONLY. Compares the committed migration set against the remote
-      # `supabase_migrations.schema_migrations` ledger, read through the
-      # Supabase CLI's own view of it (`supabase migration list --linked`), so
-      # this check sees exactly what `supabase db push` would see. No new
-      # secret: it reuses SUPABASE_ACCESS_TOKEN / SUPABASE_DB_PASSWORD /
-      # SUPABASE_PROJECT_REF, which the push step above already uses.
+      # READ-ONLY. Compares the committed migration set against the versions
+      # GENUINELY PRESENT in the remote `supabase_migrations.schema_migrations`
+      # ledger via a direct SQL SELECT (.github/scripts/verify-migration-ledger.sh).
+      # No new secret: it reuses SUPABASE_DB_PASSWORD / SUPABASE_PROJECT_REF,
+      # which the push step above already uses.
       #
-      # On the changed==true path it runs AFTER the push, so a green push must
-      # leave the two ledgers in parity. On the changed==false path it is the
-      # only database interaction, and it is what stops a frontend-only release
-      # from bypassing database-state verification.
+      # P0-6 fix (2026-08-20): this step used to parse the rendered
+      # `supabase migration list --linked` table with
+      # `awk -F'|' '{ v=$2 }'`. The CLI emits each row with a LEADING pipe
+      # (`|local|remote|time|`), so under `-F'|'` field 2 is actually the
+      # LOCAL column, not remote — the check compared the local migration set
+      # against itself and could never fail. Across four consecutive
+      # production deploys it printed EXACTLY equal counts (580/580, 585/585,
+      # 587/587, 588/588) while production's real ledger was missing 8
+      # committed versions. verify-migration-ledger.sh SELECTs the ledger
+      # table directly instead of parsing rendered CLI output. See the
+      # script's own header for the full RCA.
+      #
+      # This is the ASSERTION. The `ledger-probe` step above runs the very same
+      # script, but read-only and non-fatal, purely to decide whether to push;
+      # this invocation is the one that renders the verdict and is deliberately
+      # UNCONDITIONAL. Keep it that way — the probe deciding "no push needed"
+      # must never be able to also mean "no verification needed", which is the
+      # shape of the bug this whole job keeps re-learning.
+      #
+      # When a push ran, this runs AFTER it, so a green push must leave the two
+      # ledgers in parity. When no push ran, it is the only database
+      # interaction, and it is what stops a frontend-only release from bypassing
+      # database-state verification.
       - name: Verify migration-history parity
         id: parity
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          EXPECTED_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          FORBIDDEN_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          ENV_LABEL: production
           LC_ALL: C
         run: |
           echo "target_environment=production" >> "$GITHUB_OUTPUT"
 
           supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
 
-          # LOCAL: committed, top-level supabase/migrations/*.sql only.
-          # -maxdepth 1 is what excludes `_legacy/`, matching both the Supabase
-          # CLI's own scope and scripts/lint-migrations.js.
-          LOCAL_VERSIONS=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' \
-            | sed -nE 's#^([0-9]{14})_.*\.sql$#\1#p' \
-            | sort -u)
-
-          # REMOTE: the "Remote" column of the CLI ledger view. Parsed
-          # positionally (field 2 of a pipe-delimited row) and filtered to
-          # 14-digit versions, so header/separator/progress lines drop out.
-          if ! REMOTE_RAW=$(supabase migration list --linked 2>&1); then
-            echo "::error::Could not read remote migration history — cannot prove database state for this release."
-            printf '%s\n' "$REMOTE_RAW"
-            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-          REMOTE_VERSIONS=$(printf '%s\n' "$REMOTE_RAW" \
-            | awk -F'|' 'NF>=2 { v=$2; gsub(/[^0-9]/, "", v); if (length(v) == 14) print v }' \
-            | sort -u)
-
-          LOCAL_COUNT=$(printf '%s\n' "$LOCAL_VERSIONS" | sed '/^$/d' | wc -l)
-          REMOTE_COUNT=$(printf '%s\n' "$REMOTE_VERSIONS" | sed '/^$/d' | wc -l)
-          echo "Committed migration versions: $LOCAL_COUNT"
-          echo "Remote ledger versions:       $REMOTE_COUNT"
-
-          # Non-vacuity: an empty side means the scan or the parse broke, not
-          # that the ledgers agree. Fail rather than pass for the wrong reason.
-          if [ "$LOCAL_COUNT" -eq 0 ]; then
-            echo "::error::Found 0 committed migration versions under supabase/migrations/ — the parity scan is broken, not clean."
-            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-          if [ "$REMOTE_COUNT" -eq 0 ]; then
-            echo "::error::Parsed 0 remote migration versions from 'supabase migration list --linked' — the ledger read is broken, not clean."
-            printf '%s\n' "$REMOTE_RAW"
+          if bash .github/scripts/verify-migration-ledger.sh; then
+            echo "migration_parity=verified" >> "$GITHUB_OUTPUT"
+          else
             echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
-          COMMITTED_NOT_REMOTE=$(comm -23 <(printf '%s\n' "$LOCAL_VERSIONS" | sed '/^$/d') <(printf '%s\n' "$REMOTE_VERSIONS" | sed '/^$/d'))
-          REMOTE_NOT_COMMITTED=$(comm -13 <(printf '%s\n' "$LOCAL_VERSIONS" | sed '/^$/d') <(printf '%s\n' "$REMOTE_VERSIONS" | sed '/^$/d'))
-
-          if [ -n "$COMMITTED_NOT_REMOTE" ] || [ -n "$REMOTE_NOT_COMMITTED" ]; then
-            {
-              echo ""
-              echo "### Migration history parity: DRIFT"
-              echo ""
-              echo "Target environment: \`production\` (linked Supabase project)."
-              echo ""
-            } >> "$GITHUB_STEP_SUMMARY"
-            if [ -n "$COMMITTED_NOT_REMOTE" ]; then
-              {
-                echo "**Committed but NOT applied on remote** — this release would ship application code ahead of its schema:"
-                echo '```'
-                printf '%s\n' "$COMMITTED_NOT_REMOTE"
-                echo '```'
-                echo "Remediation: re-run this job after fixing whatever blocked the push, or apply the pending versions deliberately with \`supabase db push --linked --include-all\`."
-                echo ""
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
-            if [ -n "$REMOTE_NOT_COMMITTED" ]; then
-              {
-                echo "**Applied on remote but NOT committed** — out-of-band drift. This is exactly what aborts \`supabase db push --include-all\`, and surfacing it here is the point of this check:"
-                echo '```'
-                printf '%s\n' "$REMOTE_NOT_COMMITTED"
-                echo '```'
-                echo "Remediation: recover each version into a committed, idempotent migration file that reproduces what the operator applied — the same recovery performed for 20260808085345 / 20260808085349 / 20260808085419 (see \`docs/runbooks/production-release-gating.md\`). If a remote row is genuinely bogus, clear it deliberately with \`supabase migration repair --status reverted <version>\`; never hand-edit the ledger."
-                echo ""
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
-            echo "::error::Migration history parity FAILED — committed migrations and the production ledger disagree. See the job summary for the offending versions."
-            echo "migration_parity=drift" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          echo "migration_parity=verified" >> "$GITHUB_OUTPUT"
-          echo "| Migration history parity | verified ($LOCAL_COUNT committed == $REMOTE_COUNT remote) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "Migration history parity verified against production."
+      # ── Live-database security invariants (runs on BOTH paths, post-parity) ──
+      # POST-DEPLOY BEHAVIOURAL assertion (.github/scripts/assert-db-security-invariants.sh):
+      # verifies OBSERVABLE EFFECT on the live database — that `anon` cannot
+      # EXECUTE the student-data SECURITY DEFINER RPCs — rather than ledger
+      # metadata. Named by migration 20260816000002 (curated learning corpus)
+      # as "the hard gate belongs in CI"; previously wired into nothing (P0-6).
+      - name: Assert live-database security invariants
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          EXPECTED_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          FORBIDDEN_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          ENV_LABEL: production
+          LC_ALL: C
+        run: |
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
+          bash .github/scripts/assert-db-security-invariants.sh
 
   # ── Step 2: Deploy to Vercel Production (requires approval) ──
   # NOTE: Vercel's native GitHub App handles auto-deploys on push to main.
@@ -605,9 +759,9 @@ jobs:
       deploy-url: ${{ steps.deploy.outputs.deploy_url }}
       app-version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -705,13 +859,15 @@ jobs:
       verified_github_sha: ${{ steps.health.outputs.verified_github_sha }}
       content_verified_noop: ${{ steps.health.outputs.content_verified_noop }}
       verified_noop_base_sha: ${{ steps.health.outputs.verified_noop_base_sha }}
+      build_intentionally_skipped: ${{ steps.health.outputs.build_intentionally_skipped }}
+      verified_skip_base_sha: ${{ steps.health.outputs.verified_skip_base_sha }}
     steps:
       # Full history (not the repo default shallow clone) is required so the
       # no-op-deploy escape hatch below can resolve an arbitrary short SHA
       # reported by production and walk ancestry/diff it against $GITHUB_SHA.
       # Scoped to this job only — unrelated jobs keep their shallow/no
       # checkout and are unaffected.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -732,10 +888,14 @@ jobs:
           ALL_PROTECTION=1
           CURRENT_SHA_SEEN=0
           CURRENT_SHA_UNHEALTHY=0
+          LAST_DEPLOYED_SHA=""
+          LAST_SKIP_VERDICT="not-evaluated"
           echo "exact_sha_verified=false" >> "$GITHUB_OUTPUT"
           echo "verified_github_sha=" >> "$GITHUB_OUTPUT"
           echo "content_verified_noop=false" >> "$GITHUB_OUTPUT"
           echo "verified_noop_base_sha=" >> "$GITHUB_OUTPUT"
+          echo "build_intentionally_skipped=false" >> "$GITHUB_OUTPUT"
+          echo "verified_skip_base_sha=" >> "$GITHUB_OUTPUT"
           echo "rollback_authorized=false" >> "$GITHUB_OUTPUT"
           if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
             echo "::error::Bypass secret is unavailable; release is unverified."
@@ -758,6 +918,7 @@ jobs:
                 HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$BODY_FILE")
                 SEMANTIC_UNHEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===false&&['degraded','unhealthy'].includes(b.status)))}catch{process.stdout.write('false')}" "$BODY_FILE")
                 DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$BODY_FILE")
+                LAST_DEPLOYED_SHA="$DEPLOYED_SHA"
                 if [ "$DEPLOYED_SHA" = "$EXPECTED_SHA" ]; then
                   CURRENT_SHA_SEEN=1
                   if [ "$SEMANTIC_UNHEALTHY" = "true" ]; then CURRENT_SHA_UNHEALTHY=1; fi
@@ -792,6 +953,41 @@ jobs:
                     echo "verified_noop_base_sha=$NOOP_BASE_SHA" >> "$GITHUB_OUTPUT"
                     exit 0
                   fi
+
+                  # Intentionally-skipped-build escape hatch (2026-08-11).
+                  # apps/host/vercel.json runs scripts/ignore-build.cjs as
+                  # Vercel's ignoreCommand: a commit touching only ignored
+                  # prefixes (docs/, .claude/, .github/, mobile/, ...)
+                  # correctly produces NO new deployment, so no new sha will
+                  # EVER appear on production. Polling the full 10 minutes and
+                  # then failing with "Exact healthy SHA was not observed" is a
+                  # guaranteed false red — that is exactly how commit b5bcd8277
+                  # (docs-only) failed Deploy Production.
+                  #
+                  # Liveness is NOT relaxed: we are inside the
+                  # HEALTHY=true branch, so production has already proven a 200
+                  # + semantically healthy /api/v1/health on this very probe.
+                  # Only the exact-SHA assertion is answered differently, and
+                  # only when .github/scripts/verify-skipped-build.sh confirms
+                  # (a) the reported sha resolves, (b) it is a true ancestor of
+                  # ours, and (c) the ENTIRE range between it and us contains
+                  # zero deployable files — delegated to the same
+                  # ignore-build.cjs Vercel itself runs, so the ignored-prefix
+                  # list is never duplicated here. Any deployable file in the
+                  # gap reports false and the fail-closed path below stands.
+                  SKIP_CHECK=$(bash .github/scripts/verify-skipped-build.sh "$DEPLOYED_SHA" "$GITHUB_SHA" 2>/dev/null || true)
+                  SKIP_OK=$(echo "$SKIP_CHECK" | awk '{print $1}')
+                  LAST_SKIP_VERDICT="$SKIP_CHECK"
+                  if [ "$SKIP_OK" = "true" ]; then
+                    SKIP_BASE_SHA=$(echo "$SKIP_CHECK" | cut -d' ' -f2-)
+                    rm -f "$BODY_FILE"
+                    echo "::notice::Vercel build intentionally skipped for $GITHUB_SHA (no deployable change since already-healthy $SKIP_BASE_SHA, per apps/host/scripts/ignore-build.cjs). Production verified live; skipping literal-SHA wait."
+                    echo "exact_sha_verified=true" >> "$GITHUB_OUTPUT"
+                    echo "verified_github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+                    echo "build_intentionally_skipped=true" >> "$GITHUB_OUTPUT"
+                    echo "verified_skip_base_sha=$SKIP_BASE_SHA" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
                 fi
               fi
             else
@@ -814,7 +1010,15 @@ jobs:
             echo "::error::Expected SHA reached production but reported unhealthy."
             exit 1
           fi
-          echo "::error::Exact healthy SHA was not observed (current_sha_seen=$CURRENT_SHA_SEEN, last=$LAST_STATUS); rollback suppressed."
+          # Diagnostic (2026-08-11): this message used to say only "not
+          # observed", which reads identically for two very different
+          # situations — (a) a commit Vercel intentionally did not build, and
+          # (b) a deploy that genuinely never landed and left production behind.
+          # The skipped-build verdict below is what separates them, so print it.
+          # "has-deployable-change:<a>..<b>" means case (b): production is
+          # REALLY stale and this red is correct — go find the missing deploy.
+          echo "::error::Exact healthy SHA was not observed (expected=$EXPECTED_SHA, production reported=${LAST_DEPLOYED_SHA:-<none>}, current_sha_seen=$CURRENT_SHA_SEEN, last=$LAST_STATUS); rollback suppressed."
+          echo "::error::Intentionally-skipped-build check verdict: ${LAST_SKIP_VERDICT}"
           exit 1
 
       - name: Flag posture canary check (protected-flag drift gate)
@@ -1068,7 +1272,7 @@ jobs:
     outputs:
       edge_functions_changed: ${{ steps.changed.outputs.changed }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
@@ -1132,10 +1336,12 @@ jobs:
       verified_github_sha: ${{ steps.verify.outputs.verified_github_sha }}
       content_verified_noop: ${{ steps.verify.outputs.content_verified_noop }}
       verified_noop_base_sha: ${{ steps.verify.outputs.verified_noop_base_sha }}
+      build_intentionally_skipped: ${{ steps.verify.outputs.build_intentionally_skipped }}
+      verified_skip_base_sha: ${{ steps.verify.outputs.verified_skip_base_sha }}
     steps:
       # Full history required for the no-op-deploy escape hatch in the health
       # probe below (mirrors health-check job). Scoped to this job only.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -1150,6 +1356,8 @@ jobs:
           echo "verified_github_sha=" >> "$GITHUB_OUTPUT"
           echo "content_verified_noop=false" >> "$GITHUB_OUTPUT"
           echo "verified_noop_base_sha=" >> "$GITHUB_OUTPUT"
+          echo "build_intentionally_skipped=false" >> "$GITHUB_OUTPUT"
+          echo "verified_skip_base_sha=" >> "$GITHUB_OUTPUT"
           echo "## Post-Deploy Verification" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Probed domain: \`$TARGET_URL\`" >> $GITHUB_STEP_SUMMARY
@@ -1197,6 +1405,8 @@ jobs:
           COMPONENT_DETAIL=""
           NOOP_VERIFIED="false"
           NOOP_BASE_SHA=""
+          SKIP_VERIFIED="false"
+          SKIP_BASE_SHA=""
 
           for attempt in $(seq 1 "$VERIFY_ATTEMPTS"); do
             : > "$HEALTH_BODY"
@@ -1242,6 +1452,24 @@ jobs:
                 echo "::notice::No-op deploy detected — $GITHUB_SHA has identical tree to already-healthy $NOOP_BASE_SHA. Treating post-deploy exact-SHA check as satisfied."
                 break
               fi
+
+              # Intentionally-skipped-build escape hatch — mirrors the
+              # health-check job's identical guard. See
+              # .github/scripts/verify-skipped-build.sh: production is proven
+              # healthy on this very probe; only the exact-SHA assertion is
+              # relaxed, and only when the reported sha is a real ancestor and
+              # the whole gap contains zero deployable files according to the
+              # same apps/host/scripts/ignore-build.cjs Vercel runs as its
+              # ignoreCommand. Without this, every docs-only / .github-only /
+              # mobile-only commit to main fails this job by construction.
+              SKIP_CHECK=$(bash .github/scripts/verify-skipped-build.sh "$DEPLOYED_SHA" "$GITHUB_SHA" 2>/dev/null || true)
+              SKIP_OK=$(echo "$SKIP_CHECK" | awk '{print $1}')
+              if [ "$SKIP_OK" = "true" ]; then
+                SKIP_VERIFIED="true"
+                SKIP_BASE_SHA=$(echo "$SKIP_CHECK" | cut -d' ' -f2-)
+                echo "::notice::Vercel build intentionally skipped for $GITHUB_SHA (no deployable change since already-healthy $SKIP_BASE_SHA). Treating post-deploy exact-SHA check as satisfied."
+                break
+              fi
             fi
 
             if [ "$attempt" -lt "$VERIFY_ATTEMPTS" ]; then
@@ -1251,7 +1479,7 @@ jobs:
             fi
           done
 
-          if [ "$HEALTH_STATUS" != "200" ] || [ "$HEALTHY" != "true" ] || { [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ] && [ "$NOOP_VERIFIED" != "true" ]; }; then
+          if [ "$HEALTH_STATUS" != "200" ] || [ "$HEALTHY" != "true" ] || { [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ] && [ "$NOOP_VERIFIED" != "true" ] && [ "$SKIP_VERIFIED" != "true" ]; }; then
             # Echo the diagnostic BEFORE deleting the body. This is the fix for
             # the "operator gets no detail" defect.
             echo "::error::Post-deploy health did not prove healthy exact SHA after $VERIFY_ATTEMPTS attempt(s) (http=$HEALTH_STATUS healthy=$HEALTHY sha=$DEPLOYED_SHA expected=$EXPECTED_SHA)."
@@ -1379,6 +1607,10 @@ jobs:
             echo "content_verified_noop=true" >> "$GITHUB_OUTPUT"
             echo "verified_noop_base_sha=$NOOP_BASE_SHA" >> "$GITHUB_OUTPUT"
           fi
+          if [ "$SKIP_VERIFIED" = "true" ]; then
+            echo "build_intentionally_skipped=true" >> "$GITHUB_OUTPUT"
+            echo "verified_skip_base_sha=$SKIP_BASE_SHA" >> "$GITHUB_OUTPUT"
+          fi
           echo "All post-deploy verifications passed."
 
   # ── Step 4: Release Tag & Summary ──
@@ -1410,12 +1642,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Version no longer comes from the (optionally-skipped) `deploy` job — read
       # it from the host app package so release tagging works on the default
       # Vercel-GitHub-App deploy path.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -1564,6 +1796,10 @@ jobs:
           HEALTH_VERIFIED_NOOP_BASE_SHA: ${{ needs.health-check.outputs.verified_noop_base_sha }}
           POST_CONTENT_VERIFIED_NOOP: ${{ needs.post-deploy-verify.outputs.content_verified_noop }}
           POST_VERIFIED_NOOP_BASE_SHA: ${{ needs.post-deploy-verify.outputs.verified_noop_base_sha }}
+          HEALTH_BUILD_INTENTIONALLY_SKIPPED: ${{ needs.health-check.outputs.build_intentionally_skipped }}
+          HEALTH_VERIFIED_SKIP_BASE_SHA: ${{ needs.health-check.outputs.verified_skip_base_sha }}
+          POST_BUILD_INTENTIONALLY_SKIPPED: ${{ needs.post-deploy-verify.outputs.build_intentionally_skipped }}
+          POST_VERIFIED_SKIP_BASE_SHA: ${{ needs.post-deploy-verify.outputs.verified_skip_base_sha }}
           MIGRATIONS_RESULT: ${{ needs.migrations.result }}
           MIGRATION_PARITY: ${{ needs.migrations.outputs.migration_parity }}
           MIGRATION_TARGET_ENVIRONMENT: ${{ needs.migrations.outputs.migration_target_environment }}
@@ -1615,6 +1851,15 @@ jobs:
           # hatch fired.
           if [ "$HEALTH_CONTENT_VERIFIED_NOOP" = "true" ] || [ "$POST_CONTENT_VERIFIED_NOOP" = "true" ]; then
             echo "::notice::This release was verified via the no-op-deploy escape hatch (health-check base=${HEALTH_VERIFIED_NOOP_BASE_SHA:-<n/a>}, post-deploy-verify base=${POST_VERIFIED_NOOP_BASE_SHA:-<n/a>}), not a literal exact-SHA match on production."
+          fi
+
+          # Audit trail only — same rationale as the no-op notice above. Records
+          # that this release carried no deployable change, so Vercel's
+          # ignoreCommand correctly built nothing and production kept serving the
+          # named ancestor. Liveness was still proven; only the exact-SHA
+          # assertion took the skip path.
+          if [ "$HEALTH_BUILD_INTENTIONALLY_SKIPPED" = "true" ] || [ "$POST_BUILD_INTENTIONALLY_SKIPPED" = "true" ]; then
+            echo "::notice::This release had NO deployable change (apps/host/scripts/ignore-build.cjs); Vercel intentionally skipped the build and production continues to serve the verified ancestor (health-check base=${HEALTH_VERIFIED_SKIP_BASE_SHA:-<n/a>}, post-deploy-verify base=${POST_VERIFIED_SKIP_BASE_SHA:-<n/a>})."
           fi
 
           # Audit trail only — the gating assertions above already cover this.

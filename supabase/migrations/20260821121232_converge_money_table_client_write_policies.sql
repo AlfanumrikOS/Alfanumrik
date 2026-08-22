@@ -1,0 +1,196 @@
+-- Migration: 20260821121232_converge_money_table_client_write_policies.sql
+-- Purpose: Drop the three money/quota-table RLS policies that exist ONLY on staging, converging
+--          staging's policy set to production's intended 8-policy shape. Two of the three are
+--          live exploit #6 — a logged-in student resetting their own AI quota counters.
+--
+-- FILENAME / LEDGER NOTE (RESOLVED 2026-08-21): `apply_migration` stamps its own wall-clock
+-- ledger version at apply time rather than honouring a file's version prefix. This file was
+-- AUTHORED as 20260821140100; when applied to production `shktyoxqhundlvkiwguu` on 2026-08-21 the
+-- ledger stamped 20260821121232 (name `converge_money_table_client_write_policies`). BOTH this
+-- file and its DOWN partner in docs/runbooks/ were RENAMED TO MATCH THE LEDGER — the ledger was
+-- never repaired to match the file — so the filename and
+-- `supabase_migrations.schema_migrations` now AGREE and the pair stays discoverable under one
+-- version. The ledger records what actually happened; the authored filename did not.
+--
+-- NOTE THE SORT DIRECTION: the stamped 20260821121232 sorts BEFORE the authored 20260821140100.
+-- Left unreconciled, `supabase db push` would have read the higher-numbered file as still
+-- unapplied and re-run it — harmless, because all three statements below are `DROP POLICY IF
+-- EXISTS` and were a verified no-op on production, but a standing false signal. Renaming DOWN to
+-- the stamped version is what closes it. Same reconciliation as
+-- 20260821121122_create_v_xp_ledger_drift_and_reassert_view_revokes.sql and
+-- 20260821082059_restrict_secdef_views_to_service_role.sql.
+--
+-- ============================================================================
+-- THE DEFECT — STAGING NEVER GOT THE 2026-08-20 FIX
+-- ============================================================================
+-- Policy state captured read-only from BOTH projects on 2026-08-21, across the four money/quota
+-- tables (`payment_history`, `student_subscriptions`, `subscription_events`,
+-- `student_daily_usage`):
+--
+--   PRODUCTION `shktyoxqhundlvkiwguu` — exactly 8 policies. THE INTENDED SHAPE.
+--   STAGING    `gzpxqklxwzishrkiaatd` — 11 policies. THREE EXTRA.
+--
+-- The union-minus-keep set is EXACTLY THREE POLICIES, ALL STAGING-ONLY:
+--
+--   * `subscription_events_student_select` — SELECT, TO public. A redundant THIRD select policy.
+--   * `student_usage_insert`               — INSERT, TO public.  *** LIVE EXPLOIT #6 ***
+--   * `student_usage_update`               — UPDATE, TO public.  *** LIVE EXPLOIT #6 ***
+--
+-- NOTHING ON PRODUCTION IS IN THE DROP SET. All three are already absent there, so on production
+-- this migration is a VERIFIED NO-OP — not an assumed one; the absence was confirmed by
+-- enumerating `pg_policies` on both projects.
+--
+-- ============================================================================
+-- EXPLOIT #6 IS OPEN ON STAGING TODAY
+-- ============================================================================
+-- `student_usage_insert` and `student_usage_update` are PERMISSIVE policies granted `TO public`.
+-- In PostgreSQL `public` is the implicit role every other role is a member of — IT INCLUDES
+-- `anon` AND `authenticated`. PostgREST exposes every table in `public` to any caller holding
+-- the anon key plus their own JWT, so these are reachable from a browser console with nothing
+-- but a normal student login.
+--
+-- All policies on these tables are PERMISSIVE and none is RESTRICTIVE, and permissive policies
+-- are OR-ed. A SINGLE surviving permissive write policy keeps the door fully open — which is
+-- exactly why these two, alone, are sufficient to keep exploit #6 alive on staging even though
+-- the 2026-08-20 migration dropped `student_daily_usage_own_insert` / `_own_update` /
+-- `_own_delete`. Different names, same hole.
+--
+-- CONFIRMED BEHAVIOURALLY, not read from the catalogue:
+--
+--     has_table_privilege('authenticated', 'public.student_daily_usage', 'INSERT')  -> true
+--     has_table_privilege('authenticated', 'public.student_daily_usage', 'UPDATE')  -> true
+--
+-- That is exploit #6 from 20260820143726's header: a student resetting their own AI quota
+-- counters and consuming unmetered Claude API spend. Uncapped cost of goods.
+--
+-- `subscription_events_student_select` is a different class — read-only, not an exploit. It is
+-- a REDUNDANT THIRD SELECT POLICY: `sub_events_own_read` already grants own-row reads, and the
+-- service_role ALL policy covers the server path. It is dropped for convergence, so that the two
+-- environments have one describable policy set instead of two, not because it leaks.
+--
+-- ============================================================================
+-- *** THE LESSON — EXIT CODE IS NOT EVIDENCE ***
+-- ============================================================================
+-- 20260820143726_drop_client_write_policies_money_tables.sql REPORTED SUCCESS ON STAGING AND
+-- CHANGED NOTHING THERE.
+--
+-- It could not have done otherwise. Every statement in it is `DROP POLICY IF EXISTS`, and
+-- `DROP POLICY IF EXISTS` CANNOT FAIL: if the named policy is absent it emits a NOTICE and
+-- returns success. Staging's policies carry DIFFERENT NAMES from production's, so all thirteen
+-- drops matched nothing, the migration committed cleanly, and the ledger recorded a successful
+-- apply of a security fix that closed zero exposure on that environment.
+--
+-- A green exit code from a file full of `IF EXISTS` statements carries ZERO information about
+-- whether anything changed. It is the same silent-no-op failure mode documented in
+-- 20260821082059's "WHY `FROM PUBLIC` ALONE WOULD HAVE BEEN A SILENT NO-OP" section: naming a
+-- target that does not exist fails silently, and reads in review as authoritative hardening.
+--
+--   *** DO NOT VERIFY THIS MIGRATION BY WHETHER ITS STATEMENTS MATCHED. ***
+--   *** VERIFY IT BY ASSERTING THE RESULTING STATE, IN BOTH ENVIRONMENTS. ***
+--
+-- Specifically, after applying, run in EACH project:
+--
+--     SELECT tablename, policyname, cmd, roles
+--       FROM pg_policies
+--      WHERE schemaname = 'public'
+--        AND tablename IN ('payment_history','student_subscriptions',
+--                          'subscription_events','student_daily_usage')
+--      ORDER BY tablename, policyname;
+--
+-- and assert BOTH the COUNT PER TABLE and the exact POLICY NAMES PER TABLE. Expected end state
+-- is 8 policies on both projects: one own-row SELECT and one service_role ALL per table. Then
+-- re-check behaviourally under a real student JWT that INSERT/UPDATE on
+-- `public.student_daily_usage` is denied.
+--
+-- ============================================================================
+-- WHY THE KEEP-SET NAMES DIFFER BETWEEN ENVIRONMENTS — AND WHY WE DO NOT RENAME
+-- ============================================================================
+-- Staging's surviving policy names are NOT the same strings as production's — e.g. staging has
+-- `payments_own_read` where production has `payment_history_own_select`, and
+-- `sub_events_own_read` where production has `subscription_events_own_select`.
+--
+-- THAT IS FINE AND IS LEFT ALONE. Both environments end with the same SEMANTIC shape per table:
+-- one own-row SELECT policy plus one service_role ALL policy. The security posture is identical;
+-- only the identifiers differ.
+--
+-- *** DO NOT RENAME POLICIES TO MATCH. *** Renaming is cosmetic churn with real risk: a
+-- DROP-and-recreate to change a name has a window with no policy in place, and any typo in the
+-- recreated predicate is a silent authorisation change. Convergence here means "same access
+-- rules", not "same strings".
+--
+-- ============================================================================
+-- WHAT IS *NOT* DONE HERE — THE REMAINING SINGLE-LAYER RISK
+-- ============================================================================
+-- TABLE-LEVEL GRANTS ARE UNTOUCHED. This migration is three DROP POLICY statements and nothing
+-- else: no GRANT, no REVOKE, no ALTER, no CREATE, no data change.
+--
+-- Consequently, in BOTH environments, after this migration:
+--
+--     *** `anon` AND `authenticated` STILL HOLD `arwdDxtm` — ALL EIGHT PRIVILEGES, i.e.
+--         GRANT ALL — ON ALL FOUR MONEY TABLES. ***
+--
+-- Production is protected from exploits 1-6 SOLELY BY THE ABSENCE OF A PERMISSIVE WRITE POLICY.
+-- RLS denies the write because no policy permits it, not because the role lacks the privilege.
+-- THAT IS A SINGLE LAYER OF DEFENCE. Anyone who later adds a permissive write policy to one of
+-- these tables — or creates a view over one, which inherits `GRANT ALL TO anon` from
+-- `00000000000000_baseline_from_prod.sql:22640-22643` — re-opens the hole immediately, with no
+-- privilege barrier behind it to catch the mistake.
+--
+-- That is DB-12 in docs/audits/FIX-LEDGER.md (`anon` holding INSERT/UPDATE/DELETE/TRUNCATE on
+-- 419 tables) and it is EXPLICITLY OUT OF SCOPE HERE. Narrowing those privileges needs a
+-- complete write-path map plus a matching `ALTER DEFAULT PRIVILEGES` change, and has known
+-- collateral damage: three SECURITY INVOKER RPCs run with the CALLER'S privileges and would
+-- break under a blanket removal — `record_learning_event`, `mark_notification_read`,
+-- `teacher_create_class`. Not attempted in this file.
+--
+-- Also not done: no policy is CREATED, no policy is RENAMED, and the 8 keep-set policies on
+-- either project are not modified.
+--
+-- ============================================================================
+-- ROLLBACK
+-- ============================================================================
+-- DOWN migration — recreates the three staging policies from their captured definitions:
+--     docs/runbooks/20260821121232_converge_money_table_client_write_policies.DOWN.sql
+--
+-- Deliberately NOT in `supabase/migrations/`: `supabase db push` applies every file in that
+-- directory in version order, so a down-migration parked there would re-open exploit #6 on the
+-- very next deploy with no operator decision. Rolling back must be a conscious, hand-run act.
+--
+-- Rollback restores ACCESS RULES ONLY, never data: any row written through these policies while
+-- they existed stays exactly where it is. If a student reset their quota counters on staging
+-- before this migration, dropping the policy does not restore the consumed counts.
+--
+-- Ledger: docs/audits/FIX-LEDGER.md
+-- BEFORE capture (production, 2026-08-20):
+--     docs/audits/2026-08-20-money-table-policies-BEFORE.md
+-- Sibling UP that this pairs with: 20260821121122_create_v_xp_ledger_drift_and_reassert_view_revokes.sql
+
+BEGIN;
+
+-- ---------------------------------------------------------------------------
+-- public.subscription_events (1) — STAGING-ONLY; absent on production.
+--
+-- Redundant third SELECT policy, TO public. `sub_events_own_read` already
+-- covers own-row reads on staging (`subscription_events_own_select` on
+-- production). Not an exploit — dropped for convergence only.
+-- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS subscription_events_student_select ON public.subscription_events;
+
+-- ---------------------------------------------------------------------------
+-- public.student_daily_usage (2) — STAGING-ONLY; absent on production.
+--
+-- *** THESE TWO ARE LIVE EXPLOIT #6 ON STAGING. *** Permissive, TO public
+-- (which includes `anon` and `authenticated`), so any logged-in student can
+-- INSERT or UPDATE their own quota row and reset their AI usage counters —
+-- unmetered Claude API spend. Confirmed via has_table_privilege(
+-- 'authenticated', 'public.student_daily_usage', 'INSERT'/'UPDATE') -> true.
+--
+-- The legitimate writer is the service-role client at
+-- `apps/host/src/app/api/foxy/_lib/quota.ts:145`, which bypasses RLS and is
+-- unaffected. The legitimate client path is SELECT-only
+-- (`packages/lib/src/usage.ts:217,283`) and keeps its own-row read policy.
+-- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS student_usage_insert ON public.student_daily_usage;
+DROP POLICY IF EXISTS student_usage_update ON public.student_daily_usage;
+
+COMMIT;

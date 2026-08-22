@@ -1,0 +1,161 @@
+-- ############################################################################
+-- ##                                                                        ##
+-- ##   STOP. THE PAIRED UP MIGRATION'S VERSION IS DELIBERATELY BACKDATED.   ##
+-- ##   DO NOT RENAME IT. DO NOT RE-STAMP IT. DO NOT `apply_migration` IT.   ##
+-- ##                                                                        ##
+-- ############################################################################
+--
+-- Added 2026-08-22. This banner is duplicated verbatim-in-substance at the top
+-- of the UP file, because a future session is as likely to arrive here first —
+-- and the wrong move is available from either file.
+--
+-- 1. THE VERSION 20260821070000 IS BACKDATED ON PURPOSE, AND SORT POSITION IS
+--    THE ENTIRE MECHANISM.
+--    The UP must sort BEFORE
+--    20260821082059_restrict_secdef_views_to_service_role.sql so that its
+--    `CREATE OR REPLACE VIEW public.v_xp_ledger_drift` precedes that file's
+--        REVOKE ALL ON public.v_xp_ledger_drift FROM PUBLIC, anon, authenticated;
+--    `REVOKE` has NO `IF EXISTS` form. On any environment lacking the view it
+--    raises 42P01 (undefined_table), and because all SEVEN of that migration's
+--    REVOKEs share ONE transaction (BEGIN :231, this view's revoke :263,
+--    COMMIT :282), the error ROLLS BACK ALL SEVEN. The hardening lands nowhere.
+--
+-- 2. `apply_migration` CANNOT APPLY THE UP AT ITS OWN VERSION.
+--    Its schema takes only `project_id`, `name`, `query` — there is NO
+--    `version` parameter, so it stamps wall-clock time. That records a version
+--    ABOVE the head with no committed file behind it, turning ONE parity
+--    mismatch into TWO. The new remote-only version is the worse of the two:
+--    `supabase db push --include-all` cannot reconcile remote-only versions —
+--    it aborts on them.
+--
+-- 3. DO NOT RENAME THE UP TO A STAMPED VERSION.
+--    Renaming to match the ledger stamp is the CORRECT remedy everywhere else
+--    in this repo — 20260820143726, 20260820152908, 20260821061915,
+--    20260821082059, 20260821121122 and 20260821121232 were all renamed that
+--    way, correctly. It is WRONG here: for those six the version was a label on
+--    self-contained work, whereas for 20260821070000 the version IS the
+--    content. Re-stamping moves it above 20260821082059 and RE-ARMS the 42P01
+--    on staging (head 20260821061915), on a fresh CI project, and on a DR
+--    restore replaying from 00000000000000_baseline_from_prod.sql. Production
+--    would show no symptom, which is why the mistake would ship unnoticed.
+--    Point 3 of "WHY THE DROP IS COMMENTED OUT" below is the same hazard seen
+--    from the rollback side; this is the authoring side of it.
+--
+-- 4. THE CORRECT WAY TO APPLY THE UP IS
+--        supabase db push --linked --include-all      (through CI)
+--    which stamps the ledger from the FILENAME version, preserving
+--    20260821070000. That path was made reliable on 2026-08-22: the
+--    `migrations` job in .github/workflows/deploy-production.yml now decides
+--    whether to push by PROBING THE REMOTE LEDGER (its `ledger-probe` step,
+--    reusing .github/scripts/verify-migration-ledger.sh) instead of diffing
+--    `HEAD~1 HEAD`, so a committed-but-unapplied version triggers its own push
+--    on the next deploy regardless of what that deploy's commits touched.
+--    Under the old diff-only gate the UP sat committed-but-unapplied with no
+--    future commit able to re-trigger it — that is how it got stranded.
+--
+-- NOTE ON LINE NUMBERS: `deploy-production.yml:487` cited below predates the
+-- 2026-08-22 restructure and has shifted. Grep for
+-- `supabase db push --linked --include-all` instead.
+--
+-- ############################################################################
+
+-- DOWN migration for:
+--   supabase/migrations/20260821070000_create_v_xp_ledger_drift.sql
+--
+-- The UP does exactly one thing: `CREATE OR REPLACE VIEW public.v_xp_ledger_drift`. It issues no
+-- GRANT and no REVOKE, so there are no privileges to restore here. A strict inverse would
+-- therefore be a single `DROP VIEW`.
+--
+-- *** THAT DROP IS PRESENT BELOW BUT COMMENTED OUT, AND MUST STAY THAT WAY UNLESS YOU HAVE ***
+-- *** CONSCIOUSLY DECIDED OTHERWISE, ON A SPECIFIC DATABASE, FOR A STATED REASON.          ***
+--
+-- ============================================================================
+-- WHY THE DROP IS COMMENTED OUT
+-- ============================================================================
+-- ON PRODUCTION `shktyoxqhundlvkiwguu`, RUNNING IT WOULD DELETE A LIVE OBJECT.
+--
+--   1. THE UP DID NOT CREATE THE VIEW THERE. `v_xp_ledger_drift` already existed on production —
+--      created by hand, outside the migration chain (that is the finding the UP's header
+--      records). `CREATE OR REPLACE VIEW` would only have replaced it in place with a
+--      byte-identical definition. Dropping it is not a rollback of anything this migration did;
+--      it is the destruction of a pre-existing production object.
+--
+--      DO NOT ASSUME THE UP "NEVER RAN THERE". It does run: every deploy path passes
+--      `--include-all` (deploy-production.yml:487), which applies any local migration absent
+--      from the remote history table regardless of ordering, so the backdated 20260821070000
+--      IS applied to production out of order. It simply changes nothing when it runs —
+--      `CREATE OR REPLACE VIEW` replaces in place, the ACL is preserved, and the definition is
+--      byte-identical (`md5(pg_get_viewdef)` = `c69c438d…`). "Ran and changed nothing" is not
+--      "created the object", which is why dropping it is still not a rollback.
+--
+--   2. THE VIEW IS LOAD-BEARING. DB-3's detection query in docs/audits/FIX-LEDGER.md:48 is
+--      literally `SELECT count(*) FROM v_xp_ledger_drift`. Dropping the view BREAKS THE ONLY
+--      MEASUREMENT OF AN OPEN P0 — XP ledger drift affecting 14 of 68 students. The drift does
+--      not go away; only our ability to see it does. That is strictly worse than the state
+--      before the UP ran.
+--
+--   3. IT WOULD ALSO RE-BREAK THE MIGRATION CHAIN. The whole point of the UP is to make
+--      20260821082059_restrict_secdef_views_to_service_role.sql's
+--      `REVOKE ALL ON public.v_xp_ledger_drift ...` resolvable. Drop the view on an environment
+--      that later replays the chain and you restore the original 42P01, which rolls back all
+--      seven revokes in that file's single transaction.
+--
+-- DECISION RULE:
+--
+--   * PRODUCTION -> LEAVE IT COMMENTED. Never run it there. The view predates the UP.
+--   * STAGING    -> the view genuinely is new there, so dropping it is a true inverse. Even so,
+--     PREFER TO LEAVE IT IN PLACE: it is a detection view with no writers, it leaks nothing once
+--     20260821082059's revokes are in force, and keeping it is what makes staging reproduce
+--     production. Uncomment only if you specifically need staging view-free again.
+--   * IF YOU UNCOMMENT IT, CONFIRM WHICH DATABASE YOU ARE CONNECTED TO FIRST:
+--         SELECT current_database(), inet_server_addr();
+--   * AND NOTE THE ORDERING CONSEQUENCE: if you drop the view WITHOUT also reverting
+--     20260821082059 and 20260821121122, the next `db push` on that environment can re-raise
+--     42P01 (see point 3).
+--
+-- ============================================================================
+-- WHY THIS FILE IS NOT IN supabase/migrations/
+-- ============================================================================
+-- `supabase db push` applies EVERY file in `supabase/migrations/` in version order. A
+-- down-migration living there would be applied AUTOMATICALLY on the next deploy, with no
+-- operator decision and no signal that anything had changed — and if the `DROP VIEW` line were
+-- also uncommented, that automatic push would delete a live production object and break DB-3's
+-- detection query.
+--
+-- It therefore lives in `docs/runbooks/` and is NEVER auto-applied. Rolling back is a conscious,
+-- hand-run act:
+--
+--     psql "$DATABASE_URL" -f docs/runbooks/20260821070000_create_v_xp_ledger_drift.DOWN.sql
+--
+-- DO NOT MOVE THIS FILE INTO `supabase/migrations/`.
+--
+-- ============================================================================
+-- LIMITS OF THIS ROLLBACK
+-- ============================================================================
+-- 1. IT TOUCHES NO DATA. The view is a read-only projection; dropping it changes no row in
+--    `students` or `xp_transactions`, and repairs no XP drift. The UP made drift VISIBLE on
+--    staging; this file only makes it invisible again.
+-- 2. IT RESTORES NO PRIVILEGES, because the UP granted and revoked none. The seven-view ACL
+--    hardening belongs to 20260821082059 and 20260821121122; roll those back with their own DOWN
+--    files in this directory, and read their headers first — they restore a KNOWN-VULNERABLE
+--    state including anonymous write access to two auto-updatable views.
+-- 3. IT DOES NOT UN-BACKDATE THE UP. The out-of-order version 20260821070000 stays in the repo
+--    whatever this file does; an environment that has already applied a higher version will
+--    never see it either way.
+-- 4. IT DOES NOT ERASE THE UNDERLYING FINDING. `v_xp_ledger_drift` was created out-of-band
+--    against production. Dropping the view does not address that; see
+--    docs/audits/2026-08-21-out-of-band-write-incident-logs.md.
+--
+-- UP migration:
+--   supabase/migrations/20260821070000_create_v_xp_ledger_drift.sql
+-- Related DOWN files (separate, more dangerous — read their headers):
+--   docs/runbooks/20260821082059_restrict_secdef_views_to_service_role.DOWN.sql
+--   docs/runbooks/20260821121122_create_v_xp_ledger_drift_and_reassert_view_revokes.DOWN.sql
+-- Ledger: docs/audits/FIX-LEDGER.md  (DB-1 convergence; DB-3 for the drift this view reports)
+
+-- ---------------------------------------------------------------------------
+-- THE DROP IS COMMENTED OUT ON PURPOSE. See the header in full before you
+-- uncomment it, then confirm the target database:
+--     SELECT current_database(), inet_server_addr();
+-- ---------------------------------------------------------------------------
+-- DROP VIEW IF EXISTS public.v_xp_ledger_drift;
