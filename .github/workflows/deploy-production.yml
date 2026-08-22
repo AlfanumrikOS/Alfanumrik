@@ -433,12 +433,48 @@ jobs:
   # deploys reported green. Both paths now end in the SAME read-only
   # migration-history parity check, so out-of-band drift is surfaced HERE, on
   # the release that follows it, instead of being silently tolerated.
+  #
+  # WHY THE PUSH IS NOW PARITY-DRIVEN, NOT DIFF-DRIVEN (2026-08-22): the push
+  # used to be gated SOLELY on `git diff HEAD~1 HEAD -- supabase/migrations/`.
+  # That heuristic answers "did the tip commit carry SQL?", which is NOT the
+  # question the job needs answered — the question is "is the production ledger
+  # missing anything this repo has committed?". The two diverge the moment a
+  # migration-bearing merge fails to deploy, and when they diverge the job
+  # DEADLOCKS:
+  #
+  #   1. Merge e195c72b1 committed 20260821070000. Its CI was red (a ratchet
+  #      test), the Quality Gate below correctly blocked the deploy, and
+  #      `db push` never ran.
+  #   2. The next merge, 8ca6c69c0, touched no SQL. `HEAD~1 HEAD` was empty, so
+  #      the push was SKIPPED.
+  #   3. But the parity check compares the FULL committed set against the FULL
+  #      ledger, so it still failed: 613 committed vs 612 in the ledger, missing
+  #      20260821070000.
+  #   4. No future commit re-triggers the diff, because no future commit will
+  #      ever contain a file that landed in step 1. Production stays blocked,
+  #      and the job summary contradicts itself — "migrations changed: false;
+  #      versions in this release: none" printed by the same job whose parity
+  #      check is failing on a named version.
+  #
+  # The trigger and the check now read ONE source of truth: the remote ledger.
+  # `ledger-probe` runs .github/scripts/verify-migration-ledger.sh READ-ONLY
+  # before the push and reports the delta in both directions; the push fires on
+  # a non-empty committed-but-unapplied delta no matter what the tip diff says;
+  # and the SAME script then runs UNCONDITIONALLY as the post-push assertion, so
+  # a green push must still leave the two ledgers in parity. The tip diff is
+  # RETAINED as the other arm of an OR (it is the only signal available before
+  # touching the database, and it is what names "the versions this push
+  # introduced" in the release record) but it is no longer the sole gate.
   migrations:
     name: Apply Database Migrations
     runs-on: ubuntu-latest
     needs: [production-verification-gate, quality, pre-deploy-checklist]
     environment: production
     outputs:
+      # NOTE: as of 2026-08-22 `changed` means "this job touched the database
+      # plane" (tip diff OR ledger drift), not "the tip commit carried SQL", and
+      # `versions` is the UNION of both. The widening is load-bearing for the
+      # auto-rollback suppression in health-check — see the migration-diff step.
       production_migrations_changed: ${{ steps.migration-diff.outputs.changed }}
       production_migration_versions: ${{ steps.migration-diff.outputs.versions }}
       migration_parity: ${{ steps.parity.outputs.migration_parity }}
@@ -448,50 +484,194 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Detect migration changes
-        id: migration-diff
-        run: |
-          MIGRATION_FILES=$(git diff --name-only HEAD~1 HEAD -- 'supabase/migrations/' || true)
-          # 14-digit versions carried by THIS release, used to bind the release
-          # record to the migration set. Top-level only — `_legacy/` is out of
-          # scope for `supabase db push`, mirroring how scripts/lint-migrations.js
-          # scopes the chain.
-          VERSIONS=$(printf '%s\n' "$MIGRATION_FILES" \
-            | sed -nE 's#^supabase/migrations/([0-9]{14})_[^/]*\.sql$#\1#p' \
-            | sort -u | paste -sd, -)
-          echo "versions=${VERSIONS}" >> "$GITHUB_OUTPUT"
-          if [ -n "$MIGRATION_FILES" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "### Production migrations detected" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            echo "$MIGRATION_FILES" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "| Production migrations | None in this push; db push skipped, migration-history parity still verified below |" >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      # Unconditional: the parity check below runs on BOTH the changed and the
-      # unchanged path, so the CLI must always be present.
+      # Unconditional: the pre-push ledger probe AND the post-push parity
+      # assertion both talk to the remote database on EVERY path, so the CLI
+      # must always be present.
       - uses: supabase/setup-cli@v2
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
-      - name: Push migrations to production
-        if: steps.migration-diff.outputs.changed == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
-          supabase db push --linked --include-all
-
+      # MOVED AHEAD OF THE PUSH (2026-08-22). psql is what reads the ledger, and
+      # the ledger is now what DECIDES whether to push — so psql has to exist
+      # before that decision, not merely before the post-push assertion.
       - name: Ensure psql is available
         run: |
           if ! command -v psql >/dev/null 2>&1; then
             sudo apt-get update -qq
             sudo apt-get install -y -qq --no-install-recommends postgresql-client
           fi
+
+      # ── PRE-PUSH LEDGER PROBE (READ-ONLY) ────────────────────────────────
+      # Runs THE SAME .github/scripts/verify-migration-ledger.sh that asserts
+      # parity after the push. That reuse is the entire point of this step: the
+      # trigger and the check read one source of truth, so it is structurally
+      # impossible for the job to decide "nothing to push" on one definition of
+      # the migration set and then fail on another. Re-implementing the set
+      # comparison here would recreate exactly the two-definitions bug the
+      # script's own header documents (the `awk -F'|' … v=$2` tautology that
+      # printed parity forever while 8 versions were missing).
+      #
+      # This step never renders a verdict. It cannot fail the job for drift —
+      # drift here is an INPUT to the push decision, and the push is the remedy.
+      # The verdict is the unconditional parity step after the push.
+      #
+      # It DOES fail the job when the probe cannot establish database state at
+      # all (unreadable ledger, wrong/forbidden project ref, empty scan). That
+      # is not "no drift", and pushing blindly against an unknown database is
+      # worse than stopping — so that branch is fail-closed.
+      - name: Probe migration-ledger delta (read-only, pre-push)
+        id: ledger-probe
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          EXPECTED_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          FORBIDDEN_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          ENV_LABEL: production
+          LC_ALL: C
+        run: |
+          echo "drift=false" >> "$GITHUB_OUTPUT"
+          echo "pending_versions=" >> "$GITHUB_OUTPUT"
+          echo "orphan_versions=" >> "$GITHUB_OUTPUT"
+
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
+
+          PROBE_LOG="$(mktemp)"
+          trap 'rm -f "$PROBE_LOG"' EXIT
+
+          # GITHUB_STEP_SUMMARY is blanked for this invocation only (the script
+          # no-ops its summary writes when it is empty), so the job summary
+          # carries the POST-push verdict and not a pre-push drift that the push
+          # is about to remedy.
+          set +e
+          GITHUB_STEP_SUMMARY='' bash .github/scripts/verify-migration-ledger.sh >"$PROBE_LOG" 2>&1
+          PROBE_RC=$?
+          set -e
+
+          # De-escalate the script's ::error:: annotations to plain text: they
+          # are findings, not this step's verdict.
+          sed -e 's/^::error:://' -e 's/^/  [ledger-probe] /' "$PROBE_LOG"
+
+          if [ "$PROBE_RC" -eq 0 ]; then
+            echo "Ledger probe: the committed set already equals the production ledger."
+            exit 0
+          fi
+
+          # Extract both delta directions from the script's own report. This
+          # parse feeds the TRIGGER and the release record. It can only cause a
+          # push or a hard failure — never a silent skip — because the
+          # authoritative pass/fail is the parity step below, which re-runs this
+          # same script and is not gated on anything computed here.
+          delta() {
+            awk -v want="$1" '
+              /^::error::Committed but NOT in the/           { mode = "pending"; next }
+              /^::error::In the .* ledger but NOT committed/ { mode = "orphan";  next }
+              /^::error::/                                   { mode = "";       next }
+              mode == want && $0 ~ /^  [0-9]+$/ && length($1) == 14 { print $1 }
+            ' "$PROBE_LOG" | sort -u | paste -sd, -
+          }
+          PENDING="$(delta pending)"
+          ORPHAN="$(delta orphan)"
+
+          if [ -z "$PENDING" ] && [ -z "$ORPHAN" ]; then
+            echo "::error::The migration-ledger probe failed (exit ${PROBE_RC}) WITHOUT reporting a delta — the ledger could not be read, the linked project ref was wrong or forbidden, or a scan came back empty. That is not 'no drift'; the database state for this release is unknown. Refusing to push. See the [ledger-probe] lines above."
+            exit 1
+          fi
+
+          echo "drift=true" >> "$GITHUB_OUTPUT"
+          echo "pending_versions=${PENDING}" >> "$GITHUB_OUTPUT"
+          echo "orphan_versions=${ORPHAN}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$PENDING" ]; then
+            echo "::notice::Committed but NOT yet in the production ledger: ${PENDING}. This alone triggers the push below, regardless of what HEAD~1..HEAD touched."
+          fi
+          if [ -n "$ORPHAN" ]; then
+            echo "::warning::In the production ledger but NOT committed: ${ORPHAN}. A push cannot reconcile REMOTE-only versions (the CLI aborts on them), so this direction does not by itself trigger one; the unconditional parity step below will fail this job and print the recovery procedure."
+          fi
+
+      # ── SIGNAL FUSION ────────────────────────────────────────────────────
+      # Runs AFTER the probe so it can fold BOTH triggers into the single pair
+      # of outputs the rest of this workflow already consumes.
+      #
+      # `changed` no longer means "HEAD~1..HEAD touched SQL". It now means
+      # "this job is going to touch the database plane":
+      #     tip diff carried SQL   OR   the ledger is missing committed versions.
+      # That widening is REQUIRED, not cosmetic. The auto-rollback step in
+      # health-check suppresses web-only Vercel rollback when
+      # production_migrations_changed == 'true'. Had this output stayed
+      # diff-only, a drift-triggered push would apply schema to production while
+      # the rollback guard still believed the release was web-only — and would
+      # roll the app back UNDER the schema this job had just applied.
+      #
+      # `versions` is the union for the same reason: the GitHub release record
+      # and the completion-gate audit line must name the versions this release
+      # actually applied. The diff-only derivation is what printed the
+      # self-contradicting "migrations changed: false; versions in this release:
+      # none" on the deploy whose parity check was failing on 20260821070000.
+      - name: Detect migration changes
+        id: migration-diff
+        env:
+          DRIFT_PENDING: ${{ steps.ledger-probe.outputs.pending_versions }}
+          DRIFT_ORPHAN: ${{ steps.ledger-probe.outputs.orphan_versions }}
+        run: |
+          MIGRATION_FILES=$(git diff --name-only HEAD~1 HEAD -- 'supabase/migrations/' || true)
+          # 14-digit versions carried by THIS push. Top-level only — `_legacy/`
+          # is out of scope for `supabase db push`, mirroring how
+          # scripts/lint-migrations.js scopes the chain and how
+          # .github/scripts/verify-migration-ledger.sh scopes its local scan.
+          TIP_VERSIONS=$(printf '%s\n' "$MIGRATION_FILES" \
+            | sed -nE 's#^supabase/migrations/([0-9]{14})_[^/]*\.sql$#\1#p' \
+            | sort -u | paste -sd, -)
+
+          TIP_CHANGED=false
+          if [ -n "$MIGRATION_FILES" ]; then TIP_CHANGED=true; fi
+
+          CHANGED=false
+          if [ "$TIP_CHANGED" = "true" ] || [ -n "$DRIFT_PENDING" ]; then CHANGED=true; fi
+
+          VERSIONS=$(printf '%s\n%s\n' "$TIP_VERSIONS" "$DRIFT_PENDING" \
+            | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)
+
+          echo "tip_changed=${TIP_CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "changed=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "versions=${VERSIONS}" >> "$GITHUB_OUTPUT"
+
+          if [ "$TIP_CHANGED" = "true" ]; then
+            echo "### Production migrations in this push (HEAD~1..HEAD)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "$MIGRATION_FILES" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Migrations in this push (HEAD~1..HEAD) | None — the pre-push ledger probe, not this diff, decides whether a push is required; migration-history parity is verified below either way |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo "| Database plane touched by this release | \`${CHANGED}\` (tip diff \`${TIP_CHANGED}\`, ledger-pending \`${DRIFT_PENDING:-none}\`) |"
+            echo "| Migration versions this release applies | \`${VERSIONS:-none}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$DRIFT_ORPHAN" ]; then
+            echo "| Remote-only ledger versions | \`${DRIFT_ORPHAN}\` — a push cannot reconcile these; the parity step below will fail this job |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # ── PUSH ─────────────────────────────────────────────────────────────
+      # Two independent triggers, ORed. `steps.migration-diff.outputs.changed`
+      # is ALREADY the union of both (see the step above), so either arm alone
+      # is sufficient; the ledger arm is spelled out a second time here so the
+      # parity-driven trigger is visible in the condition itself and cannot be
+      # "simplified" back into a pure diff gate without someone deleting it.
+      #
+      # `--include-all` is what lets the CLI apply committed files that sort
+      # BELOW the newest remote version — required for the stranded-version case
+      # this gate exists to clear, and for the deliberately backdated
+      # 20260821070000. It does NOT reconcile remote-only versions.
+      - name: Push migrations to production
+        if: >-
+          ${{ steps.migration-diff.outputs.changed == 'true'
+          || steps.ledger-probe.outputs.pending_versions != '' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --linked --include-all
 
       # ── Migration-history parity check (runs on BOTH paths) ──
       # READ-ONLY. Compares the committed migration set against the versions
@@ -512,10 +692,17 @@ jobs:
       # table directly instead of parsing rendered CLI output. See the
       # script's own header for the full RCA.
       #
-      # On the changed==true path it runs AFTER the push, so a green push must
-      # leave the two ledgers in parity. On the changed==false path it is the
-      # only database interaction, and it is what stops a frontend-only release
-      # from bypassing database-state verification.
+      # This is the ASSERTION. The `ledger-probe` step above runs the very same
+      # script, but read-only and non-fatal, purely to decide whether to push;
+      # this invocation is the one that renders the verdict and is deliberately
+      # UNCONDITIONAL. Keep it that way — the probe deciding "no push needed"
+      # must never be able to also mean "no verification needed", which is the
+      # shape of the bug this whole job keeps re-learning.
+      #
+      # When a push ran, this runs AFTER it, so a green push must leave the two
+      # ledgers in parity. When no push ran, it is the only database
+      # interaction, and it is what stops a frontend-only release from bypassing
+      # database-state verification.
       - name: Verify migration-history parity
         id: parity
         env:
