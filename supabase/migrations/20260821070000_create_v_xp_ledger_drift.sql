@@ -1,3 +1,116 @@
+-- ############################################################################
+-- ##                                                                        ##
+-- ##      STOP. DO NOT RENAME THIS FILE. DO NOT RE-STAMP ITS VERSION.       ##
+-- ##      DO NOT APPLY IT WITH `apply_migration`.                           ##
+-- ##                                                                        ##
+-- ############################################################################
+--
+-- Added 2026-08-22, after this file spent a release cycle STRANDED — committed
+-- to the repo but absent from the production ledger — because the deploy job
+-- gated `supabase db push` on a `git diff HEAD~1 HEAD` heuristic instead of on
+-- the ledger itself. That gate is now fixed (section 4). This banner exists
+-- because the two remedies a future session will reach for FIRST are both
+-- wrong here, and both leave the tree worse than they found it.
+--
+-- ---------------------------------------------------------------------------
+-- 1. VERSION 20260821070000 IS DELIBERATELY BACKDATED. IT IS NOT UNTIDINESS
+--    TO BE CLEANED UP. IT IS THE ONLY REASON THIS FILE EXISTS.
+-- ---------------------------------------------------------------------------
+-- This file MUST sort BEFORE
+-- 20260821082059_restrict_secdef_views_to_service_role.sql, so that its
+-- `CREATE OR REPLACE VIEW public.v_xp_ledger_drift` is applied before that
+-- migration's
+--
+--     REVOKE ALL ON public.v_xp_ledger_drift FROM PUBLIC, anon, authenticated;
+--
+-- `REVOKE` has NO `IF EXISTS` form. On any environment where the view does not
+-- exist, that statement raises 42P01 (undefined_table). All SEVEN of that
+-- migration's REVOKEs share ONE transaction (BEGIN at :231, the
+-- v_xp_ledger_drift revoke at :263, COMMIT at :282), so the 42P01 does not
+-- merely skip one statement — IT ROLLS BACK ALL SEVEN. The entire view
+-- hardening lands nowhere, on every environment that hits it.
+--
+-- Sort position is the whole mechanism. Move the sort position and this file
+-- does nothing at all.
+--
+-- ---------------------------------------------------------------------------
+-- 2. `apply_migration` CANNOT APPLY THIS AT ITS OWN VERSION. NOT "SHOULD NOT" —
+--    CANNOT.
+-- ---------------------------------------------------------------------------
+-- The `apply_migration` tool's schema takes only `project_id`, `name`, and
+-- `query`. THERE IS NO `version` PARAMETER. It stamps the ledger with
+-- wall-clock time.
+--
+-- Applying this file that way therefore records a version ABOVE the current
+-- head with NO committed file behind it, converting ONE parity mismatch (a
+-- committed version missing from the ledger) into TWO: the original, still
+-- missing, PLUS a new remote-only version that no file in this repo can ever
+-- explain. The second kind is strictly worse than the first —
+-- `supabase db push --include-all` cannot reconcile remote-only versions at
+-- all; it aborts on them, blocking every subsequent deploy until someone
+-- reconstructs the migration by hand.
+--
+-- ---------------------------------------------------------------------------
+-- 3. DO NOT RENAME THIS FILE TO A STAMPED VERSION.
+--    THAT IS THE CORRECT REMEDY EVERYWHERE ELSE IN THIS REPO, AND IT IS THE
+--    WRONG ONE HERE.
+-- ---------------------------------------------------------------------------
+-- Renaming a file so its version matches the stamp actually recorded in the
+-- ledger IS the established fix in this repository. All six of these were
+-- renamed exactly that way, correctly:
+--
+--     20260820143726_drop_client_write_policies_money_tables.sql
+--     20260820152908_lock_down_coupons_read_and_bound_discount.sql
+--     20260821061915_revoke_public_execute_quiz_serving_rpcs.sql
+--     20260821082059_restrict_secdef_views_to_service_role.sql
+--     20260821121122_create_v_xp_ledger_drift_and_reassert_view_revokes.sql
+--     20260821121232_converge_money_table_client_write_policies.sql
+--
+-- THE PRECEDENT DOES NOT TRANSFER. For those six, the version number was a
+-- label on work that stood on its own content. For THIS file the version
+-- number IS the content: its sole function is to sort below 20260821082059.
+--
+-- Re-stamping it to a wall-clock version moves it ABOVE 20260821082059 and
+-- RE-ARMS the 42P01 on every environment that has not already applied the
+-- chain:
+--
+--     * STAGING — ledger head 20260821061915, i.e. below this file;
+--     * A FRESH CI PROJECT replaying the chain from the baseline;
+--     * ANY DR RESTORE replaying from 00000000000000_baseline_from_prod.sql.
+--
+-- On those three the rename silently re-breaks all seven revokes. On
+-- production it changes nothing observable — which is exactly why the mistake
+-- would ship unnoticed and be discovered only by the next restore.
+--
+-- IF YOU ARE HERE BECAUSE THE VERSION "LOOKS WRONG", YOU ARE MISSING SECTION 1.
+-- Read it, and the "THIS VERSION NUMBER IS DELIBERATELY BACKDATED" section
+-- immediately below, before you touch the filename.
+--
+-- ---------------------------------------------------------------------------
+-- 4. HOW TO APPLY IT CORRECTLY
+-- ---------------------------------------------------------------------------
+--     supabase db push --linked --include-all        (through CI)
+--
+-- `--include-all` applies local migrations absent from the remote history
+-- table REGARDLESS of whether they sort above or below the remote head, and
+-- the ledger row is stamped from the FILENAME version — so this file is
+-- recorded at 20260821070000, which is the entire point.
+--
+-- That path was made reliable on 2026-08-22: the `migrations` job in
+-- .github/workflows/deploy-production.yml now decides whether to push by
+-- PROBING THE REMOTE LEDGER (its `ledger-probe` step, which reuses
+-- .github/scripts/verify-migration-ledger.sh) rather than by diffing
+-- `HEAD~1 HEAD`. A committed-but-unapplied version now triggers its own push on
+-- the next deploy, whatever that deploy's commits happened to touch. Before
+-- that fix, a migration whose own merge had red CI could never be picked up
+-- again by any later commit — which is precisely how THIS file got stranded.
+--
+-- NOTE ON LINE NUMBERS: the `deploy-production.yml:NNN` citations further down
+-- this header predate the 2026-08-22 restructure and have shifted. Grep for
+-- `supabase db push --linked --include-all` instead of trusting them.
+--
+-- ############################################################################
+
 -- Migration: 20260821070000_create_v_xp_ledger_drift.sql
 -- Purpose: Create `public.v_xp_ledger_drift` EARLY ENOUGH IN VERSION ORDER that
 --          20260821082059_restrict_secdef_views_to_service_role.sql can revoke on it without
