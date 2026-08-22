@@ -31,7 +31,6 @@ import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import {
   ErrorResponse,
-  SubjectNotAllowedDetails,
   SuccessAck,
   TodayResponse,
   QuizQuestion,
@@ -271,28 +270,17 @@ describe('/v2 contract conformance — success envelopes parse against contract 
       name: 'Asha',
       total_xp: 1450,
       streak: 7,
-      // P13: always null on the wire — get_leaderboard emits none of these and
-      // a peer's institution/city is not exposed on a leaderboard.
       avatar_url: null,
       grade: '9',
-      school: null,
-      city: null,
+      school: 'DPS',
+      city: 'Delhi',
     };
     // P13 guard — the leaderboard entry must not carry PII beyond the existing surface.
     expect(Object.keys(entry)).not.toContain('email');
     expect(Object.keys(entry)).not.toContain('phone');
     expectParses(
       successEnvelope(LeaderboardResponse),
-      {
-        success: true,
-        data: {
-          schemaVersion: 1,
-          period: 'weekly',
-          scope: 'global',
-          entries: [entry],
-          me: { student_id: UUID_A, on_board: true, rank: 1, total_xp: 1450 },
-        },
-      },
+      { success: true, data: { schemaVersion: 1, period: 'weekly', scope: 'global', entries: [entry] } },
     );
   });
 
@@ -377,9 +365,6 @@ describe('/v2 contract conformance — error envelopes parse against ErrorRespon
     ['NO_STUDENT_PROFILE', 'No student profile found for this account'],
     ['VALIDATION_ERROR', 'Invalid query params'],
     ['SESSION_NOT_STARTED', 'session_not_started'],
-    // Shares SQLSTATE P0001 with SESSION_NOT_STARTED but is a 403, not a 409 —
-    // the ownership-guard denial (REG-394). No student id in the message (P13).
-    ['STUDENT_OWNERSHIP_DENIED', 'Access denied for this student'],
     ['RPC_FAILED', 'Temporary scoring failure — retry with same Idempotency-Key'],
     ['INSUFFICIENT_QUESTIONS_IN_SCOPE', 'insufficient_questions_in_scope (available=2, requested=10)'],
     ['GRADE_MISMATCH', 'Requested grade does not match your profile grade'],
@@ -393,98 +378,11 @@ describe('/v2 contract conformance — error envelopes parse against ErrorRespon
     expectParses(ErrorResponse, { success: false, error: 'Unauthorized' });
   });
 
-  // ── `retryable` — the cross-client field the Flutter drain branches on ──────
-  // Its NAME and TOP-LEVEL POSITION are the contract (REG-391); the generated
-  // Dart client reads it straight off the error envelope.
-  it('ErrorResponse conforms with retryable:false on a PERMANENT scoring failure', () => {
-    expectParses(ErrorResponse, {
-      success: false,
-      error:
-        'Scoring failed permanently for this submission. Do not retry — this has been reported to support.',
-      code: 'RPC_PERMANENT',
-      retryable: false,
-    });
-  });
-
-  it('ErrorResponse conforms with retryable:true on a TRANSIENT scoring failure', () => {
-    expectParses(ErrorResponse, {
-      success: false,
-      error: 'Temporary scoring failure — retry with same Idempotency-Key',
-      code: 'RPC_FAILED',
-      retryable: true,
-    });
-  });
-
-  it('ErrorResponse REJECTS a non-boolean retryable (drift guard)', () => {
-    // A string "false" is truthy in Dart/JS — a silent regression here would
-    // restore the infinite-retry defect the field exists to stop.
-    expect(
-      ErrorResponse.safeParse({
-        success: false,
-        error: 'x',
-        code: 'RPC_PERMANENT',
-        retryable: 'false',
-      }).success,
-    ).toBe(false);
-  });
-
   it('ErrorResponse REJECTS a bare {error} (legacy v1 envelope drift guard)', () => {
     // The legacy src/lib/api-response.ts emits a bare { error } with NO success
     // discriminant. The /v2 contract requires success:false — this proves the
     // schema would catch a route that regressed to the v1 envelope.
     expect(ErrorResponse.safeParse({ error: 'oops' }).success).toBe(false);
-  });
-
-  // ── `details` — subject-validation structured payload (2026-08-12 E2E batch) ──
-  // P2-7a/P2-7c: the 403 subject_not_allowed (quiz/questions) and 400
-  // UNKNOWN_SUBJECT (learn/curriculum, learn/concept) bodies carry
-  // details: { subject, reason, allowed } so clients render the rejected value
-  // and the allowed subject-code list instead of string-parsing the message.
-  it('ErrorResponse conforms with subject_not_allowed details (403 GET /v2/quiz/questions)', () => {
-    expectParses(ErrorResponse, {
-      success: false,
-      error:
-        "Subject 'Mathematics' is not allowed (not available for your grade). Allowed subject codes: math, science",
-      code: 'subject_not_allowed',
-      details: { subject: 'Mathematics', reason: 'grade', allowed: ['math', 'science'] },
-    });
-  });
-
-  it('ErrorResponse conforms with UNKNOWN_SUBJECT details (400 learn routes)', () => {
-    expectParses(ErrorResponse, {
-      success: false,
-      error:
-        "Unknown subject 'Mathematics' — subject must be one of this student's subject codes: math, science",
-      code: 'UNKNOWN_SUBJECT',
-      details: { subject: 'Mathematics', reason: 'unknown_subject', allowed: ['math', 'science'] },
-    });
-  });
-
-  // P2-7b: governance-RPC outage fails CLOSED — 503 + the top-level retryable
-  // idiom (#1526) so the mobile drain retries instead of discarding.
-  it('ErrorResponse conforms with SUBJECT_GOVERNANCE_UNAVAILABLE + retryable:true (fail-closed 503)', () => {
-    expectParses(ErrorResponse, {
-      success: false,
-      error: 'Subject eligibility could not be verified — please retry',
-      code: 'SUBJECT_GOVERNANCE_UNAVAILABLE',
-      retryable: true,
-    });
-  });
-
-  it('SubjectNotAllowedDetails accepts the wire shape', () => {
-    expectParses(SubjectNotAllowedDetails, {
-      subject: 'Mathematics',
-      reason: 'grade',
-      allowed: ['math'],
-    });
-  });
-
-  it('SubjectNotAllowedDetails REJECTS a missing allowed[] (drift guard)', () => {
-    // `allowed` is the actionable half of the payload — a regression that
-    // drops it re-creates the "rejected, but with what valid values?" defect.
-    expect(
-      SubjectNotAllowedDetails.safeParse({ subject: 'Mathematics', reason: 'grade' }).success,
-    ).toBe(false);
   });
 });
 

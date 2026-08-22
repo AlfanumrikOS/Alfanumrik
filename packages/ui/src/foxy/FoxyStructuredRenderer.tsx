@@ -37,14 +37,12 @@ import type {
   FoxyMermaidBlock,
   FoxyVerticalMathBlock,
   FoxyMapBlock,
-  FoxyFormulaSheetBlock,
 } from '@alfanumrik/lib/foxy/schema';
 import {
   isFoxyMcqBlock,
   isFoxyMermaidBlock,
   isFoxyVerticalMathBlock,
   isFoxyMapBlock,
-  isFoxyFormulaSheetBlock,
 } from '@alfanumrik/lib/foxy/schema';
 
 // Lazy-loaded block renderers (P10 bundle budget)
@@ -134,16 +132,6 @@ export interface FoxyStructuredRendererProps {
   response: FoxyResponse;
   /** Optional subject code override; defaults to `response.subject`. */
   subjectKey?: string;
-  /**
-   * Student's enrolled grade and the active chapter number, when known.
-   * Used ONLY by the `diagram` block to scope its `topic_diagrams` lookup to
-   * the exact chapter being discussed (via `subjectKey`, which must be the
-   * granular subject code — e.g. "physics" — matching `topic_diagrams.subject`,
-   * not the coarse `FoxySubjectEnum` on `response.subject`). Omit either to
-   * fall back to the prior corpus-wide free-text search.
-   */
-  grade?: string;
-  chapterNumber?: number;
   /** Invoked when a math block fails to render (renderer surfaces a button). */
   onReportIssue?: () => void;
   /**
@@ -166,7 +154,6 @@ interface Chrome {
   definition: string;
   example: string;
   practice: string;
-  formula_sheet: string;
   formulaError: string;
   reportIssue: string;
   diagram: string;
@@ -197,7 +184,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     definition: 'Definition',
     example: 'Example',
     practice: 'Practice',
-    formula_sheet: 'Formula Sheet',
+    formulaError: 'Issue with formula',
     reportIssue: 'Report issue',
     diagram: 'Diagram',
     diagramLoading: 'Drawing diagram…',
@@ -213,7 +200,6 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     mcqAlready: 'You already answered this one.',
     mcqRetry: 'Try again',
     mcqRetryHint: "Couldn't submit just now.",
-    formulaError: 'Issue with formula',
   },
   hi: {
     answer: 'उत्तर',
@@ -225,7 +211,7 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     definition: 'परिभाषा',
     example: 'उदाहरण',
     practice: 'अभ्यास',
-    formula_sheet: 'सूत्र पुस्तिका',
+    formulaError: 'सूत्र में समस्या',
     reportIssue: 'समस्या रिपोर्ट करें',
     diagram: 'चित्र',
     diagramLoading: 'डायग्राम बन रहा है…',
@@ -241,7 +227,6 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     mcqAlready: 'आप इसका उत्तर पहले ही दे चुके हैं।',
     mcqRetry: 'फिर कोशिश करें',
     mcqRetryHint: 'अभी उत्तर जमा नहीं हो पाया।',
-    formulaError: 'सूत्र में समस्या',
   },
 };
 
@@ -322,10 +307,6 @@ interface BlockProps {
   onReportIssue?: () => void;
   /** Part B1: evidential binding for the MCQ block (undefined → self-check). */
   quizMe?: QuizMeBinding;
-  /** Diagram-block chapter scoping — see FoxyStructuredRendererProps. */
-  subjectCode?: string;
-  grade?: string;
-  chapterNumber?: number;
 }
 
 function ParagraphBlock({ block }: { block: FoxyBlock }) {
@@ -427,45 +408,6 @@ function AnswerBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
   );
 }
 
-function FormulaSheetBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
-  return (
-    <div className="my-3 px-4 py-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900">
-      <div className="font-bold text-sm mb-1">{chrome.formula_sheet}</div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="border-b border-indigo-200">
-              <th className="text-left px-3 py-1 font-semibold text-indigo-700">Formula</th>
-              <th className="text-left px-3 py-1 font-semibold text-indigo-700">When to use</th>
-            </tr>
-          </thead>
-          <tbody>
-            {block.formulae && block.formulae.length > 0 ? (
-              block.formulae.map((f: { formula?: string; use?: string; label?: string }, idx: number) => (
-                <tr key={idx} className="border-b border-indigo-100">
-                  <td className="px-3 py-1.5 text-indigo-900 font-mono text-xs break-all">
-                    {f.label && <span className="font-semibold block">{f.label}</span>}
-                    <InlineContent text={f.formula ?? ''} />
-                  </td>
-                  <td className="px-3 py-1.5 text-indigo-800 text-xs">
-                    <InlineContent text={f.use ?? ''} />
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td className="px-3 py-1.5 text-indigo-800" colSpan={2}>
-                  <InlineContent text={block.text ?? ''} />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function ExamTipBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
   return (
     <div className="my-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
@@ -534,57 +476,7 @@ function CodeBlock({ block }: { block: FoxyBlock }) {
   );
 }
 
-/** Stopwords stripped from a diagram `search_query` before keyword matching —
- * generic terms the model appends to nearly every query ("...NCERT diagram
- * for Class 10") that would otherwise match everything in-scope. */
-const DIAGRAM_SEARCH_STOPWORDS = new Set([
-  'diagram', 'ncert', 'class', 'explain', 'show', 'the', 'and', 'with', 'for',
-]);
-
-/** Split by spaces/hyphens (so e.g. "d-block" yields 'd','block') and drop
- * short/generic tokens, leaving the words that actually identify the figure. */
-function extractDiagramKeywords(rawQuery: string): string[] {
-  return rawQuery
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .split(/[\s-]+/)
-    .filter((w) => w.length > 3 && !DIAGRAM_SEARCH_STOPWORDS.has(w));
-}
-
-/**
- * Rank an already chapter-scoped diagram set by keyword overlap with the
- * model's `search_query`, so a chapter with several figures (heart, lungs,
- * digestive tract, ...) still surfaces the one the student actually asked
- * about. Returns `[]` (never throws) when no diagram's topic/caption/alt_text
- * contains any keyword — the caller decides what to show in that case.
- */
-function rankDiagramsBySearchQuery(diagrams: any[], rawQuery: string): any[] {
-  const keywords = extractDiagramKeywords(rawQuery);
-  if (keywords.length === 0) return [];
-  return diagrams
-    .map((d) => {
-      const haystack = `${d.topic ?? ''} ${d.caption ?? ''} ${d.alt_text ?? ''}`.toLowerCase();
-      const score = keywords.reduce((n, w) => n + (haystack.includes(w) ? 1 : 0), 0);
-      return { d, score };
-    })
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map((x) => x.d);
-}
-
-function DiagramBlock({
-  block,
-  chrome,
-  subjectCode,
-  grade,
-  chapterNumber,
-}: {
-  block: FoxyBlock;
-  chrome: Chrome;
-  subjectCode?: string;
-  grade?: string;
-  chapterNumber?: number;
-}) {
+function DiagramBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
   const [diagrams, setDiagrams] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -597,51 +489,11 @@ function DiagramBlock({
     let mounted = true;
     async function search() {
       const rawQuery = block.search_query || '';
-
-      // Chapter-scoped lookup: when the chat knows the exact subject/grade/
-      // chapter, search ONLY within that chapter's diagrams (indexed via
-      // idx_diagrams_subject_grade_chapter) so Foxy never surfaces a figure
-      // from the wrong chapter or grade. `topic_diagrams.grade` is stored as
-      // "Grade N" (see getTopicDiagrams in packages/lib/src/supabase.ts).
-      if (subjectCode && grade && chapterNumber != null) {
-        const normalizedGrade = grade.startsWith('Grade') ? grade : `Grade ${grade}`;
-        const { data: chapterDiagrams } = await supabase
-          .from('topic_diagrams')
-          .select('*')
-          .eq('subject', subjectCode)
-          .eq('grade', normalizedGrade)
-          .eq('chapter_number', chapterNumber)
-          .eq('is_active', true)
-          .order('display_order')
-          .limit(20);
-
-        if (!mounted) return;
-
-        if (chapterDiagrams && chapterDiagrams.length > 0) {
-          const ranked = rankDiagramsBySearchQuery(chapterDiagrams, rawQuery);
-          // Keyword overlap picks the right figure among several in the same
-          // chapter; if none score (a terse/paraphrased search_query), fall
-          // back to the chapter's own diagrams in book order rather than
-          // reaching outside the chapter.
-          setDiagrams((ranked.length > 0 ? ranked : chapterDiagrams).slice(0, 2));
-          setLoading(false);
-          return;
-        }
-
-        // No diagrams exist for this exact chapter — nothing on-topic to
-        // show. Do NOT fall back to a corpus-wide search here: a diagram
-        // from a different chapter would be actively misleading.
-        setDiagrams([]);
-        setLoading(false);
-        return;
-      }
-
-      // Unscoped fallback — chapter context wasn't supplied by the caller
-      // (e.g. an embed that hasn't threaded grade/chapterNumber through yet).
-      // Best-effort corpus-wide search, same as the original implementation.
+      
+      // Create a websearch query as first attempt
       const queryStr = rawQuery.split(' ').slice(0, 5).join(' ');
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('topic_diagrams')
         .select('*')
         .textSearch('caption', queryStr, { type: 'websearch' })
@@ -655,26 +507,32 @@ function DiagramBlock({
         }
 
         // Fallback: robust keyword matching across topic, caption, and alt_text
-        const words = extractDiagramKeywords(rawQuery);
-
+        const ignored = ['diagram', 'ncert', 'class', 'explain', 'show', 'the', 'and', 'with', 'for'];
+        // Split by spaces and hyphens to get base words (e.g. d-block -> 'd', 'block')
+        const words = rawQuery
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, ' ') 
+          .split(/[\s-]+/)
+          .filter(w => w.length > 3 && !ignored.includes(w));
+          
         if (words.length > 0) {
           // Take the top 3 most significant words to form the OR condition
           const searchWords = words.slice(0, 3);
           const orConditions = searchWords.map(w => `topic.ilike.%${w}%,caption.ilike.%${w}%,alt_text.ilike.%${w}%`).join(',');
-
+          
           const { data: fallbackData } = await supabase
             .from('topic_diagrams')
             .select('*')
             .or(orConditions)
             .limit(2);
-
+            
           if (fallbackData && fallbackData.length > 0) {
              setDiagrams(fallbackData);
              setLoading(false);
              return;
           }
         }
-
+        
         // Final fallback: no diagrams found
         setDiagrams([]);
         setLoading(false);
@@ -683,8 +541,8 @@ function DiagramBlock({
     search();
 
     return () => { mounted = false; };
-  }, [block.search_query, subjectCode, grade, chapterNumber]);
-
+  }, [block.search_query]);
+  
   if (!block.search_query) return null;
   
   if (loading) {
@@ -1168,9 +1026,6 @@ function BlockRouter({
   chrome,
   onReportIssue,
   quizMe,
-  subjectCode,
-  grade,
-  chapterNumber,
 }: BlockProps) {
   switch (block.type) {
     case 'paragraph':
@@ -1201,21 +1056,11 @@ function BlockRouter({
     case 'mcq':
       return <McqBlock block={block} chrome={chrome} quizMe={quizMe} />;
     case 'diagram':
-      return (
-        <DiagramBlock
-          block={block}
-          chrome={chrome}
-          subjectCode={subjectCode}
-          grade={grade}
-          chapterNumber={chapterNumber}
-        />
-      );
+      return <DiagramBlock block={block} chrome={chrome} />;
     case 'mermaid':
       return <MermaidBlock block={block} chrome={chrome} />;
     case 'code':
       return <CodeBlock block={block} />;
-    case 'formula_sheet':
-      return <FormulaSheetBlock block={block} chrome={chrome} />;
     case 'vertical_math':
       // One-math-pipeline rule (docs/math-rendering-spec.md): VerticalMathBlock
       // is a sanctioned SIBLING structured-block renderer (like mermaid) for
@@ -1248,8 +1093,6 @@ function BlockRouter({
 function FoxyStructuredRendererInner({
   response,
   subjectKey,
-  grade,
-  chapterNumber,
   onReportIssue,
   quizMe,
 }: FoxyStructuredRendererProps) {
@@ -1313,9 +1156,6 @@ function FoxyStructuredRendererInner({
             chrome={chrome}
             onReportIssue={onReportIssue ? handleReportIssue : undefined}
             quizMe={i === firstMcqIndex ? quizMe : undefined}
-            subjectCode={subjectKey}
-            grade={grade}
-            chapterNumber={chapterNumber}
           />
         ))}
       </div>

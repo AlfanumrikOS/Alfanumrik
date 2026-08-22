@@ -298,13 +298,10 @@ describe('flag-posture-canary — DB query shape', () => {
     // enabled=true/100 the same day, so it never nets into this list,
     // minus ff_quiz_telemetry_v1, promoted to always-on in code 2026-08-06,
     // backendaudit P0)
-    // minus ff_adaptive_loops_bc_v1 and ff_school_pulse_v1, both CEO-approved
-    // intentionally-live 2026-08-19 after an audited admin_flip_feature_flag
-    // rollout (admin_audit_log, 2026-08-18 16:27 UTC)
     // + ATOMIC; the two MoL shadow flags are already members of EXPECTED_OFF,
-    // so the de-duped set is 55.
+    // so the de-duped set is 57.
     expect(new Set(watched).size).toBe(watched.length);
-    expect(watched).toHaveLength(55);
+    expect(watched).toHaveLength(57);
     // Belt-and-braces against the silent-merge failure mode described in the
     // file header: pin the RELATION as well as the literal, so a future
     // EXPECTED_OFF_FLAGS edit that forgets this file fails with a message that
@@ -328,11 +325,11 @@ describe('flag-posture-canary — drift detection matrix', () => {
   }
 
   it('an EXPECTED_OFF flag re-armed (enabled at rollout 100 — the incident shape) → drift', async () => {
-    const { status, body } = await run([...CLEAN_ROWS, row('ff_productive_failure_v1', true, 100)]);
+    const { status, body } = await run([...CLEAN_ROWS, row('ff_school_pulse_v1', true, 100)]);
     expect(status).toBe(200);
     expect(body.count).toBe(1);
     expect(body.drift[0]).toEqual({
-      flag_name: 'ff_productive_failure_v1',
+      flag_name: 'ff_school_pulse_v1',
       expected: 'is_enabled=false, rollout_percentage=0',
       is_enabled: true,
       rollout_percentage: 100,
@@ -409,12 +406,12 @@ describe('flag-posture-canary — drift detection matrix', () => {
   it('compound drift: multiple deviations are ALL reported with an accurate count', async () => {
     const { body } = await run([
       row(ATOMIC, false, 0), // kill-switch down
-      row('ff_productive_failure_v1', true, 100), // re-armed
+      row('ff_school_pulse_v1', true, 100), // re-armed
       row('ff_digital_twin_v1', true, 100), // re-armed
     ]);
     expect(body.count).toBe(3);
     expect(body.drift.map((d) => d.flag_name).sort()).toEqual(
-      ['ff_digital_twin_v1', 'ff_productive_failure_v1', ATOMIC].sort(),
+      ['ff_digital_twin_v1', 'ff_school_pulse_v1', ATOMIC].sort(),
     );
   });
 
@@ -437,21 +434,6 @@ describe('flag-posture-canary — drift detection matrix', () => {
     expect(EXPECTED_OFF_FLAGS).not.toContain('ff_whatsapp_bot_v1');
   });
 
-  it('ff_adaptive_loops_bc_v1 at its CEO-approved intentionally-live posture (2026-08-19, flipped via the audited admin_flip_feature_flag RPC on 2026-08-18) is NOT drift — it is no longer in EXPECTED_OFF_FLAGS', async () => {
-    const { body } = await run([...CLEAN_ROWS, row('ff_adaptive_loops_bc_v1', true, null)]);
-    expect(body).toEqual({ drift: [], count: 0 });
-  });
-
-  it('ff_school_pulse_v1 at its CEO-approved intentionally-live posture (2026-08-19, flipped via the audited admin_flip_feature_flag RPC on 2026-08-18) is NOT drift — it is no longer in EXPECTED_OFF_FLAGS', async () => {
-    const { body } = await run([...CLEAN_ROWS, row('ff_school_pulse_v1', true, null)]);
-    expect(body).toEqual({ drift: [], count: 0 });
-  });
-
-  it('both 2026-08-19 intentionally-live flags are correctly absent from the watched set derived from EXPECTED_OFF_FLAGS', () => {
-    expect(EXPECTED_OFF_FLAGS).not.toContain('ff_adaptive_loops_bc_v1');
-    expect(EXPECTED_OFF_FLAGS).not.toContain('ff_school_pulse_v1');
-  });
-
   it('ff_foxy_openai_primary_rollout_v1 at its CEO-approved intentionally-live posture (2026-08-03, is_enabled=true/rollout_percentage=100 — the OpenAI-primary rollback lever, #1443) is NOT drift — it is no longer in EXPECTED_OFF_FLAGS, so the post-deploy flag-posture canary sees prod enabled=true/100 as expected', async () => {
     const { body } = await run([...CLEAN_ROWS, row('ff_foxy_openai_primary_rollout_v1', true, 100)]);
     expect(body).toEqual({ drift: [], count: 0 });
@@ -468,7 +450,7 @@ describe('flag-posture-canary — drift detection matrix', () => {
 
 describe('flag-posture-canary — drift side-effects', () => {
   it('drift → one ops_events row (severity error) + one audit row (system actor, failure status)', async () => {
-    dbResult = { data: [...CLEAN_ROWS, row('ff_productive_failure_v1', true, 100)], error: null };
+    dbResult = { data: [...CLEAN_ROWS, row('ff_school_pulse_v1', true, 100)], error: null };
     const { GET } = await loadRoute();
     await GET(req({ 'x-cron-secret': SECRET }));
 
@@ -517,7 +499,7 @@ describe('flag-posture-canary — payload posture (P13) and failure posture', ()
     dbResult = {
       data: [
         row(ATOMIC, false, 0),
-        row('ff_productive_failure_v1', true, 100),
+        row('ff_school_pulse_v1', true, 100),
         row('ff_grounded_answer_mol_shadow_v1', false, 0, { enabled: 'true' }),
       ],
       error: null,
@@ -574,7 +556,7 @@ describe('flag-posture-canary — cron job-health heartbeat', () => {
   });
 
   it('drift run → STILL records the heartbeat (drift detection IS a successful run)', async () => {
-    dbResult = { data: [...CLEAN_ROWS, row('ff_productive_failure_v1', true, 100)], error: null };
+    dbResult = { data: [...CLEAN_ROWS, row('ff_school_pulse_v1', true, 100)], error: null };
     const { GET } = await loadRoute();
     const res = await GET(req({ 'x-cron-secret': SECRET }));
     expect(res.status).toBe(200);

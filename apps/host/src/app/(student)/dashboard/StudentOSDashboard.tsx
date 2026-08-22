@@ -218,7 +218,7 @@ export default function StudentOSDashboard() {
 
   const firstName = student.name.split(' ')[0] || student.name;
   const streak = snapshot?.current_streak ?? 0;
-  const totalXp = snapshot?.total_xp ?? student.xp_total ?? 0;
+  const totalXp = student.xp_total ?? snapshot?.total_xp ?? 0;
   const subjectCode = student.preferred_subject ?? 'science';
 
   // Subject display-name → code map so roadmap node taps deep-link Foxy

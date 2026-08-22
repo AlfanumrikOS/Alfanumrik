@@ -92,16 +92,6 @@ export interface LoopAugmentation {
     chapterNumber: number;
     progressPct: number;
   }>;
-  /** Completed lessons (is_completed = true) with pool_coverage < 0.5.
-   *  Reads from `chapter_progress`. May be empty. These chapters have been
-   *  read once but not yet mastered — surfaced as a "check what you learned"
-   *  action so chapter-read completion feeds the adaptive engine.
-   *  Optional so existing callers and test fixtures remain valid. */
-  completedLessons?: Array<{
-    subjectCode: string;
-    chapterNumber: number;
-    progressPct: number;
-  }>;
   /** The single highest-priority teacher-assigned remediation, or null/absent
    *  when the student has none open. Optional so existing callers that don't
    *  fetch it (and test fixtures) remain valid — absence ≡ "no assignment". */
@@ -385,7 +375,7 @@ export async function buildLoopAugmentation(
       : Promise.resolve(null);
 
   // Run the reads in parallel — they are independent.
-  const [dueCountRes, todayQuizRes, inProgressRes, completedRes, pendingTeacherRemediation, unstartedRes] = await Promise.all([
+  const [dueCountRes, todayQuizRes, inProgressRes, pendingTeacherRemediation, unstartedRes] = await Promise.all([
     // Due-review count — via the E4 SRS single read adapter (srs-source →
     // domains/practice), which owns the ONE due predicate: student's own
     // ACTIVE cards with `next_review_date <= CURRENT_DATE` (UTC date — the
@@ -413,17 +403,6 @@ export async function buildLoopAugmentation(
       .gte('pool_coverage_percent', LEARNER_LOOP_CONFIG.CONTINUE_LESSON_MIN_PROGRESS * 100)
       .order('last_activity_at', { ascending: false })
       .limit(5),
-    // Completed chapters (is_completed = true) with low coverage — read once
-    // but not yet mastered. Surfaced as a "check what you learned" action so
-    // chapter-read completion feeds the adaptive engine (Step 4 bridge).
-    sb
-      .from('chapter_progress')
-      .select('subject, chapter_number, pool_coverage_percent')
-      .eq('student_id', studentId)
-      .eq('is_completed', true)
-      .lt('pool_coverage_percent', 50)
-      .order('completed_at', { ascending: false })
-      .limit(5),
     teacherRemediationPromise,
     sb.rpc('get_next_unstarted_chapter', { p_auth_user_id: authUserId }).maybeSingle(),
   ]);
@@ -434,17 +413,10 @@ export async function buildLoopAugmentation(
     progressPct: Number(row.pool_coverage_percent) / 100,
   }));
 
-  const completedLessons = (completedRes.data ?? []).map(row => ({
-    subjectCode: String(row.subject).toLowerCase(),
-    chapterNumber: Number(row.chapter_number),
-    progressPct: Number(row.pool_coverage_percent) / 100,
-  }));
-
   return {
     dueReviewCount: dueCountRes.ok ? dueCountRes.data.total : 0,
     attemptedQuizToday: (todayQuizRes.count ?? 0) > 0,
     inProgressLessons,
-    completedLessons,
     pendingTeacherRemediation,
     nextUnstartedChapter: unstartedRes.data
       ? {
@@ -707,27 +679,6 @@ const BRANCHES: ResolverBranch[] = [
     },
   },
 
-  // Branch 5c — check what you learned: a completed chapter with low
-  // pool coverage. The student read it once (is_completed = true) but
-  // the mastery engine has not yet promoted it — surfaced as a quick
-  // comprehension check so chapter-read completion feeds the adaptive
-  // loop instead of silently vanishing (Step 4 bridge).
-  {
-    kind: 'check_what_you_learned',
-    predicate: (_state, aug) => (aug.completedLessons?.length ?? 0) > 0,
-    build: (_state, aug) => {
-      const top = aug.completedLessons![0];
-      return {
-        kind: 'check_what_you_learned',
-        url: `/quiz?subject=${encodeURIComponent(top.subjectCode)}&chapter=${top.chapterNumber}&mode=comprehension`,
-        subjectCode: top.subjectCode,
-        chapterNumber: top.chapterNumber,
-        progressPct: top.progressPct,
-        reason: 'completed_but_unchecked',
-      };
-    },
-  },
-
   // Branch 5b — introduce an unstarted chapter when the student has fresh content
   // to explore (fired after today's ZPD quiz, or as secondary queue item).
   {
@@ -826,10 +777,19 @@ export function resolveNextLearnerAction(
  * Derive the live-session resume action from `state.live`. Returns null
  * when the learner is idle. The URL reuses the live state's existing
  * target derivation — no new routes are invented here:
- *   - in_quiz   → /quiz   (the runtime resumes from the open session)
+ *   - in_quiz   → /quiz?session={quizSessionId}
  *   - in_foxy   → /foxy   (the chat resumes the open thread)
  *   - in_lesson → /learn/{subjectCode}/{chapterNumber}  (same shape the
  *                 continue_lesson branch already builds)
+ *
+ * PHASE 4 FIX — the in_quiz link used to be a bare `/quiz`, which lands on
+ * the QuizSetup SELECTION screen. The CTA said "resume" and started the
+ * student over on a brand-new question set: the single most user-visible
+ * expression of "no session survives a refresh". `/quiz` now honours a
+ * `session` param and rebuilds the interrupted session from the server-owned
+ * snapshot (see packages/lib/src/quiz/resume.ts), so the id must be carried.
+ * When the session id is somehow absent the bare `/quiz` is still emitted —
+ * a setup screen is a worse CTA than a resume, but it is not a broken link.
  */
 function resumeActionFromLive(state: StudentState): LearnerAction | null {
   const live = state.live;
@@ -837,7 +797,9 @@ function resumeActionFromLive(state: StudentState): LearnerAction | null {
     case 'in_quiz':
       return {
         kind: 'resume_in_progress',
-        url: '/quiz',
+        url: live.quizSessionId
+          ? `/quiz?session=${encodeURIComponent(live.quizSessionId)}`
+          : '/quiz',
         liveKind: 'in_quiz',
         subjectCode: live.subjectCode,
         chapterNumber: live.chapterNumber,

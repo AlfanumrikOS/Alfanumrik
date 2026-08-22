@@ -49,21 +49,6 @@ const nextConfig = {
   // full node_modules install. Public assets and static chunks are copied
   // separately in the Dockerfile.
   output: 'standalone',
-  typescript: {
-    // The build-time type-checker generates `.next/types/validator.ts` which
-    // imports `../../src/app/<route>/layout.js` for every App Router layout —
-    // but those files are `.tsx`, not `.js`. Next.js 16 generates the `.js`
-    // references and then fails to resolve them, producing ~500 spurious
-    // TS2307 errors and killing the build before `routes-manifest.json` is
-    // written (so `vercel deploy --prebuilt` sees "Config file was not found").
-    //
-    // tsconfig.json already excludes `.next/**` so `tsx --noEmit` (our CI gate
-    // and `npm run type-check`) passes clean — the error only bites the
-    // Next.js internal build checker. Ignore it at that level so the build
-    // completes with full output. Pre-existing; introduced 2026-07-17
-    // monorepo migration (CLAUDE.md § Path aliases). Not a Foxy regression.
-    ignoreBuildErrors: true,
-  },
   // The active npm workspace is apps/host, but node_modules is hoisted at the
   // repository root. Trace from the monorepo root so standalone Docker images
   // include runtime packages such as next.
@@ -168,6 +153,33 @@ const nextConfig = {
       { source: '/review',     destination: '/refresh?tab=flashcards', permanent: true },
       { source: '/revise',     destination: '/refresh?tab=chapters',   permanent: true },
       { source: '/study-plan', destination: '/exam-prep',              permanent: true },
+
+      // Legacy /mock-exam runtime — DELETED 2026-08-11 (Phase 5 track A).
+      //
+      // It ran a 3-hour / 39-question / 80-mark CBSE paper entirely in React
+      // state and then handed the result to /mock-exam/results AS A URL QUERY
+      // STRING. Zero database writes: no quiz_session, no responses, no XP, no
+      // mastery. A student could sit a full board-pattern paper and the product
+      // would retain nothing — and the score was derived in the browser from
+      // `correct_answer_index` values the browser had been handed.
+      //
+      // Superseded by /exams/mock (catalogue) + /exams/mock/[paperId] (runner),
+      // which start a server-side attempt via POST /api/exams/papers/[id]/start
+      // and persist through submit_mock_test_attempt. The runner's
+      // ExamStructureCard reproduces the old "Exam Structure" info card, so the
+      // section/marks briefing survives the deletion.
+      //
+      // Deep links must keep resolving: /mock-exam was removed from nav in
+      // Phase 3 but bookmarks, the /practice/exam/mock alias and any pasted
+      // link still point here. Both a bare /mock-exam and the old
+      // /mock-exam/results?data=… land on the catalogue; the query string is
+      // dropped because that payload described a result that was never stored.
+      { source: '/mock-exam',         destination: '/exams/mock', permanent: true },
+      { source: '/mock-exam/:path*',  destination: '/exams/mock', permanent: true },
+      // The /practice/exam/mock client shell existed only to bounce to
+      // /mock-exam. Collapsed into a config redirect so there is no JS round
+      // trip and no intermediate flash.
+      { source: '/practice/exam/mock', destination: '/exams/mock', permanent: true },
     ];
   },
   // PostHog reverse-proxy → EU project 159341 (eu.i.posthog.com). /ingest/static/*

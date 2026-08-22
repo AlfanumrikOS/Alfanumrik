@@ -204,7 +204,16 @@ function MissionSection() {
   const revealRef = useReveal(50);
 
   const stats = [
-    { value: '16', labelEn: 'Subjects Covered', labelHi: 'विषय शामिल' },
+    // CATALOGUE-CLAIM FIX (2026-08-12): this tile read "16 / Subjects Covered".
+    // Production `subjects.is_active` is true for exactly five codes — math,
+    // science, physics, chemistry, biology — so the number was false. The value
+    // goes through `t()` like the bilingual-tutoring tile below it, so the
+    // Hindi reader sees the same claim, not a numeral with a Hindi noun.
+    {
+      value: t('Maths & Science', 'गणित और विज्ञान'),
+      labelEn: 'What We Teach',
+      labelHi: 'हम क्या पढ़ाते हैं',
+    },
     { value: '6-12', labelEn: 'Grades Supported', labelHi: 'कक्षाएँ समर्थित' },
     {
       value: t('Hindi + English', 'हिंदी + अंग्रेज़ी'),

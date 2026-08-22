@@ -429,28 +429,6 @@ export function getProtection(flagName: string): FlagProtection | null {
  * typed confirmation. If ever rolled back to 0%, re-add
  * 'ff_whatsapp_bot_v1' to this list.
  *
- * ALSO NOT in this list (on purpose, as of 2026-08-19):
- * ff_adaptive_loops_bc_v1 and ff_school_pulse_v1. CEO-approved (Pradeep
- * Sharma) INTENTIONALLY-LIVE. Both were flipped is_enabled=true in production
- * on 2026-08-18 16:27 UTC through admin_flip_feature_flag -- the governed,
- * typed-confirm RPC -- and both flips are recorded in admin_audit_log under
- * action 'feature_flag.protected_flip_rpc' by admin 2b0ae0a9. That is an
- * authorised rollout, not the 2026-07-20 console bulk-enable failure mode this
- * canary exists to catch, so leaving them listed here made every production
- * deploy since fail its post-deploy flag-posture gate on a state an operator
- * had deliberately and correctly set (Deploy Production #1410, #1411).
- *
- * CAVEAT, deliberately recorded rather than silently blessed: both rows are
- * live at rollout_percentage = NULL, not at an explicit staged number the way
- * ff_adaptive_remediation_v1 (10%) and ff_foxy_openai_primary_rollout_v1 (100%)
- * were. NULL is ungated, not a staged rollout, and the protected_feature_flags
- * reason string for both asks for a staged-rollout runbook (REG-124 /
- * REG-126..129 / REG-131..134 / REG-175). If the intent was a staged pilot,
- * set an explicit rollout_percentage; if either is ever rolled back to
- * is_enabled=false / 0, re-add it here -- mirroring the
- * ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 /
- * ff_foxy_openai_primary_rollout_v1 precedents below.
- *
  * ALSO NOT in this list (on purpose, as of 2026-08-03):
  * ff_foxy_openai_primary_rollout_v1. CEO-approved (Pradeep Sharma)
  * INTENTIONALLY-LIVE at is_enabled=true / rollout_percentage=100 -- the
@@ -465,11 +443,10 @@ export function getProtection(flagName: string): FlagProtection | null {
  * ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 precedents immediately above.
  */
 export const EXPECTED_OFF_FLAGS: string[] = [
-  // Group A — constitution-pinned. ff_adaptive_loops_bc_v1 and
-  // ff_school_pulse_v1 left this list on 2026-08-19 (CEO-approved
-  // intentionally-live; see the header note above) and remain
-  // constitution_pinned entries in PROTECTED_FLAGS.
+  // Group A — constitution-pinned
+  'ff_adaptive_loops_bc_v1',
   'ff_digital_twin_v1',
+  'ff_school_pulse_v1',
   // Pedagogy v2 constitution-pinned flags added 2026-07-22
   'ff_productive_failure_v1',
   'ff_pedagogy_v2_monthly_synthesis',

@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     if (error) throw error;
 
     invalidateFlagCache();
-    await logAdminAction({ action: 'create_feature_flag', entity_type: 'feature_flag', entity_id: data.id, details: { name }, ip, actorUserId: auth.userId });
+    await logAdminAction({ action: 'create_feature_flag', entity_type: 'feature_flag', entity_id: data.id, details: { name }, ip });
     return NextResponse.json({ success: true, data });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -148,7 +148,7 @@ export async function PATCH(request: NextRequest) {
     if (error) throw error;
 
     invalidateFlagCache();
-    await logAdminAction({ action: 'update_feature_flag', entity_type: 'feature_flag', entity_id: id, details: safe, ip, actorUserId: auth.userId });
+    await logAdminAction({ action: 'update_feature_flag', entity_type: 'feature_flag', entity_id: id, details: safe, ip });
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });

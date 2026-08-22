@@ -21,6 +21,35 @@
  * pre-existing hyphen/em-dash variance exists in rule 3. The shared semantic
  * surface above is what must never fork.
  *
+ * ── Second parity axis, added 2026-08-11 ────────────────────────────────────
+ * ALFABOT_CORE_CONTEXT (Deno-only) was DELIBERATELY excluded from the parity
+ * set above, and that exclusion is exactly why it drifted silently: the
+ * constant is authored verbatim from `docs/alfabot/knowledge-base.md`
+ * section `pricing-plans`, is injected into EVERY turn (not RAG-retrieved,
+ * not audience-filtered), and prompt rule 2 orders the model to quote it
+ * verbatim — yet nothing pinned it to the KB. It accumulated four false
+ * subject claims per language ("all seven subjects", "4 subjects",
+ * "all subjects", "2 subjects" and their Hindi twins) while every mirror
+ * assertion above kept passing.
+ *
+ * The `ALFABOT_CORE_CONTEXT ↔ knowledge-base parity` block below closes that
+ * hole with three cheap, non-brittle checks:
+ *   a. FORBIDDEN claims — no subject-count claim may appear in either the
+ *      core context or the KB pricing section, in either language (P12:
+ *      under-promise; the product is Mathematics and Science only and every
+ *      plan, free Explorer included, grants both).
+ *   b. SHARED claims — a small set of load-bearing literals must appear in
+ *      BOTH sources, whitespace-normalized (the core context is hard-wrapped
+ *      at ~72 cols, the KB is one long paragraph, so raw substring matching
+ *      would be meaningless).
+ *   c. Price-set + EN/HI symmetry — the multiset of ₹ amounts must be equal
+ *      across the two sources, and the EN and HI halves of the core context
+ *      must carry the same prices and the same cancellation clause (P7: a
+ *      prior pass found Hindi omitting the consumer-friendly half of the
+ *      cancellation sentence that English carried).
+ * Deliberately NOT pinned: prose wording, sentence order, or the full text.
+ * That would make every KB copy-edit a test failure. Only claims are pinned.
+ *
  * Owner: ai-engineer. Reviewers: assessment (scope), testing.
  */
 
@@ -152,5 +181,163 @@ describe('AlfaBot prompt Node↔Deno mirror parity', () => {
       const matches = src.match(/id:\s*'(not_a_tutor|off_topic|other_student_data|unknown_info)'/g) ?? [];
       expect(matches).toHaveLength(4);
     }
+  });
+});
+
+// ─── ALFABOT_CORE_CONTEXT ↔ knowledge-base parity ───────────────────────────
+
+const KB = 'docs/alfabot/knowledge-base.md';
+
+/** Collapse all whitespace so hard-wrapped prompt text matches flowing KB prose. */
+function norm(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/** Extract the template-literal body of `export const ALFABOT_CORE_CONTEXT`. */
+function extractCoreContext(denoSource: string): string {
+  const start = denoSource.indexOf('export const ALFABOT_CORE_CONTEXT = `');
+  if (start === -1) throw new Error('ALFABOT_CORE_CONTEXT declaration not found');
+  const bodyStart = denoSource.indexOf('`', start) + 1;
+  const bodyEnd = denoSource.indexOf('`;', bodyStart);
+  if (bodyEnd === -1) throw new Error('ALFABOT_CORE_CONTEXT is not terminated');
+  return denoSource.slice(bodyStart, bodyEnd);
+}
+
+/** Slice a `## <id>` section out of the knowledge base, up to the next H2. */
+function extractKbSection(kbSource: string, sectionId: string): string {
+  const start = kbSource.indexOf(`## ${sectionId}`);
+  if (start === -1) throw new Error(`KB section "${sectionId}" not found`);
+  const after = kbSource.slice(start + 3);
+  const next = after.search(/\n## [a-z]/);
+  return next === -1 ? after : after.slice(0, next);
+}
+
+/**
+ * Claims the product cannot back (P12). The product teaches Mathematics and
+ * Science only, and migration 20260814000018 left `max_subjects` NULL on all
+ * four plans with 5 `plan_subject_access` rows each — subject count is not a
+ * differentiator and must never be stated as one, in either language.
+ */
+const FORBIDDEN_SUBJECT_CLAIMS: ReadonlyArray<{ label: string; re: RegExp }> = [
+  { label: 'EN numeric/word subject count', re: /\b(?:all\s+)?(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+subjects?\b/i },
+  { label: 'EN "all subjects"', re: /\ball\s+subjects\b/i },
+  { label: 'HI "सातों विषय" (all seven subjects)', re: /सातों\s*विषय/ },
+  { label: 'HI numeric subject count', re: /\d+\s*विषय/ },
+  { label: 'HI "सभी विषय" (all subjects)', re: /सभी\s*विषय/ },
+];
+
+/**
+ * Load-bearing claims that MUST be present in both the core context and the
+ * KB pricing-plans section. Whitespace-normalized on both sides.
+ */
+const SHARED_EN_CLAIMS: readonly string[] = [
+  '₹699 per month',
+  '₹299 per month',
+  '₹1,099 per month',
+  'no credit card required',
+  'Cancel anytime, one tap, no questions',
+  'Cancellation takes effect at end of current billing month',
+  '30 to 3,000 seats',
+  'contact for quote',
+  'Mathematics and Science are included on every tier, free Explorer included',
+  'no subject sits behind a paywall and subjects are never a paid upgrade',
+  'Grades 6 to 10 study Maths and Science',
+  'Physics, Chemistry and Biology, presented together as one Science group',
+];
+
+const SHARED_HI_CLAIMS: readonly string[] = [
+  'गणित और विज्ञान हर tier में शामिल हैं, मुफ़्त Explorer में भी',
+  'कोई विषय paywall के पीछे नहीं है और विषय कभी paid upgrade नहीं हैं',
+  'कक्षा 6 से 10 में गणित और विज्ञान',
+  'कक्षा 11 और 12 में गणित के साथ भौतिकी, रसायन और जीवविज्ञान',
+];
+
+describe('ALFABOT_CORE_CONTEXT ↔ knowledge-base parity', () => {
+  const denoSrc = readSource(DENO_PROMPT);
+  const kbSrc = readSource(KB);
+
+  const coreContext = extractCoreContext(denoSrc);
+  const kbPricing = extractKbSection(kbSrc, 'pricing-plans');
+
+  // The core context's [PRICING] block, and its EN / HI halves.
+  const pricingBlock = coreContext.slice(
+    coreContext.indexOf('[PRICING'),
+    coreContext.indexOf('[SAFETY/DPDPA'),
+  );
+  const enHalf = pricingBlock.slice(pricingBlock.indexOf('\nEN:'), pricingBlock.indexOf('\nHI:'));
+  const hiHalf = pricingBlock.slice(pricingBlock.indexOf('\nHI:'));
+
+  it('extracts a non-empty core context and a non-empty KB pricing section', () => {
+    expect(coreContext.length).toBeGreaterThan(500);
+    expect(kbPricing.length).toBeGreaterThan(500);
+    expect(enHalf.length).toBeGreaterThan(100);
+    expect(hiHalf.length).toBeGreaterThan(100);
+  });
+
+  it('core context makes NO subject-count claim in either language (P12)', () => {
+    for (const { label, re } of FORBIDDEN_SUBJECT_CLAIMS) {
+      const hit = coreContext.match(re);
+      expect(
+        hit,
+        `ALFABOT_CORE_CONTEXT contains a forbidden ${label}: ${JSON.stringify(hit?.[0])}`,
+      ).toBeNull();
+    }
+  });
+
+  it('KB pricing-plans section makes NO subject-count claim either (source parity)', () => {
+    for (const { label, re } of FORBIDDEN_SUBJECT_CLAIMS) {
+      const hit = kbPricing.match(re);
+      expect(
+        hit,
+        `KB pricing-plans contains a forbidden ${label}: ${JSON.stringify(hit?.[0])}`,
+      ).toBeNull();
+    }
+  });
+
+  it('every load-bearing EN claim appears in BOTH the core context and the KB', () => {
+    const core = norm(coreContext);
+    const kb = norm(kbPricing);
+    for (const claim of SHARED_EN_CLAIMS) {
+      expect(core, `core context missing EN claim: ${claim}`).toContain(claim);
+      expect(kb, `KB pricing-plans missing EN claim: ${claim}`).toContain(claim);
+    }
+  });
+
+  it('every load-bearing HI claim appears in BOTH the core context and the KB (P7)', () => {
+    const core = norm(coreContext);
+    const kb = norm(kbPricing);
+    for (const claim of SHARED_HI_CLAIMS) {
+      expect(core, `core context missing HI claim: ${claim}`).toContain(claim);
+      expect(kb, `KB pricing-plans missing HI claim: ${claim}`).toContain(claim);
+    }
+  });
+
+  it('core context and KB quote the SAME set of ₹ amounts (REG-65 price drift)', () => {
+    const prices = (s: string) =>
+      [...new Set([...s.matchAll(/₹\s?([\d,]+)/g)].map((m) => m[1]))].sort();
+    expect(prices(coreContext)).toEqual(['1,099', '299', '699']);
+    expect(prices(kbPricing)).toEqual(prices(coreContext));
+  });
+
+  it('EN and HI halves of the core context carry the same prices (P7)', () => {
+    const prices = (s: string) =>
+      [...new Set([...s.matchAll(/₹\s?([\d,]+)/g)].map((m) => m[1]))].sort();
+    expect(prices(hiHalf)).toEqual(prices(enHalf));
+  });
+
+  it('EN and HI halves both carry the cancellation clause — neither may be harsher (P7)', () => {
+    // Regression guard: the HI half previously stopped at "Cancel anytime"
+    // and omitted "…takes effect at end of current billing month, access
+    // until that date", making Hindi read as an immediate cut-off.
+    for (const [label, half] of [['EN', enHalf], ['HI', hiHalf]] as const) {
+      expect(norm(half), `${label} half missing cancellation clause`).toContain(
+        'Cancellation takes effect at end of current billing month',
+      );
+    }
+  });
+
+  it('EN and HI halves both state the Maths+Science-only scope (P7)', () => {
+    expect(norm(enHalf)).toContain('We teach Mathematics and Science only');
+    expect(norm(hiHalf)).toContain('हम केवल गणित और विज्ञान पढ़ाते हैं');
   });
 });

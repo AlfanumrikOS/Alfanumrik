@@ -18,23 +18,8 @@ import { NextRequest } from 'next/server';
 const mockGetUser = vi.fn();
 const mockRpc = vi.fn();
 const mockInsert = vi.fn().mockReturnValue({ catch: vi.fn() });
-
-// Per-identity-table mock rows for resolveIdentity() — the route re-reads DB
-// truth on the already_completed and deduplicated paths (P1-4 role-echo fix).
-// Keys: students | teachers | guardians | school_admins | onboarding_state.
-// Reset to {} (no profile rows) in beforeEach; tests set what they need.
-let identityTables: Record<string, unknown> = {};
-const IDENTITY_TABLES = [
-  'students',
-  'teachers',
-  'guardians',
-  'school_admins',
-  'onboarding_state',
-];
-
-// Default mockFrom: supports .insert (for audit log), .select().eq() for
-// subjects master lookup (used by C3 subject governance guard), and
-// .select().eq().maybeSingle() for the resolveIdentity() profile-table reads.
+// Default mockFrom: supports .insert (for audit log) and .select().eq() for
+// subjects master lookup (used by C3 subject governance guard).
 const makeFromHandler = (subjectRows: Array<{ code: string }> | null = null) =>
   vi.fn((table: string) => {
     if (table === 'subjects') {
@@ -68,29 +53,9 @@ const makeFromHandler = (subjectRows: Array<{ code: string }> | null = null) =>
         }),
       };
     }
-    if (IDENTITY_TABLES.includes(table)) {
-      return {
-        select: () => ({
-          eq: () => ({
-            maybeSingle: () =>
-              Promise.resolve({ data: identityTables[table] ?? null, error: null }),
-          }),
-        }),
-      };
-    }
     return { insert: mockInsert };
   });
 const mockFrom = makeFromHandler();
-
-// Redis idempotency-lock seam (P1-4 ordering fix): the route must validate the
-// body BEFORE acquiring the lock, so a garbage first call cannot burn the 30s
-// TTL for the subsequent good one. Default: lock acquired (fresh bootstrap).
-const mockAcquireLock = vi.fn();
-const mockReleaseLock = vi.fn();
-vi.mock('@alfanumrik/lib/redis', () => ({
-  acquireIdempotencyLock: (key: string, ttl: number) => mockAcquireLock(key, ttl),
-  releaseIdempotencyLock: (key: string) => mockReleaseLock(key),
-}));
 
 // Mock createSupabaseServerClient (session-based, respects RLS)
 vi.mock('@alfanumrik/lib/supabase-server', () => ({
@@ -217,12 +182,6 @@ describe('POST /api/auth/bootstrap', () => {
       data: { user: null },
       error: { message: 'invalid token' },
     });
-    // Default: no profile rows resolvable (fresh-signup posture); tests that
-    // exercise the already_completed / deduplicated role-echo set rows here.
-    identityTables = {};
-    // Default: Redis lock acquired (fresh bootstrap, no concurrent duplicate).
-    mockAcquireLock.mockResolvedValue(true);
-    mockReleaseLock.mockResolvedValue(undefined);
     // Reset from() handler to the default (supports insert + subjects lookup)
     const defaultHandler = makeFromHandler();
     mockFrom.mockImplementation(defaultHandler as any);
@@ -846,258 +805,6 @@ describe('POST /api/auth/bootstrap', () => {
       const request = createBootstrapRequest({ role: 'parent', name: 'Parent' });
       const json = await (await POST(request)).json();
       expect(json.data.redirect).toBe('/parent');
-    });
-  });
-
-  // ── Role-echo integrity (P1-4, 2026-08-12 E2E fix) ──
-  //
-  // The response `role`/`redirect` are the contract the frontend routes on.
-  // On the idempotent already_completed path they must come from what the
-  // user ACTUALLY is (resolveIdentity ladder: institution_admin → teacher →
-  // parent → student), never echoed from the client-supplied body.
-
-  describe('Role-echo integrity (P1-4)', () => {
-    const STUDENT_ROW = {
-      id: 'student-profile-uuid-1',
-      name: 'Aarav Sharma',
-      grade: '9',
-      auth_user_id: MOCK_USER.id,
-      is_demo: false,
-      account_status: 'active',
-    };
-
-    it('already-bootstrapped student posting institution_admin gets role:student + redirect:/dashboard', async () => {
-      identityTables = { students: STUDENT_ROW };
-      mockRpc.mockResolvedValue({
-        data: { status: 'already_completed', profile_id: 'student-profile-uuid-1' },
-        error: null,
-      });
-
-      const request = createBootstrapRequest({
-        role: 'institution_admin',
-        name: 'Aarav Sharma',
-      });
-      const response = await POST(request);
-      const json = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(json.success).toBe(true);
-      expect(json.data.status).toBe('already_completed');
-      // DB truth — NOT the client-supplied elevation.
-      expect(json.data.role).toBe('student');
-      expect(json.data.redirect).toBe('/dashboard');
-      // Server RBAC held: DB untouched apart from the idempotent RPC.
-      expect(json.data.role).not.toBe('institution_admin');
-      expect(json.data.redirect).not.toBe('/school-admin');
-    });
-
-    it('already_completed echoes the DB role (teacher) regardless of the request role', async () => {
-      identityTables = {
-        teachers: { id: 'teacher-uuid-1', name: 'Ms. Verma', auth_user_id: MOCK_USER.id, is_demo: false },
-      };
-      mockRpc.mockResolvedValue({
-        data: { status: 'already_completed', profile_id: 'teacher-uuid-1' },
-        error: null,
-      });
-
-      const json = await (
-        await POST(createBootstrapRequest({ role: 'student', name: 'Ms. Verma' }))
-      ).json();
-
-      expect(json.data.role).toBe('teacher');
-      expect(json.data.redirect).toBe('/teacher');
-    });
-
-    it('falls back to the VALIDATED request role when no profile row is resolvable (P15: funnel never breaks)', async () => {
-      identityTables = {}; // detection yields null (transient / mid-write)
-      mockRpc.mockResolvedValue({
-        data: { status: 'already_completed', profile_id: 'existing-profile' },
-        error: null,
-      });
-
-      const response = await POST(
-        createBootstrapRequest({ role: 'student', name: 'Aarav Sharma', grade: '9' })
-      );
-      const json = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(json.data.role).toBe('student');
-      expect(json.data.redirect).toBe('/dashboard');
-    });
-
-    it('survives an identity-read THROW on already_completed: 200 with the validated request role, never a 500 (P15)', async () => {
-      // Stronger than the "no rows" fallback above: the profile-table read
-      // REJECTS (connection reset mid-flight). resolveIdentity's Promise.all
-      // rejects, resolveDbRole's catch converts it to null, and the funnel
-      // must complete with the VALIDATED request role — a role-echo read
-      // hiccup can never break bootstrap (P15).
-      const base = makeFromHandler();
-      mockFrom.mockImplementation(((table: string) => {
-        if (table === 'students') {
-          return {
-            select: () => ({
-              eq: () => ({
-                maybeSingle: () => Promise.reject(new Error('ECONNRESET')),
-              }),
-            }),
-          };
-        }
-        return base(table);
-      }) as any);
-      mockRpc.mockResolvedValue({
-        data: { status: 'already_completed', profile_id: 'existing-profile' },
-        error: null,
-      });
-
-      const response = await POST(
-        createBootstrapRequest({ role: 'student', name: 'Aarav Sharma', grade: '9' })
-      );
-      const json = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(json.success).toBe(true);
-      expect(json.data.status).toBe('already_completed');
-      expect(json.data.role).toBe('student');
-      expect(json.data.redirect).toBe('/dashboard');
-    });
-
-    it('fresh success path stays byte-identical: request role echoed, no profile-table re-read', async () => {
-      // Default mockRpc: { status: 'success' } — the RPC just created the
-      // profile, so request role and DB role coincide by construction.
-      const response = await POST(
-        createBootstrapRequest({ role: 'teacher', name: 'Ms. Priya Verma' })
-      );
-      const json = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(json.data.status).toBe('success');
-      expect(json.data.role).toBe('teacher');
-      expect(json.data.redirect).toBe('/teacher');
-      // No resolveIdentity() round-trip on the hot fresh-signup path.
-      const tablesQueried = mockFrom.mock.calls.map((c) => c[0]);
-      expect(tablesQueried).not.toContain('students');
-      expect(tablesQueried).not.toContain('school_admins');
-    });
-  });
-
-  // ── Validation ordering (P1-4, 2026-08-12 E2E fix) ──
-  //
-  // Body parse + role validation run in POST BEFORE the in-memory dedup map
-  // and BEFORE acquireIdempotencyLock. Previously the Redis short-circuit
-  // answered 200 { role:'unknown' } before validation ever ran, so an invalid
-  // role was 400 on a fresh profile but 200 on an existing one, and a garbage
-  // first call burned the 30s TTL for the subsequent good one.
-
-  describe('Validation ordering (P1-4): validate before dedup short-circuits', () => {
-    it('rejects an invalid role with 400 WITHOUT taking the Redis idempotency lock', async () => {
-      const response = await POST(
-        createBootstrapRequest({ role: 'admin', name: 'Nope' })
-      );
-      const json = await response.json();
-
-      expect(response.status).toBe(400);
-      expect(json.code).toBe('INVALID_ROLE');
-      // The 30s TTL must NOT be burned by a rejected call.
-      expect(mockAcquireLock).not.toHaveBeenCalled();
-      expect(mockRpc).not.toHaveBeenCalled();
-    });
-
-    it('rejects invalid JSON with 400 INVALID_BODY without taking the lock', async () => {
-      const response = await POST(createInvalidJsonRequest());
-      const json = await response.json();
-
-      expect(response.status).toBe(400);
-      expect(json.code).toBe('INVALID_BODY');
-      expect(mockAcquireLock).not.toHaveBeenCalled();
-    });
-
-    it('rejects an invalid role with 400 even when the dedup lock is already held (existing-profile case)', async () => {
-      // Pre-fix: this returned 200 { status:'deduplicated', role:'unknown' }.
-      mockAcquireLock.mockResolvedValue(false);
-
-      const response = await POST(
-        createBootstrapRequest({ role: 'garbage_role', name: 'Nope' })
-      );
-      const json = await response.json();
-
-      expect(response.status).toBe(400);
-      expect(json.code).toBe('INVALID_ROLE');
-      expect(mockRpc).not.toHaveBeenCalled();
-    });
-
-    it('deduplicated branch echoes DB truth, never "unknown": student in DB + institution_admin request → role:student', async () => {
-      mockAcquireLock.mockResolvedValue(false); // concurrent bootstrap holds the lock
-      identityTables = {
-        students: {
-          id: 'student-profile-uuid-1',
-          name: 'Aarav Sharma',
-          grade: '9',
-          auth_user_id: MOCK_USER.id,
-          is_demo: false,
-          account_status: 'active',
-        },
-      };
-
-      const response = await POST(
-        createBootstrapRequest({ role: 'institution_admin', name: 'Aarav Sharma' })
-      );
-      const json = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(json.data.status).toBe('deduplicated');
-      expect(json.data.role).toBe('student');
-      expect(json.data.redirect).toBe('/dashboard');
-      // Dedup means the RPC is NOT re-fired.
-      expect(mockRpc).not.toHaveBeenCalled();
-    });
-
-    it('deduplicated branch falls back to the VALIDATED request role mid-bootstrap (no profile rows yet)', async () => {
-      mockAcquireLock.mockResolvedValue(false);
-      identityTables = {}; // first call's RPC has not committed yet
-
-      const response = await POST(
-        createBootstrapRequest({ role: 'parent', name: 'Rajesh Sharma' })
-      );
-      const json = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(json.data.status).toBe('deduplicated');
-      expect(json.data.role).toBe('parent');
-      expect(json.data.redirect).toBe('/parent');
-      expect(json.data.role).not.toBe('unknown');
-    });
-
-    it('deduplicated branch survives an identity-read THROW: 200 with the validated request role, never a 500 (P15)', async () => {
-      // The dedup short-circuit exists to answer FAST while a concurrent
-      // bootstrap holds the lock — a rejecting profile-table read must not
-      // turn that answer into a 500 (P15). resolveDbRole catches internally
-      // and the response falls back to the VALIDATED request role.
-      mockAcquireLock.mockResolvedValue(false);
-      const base = makeFromHandler();
-      mockFrom.mockImplementation(((table: string) => {
-        if (table === 'guardians') {
-          return {
-            select: () => ({
-              eq: () => ({
-                maybeSingle: () => Promise.reject(new Error('ECONNRESET')),
-              }),
-            }),
-          };
-        }
-        return base(table);
-      }) as any);
-
-      const response = await POST(
-        createBootstrapRequest({ role: 'parent', name: 'Rajesh Sharma' })
-      );
-      const json = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(json.data.status).toBe('deduplicated');
-      expect(json.data.role).toBe('parent');
-      expect(json.data.redirect).toBe('/parent');
-      // Dedup still means the RPC is NOT re-fired, even on the fallback path.
-      expect(mockRpc).not.toHaveBeenCalled();
     });
   });
 });

@@ -76,18 +76,25 @@ function PhoneMockup() {
 
 function StatsStrip() {
   const { isHi } = useLang();
+  // CATALOGUE-CLAIM FIX (2026-08-12): the first tile read "16 / Subjects".
+  // `subjects.is_active` is true for exactly five codes — math, science,
+  // physics, chemistry, biology. This component currently has ZERO importers
+  // (verified by grep), so nobody is being shown the number today; it is
+  // corrected rather than left to be re-mounted carrying a falsehood.
+  // `valueHi` exists so the tile stays bilingual (P7) now that the value
+  // itself is words rather than a numeral.
   const stats = [
-    { value: '16', label: 'Subjects', labelHi: 'विषय' },
-    { value: '6–12', label: 'Grades', labelHi: 'कक्षाएँ' },
-    { value: 'हिन्दी+En', label: 'Bilingual', labelHi: 'द्विभाषी' },
-    { value: 'DPIIT', label: 'Recognized', labelHi: 'मान्यता प्राप्त' },
+    { value: 'Maths & Science', valueHi: 'गणित और विज्ञान', label: 'What we teach', labelHi: 'हम क्या पढ़ाते हैं' },
+    { value: '6–12', valueHi: '6–12', label: 'Grades', labelHi: 'कक्षाएँ' },
+    { value: 'हिन्दी+En', valueHi: 'हिन्दी+En', label: 'Bilingual', labelHi: 'द्विभाषी' },
+    { value: 'DPIIT', valueHi: 'DPIIT', label: 'Recognized', labelHi: 'मान्यता प्राप्त' },
   ];
   return (
     <div className="grid grid-cols-4 gap-3 sm:gap-8 max-w-md sm:max-w-none mx-auto mt-10">
       {stats.map((s, i) => (
         <FadeIn key={s.label} delay={i * 0.1}>
           <div className="text-center">
-            <div className="text-sm sm:text-xl font-extrabold" style={{ color: 'var(--orange)' }}>{s.value}</div>
+            <div className="text-sm sm:text-xl font-extrabold" style={{ color: 'var(--orange)' }}>{isHi ? s.valueHi : s.value}</div>
             <div className="text-[10px] sm:text-xs font-medium" style={{ color: 'var(--text-3)' }}>{isHi ? s.labelHi : s.label}</div>
           </div>
         </FadeIn>

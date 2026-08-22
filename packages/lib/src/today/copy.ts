@@ -20,6 +20,26 @@
  *
  * `deepLinkToHref` is the SINGLE place a parsed `TodayDeepLink` ({route, params})
  * becomes a URL string. Components never hand-build query strings.
+ *
+ * ── Phase 4 (2026-08-11): recommendation-reason copy ──────────────────────
+ * The resolver emits 12 opaque machine `reason` strings
+ * (`state/learner-loop/types.ts`). They are TELEMETRY IDENTIFIERS, never
+ * student-visible text. `todayReasonCopy()` below is the ONLY place a machine
+ * reason becomes learner-facing language, and it can only ever produce one of
+ * the six approved phrases — OR nothing at all, for the three calendar-driven
+ * reasons that have no honest claim to make about the learner (see
+ * `REASONS_WITH_NO_CHIP`):
+ *
+ *   Review due · Continue where you stopped · Build this prerequisite ·
+ *   Teacher assigned · Prepare for your test · Ready for the next concept
+ *
+ * Hard rule: no internal vocabulary may reach a student. IRT, BKT, DKT, CME,
+ * SRS, ZPD, theta, "decay", "probability", "confidence", "fatigue", and
+ * "cognitive load" must never appear in any string in this file. An unknown
+ * reason resolves to `null` (render nothing) rather than falling through to
+ * the raw key — the `todayCopy` "return the key" behaviour is a useful loud
+ * failure for a missing translation, but it would leak `decay_above_threshold`
+ * onto a child's screen.
  */
 
 import type { TodayDeepLink } from '@alfanumrik/lib/today/types';
@@ -163,18 +183,197 @@ const COPY: Record<string, CopyEntry> = {
     hi: '{subject} शुरू करो · अध्याय {chapter}',
   },
 
-  // ── Item: completed_lesson_check ───────────────────────────────
-  // A chapter the student read once but hasn't mastered yet — quick
-  // comprehension check so chapter-read completion feeds the loop.
-  'today.item.completed_lesson_check.label': {
-    en: 'Check what you learned',
-    hi: 'जो तुमने सीखा उसे जाँचें',
-  },
-  'today.item.completed_lesson_check.subtitle': {
-    en: '{subject} · {progress}% covered',
-    hi: '{subject} · {progress}% कवर किया',
-  },
+  // ── Phase 4: recommendation reasons ────────────────────────────
+  // The SIX approved learner-facing phrases. Every one of the resolver's 12
+  // machine reasons maps into exactly one of these (see REASON_TO_COPY_KEY).
+  // Never add an entry here that names an internal model or metric.
+  'today.reason.label':         { en: 'Why this',                    hi: 'यह क्यों' },
+  'today.reason.review':        { en: 'Review due',                  hi: 'रिवीज़न बाकी है' },
+  'today.reason.continue':      { en: 'Continue where you stopped',  hi: 'जहाँ छोड़ा था वहीं से जारी रखो' },
+  'today.reason.prerequisite':  { en: 'Build this prerequisite',     hi: 'यह बुनियाद मज़बूत करो' },
+  'today.reason.teacher':       { en: 'Teacher assigned',            hi: 'शिक्षक ने दिया है' },
+  'today.reason.exam':          { en: 'Prepare for your test',       hi: 'अपनी परीक्षा की तैयारी करो' },
+  'today.reason.nextConcept':   { en: 'Ready for the next concept',  hi: 'अगले टॉपिक के लिए तैयार' },
+
+  // ── Phase 4: activity-type labels (closed set, one per TodayItemType) ──
+  // The "what kind of work is this" line on the primary card. A fixed
+  // vocabulary of student words — no internal taxonomy.
+  'today.activity.resume_in_progress':    { en: 'Unfinished session', hi: 'अधूरा सेशन' },
+  'today.activity.cold_start_diagnostic': { en: 'Quick check',        hi: 'छोटी जाँच' },
+  'today.activity.teacher_remediation':   { en: 'Practice',           hi: 'अभ्यास' },
+  'today.activity.srs_due':               { en: 'Revision cards',     hi: 'रिवीज़न कार्ड' },
+  'today.activity.revise_decayed_topic':  { en: 'Re-read',            hi: 'दोबारा पढ़ो' },
+  'today.activity.weak_topic_zpd':        { en: 'Practice',           hi: 'अभ्यास' },
+  'today.activity.continue_lesson':       { en: 'Lesson',             hi: 'पाठ' },
+  'today.activity.new_topic':             { en: 'New chapter',        hi: 'नया अध्याय' },
+  'today.activity.weekly_dive_due':       { en: 'Explore',            hi: 'खोजो' },
+  'today.activity.monthly_synthesis_due': { en: 'Monthly summary',    hi: 'मासिक सारांश' },
+  'today.activity.practice_weakest':      { en: 'Practice',           hi: 'अभ्यास' },
+
+  // ── Phase 4: primary card chrome ───────────────────────────────
+  'today.primary.eyebrow':       { en: 'Start here',      hi: 'यहाँ से शुरू करो' },
+  'today.primary.cta.start':     { en: 'Start',           hi: 'शुरू करो' },
+  'today.primary.cta.continue':  { en: 'Continue',        hi: 'जारी रखो' },
+  'today.primary.status.inProgress': { en: 'In progress', hi: 'चल रहा है' },
+  'today.primary.status.partway':    { en: '{progress}% done', hi: '{progress}% हो गया' },
+  'today.primary.status.notStarted': { en: 'Not started', hi: 'शुरू नहीं हुआ' },
+  'today.primary.subjectLabel':  { en: 'Subject',         hi: 'विषय' },
+  'today.primary.conceptLabel':  { en: 'Topic',           hi: 'टॉपिक' },
+
+  // ── Phase 4: plan ──────────────────────────────────────────────
+  'today.plan.heading': { en: "Today's plan", hi: 'आज की योजना' },
+
+  // ── Phase 4: the single most urgent reminder ───────────────────
+  'today.reminder.exam':          { en: 'Test {day} · {title}',                       hi: 'परीक्षा {day} · {title}' },
+  'today.reminder.exam.cta':      { en: 'Revise',                                     hi: 'दोहराओ' },
+  'today.reminder.streak':        { en: 'Practise today to keep your {days}-day streak', hi: 'अपनी {days} दिन की स्ट्रीक बचाने के लिए आज अभ्यास करो' },
+  'today.reminder.unread':        { en: '{count} new updates for you',                hi: 'तुम्हारे लिए {count} नए अपडेट' },
+  'today.reminder.unread.one':    { en: '1 new update for you',                       hi: 'तुम्हारे लिए 1 नया अपडेट' },
+  'today.reminder.unread.cta':    { en: 'Open',                                       hi: 'खोलो' },
+
+  // ── Phase 4: the single weekly progress statement ──────────────
+  // Only numbers with a reliable source appear here: `current_streak` and
+  // `total_xp` from the AuthContext snapshot. XP is explicitly labelled
+  // "total" because the snapshot carries no weekly aggregate — we do not
+  // present an all-time number as a weekly one.
+  'today.progress.streak':   { en: "You've practised {days} days in a row.", hi: 'तुमने लगातार {days} दिन अभ्यास किया है।' },
+  'today.progress.streakOne':{ en: "You've practised 1 day in a row.",       hi: 'तुमने 1 दिन अभ्यास किया है।' },
+  'today.progress.noStreak': { en: 'No streak yet — one session today starts it.', hi: 'अभी कोई स्ट्रीक नहीं — आज एक सेशन से शुरुआत हो जाएगी।' },
+  'today.progress.xpTotal':  { en: '{xp} XP total', hi: 'कुल {xp} XP' },
+
+  // ── Phase 4: contextual Foxy entry ─────────────────────────────
+  'today.foxy.subject': { en: 'Stuck on {subject}? Ask Foxy.', hi: '{subject} में अटक गए? Foxy से पूछो।' },
+  'today.foxy.generic': { en: 'Stuck on something? Ask Foxy.', hi: 'कहीं अटक गए? Foxy से पूछो।' },
+  'today.foxy.cta':     { en: 'Ask Foxy',                      hi: 'Foxy से पूछो' },
+
+  // ── Phase 4: states ────────────────────────────────────────────
+  // Honest-failure voice, matching the Phase 3 SubjectsUnavailable pattern:
+  // a load failure explicitly denies the "you lost something" reading.
+  'today.state.loading':          { en: 'Loading your plan',  hi: 'तुम्हारी योजना लोड हो रही है' },
+  'today.state.stale':            { en: 'Showing your earlier plan while we refresh it.', hi: 'नई योजना आने तक पिछली योजना दिख रही है।' },
+  'today.state.error.title':      { en: "Couldn't load your plan",  hi: 'तुम्हारी योजना लोड नहीं हो सकी' },
+  'today.state.error.body':       { en: "Nothing has been lost — your progress is safe. Please try again.", hi: 'कुछ भी नहीं गया — तुम्हारी प्रगति सुरक्षित है। दोबारा कोशिश करो।' },
+  'today.state.error.cta':        { en: 'Try again', hi: 'फिर से कोशिश करो' },
+  'today.state.offline.title':    { en: "You're offline", hi: 'तुम ऑफ़लाइन हो' },
+  'today.state.offline.body':     { en: "Your plan needs a connection. It'll load the moment you're back online.", hi: 'योजना के लिए कनेक्शन चाहिए। ऑनलाइन आते ही यह लोड हो जाएगी।' },
+  'today.state.offline.cta':      { en: 'Try again', hi: 'फिर से कोशिश करो' },
+  'today.state.insufficient.title': { en: "We don't know your level yet", hi: 'हमें अभी तुम्हारा स्तर नहीं पता' },
+  'today.state.insufficient.body':  { en: 'Answer a few questions and your plan starts building itself.', hi: 'कुछ सवालों के जवाब दो, तुम्हारी योजना अपने आप बनने लगेगी।' },
+  'today.state.insufficient.cta':   { en: 'Find my starting point', hi: 'मेरी शुरुआत खोजो' },
+  'today.state.locked.title':     { en: 'Your plan is turned off right now', hi: 'तुम्हारी योजना अभी बंद है' },
+  'today.state.locked.body':      { en: "This isn't switched on for your account yet. Nothing is lost — your dashboard still has everything.", hi: 'यह अभी तुम्हारे खाते के लिए चालू नहीं है। कुछ भी नहीं गया — डैशबोर्ड पर सब कुछ मौजूद है।' },
+  'today.state.locked.cta':       { en: 'Go to dashboard', hi: 'डैशबोर्ड पर जाओ' },
+  'today.state.complete.title':   { en: 'Done for today', hi: 'आज का काम पूरा' },
+  'today.state.complete.body':    { en: "You've finished everything on today's plan.", hi: 'आज की योजना का सारा काम पूरा हो गया।' },
+  'today.state.complete.cta':     { en: 'Practise anyway', hi: 'फिर भी अभ्यास करो' },
+  'today.empty.cta':              { en: 'Start free practice', hi: 'मुफ़्त अभ्यास शुरू करो' },
 };
+
+/**
+ * Reasons that DELIBERATELY render no chip.
+ *
+ * A reason line is a CLAIM ABOUT THE LEARNER: "we looked at your work and this
+ * is why this is next". A reason whose resolver branch consulted nothing about
+ * the learner has no such claim to make, and inventing one is worse than
+ * silence — it teaches a child that the system's explanations are decorative.
+ *
+ * These three are enumerated (never a catch-all) so a NEW unmapped reason still
+ * fails the completeness test rather than quietly inheriting "render nothing".
+ *
+ *   sunday_default   — the branch predicate is `isSundayIst(ctx.now)` and
+ *     NOTHING else. The item is a weekly Curiosity Dive, deliberately OUTSIDE
+ *     the concept sequence. "Ready for the next concept" would tell a child we
+ *     assessed them as ready when we in fact read a calendar — and would point
+ *     at a "next concept" the Dive is expressly not.
+ *
+ *   month_end_default — the predicate is `isMonthEndDayIst(ctx.now)`; the item
+ *     is a monthly synthesis. "Review due" asserts two false things (something
+ *     is due; something is being reviewed) and, worse, COLLIDES with
+ *     `today.item.srs_due.label` ("Reviews due"). A student who has learned
+ *     "Review due = flashcards waiting" is then actively misled.
+ *
+ *   no_signals_yet — the cold-start branch. It fires precisely because we know
+ *     nothing about this learner, so "Ready for the next concept" is a
+ *     readiness judgement made from zero evidence. It also contradicts its own
+ *     card, which says "Find your starting point / a quick diagnostic": the
+ *     chip claims we know where they are while the card says we are about to
+ *     find out.
+ *
+ * All three cards are self-explanatory ("Weekly Curiosity Dive", "Your monthly
+ * summary is ready", "Find your starting point"). Nothing is lost by silence.
+ */
+const REASONS_WITH_NO_CHIP: readonly string[] = [
+  'sunday_default',
+  'month_end_default',
+  'no_signals_yet',
+];
+
+/**
+ * The reason → approved-phrase map. THE single place a machine `reason`
+ * becomes student language.
+ *
+ * Every one of the resolver's 12 reasons is accounted for: 9 map to a phrase
+ * here, 3 map deliberately to no chip (see REASONS_WITH_NO_CHIP above).
+ * Grouping rationale for the 9:
+ *   - `decay_above_threshold` lands on "Review due" — a topic going stale IS
+ *     "come back to something you already met". The word "decay" itself is
+ *     forbidden student-side.
+ *   - `todays_zpd` and `weakest_topic_practice` both land on "Build this
+ *     prerequisite" — both point at the weakest chapter. "ZPD" never ships.
+ *   - `unstarted_chapter_available` lands on "Ready for the next concept" —
+ *     it is the one branch that genuinely means "you have finished what came
+ *     before, here is the next new thing in sequence".
+ *
+ * "Prepare for your test" is the sixth approved phrase. NO resolver reason
+ * produces it (the loop has no exam-driven branch), so it is not in this map
+ * — it is emitted by the exam reminder, which reads the real exam schedule.
+ * Mapping a resolver reason onto it would be a fabricated justification.
+ */
+const REASON_TO_COPY_KEY: Record<string, string> = {
+  live_session:                'today.reason.continue',
+  in_progress_lesson:          'today.reason.continue',
+  reviews_stacking:            'today.reason.review',
+  reviews_due_today:           'today.reason.review',
+  decay_above_threshold:       'today.reason.review',
+  teacher_assigned:            'today.reason.teacher',
+  todays_zpd:                  'today.reason.prerequisite',
+  weakest_topic_practice:      'today.reason.prerequisite',
+  unstarted_chapter_available: 'today.reason.nextConcept',
+};
+
+/**
+ * True when `reason` is a KNOWN reason that deliberately renders no chip.
+ *
+ * Exported so the completeness test can tell "deliberately silent" apart from
+ * "nobody mapped this yet" — both return `null` from `todayReasonCopy`, and
+ * collapsing them would let a new unmapped resolver branch ship unnoticed.
+ */
+export function isSilentTodayReason(reason: string): boolean {
+  return REASONS_WITH_NO_CHIP.includes(reason);
+}
+
+/**
+ * Resolve a machine `reason` into one of the six approved learner-facing
+ * phrases, or `null` when no chip should render.
+ *
+ * `null` covers two cases, both of which must render nothing:
+ *   - a reason on the deliberate no-chip list (the branch determined nothing
+ *     about the learner, so there is no honest claim to print);
+ *   - an UNKNOWN reason (a resolver branch added without updating this table).
+ * It must never degrade into printing the raw identifier — see the module
+ * header. Use `isSilentTodayReason` to distinguish the two.
+ */
+export function todayReasonCopy(reason: string, isHi: boolean): string | null {
+  const key = REASON_TO_COPY_KEY[reason];
+  if (!key) return null;
+  return todayCopy(key, isHi);
+}
+
+/** The exam reminder's reason phrase — the sixth approved phrase, sourced
+ *  from the real exam schedule rather than from a resolver reason. */
+export function todayExamReasonCopy(isHi: boolean): string {
+  return todayCopy('today.reason.exam', isHi);
+}
 
 /**
  * Interpolate `{token}` placeholders from `vars`. Missing tokens are left

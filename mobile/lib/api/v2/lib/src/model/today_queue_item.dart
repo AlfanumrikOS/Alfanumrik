@@ -52,7 +52,7 @@ abstract class TodayQueueItem implements Built<TodayQueueItem, TodayQueueItemBui
 
   @BuiltValueField(wireName: r'type')
   TodayItemType get type;
-  // enum typeEnum {  resume_in_progress,  cold_start_diagnostic,  teacher_remediation,  srs_due,  revise_decayed_topic,  weak_topic_zpd,  continue_lesson,  new_topic,  weekly_dive_due,  monthly_synthesis_due,  practice_weakest,  completed_lesson_check,  };
+  // enum typeEnum {  resume_in_progress,  cold_start_diagnostic,  srs_due,  revise_decayed_topic,  weak_topic_zpd,  continue_lesson,  weekly_dive_due,  monthly_synthesis_due,  practice_weakest,  completed_lesson_check,  };
 
   TodayQueueItem._();
 
@@ -178,8 +178,9 @@ class _$TodayQueueItemSerializer implements PrimitiveSerializer<TodayQueueItem> 
         case r'meta':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType(BuiltMap, [FullType(String), FullType.nullable(JsonObject)]),
-          ) as BuiltMap<String, JsonObject?>;
+            specifiedType: const FullType.nullable(BuiltMap, [FullType(String), FullType.nullable(JsonObject)]),
+          ) as BuiltMap<String, JsonObject?>?;
+          if (valueDes == null) continue;
           result.meta.replace(valueDes);
           break;
         case r'rank':

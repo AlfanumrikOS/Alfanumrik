@@ -140,9 +140,17 @@ Deno.test('happy path: parent asks pricing → response contains ₹699 + cites 
   // Fixture updated 2026-07-17 (pricing-framing fix): mirrors the truthful
   // tier-ladder canonical copy — the old "everything included / no upsells"
   // framing contradicted the live 3-tier product and was removed from the KB.
+  //
+  // Fixture updated again 2026-08-11 (subject-claim fix): the mock reply used
+  // to assert a seven-subject catalogue. It is not a claim source — the model
+  // output is stubbed, so that string never reached a user — but a fixture
+  // reads as a spec of correct output, and this one contradicted production
+  // (the product is Mathematics and Science only; every plan, free Explorer
+  // included, grants both). Replaced with the truthful depth-differentiator
+  // framing so the fixture models a correct reply. Prices unchanged.
   installFetchStub({
     openAiText:
-      'Pro, at ₹699 per month, is our most popular family plan — unlimited Foxy chats, unlimited quizzes, all seven subjects, and the Sunday parent letter. Starter is ₹299 per month and Unlimited is ₹1,099 per month (pricing-plans). Want to try Foxy free? Sign up at /.',
+      'Pro, at ₹699 per month, is our most popular family plan — unlimited Foxy chats, unlimited quizzes, and the Sunday parent letter. Starter is ₹299 per month and Unlimited is ₹1,099 per month (pricing-plans). Mathematics and Science are included on every tier, free Explorer included — the tiers differ on depth, never on which subjects your child can open (pricing-plans). Want to try Foxy free? Sign up at /.',
   });
   stubSupabase([
     {
@@ -150,7 +158,7 @@ Deno.test('happy path: parent asks pricing → response contains ₹699 + cites 
       section_id: 'pricing-plans',
       title: 'Pricing Plans',
       content:
-        'Pro: ₹699 per month — our most popular family plan. Starter: ₹299 per month. Unlimited: ₹1,099 per month. Every plan starts free on the Explorer tier — no credit card required. Cancel anytime, one tap, no questions.',
+        'Pro: ₹699 per month — our most popular family plan. Starter: ₹299 per month. Unlimited: ₹1,099 per month. Every plan starts free on the Explorer tier — no credit card required. Mathematics and Science are included on every tier, free Explorer included: no subject sits behind a paywall. Cancel anytime, one tap, no questions.',
       canonical: true,
       similarity: 0.85,
     },

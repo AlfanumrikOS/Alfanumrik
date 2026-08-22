@@ -227,9 +227,9 @@ describe('PROTECTED_FLAGS registry — tier membership', () => {
 // ─── EXPECTED_OFF_FLAGS posture list ──────────────────────────────────
 
 describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
-  it('contains exactly 54 unique names (52 block-(ii) + ff_irt_question_selection + 2 Pedagogy v2 additions + 2 WhatsApp bot protected flags (seed 20260801100500) + 5 GenAI ecosystem additions (seed 20260801120000) + ff_foxy_openai_primary_rollout_v1 (seed 20260803120000) MINUS ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) MINUS ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) MINUS 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine) MINUS ff_foxy_openai_primary_rollout_v1 (CEO-approved intentionally-live, 2026-08-03) MINUS ff_quiz_telemetry_v1 (promoted always-on in code, 2026-08-06 backendaudit P0) MINUS ff_adaptive_loops_bc_v1 and ff_school_pulse_v1 (CEO-approved intentionally-live, 2026-08-19))', () => {
-    expect(EXPECTED_OFF_FLAGS).toHaveLength(54);
-    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(54);
+  it('contains exactly 56 unique names (52 block-(ii) + ff_irt_question_selection + 2 Pedagogy v2 additions + 2 WhatsApp bot protected flags (seed 20260801100500) + 5 GenAI ecosystem additions (seed 20260801120000) + ff_foxy_openai_primary_rollout_v1 (seed 20260803120000) MINUS ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) MINUS ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) MINUS 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine) MINUS ff_foxy_openai_primary_rollout_v1 (CEO-approved intentionally-live, 2026-08-03) MINUS ff_quiz_telemetry_v1 (promoted always-on in code, 2026-08-06 backendaudit P0))', () => {
+    expect(EXPECTED_OFF_FLAGS).toHaveLength(56);
+    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(56);
     expect(EXPECTED_OFF_FLAGS).toContain('ff_irt_question_selection');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_productive_failure_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_pedagogy_v2_monthly_synthesis');
@@ -309,17 +309,6 @@ describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
     // longer expected fully-OFF. Still parsed from migration block (ii) here,
     // so it must be excluded exactly like the other always-on promotions above.
     expected.delete('ff_quiz_telemetry_v1');
-    // 2026-08-19: ff_adaptive_loops_bc_v1 and ff_school_pulse_v1 were flipped
-    // is_enabled=true in production on 2026-08-18 16:27 UTC through the
-    // governed admin_flip_feature_flag RPC, both recorded in admin_audit_log
-    // ('feature_flag.protected_flip_rpc', admin 2b0ae0a9). CEO-approved
-    // intentionally-live, so no longer expected fully-OFF. Both REMAIN
-    // constitution_pinned in PROTECTED_FLAGS (asserted separately above), so
-    // the console guardrail and the DB trigger still require typed
-    // confirmation for any further change. Re-add here if either is ever
-    // rolled back to is_enabled=false / rollout_percentage=0.
-    expected.delete('ff_adaptive_loops_bc_v1');
-    expected.delete('ff_school_pulse_v1');
     expect(new Set(EXPECTED_OFF_FLAGS)).toEqual(expected);
   });
 

@@ -3,10 +3,10 @@
 /**
  * MobileBottomNav — tier 1 of the ONE student navigation (360–767px).
  *
- * Renders the primary slots from resolveStudentPrimaryNav() in the fixed
- * spec order: Today · Practice · Progress · More. The tablet rail
+ * Renders the five primary slots from resolveStudentPrimaryNav() in the fixed
+ * spec order: Today · Learn · Practice · Progress · More. The tablet rail
  * (TabletNavRail, 768–1023px) and the desktop sidebar (DesktopSidebar, 1024+)
- * render the SAME slots, same labels, same destinations, same order — only the
+ * render the SAME five, same labels, same destinations, same order — only the
  * chrome changes. Visibility per tier is CSS-only (globals.css); all three
  * components stay mounted so route transitions never re-mount navigation.
  *
@@ -85,7 +85,7 @@ export function MobileBottomNav() {
   const studentGrade = parseInt(student?.grade ?? '6', 10);
 
   // Non-student roles keep their ROLE_CONFIG-derived 4 tabs + More. Only the
-  // student role has the typed primary-slot contract.
+  // student role has the typed five-slot primary contract.
   const isStudent = activeRole === 'student';
   const slots: ResolvedNavSlot[] = isStudent
     ? resolveStudentPrimaryNav({ flags: navFlags, grade: studentGrade, hasUpcomingExam })

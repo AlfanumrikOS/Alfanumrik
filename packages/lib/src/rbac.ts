@@ -882,22 +882,6 @@ export const PERMISSIONS = {
   // admin via wildcard, super_admin via hasPermission() bypass).
   PAYMENTS_SUBSCRIBE: 'payments.subscribe',
 
-  // ── Student router access ──────────────────────────────────
-  // Gated deep-link router for student session continuity.
-  // Any authenticated student role can access; admin/super_admin
-  // bypass via wildcard. Seeded by companion migration below.
-  STUDENT_ROUTER_ACCESS: 'student.router_access',
-
-  // ── Learning sources (curated corpus signed-URL surface) ────
-  // Gates /api/learning-sources — mints a short-lived signed URL into the
-  // rights-restricted corpus bucket via supabaseAdmin (service role, bypasses
-  // RLS). Any authenticated student role can access; teacher also granted
-  // (lesson prep against the same curated corpus); admin/super_admin bypass
-  // via wildcard. P0-1 fix (2026-08-20) — the route previously called
-  // authorizeRequest() with NO permission code at all. Seeded by companion
-  // migration 20260820000100_seed_learning_source_view_permission.sql.
-  LEARNING_SOURCE_VIEW: 'learning_source.view',
-
   // ── Study plan ──────────────────────────────────────────────
   STUDY_PLAN_VIEW: 'study_plan.view',
   STUDY_PLAN_CREATE: 'study_plan.create',
@@ -1079,20 +1063,6 @@ export const PERMISSIONS = {
   // policy; teacher is not the review lane). Seed migration: 20260806000100.
   // RBAC addition approved 2026-08-05 under A1.
   SAFEGUARDING_REVIEW: 'safeguarding.review',
-
-  // ── Support (ticket operator console) ─────────────────────
-  // support.view_tickets / support.manage_tickets — already DB-granted to
-  // the `support` role only (migration 20260612123200_rbac_matrix_conformance.sql
-  // lines ~294-299; admin/super_admin hold it via wildcard). These codes were
-  // live in production, enforced via authorizeRequest() in
-  // apps/host/src/app/api/internal/admin/support/route.ts, but were missing
-  // from this TS registry — pure TS/DB drift reconciliation, NO grant
-  // changed. Closed as part of the 2026-08-16 Mission Control Phase 1
-  // privilege-model reconciliation (see migration
-  // 20260816000008_analyst_role_and_admin_tier_rbac_sync.sql header for the
-  // list of remaining unreconciled DB-only codes left for a follow-up pass).
-  SUPPORT_VIEW_TICKETS: 'support.view_tickets',
-  SUPPORT_MANAGE_TICKETS: 'support.manage_tickets',
 
   // ── Student memory self-access (DPDP transparency, T2 screen) ──
   // Granted to: student. Self-scope codes like account.delete above — a

@@ -46,7 +46,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
+import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { createStudentStateBuilder } from '@alfanumrik/lib/state/student-state-builder';
 import { decayedChapters } from '@alfanumrik/lib/state/learner-loop/resolve-next-action';
@@ -63,15 +63,10 @@ export const dynamic = 'force-dynamic';
  *  also too much to render on a mobile screen. */
 const MAX_ITEMS = 12;
 
-export async function GET(request: Request) {
-  // Bearer-AWARE, RLS-respecting client. The cookie-only
-  // createSupabaseServerClient() NULLed auth.uid() for `Authorization: Bearer`
-  // callers (the entire Flutter app), so the state builder's RLS reads denied
-  // and this route answered a spurious 404 no_student_profile. Never
-  // service-role; RLS enforced on both transports.
-  const supabase = await createSupabaseRouteClient(request);
+export async function GET(_request: Request) {
+  const supabase = await createSupabaseServerClient();
 
-  const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
+  const auth = await authorizeRequest(_request, 'study_plan.view', { requireStudentId: true });
   if (!auth.authorized || !auth.userId) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }

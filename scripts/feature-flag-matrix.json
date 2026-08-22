@@ -1,7 +1,7 @@
 {
   "source": "packages/lib/src/flags/defaults.ts",
   "registryRoot": "packages/lib/src/flags/registries",
-  "flagCount": 139,
+  "flagCount": 143,
   "flags": [
     {
       "name": "ff_adaptive_live_selection_v1",
@@ -249,6 +249,15 @@
       "rolloutPercentage": 100
     },
     {
+      "name": "ff_foxy_close_stage_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "ai-learning-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it (seeded OFF by 20260811000003_seed_ff_foxy_close_stage_v1.sql). Gates the additive L7 close-stage payload emitted by the R3 pipeline `close` stage; scaffolding-only until R3 wires runPipeline (see docs/runbooks/foxy-r3-decomposition-plan.md).",
+      "source": "packages/lib/src/flags/registries/foxy.ts"
+    },
+    {
       "name": "ff_foxy_context_rich_v1",
       "defaultEnabled": true,
       "stagingEnabled": true,
@@ -269,8 +278,26 @@
       "source": "packages/lib/src/flags/registries/foxy.ts"
     },
     {
+      "name": "ff_foxy_decide_ladder_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "ai-learning-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it (seeded OFF by 20260811000000_seed_ff_foxy_decide_ladder_v1.sql). Gates the L3 7-tier decide ladder (adds safety-hold + assigned-work tiers to deriveNextAction) — planner extension is live behind the flag but the extraction into the R3 `decide` stage lands with R3-B.",
+      "source": "packages/lib/src/flags/registries/foxy.ts"
+    },
+    {
+      "name": "ff_foxy_director_prompt_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "ai-learning-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it (seeded OFF by 20260811000002_seed_ff_foxy_director_prompt_v1.sql). Gates the L4 director-code path (teaching-director config + section renderer) over prompt text — inline.ts slot swap lands with R3-B extraction (see docs/runbooks/foxy-r3-decomposition-plan.md §2 R3-B).",
+      "source": "packages/lib/src/flags/registries/foxy.ts"
+    },
+    {
       "name": "ff_foxy_learning_actions_v1",
-      "defaultEnabled": true,
+      "defaultEnabled": false,
       "stagingEnabled": true,
       "productionEnabled": true,
       "owner": "ai-learning-backend",
@@ -337,6 +364,15 @@
       "productionEnabled": false,
       "owner": "ai-learning-backend",
       "rationale": "Default OFF until an operator or reviewed rollout enables it.",
+      "source": "packages/lib/src/flags/registries/foxy.ts"
+    },
+    {
+      "name": "ff_foxy_perception_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "ai-learning-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it (seeded OFF by 20260715130000_seed_ff_foxy_perception_v1.sql). Gates the Foxy per-turn perception classifier (observability-only; fires as fire-and-forget/fail-safe, no serving-path decision reads it). Referenced by U3 in the Foxy North-Star tracker.",
       "source": "packages/lib/src/flags/registries/foxy.ts"
     },
     {

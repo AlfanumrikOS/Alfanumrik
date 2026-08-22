@@ -11,22 +11,20 @@ part 'leaderboard_entry.g.dart';
 /// LeaderboardEntry
 ///
 /// Properties:
-/// * [avatarUrl] - Always null (not emitted by get_leaderboard).
-/// * [city] - Always null (P13 — not exposed for peers).
+/// * [avatarUrl] 
+/// * [city] 
 /// * [grade] 
 /// * [name] 
 /// * [rank] 
-/// * [school] - Always null (P13 — not exposed for peers).
+/// * [school] 
 /// * [streak] 
 /// * [studentId] 
 /// * [totalXp] 
 @BuiltValue()
 abstract class LeaderboardEntry implements Built<LeaderboardEntry, LeaderboardEntryBuilder> {
-  /// Always null (not emitted by get_leaderboard).
   @BuiltValueField(wireName: r'avatar_url')
   String? get avatarUrl;
 
-  /// Always null (P13 — not exposed for peers).
   @BuiltValueField(wireName: r'city')
   String? get city;
 
@@ -39,7 +37,6 @@ abstract class LeaderboardEntry implements Built<LeaderboardEntry, LeaderboardEn
   @BuiltValueField(wireName: r'rank')
   int get rank;
 
-  /// Always null (P13 — not exposed for peers).
   @BuiltValueField(wireName: r'school')
   String? get school;
 

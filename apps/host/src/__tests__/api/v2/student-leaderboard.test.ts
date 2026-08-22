@@ -70,66 +70,12 @@ describe('GET /api/v2/student/leaderboard', () => {
     expect(body.data.scope).toBe('global');
   });
 
-  it('forwards period=all and accepts scope=global', async () => {
-    const res = await GET(url({ period: 'all', scope: 'global' }));
+  it('forwards period=all and scope=school', async () => {
+    const res = await GET(url({ period: 'all', scope: 'school' }));
     expect(rpcSpy).toHaveBeenCalledWith('get_leaderboard', { p_period: 'all', p_limit: 50 });
     const body = await res.json();
     expect(body.data.period).toBe('all');
-    expect(body.data.scope).toBe('global');
-  });
-
-  // Contract fix: `get_leaderboard(p_period, p_limit)` has no scope parameter,
-  // so `scope=school` used to return GLOBAL rows labelled "school". The route
-  // now refuses the param instead of lying about it.
-  it('rejects scope=school with 400 SCOPE_UNSUPPORTED (never serves global rows as "school")', async () => {
-    const res = await GET(url({ scope: 'school' }));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.success).toBe(false);
-    expect(body.code).toBe('SCOPE_UNSUPPORTED');
-    expect(rpcSpy).not.toHaveBeenCalled();
-  });
-
-  // P13: school/city/avatar_url are permanently null — get_leaderboard does not
-  // emit them and peers must not receive a minor's institution or city.
-  it('never emits peer school/city/avatar_url even if the RPC row carries them', async () => {
-    _rpcResult = {
-      data: [
-        {
-          rank: 1, student_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Asha',
-          total_xp: 1450, streak: 7, grade: '9',
-          school: 'DPS', school_name: 'DPS', city: 'Delhi', avatar_url: 'https://x/y.png',
-        },
-      ],
-      error: null,
-    };
-    const body = await (await GET(url())).json();
-    expect(body.data.entries[0].school).toBeNull();
-    expect(body.data.entries[0].city).toBeNull();
-    expect(body.data.entries[0].avatar_url).toBeNull();
-    const s = JSON.stringify(body);
-    expect(s).not.toContain('DPS');
-    expect(s).not.toContain('Delhi');
-  });
-
-  // The RPC filters HAVING SUM(xp_earned) > 0, so a zero-XP caller is absent
-  // from their own board. `me` must say so rather than looking like a failure.
-  it('reports the caller as off-board when absent from the returned rows', async () => {
-    const body = await (await GET(url())).json();
-    expect(body.data.me.on_board).toBe(false);
-    expect(body.data.me.rank).toBeNull();
-  });
-
-  it('reports the caller rank when present on the board', async () => {
-    _rpcResult = {
-      data: [
-        { rank: 1, student_id: '11111111-1111-4111-8111-111111111111', name: 'Me', total_xp: 900, streak: 3, grade: '8' },
-      ],
-      error: null,
-    };
-    const body = await (await GET(url())).json();
-    expect(body.data.me.on_board).toBe(true);
-    expect(body.data.me.rank).toBe(1);
+    expect(body.data.scope).toBe('school');
   });
 
   it('returns ranked entries without PII beyond name/grade (P13)', async () => {

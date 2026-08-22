@@ -226,20 +226,9 @@ export async function main(argv: string[]): Promise<number> {
 
   let judge: InjectedJudge | null = null;
   if (args.judge) {
-    // Capture the CALLER's ambient credential state BEFORE self-loading
-    // .env.local. This ordering is load-bearing, not incidental:
-    // `loadDotenv` (agents/runtime/env.ts) deliberately treats an empty string
-    // as "unset" and refills it from disk — so reading process.env AFTER the
-    // load made this gate unreachable on any machine with a key in
-    // .env.local, i.e. every machine that can actually run `--judge on`. The
-    // gate is a statement about the caller's INTENT: an explicitly-set
-    // ANTHROPIC_API_KEY is authoritative (an explicit empty value means
-    // "no key" → config error); only an ABSENT one may be filled from
-    // .env.local, which is what the self-load exists for.
-    const ambientKey = process.env.ANTHROPIC_API_KEY;
+    // Self-load .env.local (ambient env wins — loadDotenv never overwrites).
     loadDotenv(REPO_ROOT);
-    const effectiveKey = ambientKey === undefined ? process.env.ANTHROPIC_API_KEY : ambientKey;
-    if (!effectiveKey) {
+    if (!process.env.ANTHROPIC_API_KEY) {
       log(
         '[teacher-eval] config error: --judge on requires ANTHROPIC_API_KEY ' +
           '(callClaude transport). Run with --judge off for deterministic checks only.',

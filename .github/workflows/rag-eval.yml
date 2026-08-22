@@ -16,9 +16,6 @@ on:
       - 'scripts/rag-eval.mjs'
       - '.github/workflows/rag-eval.yml'
 
-permissions:
-  contents: read
-
 # Single run at a time per branch to avoid hammering the live service.
 concurrency:
   group: rag-eval-${{ github.ref }}
@@ -28,15 +25,14 @@ jobs:
   eval:
     name: Run RAG gold-set eval
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     # Forks have no service-role secret. Skip rather than fail.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     # Advisory until 5 consecutive runs at >=95% pass rate. Then flip to false.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           check-latest: true

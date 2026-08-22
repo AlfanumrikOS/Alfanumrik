@@ -16,7 +16,8 @@
  * Day 1 to abort: missing migrations, missing Edge Functions, missing prompt
  * templates, config drift between web and Deno sides, ESLint rules not
  * registered, runbooks not written, POST handlers missing, P1 scoring fix
- * not wired into all 5 client push sites.
+ * not wired into every client push site (each must stamp `shuffle_map: null`;
+ * see checkQuizPushSites — the count is a floor, the null is the point).
  *
  * The checks are exported as individual functions so the vitest suite can
  * assert they pass on the current worktree state.
@@ -332,22 +333,69 @@ export function checkQuizResponseShuffleMap(): CheckResult {
   return ok('QuizResponse.shuffle_map');
 }
 
-const EXPECTED_SHUFFLE_MAP_PUSH_SITES = 5;
+/**
+ * The client is NOT the shuffle authority (P1 / REG-51). Every `Response` the
+ * quiz page constructs stamps `shuffle_map: null`; a non-null value is the
+ * client asserting a mapping that only the server's per-session snapshot can
+ * know, which is exactly the defect the server-side shuffle fix removed.
+ *
+ * This used to be an exact count (`=== 5`) — weak twice over. It was silent
+ * about the VALUE (it would have passed unchanged if all five sites wrote
+ * `shuffle_map: buildLocalMap()`, i.e. the very P1 defect it claims to guard),
+ * and it broke on every honest new response construction. It did break on
+ * 2026-08-11: b008c20c7 (Phase 4 session resume) added a sixth, legitimate
+ * site. So: pin the property, floor the count.
+ *
+ * The floor catches a construction that loses its stamp; the value check
+ * catches a construction that fabricates one.
+ *
+ * The floor is the OBSERVED count, not a slack number. Setting it below the
+ * real count re-opens the hole it exists to close: with 6 real sites and a
+ * floor of 5, one construction could silently drop its `shuffle_map: null` and
+ * still pass. Raise it when you add a site; only lower it when you genuinely
+ * remove one, and say why in the commit. Additions are already safe — every
+ * new occurrence must be `null` to pass the value check.
+ *
+ * The 6 sites as of 2026-08-11: session resume-restore, MCQ answer, written
+ * answer, written skip, final-question submit flush, timer-expiry pending
+ * flush.
+ *
+ * Note this deliberately errs fail-closed: the page's local `Response`
+ * interface declares the field as `shuffle_map?:` (optional), which the regex
+ * does not match, but if it ever became non-optional the type annotation would
+ * be read as a "fabricated" value and fail loudly rather than silently weaken
+ * the check.
+ */
+const MIN_SHUFFLE_MAP_PUSH_SITES = 6;
 
 export function checkQuizPushSites(): CheckResult {
   const p = repoFile('src', 'app', '(student)', 'quiz', 'page.tsx');
   if (!existsSync(p)) return fail('quiz page shuffle_map pushes', `missing: ${p}`);
   const src = readFileSync(p, 'utf8');
-  // Count occurrences of shuffle_map: ... in push payloads. Our spec says 5.
-  // Each push site writes one occurrence; type declaration is in types.ts not here.
-  const matches = src.match(/shuffle_map:\s*/g) ?? [];
-  if (matches.length !== EXPECTED_SHUFFLE_MAP_PUSH_SITES) {
+  // `\s*` spans newlines so a value on the following line is still captured;
+  // `[^,\n]+` stops at the property separator. Trailing `//` comments and a
+  // trailing `;` are stripped so an annotated `shuffle_map: null, // why`
+  // still reads as `null`.
+  const values = [...src.matchAll(/shuffle_map:\s*([^,\n]+)/g)].map((m) =>
+    m[1]
+      .replace(/\/\/.*$/, '')
+      .replace(/;\s*$/, '')
+      .trim(),
+  );
+  if (values.length < MIN_SHUFFLE_MAP_PUSH_SITES) {
     return fail(
       'quiz page shuffle_map pushes',
-      `expected ${EXPECTED_SHUFFLE_MAP_PUSH_SITES} occurrences, found ${matches.length}`,
+      `only ${values.length} sites (floor ${MIN_SHUFFLE_MAP_PUSH_SITES}) — a response construction lost its stamp`,
     );
   }
-  return ok('quiz page shuffle_map pushes', `${matches.length} sites`);
+  const fabricated = values.filter((v) => v !== 'null');
+  if (fabricated.length > 0) {
+    return fail(
+      'quiz page shuffle_map pushes',
+      `client fabricated a shuffle_map (P1): ${fabricated.join(', ')}`,
+    );
+  }
+  return ok('quiz page shuffle_map pushes', `${values.length} sites, all null`);
 }
 
 // ─── Runner ──────────────────────────────────────────────────────────

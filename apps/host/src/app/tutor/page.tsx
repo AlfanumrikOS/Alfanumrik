@@ -192,8 +192,8 @@ export default function TutorPage() {
           </p>
           <p className="text-xs text-[var(--text-3)] mb-6">
             {isHi
-              ? 'अध्यापक से अगली कक्षा खोलने को कहो। पुरानी अवधारणाओं की दोबारा जाँच जल्द ही।'
-              : 'Ask your teacher to unlock the next grade. Spaced-repetition review coming soon.'}
+              ? 'अध्यापक से अगली कक्षा खोलने को कहो। तब तक Refresh में पुराने टॉपिक दोहरा सकते हो।'
+              : 'Ask your teacher to unlock the next grade. Until then you can revisit older topics in Refresh.'}
           </p>
           <Button onClick={() => router.push('/dashboard')}>← {isHi ? 'डैशबोर्ड' : 'Dashboard'}</Button>
         </main>

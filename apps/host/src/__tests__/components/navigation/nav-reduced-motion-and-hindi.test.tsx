@@ -179,13 +179,14 @@ describe('MobileBottomNav — prefers-reduced-motion', () => {
     const slots = Array.from(document.querySelectorAll('[data-slot]'));
     expect(slots.map((s) => s.getAttribute('data-slot'))).toEqual([
       'today',
+      'learn',
       'practice',
       'progress',
       'more',
     ]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Practice' }));
-    expect(routerPush).toHaveBeenCalledWith('/practice');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    expect(routerPush).toHaveBeenCalledWith('/learn');
   });
 });
 

@@ -20,10 +20,6 @@
 //   prompt_template     — which registered template renders the system prompt
 //   prompt_rev          — config.ts PROMPT_REV (bump on ANY prompt-text change)
 //   model_route_rev     — config.ts MODEL_ROUTE_REV (bump on model-routing change)
-//   everyday_examples   — ff_foxy_everyday_examples_v1 state; present ONLY when
-//                         the flag is ON (a different Foxy system prompt →
-//                         a different answer). Omitted when OFF so flag-OFF
-//                         requests keep their pre-flag hash. See the field doc.
 //   model_preference    — 'haiku' | 'sonnet' | 'auto'
 //   max_tokens          — caller-requested generation budget
 //   temperature         — caller-requested temperature
@@ -79,42 +75,6 @@ export interface GenCtx {
    * order a given cached response was generated under").
    */
   model_order: ModelOrder;
-  /**
-   * ff_foxy_everyday_examples_v1 state for this request (see
-   * _everyday-flag.ts). When true, Foxy's structured-output addendum carries
-   * EVERYDAY_EXAMPLE_DIRECTIVE (structured-prompt.ts) — a REQUIREMENT for at
-   * least one everyday-Indian-life "example" block. That is a different system
-   * prompt, and therefore a materially different answer, for the SAME query.
-   *
-   * EXACTLY the model_order precedent (see its doc immediately above): a
-   * percentage/boolean rollout flag changed generation while every other
-   * gen_ctx field stayed identical, so the cache key did not rotate and a
-   * flagged-ON student could be served an answer generated under the
-   * flagged-OFF prompt (and vice versa). Same problem here, same fix — fold
-   * the resolved flag state into the tuple that is hashed into EVERY cache
-   * tier's key/tuple (L1 cache.ts, L2 cache-redis.ts, L3 cache-durable.ts), so
-   * a flag flip is a guaranteed MISS and a fresh, prompt-correct generation.
-   *
-   * Resolved ONCE per pipeline run, BEFORE the Step-2 cache lookup, and the
-   * SAME resolved boolean is threaded into buildStructuredOutputPrompt at the
-   * prompt-assembly step — so the prompt the answer was generated under and
-   * the key it is cached under can never disagree.
-   *
-   * PRESENT ONLY WHEN TRUE (deliberate — this is why no PROMPT_REV bump is
-   * needed). canonicalJson drops undefined members, so a flag-OFF request
-   * serializes byte-identically to a pre-flag request and EVERY existing cache
-   * entry (including the DURABLE L3 ncert_solver_solutions store, which has no
-   * TTL to age orphans out) stays reachable and valid — correctly, because the
-   * flag-OFF prompt is byte-identical to today's. Only flag-ON requests rotate
-   * the hash, and they SHOULD. An always-present `false` would have been the
-   * more conventional shape but would have orphaned every cached response on
-   * deploy for users who see no behavioural change — precisely the needless
-   * flush that config.ts's PROMPT_REV comment declines. Note this is the one
-   * GenCtx member that may be absent; `min_similarity_override` normalizes to
-   * null instead because BOTH of its states are live generation inputs,
-   * whereas `everyday_examples: false` IS the pre-existing baseline.
-   */
-  everyday_examples?: true;
   model_preference: 'haiku' | 'sonnet' | 'auto';
   max_tokens: number;
   temperature: number;
@@ -143,29 +103,17 @@ export const GEN_CTX_KEY_FRAGMENT_LENGTH = 12;
  * request path MUST resolve and pass the caller's ACTUAL current order
  * (see pipeline.ts's Step 2) — relying on this default there would defeat
  * the whole point of this fix.
- *
- * `everydayExamples` defaults to false for the same reason: false is the
- * pre-flag baseline, so every pre-existing call site keeps compiling AND
- * keeps hashing to its existing value (the member is omitted when false —
- * see the GenCtx.everyday_examples doc). Live Foxy call sites MUST pass the
- * value resolved by isEverydayExamplesEnabled (_everyday-flag.ts) before the
- * cache lookup.
  */
 export function buildGenCtx(
   request: GroundedRequest,
   contentVersion: number,
   modelOrder: ModelOrder = 'openai_primary',
-  everydayExamples = false,
 ): GenCtx {
   return {
     prompt_template: request.generation.system_prompt_template,
     prompt_rev: PROMPT_REV,
     model_route_rev: MODEL_ROUTE_REV,
     model_order: modelOrder,
-    // Conditional spread, NOT `everyday_examples: everydayExamples` — the
-    // member must be ABSENT (not `false`) in the flag-OFF case so the canonical
-    // JSON is byte-identical to a pre-flag request. See the field's doc.
-    ...(everydayExamples ? { everyday_examples: true as const } : {}),
     model_preference: request.generation.model_preference,
     max_tokens: request.generation.max_tokens,
     temperature: request.generation.temperature,

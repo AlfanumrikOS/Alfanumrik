@@ -258,16 +258,19 @@ const REDIRECTS = redirectSources(readFileSync(NEXT_CONFIG, 'utf8'));
  * for. Every entry is a real user-visible 404 that predates this test and is
  * OUTSIDE the four fixes it pins. Do not add to this list to silence a new link.
  *
- * TODO(frontend): resolve both and delete the entries.
+ * TODO(frontend): resolve and delete the entry.
  *   - `/super-admin/students` — `apps/host/src/app/super-admin/students/` exists
  *     but contains ONLY `[id]/page.tsx`; there is no index page, so the "back to
  *     students" link in the Foxy report 404s.
  *     Linked from apps/host/src/app/super-admin/foxy-report/[studentId]/page.tsx
- *   - `/upgrade` — no page and no redirect. `/pricing` and `/billing` both exist
- *     and are plausible intended targets; picking one is a product decision.
- *     Linked from apps/host/src/app/(student)/exams/mock/MockTestCatalog.tsx
+ *
+ * RESOLVED 2026-08-11 (R7): `/upgrade` is no longer dead. It now has a real
+ * page (`apps/host/src/app/upgrade/page.tsx`) that redirects to `/pricing`. It
+ * is deliberately a route and not a repoint of the five hrefs, because the API
+ * emits `upgrade_url: '/upgrade'` as DATA and mobile consumes the same field —
+ * see the hard assertion below, which replaces the allowlist entry.
  */
-const KNOWN_DEAD_LINKS = new Set<string>(['/super-admin/students', '/upgrade']);
+const KNOWN_DEAD_LINKS = new Set<string>(['/super-admin/students']);
 
 export function isResolvable(urlPath: string, routes: string[], redirects: string[]): boolean {
   if (redirects.some((r) => routeMatches(r, urlPath))) return true;
@@ -337,6 +340,46 @@ describe('internal link canary — no source file links to the removed /answer-c
     // document the removal (so a wholesale revert is visible here too).
     expect(widget).toContain('BoardScoreWidget');
     expect(widget).toContain('answer-checker');
+  });
+});
+
+describe('R7 — the paywall CTA /upgrade resolves (monetisation path)', () => {
+  // Hard assertions, NOT allowlist-mediated. Every tap on a locked mock-test
+  // paper used to 404 because /upgrade had no page, no redirect and no rewrite.
+  it('/upgrade resolves to a real page or redirect', () => {
+    expect(
+      isResolvable('/upgrade', ROUTES, REDIRECTS),
+      '/upgrade does not resolve — every locked-paper CTA 404s on the payment path',
+    ).toBe(true);
+  });
+
+  it('is still actually linked (so this is not a dead assertion about a dead URL)', () => {
+    expect(internalHrefs.some((h) => h.path === '/upgrade')).toBe(true);
+  });
+
+  it('/pricing — the destination — is itself a real route', () => {
+    // A redirect to a second dead route would move the 404, not fix it.
+    expect(ROUTES).toContain('/pricing');
+  });
+
+  it('the /upgrade page redirects rather than forking pricing copy', () => {
+    // Price/plan copy must live in exactly one place (P11-adjacent: a second
+    // pricing surface is where ₹-drift starts). Pinned structurally.
+    const page = readFileSync(resolve(APP_DIR, 'upgrade/page.tsx'), 'utf8');
+    expect(page).toMatch(/redirect\(\s*['"]\/pricing['"]\s*\)/);
+    // No rupee amounts, no plan names restated here.
+    expect(page).not.toMatch(/₹|\bRs\.?\s*\d/);
+  });
+
+  it('the API still emits /upgrade as data, which is WHY the route had to exist', () => {
+    // If this ever stops being true, repointing the hrefs would have been
+    // sufficient and this route can be reconsidered. Until then, deleting the
+    // route re-breaks the server-supplied and mobile paths.
+    const paperRoute = readFileSync(
+      resolve(REPO_ROOT, 'apps/host/src/app/api/exams/papers/[id]/route.ts'),
+      'utf8',
+    );
+    expect(paperRoute).toContain("upgrade_url: '/upgrade'");
   });
 });
 

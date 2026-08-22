@@ -45,8 +45,15 @@ export const metadata: Metadata = {
   keywords: 'CBSE AI tutor, adaptive learning India, AI tutor Hindi, board exam preparation, Foxy, spaced repetition CBSE, personalized learning India, class 9 science, class 10 math, online tutor India, Hindi medium tutor, Alfanumrik, Cusiosense Learning',
   openGraph: {
     title: 'Alfanumrik - AI Tutor for CBSE Students | Learn Smarter',
+    // CATALOGUE-CLAIM FIX (2026-08-12): this read "16 subjects". Production
+    // `subjects.is_active` is true for exactly five codes — math, science,
+    // physics, chemistry, biology — so the number was false by a factor of
+    // three. This field is the worst place to carry a falsehood: search engines
+    // and link unfurlers scrape and CACHE it off-site, so it keeps being served
+    // to people long after the page itself is corrected. Pinned by
+    // `src/__tests__/subject-catalogue-claim-guard.test.ts`.
     description:
-      'Meet Foxy, your personal AI tutor that teaches at YOUR level. 16 subjects, Hindi & English. Adaptive learning powered by Bayesian mastery tracking.',
+      'Meet Foxy, your personal AI tutor that teaches at YOUR level. Mathematics and Science for CBSE grades 6-12, in Hindi & English. Adaptive learning powered by Bayesian mastery tracking.',
     url: 'https://alfanumrik.com',
     locale: 'en_IN',
     type: 'website',

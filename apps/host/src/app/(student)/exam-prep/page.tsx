@@ -7,17 +7,22 @@ import { getStudyPlan, generateStudyPlan, supabase } from '@alfanumrik/lib/supab
 import { logger } from '@alfanumrik/lib/logger';
 import { Card, Button, ProgressBar, SectionHeader, LoadingFoxy } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
-import { BLOOM_CONFIG, type BloomLevel } from '@alfanumrik/lib/cognitive-engine';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import TodayLoopCard from '@alfanumrik/ui/study-plan/TodayLoopCard';
 import { toast } from '@alfanumrik/ui/ui/toast';
 
-const TASK_BLOOM_MAP: Record<string, BloomLevel> = {
-  learn: 'understand', quiz: 'apply', review: 'remember', revision: 'remember',
-  practice: 'apply', notes: 'understand', foxy_chat: 'understand', challenge: 'evaluate',
-};
+// R5 (2026-08-11) — the per-task Bloom badge was DELETED, not renamed.
+// It read `TASK_BLOOM_MAP[task.task_type]`, i.e. it derived a cognitive level
+// from the task-type STRING and never from the task's actual questions, so
+// every quiz task claimed "Apply" and every learn task "Understand" regardless
+// of content. That is fabricated pedagogical metadata, not a jargon leak, and
+// there is no per-task Bloom signal on `study_plan_tasks` to render honestly.
+// If assessment later emits a real per-task bloom_level, re-add the badge
+// reading THAT column — do not reinstate a task_type→Bloom lookup.
 
-const ZPD_LABELS: Record<number, { label: string; labelHi: string; color: string }> = {
+// Plain difficulty wording. This used to render as `ZPD: Easy` — "ZPD" is an
+// internal model name that means nothing to a Class 6-12 student.
+const DIFFICULTY_LABELS: Record<number, { label: string; labelHi: string; color: string }> = {
   1: { label: 'Easy', labelHi: 'आसान', color: '#16A34A' },
   2: { label: 'Medium', labelHi: 'मध्यम', color: '#F59E0B' },
   3: { label: 'Hard', labelHi: 'कठिन', color: '#EF4444' },
@@ -427,8 +432,8 @@ export default function ExamPrepPage() {
               </h3>
               <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto">
                 {isHi
-                  ? 'सिद्ध विज्ञान पर आधारित: Retrieval Practice + Spaced Repetition + Interleaving'
-                  : 'Powered by proven science: Retrieval Practice + Spaced Repetition + Interleaved Practice'}
+                  ? 'रोज़ थोड़ा याद करो, पुराने टॉपिक दोबारा दोहराओ, और विषय मिलाकर अभ्यास करो।'
+                  : 'Recall a little every day, revisit older topics, and mix subjects while you practise.'}
               </p>
             </div>
 
@@ -508,10 +513,10 @@ export default function ExamPrepPage() {
               <p className="text-xs font-bold text-[var(--text-2)] mb-2">{isHi ? 'हर दिन का चक्र:' : 'Daily learning cycle:'}</p>
               <div className="space-y-1.5">
                 {[
-                  { icon: '🧠', en: 'Quick Recall — retrieval practice from yesterday', hi: 'Quick Recall — कल का revision' },
-                  { icon: '🔄', en: 'Flashcard Review — spaced repetition (d=0.54)', hi: 'Flashcard Review — spaced repetition' },
+                  { icon: '🧠', en: 'Quick Recall — 5 minutes on yesterday\'s topic', hi: 'Quick Recall — कल के टॉपिक पर 5 मिनट' },
+                  { icon: '🔄', en: 'Flashcard Review — the cards that are due today', hi: 'Flashcard Review — आज ड्यू कार्ड्स' },
                   { icon: '📖', en: 'New Topic — learn 1 chapter with Foxy', hi: 'New Topic — Foxy से 1 chapter सीखो' },
-                  { icon: '✏️', en: 'Mixed Practice — interleaved problems (d=1.05)', hi: 'Mixed Practice — mixed problems' },
+                  { icon: '✏️', en: 'Mixed Practice — questions from several chapters', hi: 'Mixed Practice — कई chapters के सवाल' },
                   { icon: '⚡', en: 'Quiz — wrong answers become flashcards', hi: 'Quiz — गलत जवाब flashcard बनते हैं' },
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs text-[var(--text-3)]">
@@ -558,7 +563,11 @@ export default function ExamPrepPage() {
                 <span>⭐ {earnedXp}/{totalXp} XP</span>
                 {energyLevel && (
                   <span style={{ color: energyLevel === 'high' ? '#16A34A' : energyLevel === 'medium' ? '#F59E0B' : '#EF4444' }}>
-                    {energyLevel === 'high' ? '⚡' : energyLevel === 'medium' ? '🔋' : '🪫'} {isHi ? (energyLevel === 'high' ? 'ऊर्जा अच्छी' : energyLevel === 'medium' ? 'थोड़ी थकान' : 'आराम करो') : (energyLevel === 'high' ? 'Energy: High' : energyLevel === 'medium' ? 'Energy: Medium' : 'Energy: Low')}
+                    {/* Hindi mirrors the English three-step scale. It used to read
+                        'थोड़ी थकान' / 'आराम करो' against 'Energy: Medium' / 'Energy:
+                        Low' — a different (and more alarming) claim in each
+                        language, off the same value. */}
+                    {energyLevel === 'high' ? '⚡' : energyLevel === 'medium' ? '🔋' : '🪫'} {isHi ? (energyLevel === 'high' ? 'ऊर्जा: अच्छी' : energyLevel === 'medium' ? 'ऊर्जा: ठीक-ठाक' : 'ऊर्जा: कम') : (energyLevel === 'high' ? 'Energy: High' : energyLevel === 'medium' ? 'Energy: Medium' : 'Energy: Low')}
                   </span>
                 )}
               </div>
@@ -653,22 +662,12 @@ export default function ExamPrepPage() {
                                   {task.xp_reward > 0 && <span className="text-[10px] text-[var(--text-3)]">⭐ {task.xp_reward} XP</span>}
                                   {task.question_count && <span className="text-[10px] text-[var(--text-3)]">📝 {task.question_count} Qs</span>}
                                   {task.chapter_title && <span className="text-[10px] text-[var(--text-3)] truncate">📚 {task.chapter_title}</span>}
-                                  {/* Bloom badge */}
-                                  {(() => {
-                                    const bl = TASK_BLOOM_MAP[task.task_type] || 'understand';
-                                    const bc = BLOOM_CONFIG[bl];
-                                    return (
-                                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: `${bc.color}15`, color: bc.color }}>
-                                        {bc.icon} {isHi ? bc.labelHi : bc.label}
-                                      </span>
-                                    );
-                                  })()}
-                                  {/* ZPD badge for quiz tasks */}
+                                  {/* Difficulty badge for quiz/practice tasks */}
                                   {(task.task_type === 'quiz' || task.task_type === 'practice') && task.difficulty > 0 && (() => {
-                                    const z = ZPD_LABELS[task.difficulty] || ZPD_LABELS[2];
+                                    const z = DIFFICULTY_LABELS[task.difficulty] || DIFFICULTY_LABELS[2];
                                     return (
                                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: `${z.color}15`, color: z.color }}>
-                                        ZPD: {isHi ? z.labelHi : z.label}
+                                        {isHi ? z.labelHi : z.label}
                                       </span>
                                     );
                                   })()}

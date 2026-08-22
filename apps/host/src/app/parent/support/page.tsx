@@ -5,11 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
-import {
-  supportFirstResponseText,
-  supportCoverageText,
-  supportSlaFull,
-} from '@alfanumrik/lib/support/response-sla';
 
 // ============================================================
 // BILINGUAL HELPER (P7)
@@ -213,8 +208,13 @@ const faqItems: { q: { en: string; hi: string }; a: { en: string; hi: string } }
       hi: 'Alfanumrik किन विषयों को कवर करता है?',
     },
     a: {
-      en: 'Alfanumrik covers all major CBSE subjects: Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, Social Studies, Computer Science, Economics, Accountancy, and more — for Classes 6 through 12.',
-      hi: 'Alfanumrik सभी प्रमुख CBSE विषयों को कवर करता है: गणित, विज्ञान, भौतिकी, रसायन विज्ञान, जीव विज्ञान, अंग्रेज़ी, हिंदी, सामाजिक विज्ञान, कंप्यूटर विज्ञान, अर्थशास्त्र, लेखाशास्त्र और बहुत कुछ — कक्षा 6 से 12 तक।',
+      // CATALOGUE-CLAIM FIX (2026-08-12): read "covers all major CBSE
+      // subjects" followed by an eleven-name list ending in "and more".
+      // `subjects.is_active` is true for five codes only (math, science,
+      // physics, chemistry, biology). House wording:
+      // docs/alfabot/knowledge-base.md (product-features).
+      en: 'Alfanumrik teaches Mathematics and Science, and nothing else. Classes 6 to 10 study Maths and Science; Classes 11 and 12 study Maths plus Physics, Chemistry and Biology, presented together as one Science group. That is the whole catalogue — we would rather cover Maths and Science properly than spread thin across a timetable.',
+      hi: 'Alfanumrik केवल गणित और विज्ञान पढ़ाता है, और कुछ नहीं। कक्षा 6 से 10 में गणित और विज्ञान; कक्षा 11 और 12 में गणित के साथ भौतिकी, रसायन और जीवविज्ञान, जो एक ही Science समूह के रूप में मिलते हैं। यही हमारा पूरा catalogue है — हम गणित और विज्ञान को ठीक से पढ़ाना चुनते हैं, कई विषयों में बिखरना नहीं।',
     },
   },
   {
@@ -667,15 +667,11 @@ export default function ParentSupportPage() {
 
       // Success — show a real confirmation with the ticket id.
       const shortId = json.ticket_id.slice(0, 8);
-      // SLA numbers are CEO-set and live ONLY in
-      // @alfanumrik/lib/support/response-sla. This toast used to promise "within
-      // 24 hours", which contradicted every other support surface. The promise
-      // is never shown without the coverage window beside it.
       setToast({
         message: t(
           isHi,
-          `Ticket #${shortId} created. First reply ${supportFirstResponseText(false)} (${supportCoverageText(false)}).`,
-          `टिकट #${shortId} बना दिया गया। पहला जवाब ${supportFirstResponseText(true)} (${supportCoverageText(true)})।`
+          `Ticket #${shortId} created. We'll respond within 24 hours.`,
+          `टिकट #${shortId} बना दिया गया। हम 24 घंटे के भीतर जवाब देंगे।`
         ),
         kind: 'success',
       });
@@ -888,8 +884,8 @@ export default function ParentSupportPage() {
           <p style={{ fontSize: 11, color: '#64748B', margin: '8px 0 0', lineHeight: 1.4 }}>
             {t(
               isHi,
-              `Use the form above. ${supportSlaFull(false)}`,
-              `ऊपर दिया फ़ॉर्म उपयोग करें। ${supportSlaFull(true)}`
+              'For urgent queries, use the form above. We typically respond within 24 hours.',
+              'तत्काल प्रश्नों के लिए ऊपर दिया फ़ॉर्म उपयोग करें। हम आमतौर पर 24 घंटे में जवाब देते हैं।'
             )}
           </p>
         </div>

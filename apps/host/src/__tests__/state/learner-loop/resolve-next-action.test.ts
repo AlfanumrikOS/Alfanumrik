@@ -217,36 +217,6 @@ describe('resolveNextLearnerAction — branch ordering', () => {
     }
   });
 
-  it('branch 5c — attempted quiz today + completedLessons → check_what_you_learned', () => {
-    const state = makeState();
-    const aug: LoopAugmentation = {
-      dueReviewCount: 0,
-      attemptedQuizToday: true,
-      inProgressLessons: [],
-      completedLessons: [
-        { subjectCode: 'science', chapterNumber: 4, progressPct: 0.3 },
-      ],
-    };
-    const action = resolveNextLearnerAction(state, aug, { now: WEEKDAY_NOON_IST });
-    expect(action.kind).toBe('check_what_you_learned');
-    if (action.kind === 'check_what_you_learned') {
-      expect(action.subjectCode).toBe('science');
-      expect(action.chapterNumber).toBe(4);
-      expect(action.url).toContain('mode=comprehension');
-      expect(action.reason).toBe('completed_but_unchecked');
-    }
-  });
-
-  it('branch 5c — absent completedLessons does NOT fire check_what_you_learned', () => {
-    const state = makeState();
-    const aug: LoopAugmentation = {
-      ...emptyAugmentation(),
-      attemptedQuizToday: true,
-    };
-    const action = resolveNextLearnerAction(state, aug, { now: WEEKDAY_NOON_IST });
-    expect(action.kind).not.toBe('check_what_you_learned');
-  });
-
   it('branch 5b — null nextUnstartedChapter does NOT fire introduce_new_topic', () => {
     const state = makeState();
     const aug: LoopAugmentation = {
@@ -424,7 +394,6 @@ describe('LearnerAction kinds', () => {
       'weekly_dive',
       'monthly_synthesis',
       'introduce_new_topic',
-      'check_what_you_learned',
       'resume_in_progress',
     ]);
   });

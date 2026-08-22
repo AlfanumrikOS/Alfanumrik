@@ -7,13 +7,21 @@
  * This page IS the "Learn" tab destination. Students pick a subject, see all
  * chapters, and tap any chapter to go to /learn/[subject]/[chapter].
  *
- * Plan-based subject gating:
- *   free (tier 0)      → 2 subjects (first N in grade order)
- *   starter (tier 1)   → 4 subjects
- *   pro / unlimited    → all subjects
+ * Subject gating is DATA-DRIVEN, never assumed here. The grid renders whatever
+ * `useAllowedSubjects` → `/api/student/subjects` reports as unlocked/locked,
+ * which resolves from `grade_subject_map` ∩ `plan_subject_access`.
  *
- * Locked subjects are shown greyed out with an upgrade CTA — they are never
- * hidden, which helps students understand what upgrading unlocks.
+ * As of migration 20260814000018 no B2C plan gates on subject count at all:
+ * `subscription_plans.max_subjects` is NULL on all four plans and
+ * `plan_subject_access` grants every subject code to every plan, free included.
+ * In practice `lockedSubjects` is therefore empty and the locked cards plus the
+ * "Unlock N more subjects" strip below do not render. Those branches are kept
+ * because the gate is a server answer, not a constant — this header previously
+ * asserted "free → 2 subjects / starter → 4 subjects / pro → all subjects",
+ * which had become simply untrue.
+ *
+ * When a subject IS locked it is shown greyed out with an upgrade CTA rather
+ * than hidden, so a student can see what exists.
  */
 
 import { useState, useEffect, useMemo } from 'react';
@@ -25,12 +33,13 @@ const CelebrationOverlay = dynamic(
   () => import('@alfanumrik/ui/quiz/CelebrationOverlay'),
   { ssr: false },
 );
-import { supabase } from '@alfanumrik/lib/supabase';
-import { useAllowedChapters } from '@alfanumrik/lib/useAllowedChapters';
+import { getChaptersForSubject, supabase } from '@alfanumrik/lib/supabase';
 import { logger } from '@alfanumrik/lib/logger';
-import { LoadingFoxy, PremiumCard, GlowButton, LockedCard } from '@alfanumrik/ui/ui';
+import {  LoadingFoxy, PremiumCard, GlowButton, LockedCard } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import { SubjectsUnavailable } from '@alfanumrik/ui/learn/SubjectsUnavailable';
+import { Bone } from '@alfanumrik/ui/Skeleton';
 import { getPlanConfig } from '@alfanumrik/lib/plans';
 import { useSubjectReadiness } from '@alfanumrik/lib/useSubjectReadiness';
 import { ChapterReadinessBadge } from '@alfanumrik/ui/learn/ChapterReadinessBadge';
@@ -54,7 +63,22 @@ const SubjectsOSHub = dynamic(
 
 function LegacyLearnPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
-  const { subjects: allSubjects, unlocked: allowedSubjects, locked: lockedSubjects } = useAllowedSubjects();
+  // `degraded` separates "the gating source answered and this subject needs an
+  // upgrade" from "we could not establish what this student can access". The
+  // subjects route fails CLOSED — an RPC error returns HTTP 200 with EVERY row
+  // isLocked=true — so without this signal the grid below rendered a wall of
+  // "Upgrade to unlock" cards plus an "Unlock N more subjects" strip at a
+  // student who may well already be on Pro or Unlimited. See
+  // useAllowedSubjects: it is never inferred from `unlocked.length === 0`,
+  // which is a legitimate free-tier state.
+  const {
+    subjects: allSubjects,
+    unlocked: allowedSubjects,
+    locked: lockedSubjects,
+    isLoading: subjectsLoading,
+    degraded: subjectsDegraded,
+    refresh: refreshSubjects,
+  } = useAllowedSubjects();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -64,11 +88,15 @@ function LegacyLearnPage() {
   const subjectsOsOn = useSubjectsOsFlag();
 
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
-  // Chapter row shape. The three *_count fields are all OPTIONAL because the
-  // tiered-verification RPC (migration 20260814000014) may not be applied to
-  // the database this build is talking to, in which case they arrive
-  // `undefined`. See the badge render below for how "unknown" is handled —
-  // it is NOT the same as zero.
+  const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string; title_hi?: string | null; verified_question_count?: number }>>([]);
+  const [chaptersLoading, setChaptersLoading] = useState(false);
+  // Separates "this subject genuinely has no chapters yet" from "the chapter
+  // read failed". Both used to render "No chapters available yet" — telling a
+  // student their whole syllabus was missing after a 401 or a 5xx.
+  const [chaptersFailed, setChaptersFailed] = useState(false);
+  // Bumped by the retry control so the chapter effect re-runs without having
+  // to unset/reset the selected subject (which would flash the subject grid).
+  const [chaptersReloadKey, setChaptersReloadKey] = useState(0);
   const [lastStudied, setLastStudied] = useState<{ subject: string; chapter: number; chapterTitle: string; concept: number; timestamp: number } | null>(null);
   const [progressRows, setProgressRows] = useState<Array<{ subject: string; chapter_number: number; is_completed: boolean }>>([]);
   const [subjectTotalChapters, setSubjectTotalChapters] = useState<Record<string, number>>({});
@@ -155,17 +183,30 @@ function LegacyLearnPage() {
       });
   }, [student?.grade]);
 
-  const { chapters: hookChapters, isLoading: hookChaptersLoading, error: hookChaptersError, refresh: refreshChapters } = useAllowedChapters(selectedSubject);
-
-  // A failed chapter read must stay observable. The pre-SWR effect logged this
-  // and the move to useAllowedChapters dropped it, leaving the read failing
-  // silently behind the error card. P13: message only — no student id, no rows.
   useEffect(() => {
-    if (!hookChaptersError) return;
-    logger.warn('learn: chapter list failed to load', {
-      reason: hookChaptersError instanceof Error ? hookChaptersError.message : 'unknown error',
-    });
-  }, [hookChaptersError]);
+    if (!selectedSubject || !student?.grade) { setChapters([]); setChaptersFailed(false); return; }
+    setChaptersLoading(true);
+    setChaptersFailed(false);
+    getChaptersForSubject(selectedSubject, student.grade)
+      .then((res) => {
+        if (!res.ok) {
+          // P13: message only — no student id, no row payload.
+          logger.warn('learn: chapter list failed to load', { reason: res.error });
+          setChaptersFailed(true);
+          setChapters([]);
+          return;
+        }
+        setChapters(res.data);
+      })
+      .catch((e) => {
+        logger.warn('learn: chapter list threw', {
+          reason: e instanceof Error ? e.message : 'unknown error',
+        });
+        setChaptersFailed(true);
+        setChapters([]);
+      })
+      .finally(() => setChaptersLoading(false));
+  }, [selectedSubject, student?.grade, chaptersReloadKey]);
 
   // Guard: if selected subject is locked (plan downgrade, grade change, etc.),
   // reset selection. Calling setSelectedSubject() during render is a React
@@ -205,11 +246,9 @@ function LegacyLearnPage() {
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
       {showChapterCelebration && (
-        // No real per-chapter score/XP exists at this call site (chapter
-        // completion has no scoring event) — CelebrationOverlay renders a
-        // generic, honest "Chapter complete!" message when these are
-        // omitted. Do NOT reintroduce fabricated numeric values here.
         <CelebrationOverlay
+          scorePercent={80}
+          xpEarned={100}
           isHi={isHi}
           onDismiss={() => setShowChapterCelebration(false)}
         />
@@ -218,7 +257,7 @@ function LegacyLearnPage() {
         <div className="page-header-inner flex items-center gap-3">
           {selectedSubject ? (
             <button
-              onClick={() => { setSelectedSubject(null); }}
+              onClick={() => { setSelectedSubject(null); setChapters([]); }}
               className="text-[var(--text-3)] text-lg p-2 rounded-lg"
               aria-label={isHi ? 'वापस जाएं' : 'Go back'}
             >
@@ -237,7 +276,38 @@ function LegacyLearnPage() {
         <SectionErrorBoundary section="Learn">
 
           {!selectedSubject ? (
-            /* ── Subject Grid ── */
+            /* ── Subject Grid ──
+               Four states, in strict precedence. Previously there was one: a
+               bare unlocked.map() + locked.map(), so the fail-closed fallback
+               (every row locked, `unlocked` empty) rendered "Grade 8 · Choose a
+               subject to study" above a grid of "Upgrade to unlock" cards, and
+               an empty list rendered that heading above nothing at all. The
+               failure state below REPLACES the upgrade strip rather than
+               sitting beside it — the two make contradictory claims and only
+               one of them can be true. */
+            subjectsLoading ? (
+              <div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" role="status" aria-busy="true">
+                  <span className="sr-only">{isHi ? 'विषय लोड हो रहे हैं…' : 'Loading your subjects…'}</span>
+                  {[0, 1, 2, 3, 4, 5].map(i => (
+                    <Bone key={i} height={132} radius={16} />
+                  ))}
+                </div>
+              </div>
+
+            ) : subjectsDegraded ? (
+              /* HONEST FAILURE — sibling of the chapter-failure state further
+                 down this file, and deliberately in the same voice: name what
+                 failed, deny the wrong inference, offer a real retry. */
+              <SubjectsUnavailable isHi={isHi} variant="failure" onRetry={refreshSubjects} />
+
+            ) : allSubjects.length === 0 ? (
+              /* Loaded and genuinely empty — the gating source answered with
+                 nothing. Distinct from the failure above; no retry, because
+                 retrying is not what fixes it. */
+              <SubjectsUnavailable isHi={isHi} variant="empty" />
+
+            ) : (
             <div>
               <p className="text-sm text-[var(--text-3)] mb-4 font-medium">
                 {isHi
@@ -328,11 +398,12 @@ function LegacyLearnPage() {
 
               </div>
 
-              {/* Upgrade prompt strip — only shown when there are locked subjects.
-                  This CTA must land on /pricing: it is the upgrade path off a
-                  locked subject. Pointing it at /today (as the Today
-                  consolidation briefly did) silently removes the only in-context
-                  route from a paywalled subject to the plans page. */}
+              {/* Upgrade prompt strip — only shown when there are locked
+                  subjects AND (by virtue of living in this branch) the lock is
+                  a real one the gating source vouched for. On the degraded
+                  branch above it is not rendered at all: "Unlock 12 more
+                  subjects" aimed at an Unlimited subscriber is a false claim
+                  about what they bought, not a merchandising miss. */}
               {lockedSubjects.length > 0 && (
                 <button
                   onClick={() => router.push('/pricing')}
@@ -354,6 +425,7 @@ function LegacyLearnPage() {
                 </button>
               )}
             </div>
+            )
 
           ) : subjectsOsOn ? (
             /* ── Alfa OS Subjects experience (ff_subjects_os_v1, flag ON) ──
@@ -411,14 +483,14 @@ function LegacyLearnPage() {
                 </button>
               )}
 
-              {hookChaptersLoading ? (
+              {chaptersLoading ? (
                 <div className="space-y-3">
                   {[...Array(5)].map((_, i) => (
                     <div key={i} className="h-16 bg-[var(--surface-2)] rounded-xl animate-pulse" />
                   ))}
                 </div>
 
-              ) : !!hookChaptersError ? (
+              ) : chaptersFailed ? (
                 /* HONEST FAILURE — distinct from the genuine empty below. The
                    empty state says the syllabus has nothing in it; saying that
                    after a failed read is a lie about the student's course. */
@@ -435,13 +507,13 @@ function LegacyLearnPage() {
                   <GlowButton
                     className="warm-cta min-h-[44px]"
                     icon="🔄"
-                    onClick={() => refreshChapters()}
+                    onClick={() => setChaptersReloadKey((k) => k + 1)}
                   >
                     {isHi ? 'फिर से कोशिश करो' : 'Try again'}
                   </GlowButton>
                 </div>
 
-              ) : hookChapters.length === 0 ? (
+              ) : chapters.length === 0 ? (
                 <div className="text-center py-10">
                   <div className="text-5xl mb-3">📚</div>
                   <p className="text-sm font-semibold text-[var(--text-2)] mb-1">
@@ -463,7 +535,7 @@ function LegacyLearnPage() {
 
               ) : (
                 <div className="space-y-3">
-                  {hookChapters.map((ch) => (
+                  {chapters.map((ch) => (
                     <div
                       key={ch.chapter_number}
                       className="rounded-xl overflow-hidden"
@@ -521,23 +593,7 @@ function LegacyLearnPage() {
                                 ? `अध्याय ${ch.chapter_number} · पढ़ो और समझो`
                                 : `Chapter ${ch.chapter_number} · Read & understand`}
                             </span>
-                            {/* Question-count badge. Renders `practice_ready_count`
-                                — the number the practice path can actually
-                                serve — NOT `verified_question_count`, which is
-                                a readiness signal and was advertising questions
-                                the quiz could not deliver (SEV1 #12).
-
-                                Three states, and the third is the one that
-                                matters: `undefined` means the tiered-count
-                                migration isn't live on this database, i.e. the
-                                count is UNKNOWN. Unknown must never be coerced
-                                to 0 and rendered as "0 questions" — that is the
-                                same "failure shown as a reassuring empty state"
-                                defect class. The typeof guard (not `?? 0`) is
-                                load-bearing: unknown and zero both fall through
-                                to no badge, so the row makes no claim it can't
-                                keep, and the chapter stays fully tappable. */}
-                            {typeof ch.practice_ready_count === 'number' && ch.practice_ready_count > 0 && (
+                            {(ch.verified_question_count ?? 0) > 0 && (
                               <span
                                 className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
                                 style={{
@@ -545,7 +601,7 @@ function LegacyLearnPage() {
                                   color: selectedMeta?.color || 'var(--orange)',
                                 }}
                               >
-                                📝 {ch.practice_ready_count} {isHi ? 'प्रश्न' : 'questions'}
+                                📝 {ch.verified_question_count} {isHi ? 'प्रश्न' : 'questions'}
                               </span>
                             )}
                           </div>

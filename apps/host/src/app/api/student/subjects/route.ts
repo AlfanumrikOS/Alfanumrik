@@ -83,6 +83,9 @@ const GENERIC_BOARDS = new Set(['CBSE', 'Other']);
  * Apply the RPC's grade_valid predicate to a grade's raw grade_subject_map
  * rows. Mirrors get_available_subjects (migration 20260621000400) exactly:
  *
+ *   -- the RPC's `s` CTE, which the predicate below reads from:
+ *   SELECT id, grade, stream, COALESCE(board, 'CBSE') AS board FROM students
+ *
  *   (gsm.stream IS NULL OR gsm.stream = s.stream OR s.stream IS NULL)
  *   AND ( gsm.board = s.board
  *         OR (gsm.board IN ('CBSE','Other') OR gsm.board IS NULL)
@@ -92,6 +95,17 @@ const GENERIC_BOARDS = new Set(['CBSE', 'Other']);
  * mapping is used ONLY when the student's board has no mapping at all. That
  * is the "board fallback" the previous implementation approximated with an
  * exact-match query plus a hardcoded catalogue — same semantics, no catalogue.
+ *
+ * `effectiveBoard` reproduces the `COALESCE(board, 'CBSE')` in that `s` CTE
+ * and is load-bearing, not decorative: `students.board` is NULLABLE (DEFAULT
+ * 'CBSE' only fills it on insert, so pre-default and explicit-NULL rows exist).
+ * Inside the RPC `s.board` can therefore never be NULL — a NULL-board student
+ * is a CBSE student, and where the grade has CBSE-specific rows the RPC returns
+ * ONLY those. Without the coalesce this function skipped the board-specific
+ * branch for those students and fell through to the generic filter, additionally
+ * admitting board='Other' and board IS NULL rows the RPC excludes. Use `??`,
+ * not `||`: SQL COALESCE only replaces NULL, so an empty-string board must stay
+ * '' (it then matches no row and falls to the generic branch in both engines).
  */
 function applyGradeValidPredicate(
   rows: GradeSubjectMapRow[],
@@ -102,10 +116,9 @@ function applyGradeValidPredicate(
     (r) => !stream || !r.stream || r.stream === stream,
   );
 
-  if (board) {
-    const boardSpecific = streamMatched.filter((r) => r.board === board);
-    if (boardSpecific.length > 0) return boardSpecific;
-  }
+  const effectiveBoard = board ?? 'CBSE';
+  const boardSpecific = streamMatched.filter((r) => r.board === effectiveBoard);
+  if (boardSpecific.length > 0) return boardSpecific;
 
   return streamMatched.filter(
     (r) => r.board === null || GENERIC_BOARDS.has(r.board),

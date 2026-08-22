@@ -75,12 +75,10 @@ export const commitFixTool: ToolDefinition<CommitInput, { ok: true }> = {
       throw new Error(`commit_fix oracle rejected: ${validation.category} — ${validation.reason}`);
     }
 
-    // Read prior values for history (including verifier_failure_reason directly
-    // from question_bank). `is_verified` is read for the tier rule below, NOT
-    // for history.
+    // Read prior values for history (including verifier_failure_reason directly from question_bank)
     const { data: prior, error: priorErr } = await supabaseAdmin
       .from('question_bank')
-      .select('question_text, options, correct_answer_index, explanation, verifier_failure_reason, is_verified')
+      .select('question_text, options, correct_answer_index, explanation, verifier_failure_reason')
       .eq('id', input.question_id)
       .single();
     if (priorErr || !prior) {
@@ -92,47 +90,8 @@ export const commitFixTool: ToolDefinition<CommitInput, { ok: true }> = {
       correct_answer_index: number;
       explanation: string | null;
       verifier_failure_reason: string | null;
-      is_verified: boolean | null;
     };
     const p = prior as Prior;
-
-    // ── Tiered-verification rule (Decision A option 3, 2026-08-14) ──────────
-    //
-    // Two independent columns, two independent meanings — this agent writes
-    // exactly one of them and must never blur them:
-    //   verification_state / verified_against_ncert — AUTOMATED agent proof.
-    //     Gates the PRACTICE / daily-quiz tier (get_quiz_questions,
-    //     select_quiz_questions_rag/_v2 Tier-0 floor, migration
-    //     20260814000014).
-    //   is_verified — HUMAN SME sign-off, set only by
-    //     POST /api/super-admin/questions/verify. Gates the EXAM tier
-    //     (start_mock_test_attempt, migration 20260722097000) and is counted
-    //     as `exam_ready_count` by the chapter picker.
-    //
-    // So this agent deliberately does NOT grant `is_verified`: an AI repair
-    // earns practice serving, never exam eligibility. That divergence is the
-    // design, not a bug — do not "fix" it by adding is_verified: true here.
-    //
-    // But the reverse case is a real integrity hole and IS handled: if a human
-    // had signed this row off and we are now REWRITING its content, that
-    // sign-off no longer describes what the row contains. Leaving it set would
-    // let AI-rewritten text ride a stale human approval straight into a mock
-    // test — precisely the failure the tiering exists to prevent. So when the
-    // committed candidate differs from what the SME approved, the sign-off is
-    // withdrawn and the row drops back to the practice tier until a human
-    // re-verifies it.
-    //
-    // Only ever REMOVES exam eligibility; never grants it. When nothing
-    // changed (the 're-verified unchanged' path — see the note on CommitInput)
-    // the column is left untouched.
-    const priorOptions = Array.isArray(p.options) ? p.options : [];
-    const contentChanged =
-      p.question_text !== input.fixed_question.question ||
-      p.correct_answer_index !== input.fixed_question.correct_answer_index ||
-      (p.explanation ?? '') !== input.fixed_question.explanation ||
-      priorOptions.length !== input.fixed_question.options.length ||
-      priorOptions.some((opt, i) => opt !== input.fixed_question.options[i]);
-    const withdrawSmeSignOff = contentChanged && p.is_verified === true;
 
     // UPDATE the row
     const { error: updateErr } = await supabaseAdmin
@@ -146,23 +105,11 @@ export const commitFixTool: ToolDefinition<CommitInput, { ok: true }> = {
         verified_against_ncert: true,
         verification_claimed_by: null,
         verification_claim_expires_at: null,
-        // Present only when withdrawing — an unconditional `is_verified: false`
-        // would silently strip sign-off from rows this agent merely re-verified.
-        ...(withdrawSmeSignOff ? { is_verified: false } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq('id', input.question_id);
     if (updateErr) {
       throw new Error(`commit_fix UPDATE failed: ${updateErr.message}`);
-    }
-
-    if (withdrawSmeSignOff) {
-      // Metadata only — ids and a reason, never question text (P13).
-      logger.warn('commit_fix withdrew stale SME sign-off', {
-        questionId: input.question_id,
-        fixStrategy: input.fix_strategy,
-        reason: 'content_rewritten_after_human_verification',
-      });
     }
 
     // INSERT history row

@@ -45,9 +45,6 @@ on:
       - 'package-lock.json'
       - '.github/workflows/openapi-contract.yml'
 
-permissions:
-  contents: read
-
 concurrency:
   group: openapi-contract-${{ github.ref }}
   cancel-in-progress: true
@@ -56,11 +53,10 @@ jobs:
   contract-drift:
     name: OpenAPI contract is in sync with Zod source
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           check-latest: true

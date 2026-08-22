@@ -5,7 +5,7 @@
  * CRITICAL: learning_events.student_id must be auth.uid() (auth.users.id),
  * NOT students.id. Callers must pass the authenticated user's auth UUID.
  */
-import type { LearningEvent, SystemMetric } from '@alfanumrik/lib/monitoring/types';
+import type { LearningEvent, SystemMetric } from '@/types/monitoring';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 
 export async function logLearningEvent(

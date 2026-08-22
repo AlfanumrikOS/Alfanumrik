@@ -17,8 +17,7 @@ import 'package:equatable/equatable.dart';
 ///     the responses, the on-device per-question + total timings, the
 ///     **immutable** `idempotencyKey` (generated EXACTLY ONCE at completion and
 ///     reused verbatim on every drain), the device-wall-clock `capturedAt`, the
-///     optional shuffle maps, a `drainAttempt` counter, the `lastAttemptAt`
-///     backoff stamp, and the terminal `failureCode`.
+///     optional shuffle maps, and a `drainAttempt` counter.
 ///
 /// ## P-invariant guard-rails encoded here
 ///   * P2: NO score / XP fields live on any type. The device never grades.
@@ -102,33 +101,8 @@ class QueuedQuizAttempt extends Equatable {
   final Map<String, List<int>> shuffleMaps;
 
   /// 1-based drain counter. Starts at 0 in the queue (never drained yet) and is
-  /// incremented to N on the Nth drain. Telemetry + retry-budget input only —
-  /// never affects grading.
+  /// incremented to N on the Nth drain. Telemetry only — never affects grading.
   final int drainAttempt;
-
-  /// Device wall-clock (ISO-8601 UTC) of the LAST drain that actually SENT this
-  /// attempt to the server. Null until the first send. Drives the drain's
-  /// exponential backoff only — it is NEVER sent to the server, never used to
-  /// derive attempt duration (P3), and never affects grading.
-  final String? lastAttemptAt;
-
-  /// Non-null ⇒ this attempt is TERMINAL ("needs attention"): the drain has
-  /// stopped re-sending it, either because the server declared the failure
-  /// permanent (`retryable: false`) or because the local retry budget
-  /// (max attempts / max age) was exhausted.
-  ///
-  /// The record is deliberately KEPT on-device rather than deleted — it is a
-  /// student's completed quiz. It stays listable (`OfflineQuizStore.failed()`)
-  /// and RECOVERABLE: [requeued] / `OfflineQuizStore.requeue()` returns it to
-  /// the drainable queue with its key, answers and `capturedAt` unchanged.
-  ///
-  /// ⚠️ Kept and recoverable is NOT the same as *shown*: no widget consumes the
-  /// failed-count / sync-notice providers yet, so this state does not currently
-  /// reach the student's screen. (This doc previously said "quarantined and
-  /// surfaced" — only the first half was true.)
-  ///
-  /// Short code string only (e.g. `MAX_DRAIN_ATTEMPTS`) — never PII (P13).
-  final String? failureCode;
 
   const QueuedQuizAttempt({
     required this.localId,
@@ -144,20 +118,12 @@ class QueuedQuizAttempt extends Equatable {
     required this.idempotencyKey,
     this.shuffleMaps = const {},
     this.drainAttempt = 0,
-    this.lastAttemptAt,
-    this.failureCode,
   });
 
-  /// True when this attempt has reached a terminal, needs-attention state and
-  /// must never be re-sent. See [failureCode].
-  bool get isTerminal => failureCode != null;
-
-  /// Returns a copy with [drainAttempt] bumped to the given value and (when
-  /// supplied) the [lastAttemptAt] backoff stamp refreshed. The idempotency
-  /// key, capturedAt, responses and timings are carried through UNCHANGED —
-  /// only the retry counter and the backoff stamp move.
-  QueuedQuizAttempt withDrainAttempt(int next, {String? lastAttemptAt}) =>
-      QueuedQuizAttempt(
+  /// Returns a copy with [drainAttempt] bumped to the given value. The
+  /// idempotency key, capturedAt, responses and timings are carried through
+  /// UNCHANGED — only the retry counter moves.
+  QueuedQuizAttempt withDrainAttempt(int next) => QueuedQuizAttempt(
         localId: localId,
         sessionId: sessionId,
         studentId: studentId,
@@ -171,89 +137,6 @@ class QueuedQuizAttempt extends Equatable {
         idempotencyKey: idempotencyKey,
         shuffleMaps: shuffleMaps,
         drainAttempt: next,
-        lastAttemptAt: lastAttemptAt ?? this.lastAttemptAt,
-        failureCode: failureCode,
-      );
-
-  /// Returns a TERMINAL copy stamped with [code]. The attempt stays on-device
-  /// (student work is never silently dropped) but the drain will never re-send
-  /// it. As with [withDrainAttempt], the idempotency key and every captured
-  /// field are carried through UNCHANGED — so if the record is ever re-queued
-  /// via [requeued] it replays with the SAME key and cannot double-score (P2).
-  QueuedQuizAttempt withFailure(String code) => QueuedQuizAttempt(
-        localId: localId,
-        sessionId: sessionId,
-        studentId: studentId,
-        subject: subject,
-        grade: grade,
-        topic: topic,
-        chapter: chapter,
-        responses: responses,
-        totalTimeSeconds: totalTimeSeconds,
-        capturedAt: capturedAt,
-        idempotencyKey: idempotencyKey,
-        shuffleMaps: shuffleMaps,
-        drainAttempt: drainAttempt,
-        lastAttemptAt: lastAttemptAt,
-        failureCode: code,
-      );
-
-  /// The EXACT INVERSE of [withFailure]: clears the terminal marker and returns
-  /// the record to the drainable queue with a fresh retry budget.
-  ///
-  /// Without this, a quarantined attempt had exactly one reachable end state —
-  /// deletion (`remove` / `clearFailed`) — which made "kept, never silently
-  /// dropped" a hollow claim: the work was retained but unrecoverable.
-  ///
-  /// ## What changes (retry-budget counters ONLY)
-  ///   * `failureCode` → null  (drainable again; `isTerminal` false)
-  ///   * `drainAttempt` → 0    (the `MAX_DRAIN_ATTEMPTS` gate would otherwise
-  ///                            re-fire on the very next drain pass)
-  ///   * `lastAttemptAt` → null (no stale backoff window blocking the first
-  ///                            re-send)
-  ///
-  /// ## What does NOT change — and why it must not (P2)
-  /// [idempotencyKey], [capturedAt], [responses], [totalTimeSeconds],
-  /// [sessionId], [shuffleMaps] and the per-question timings all survive
-  /// VERBATIM. The key surviving is the whole double-score safety argument: on
-  /// re-send the drain stamps the SAME `Idempotency-Key` header, so if the
-  /// original send had in fact committed server-side, the server's
-  /// `(student_id, idempotency_key)` uniqueness short-circuit returns the
-  /// CACHED result (`idempotent_replay: true`) instead of grading a second
-  /// time. Requeue can therefore never double-grant XP. Regenerating the key —
-  /// or "refreshing" `capturedAt` to dodge the staleness gate — would break
-  /// exactly that, which is why neither is offered.
-  ///
-  /// ## Honest limits
-  ///   * Because `capturedAt` is preserved, a record quarantined as
-  ///     `REPLAY_WINDOW_EXPIRED` (older than the server's 168 h replay window)
-  ///     will be re-quarantined on the next drain WITHOUT spending a request.
-  ///     That is correct: the server would only answer 422 `REPLAY_TOO_STALE`.
-  ///     Requeue restores re-sendability, not server acceptance.
-  ///   * `drainAttempt` is per-requeue-cycle after this call, so the value the
-  ///     server sees in the request body restarts at 1. It is telemetry only
-  ///     and has never fed grading.
-  ///   * This must stay a DELIBERATE (user- or operator-initiated) action. An
-  ///     automatic requeue-on-failure would reconstitute the unbounded retry
-  ///     loop the retry budget exists to bound.
-  QueuedQuizAttempt requeued() => QueuedQuizAttempt(
-        localId: localId,
-        sessionId: sessionId,
-        studentId: studentId,
-        subject: subject,
-        grade: grade,
-        topic: topic,
-        chapter: chapter,
-        responses: responses,
-        totalTimeSeconds: totalTimeSeconds,
-        // Captured ONCE at completion — never refreshed. See "Honest limits".
-        capturedAt: capturedAt,
-        // P2: the grading token is reused VERBATIM. Never regenerated.
-        idempotencyKey: idempotencyKey,
-        shuffleMaps: shuffleMaps,
-        drainAttempt: 0,
-        lastAttemptAt: null,
-        failureCode: null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -271,8 +154,6 @@ class QueuedQuizAttempt extends Equatable {
         'shuffle_maps':
             shuffleMaps.map((k, v) => MapEntry(k, List<int>.from(v))),
         'drain_attempt': drainAttempt,
-        'last_attempt_at': lastAttemptAt,
-        'failure_code': failureCode,
       };
 
   factory QueuedQuizAttempt.fromJson(Map<String, dynamic> json) {
@@ -311,11 +192,6 @@ class QueuedQuizAttempt extends Equatable {
       idempotencyKey: json['idempotency_key'] as String,
       shuffleMaps: maps,
       drainAttempt: (json['drain_attempt'] as num?)?.toInt() ?? 0,
-      // Both fields are ADDITIVE: records written before they existed decode
-      // with null (never attempted-stamped / not terminal), so an app upgrade
-      // never strands an already-queued attempt.
-      lastAttemptAt: json['last_attempt_at'] as String?,
-      failureCode: json['failure_code'] as String?,
     );
   }
 
@@ -334,7 +210,5 @@ class QueuedQuizAttempt extends Equatable {
         idempotencyKey,
         shuffleMaps,
         drainAttempt,
-        lastAttemptAt,
-        failureCode,
       ];
 }

@@ -57,6 +57,10 @@ import { StudyArtifactSheet } from '@/app/foxy/_components/StudyArtifactSheet';
 import type { ArtifactState } from '@/app/foxy/_lib/study-artifacts';
 import type { DiagramSpec } from '@alfanumrik/lib/diagram/types';
 import type { LessonNotes } from '@alfanumrik/lib/lesson/types';
+// The canonical bilingual Bloom's labels. Imported so the "no raw enum token"
+// guard re-derives the machine values from the same source the component reads,
+// rather than hardcoding a list that rots when a 7th level is added.
+import { BLOOM_CONFIG } from '@alfanumrik/lib/cognitive-engine';
 
 const VALID_CODE = 'flowchart TD\n  A[Atom] --> B[Molecule]';
 
@@ -456,7 +460,118 @@ describe('Foxy StudyArtifactSheet — lesson body', () => {
     ).toBeTruthy();
   });
 
-  it("keeps Bloom's level untranslated in Hindi mode (technical term — P7)", () => {
+  // ── Bloom's badge ──────────────────────────────────────────────────────────
+  //
+  // SUPERSEDED ASSERTION (rewritten 2026-08-11). This pair of `it`s replaces a
+  // single test that asserted `getByText('understand')` + `getByTitle("Bloom's:
+  // understand")` under the name "keeps Bloom's level untranslated in Hindi
+  // mode (technical term — P7)". That test was pinning the DEFECT as correct.
+  //
+  // P7 permits "Bloom's" as an untranslated technical term. It does NOT permit
+  // `understand` / `analyze` / `evaluate` — those are the raw lowercase members
+  // of the `BloomLevel` union, i.e. MACHINE values. Leaking them to a grade
+  // 6-12 student was an R5 jargon audit finding: the badge read `understand` in
+  // English AND in Hindi, so the "untranslated" the old test defended was
+  // untranslated *jargon*, not an untranslated technical term. The fix renders
+  // `BLOOM_CONFIG[level].label` / `.labelHi` — a human-readable, genuinely
+  // bilingual label — with the config's description as the tooltip.
+  //
+  // The rewrite is strictly stronger than what it replaces: it pins the exact
+  // EN and HI strings in BOTH languages (the old test only looked at Hindi),
+  // pins the tooltip in both, AND adds a standing guard that no raw BloomLevel
+  // token — derived from BLOOM_CONFIG's own keys, so a 7th level is covered on
+  // the day it is added — appears as rendered text or in any title attribute.
+
+  /** Every raw `BloomLevel` union member — the machine values, re-derived. */
+  const RAW_BLOOM_TOKENS = Object.keys(BLOOM_CONFIG);
+
+  /**
+   * Every place a raw enum token could surface to a student: element text and
+   * `title` tooltips. Returns offenders so a failure names the leak.
+   */
+  function rawBloomTokenLeaks(container: HTMLElement): string[] {
+    const leaks: string[] = [];
+    for (const el of Array.from(container.querySelectorAll<HTMLElement>('*'))) {
+      const own = Array.from(el.childNodes)
+        .filter((n) => n.nodeType === 3)
+        .map((n) => n.textContent ?? '')
+        .join('')
+        .trim();
+      if (RAW_BLOOM_TOKENS.includes(own)) leaks.push(`text:${own}`);
+      const title = el.getAttribute('title');
+      if (title !== null) {
+        for (const t of RAW_BLOOM_TOKENS) {
+          // Bare token, or the old `Bloom's: understand` tooltip shape.
+          if (title.trim() === t || new RegExp(`\\b${t}\\b`).test(title)) {
+            leaks.push(`title:${title}`);
+          }
+        }
+      }
+    }
+    return leaks;
+  }
+
+  it('the raw-token guard actually detects the superseded markup (non-vacuity)', () => {
+    // A guard that inspects nothing passes everything. Feed it the EXACT DOM
+    // the component used to produce and assert it reports both leaks, so the
+    // two `toEqual([])` assertions below are known to be load-bearing rather
+    // than trivially satisfied.
+    const old = document.createElement('div');
+    old.innerHTML = `<h4><span title="Bloom's: understand">understand</span></h4>`;
+    expect(rawBloomTokenLeaks(old)).toEqual([
+      'text:understand',
+      "title:Bloom's: understand",
+    ]);
+
+    // And the current markup is clean.
+    const now = document.createElement('div');
+    now.innerHTML = `<h4><span title="Explain ideas or concepts">Understand</span></h4>`;
+    expect(rawBloomTokenLeaks(now)).toEqual([]);
+  });
+
+  it("renders Bloom's as a human-readable label in English, never the raw enum token (P7)", () => {
+    const { container } = render(
+      <StudyArtifactSheet
+        kind="lesson"
+        state={{ status: 'ready', data: READY_LESSON }}
+        {...baseProps()}
+      />,
+    );
+    // The badge is present and carries the config's description as its tooltip.
+    const badge = screen.getByTitle('Explain ideas or concepts');
+    expect(badge.textContent).toBe('Understand');
+    // …and the machine value never reaches the student.
+    expect(rawBloomTokenLeaks(container)).toEqual([]);
+  });
+
+  it("renders Bloom's as a human-readable label in Hindi, never the raw enum token (P7)", () => {
+    const { container } = render(
+      <StudyArtifactSheet
+        kind="lesson"
+        state={{ status: 'ready', data: READY_LESSON }}
+        {...baseProps()}
+        isHi
+      />,
+    );
+    const badge = screen.getByTitle('विचारों या अवधारणाओं को समझाओ');
+    expect(badge.textContent).toBe('समझो');
+    expect(rawBloomTokenLeaks(container)).toEqual([]);
+  });
+
+  it("the EN and HI Bloom's labels are genuinely different strings (P7 parity)", () => {
+    // The defect's signature was one string serving both languages. Assert the
+    // two renders disagree, so a regression to a single hardcoded label — raw
+    // token or not — cannot pass the two tests above by accident.
+    const { unmount } = render(
+      <StudyArtifactSheet
+        kind="lesson"
+        state={{ status: 'ready', data: READY_LESSON }}
+        {...baseProps()}
+      />,
+    );
+    const en = screen.getByTitle('Explain ideas or concepts').textContent;
+    unmount();
+
     render(
       <StudyArtifactSheet
         kind="lesson"
@@ -465,8 +580,11 @@ describe('Foxy StudyArtifactSheet — lesson body', () => {
         isHi
       />,
     );
-    expect(screen.getByText('understand')).toBeTruthy();
-    expect(screen.getByTitle("Bloom's: understand")).toBeTruthy();
+    const hi = screen.getByTitle('विचारों या अवधारणाओं को समझाओ').textContent;
+
+    expect(en).not.toBe(hi);
+    expect(hi).toMatch(/[ऀ-ॿ]/); // Devanagari, not a transliteration
+    expect(en).toMatch(/^[A-Z]/); // human-cased, not the lowercase machine value
   });
 
   it('renders the calm fallback for an empty section list', () => {

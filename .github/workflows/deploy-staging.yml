@@ -140,10 +140,10 @@ jobs:
       # ── Path B: staging-branch push / manual dispatch → inline checks ──
       # (No ci.yml run exists for these SHAs; the original steps run
       # unchanged, fail-closed.)
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
         if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v6
         if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -193,14 +193,11 @@ jobs:
     # database. Scoped to this JOB (not the workflow) so only the DB-push
     # portion queues — build/deploy stay parallel under the workflow group
     # above. Never cancel a migration push mid-flight.
-    # 2026-08-20: ci.yml's `Integration Tests (live DB)` job (reads/writes the
-    # same staging DB) also joined this group — see that job's concurrency
-    # comment for the incident (commit 0b05519) that motivated it.
     concurrency:
       group: staging-db-push
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - uses: supabase/setup-cli@v2
         with:
@@ -234,9 +231,9 @@ jobs:
     outputs:
       preview-url: ${{ steps.deploy.outputs.preview_url }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -335,7 +332,7 @@ jobs:
     needs: [deploy, migrations]
     environment: staging
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 2
 
@@ -392,7 +389,7 @@ jobs:
 
           for i in 1 2 3; do
             RESPONSE=$(curl -s -w "\n%{http_code}" \
-              "${DEPLOY_URL}/api/v1/health" 2>/dev/null)
+              "${DEPLOY_URL}/api/health" 2>/dev/null)
             STATUS=$(echo "$RESPONSE" | tail -1)
             BODY=$(echo "$RESPONSE" | head -1)
             if [ "$STATUS" = "200" ]; then

@@ -24,7 +24,6 @@ import {
   Badge,
 } from '@alfanumrik/ui/ui';
 import { CardListSkeleton } from '@alfanumrik/ui/Skeleton';
-import { supportSlaLine } from '@alfanumrik/lib/support/response-sla';
 
 /* ── Types matching backend contract ─────────────────────────── */
 type TicketCategory = 'bug' | 'billing' | 'content' | 'account' | 'other';
@@ -32,14 +31,7 @@ type TicketPriority = 'low' | 'normal' | 'high';
 type TicketStatus = 'open' | 'pending' | 'in_progress' | 'resolved' | 'closed';
 
 interface Ticket {
-  /**
-   * CANONICAL id. GET /api/support/tickets selects `id` (route.ts:260) — it has
-   * never returned `ticket_id`. This interface previously declared `ticket_id`,
-   * so every row rendered `key={undefined}` and every tap navigated to
-   * `/support/undefined`, i.e. the detail page was unreachable from here.
-   * Keep this aligned with /support/[ticket_id], which also reads `id`.
-   */
-  id: string;
+  ticket_id: string;
   subject: string;
   category: TicketCategory | string;
   priority: TicketPriority | string;
@@ -223,18 +215,6 @@ export default function SupportListPage() {
           </div>
         )}
 
-        {/* Published SLA — one unobtrusive line. A student looking at an open
-            ticket is exactly who needs to know when to expect a reply. Copy and
-            numbers come from @alfanumrik/lib/support/response-sla (CEO-set);
-            never inline them, and never render a countdown off them. */}
-        <p
-          className="text-[11px] px-1"
-          style={{ color: 'var(--text-3)' }}
-          data-testid="support-sla-note"
-        >
-          {supportSlaLine(isHi)}
-        </p>
-
         {/* Loading */}
         {swrLoading && !data && (
           <div data-testid="support-loading">
@@ -284,9 +264,9 @@ export default function SupportListPage() {
         {!swrLoading && !error && tickets.length > 0 && (
           <ul className="space-y-2" aria-label={isHi ? 'टिकट सूची' : 'Ticket list'}>
             {tickets.map((t) => (
-              <li key={t.id}>
+              <li key={t.ticket_id}>
                 <button
-                  onClick={() => router.push(`/support/${t.id}`)}
+                  onClick={() => router.push(`/support/${t.ticket_id}`)}
                   className="w-full rounded-2xl p-4 text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
                   style={{
                     background: 'var(--surface-1)',

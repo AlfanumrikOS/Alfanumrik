@@ -76,12 +76,7 @@ import {
   hashPrompt,
   type PromptSegment,
 } from './prompts/index.ts';
-import { buildStructuredOutputPrompt } from './structured-prompt.ts';
-// Everyday-Indian-life example directive (ff_foxy_everyday_examples_v1) —
-// mirrors pipeline.ts. Default-OFF, fail-CLOSED. Resolved ONCE per run and
-// composed through the SAME helper pipeline.ts uses, so the streaming and
-// non-streaming system prompts stay byte-identical in both flag states.
-import { isEverydayExamplesEnabled } from './_everyday-flag.ts';
+import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
 import { repairIllegalJsonEscapes } from './json-escape-repair.ts';
 import {
   rescueFromTruncatedJson,
@@ -414,18 +409,6 @@ export async function* runStreamingPipeline(
     }
   }
 
-  // Step 1b. Everyday-Indian-life example directive
-  // (ff_foxy_everyday_examples_v1, default OFF + fail-CLOSED) — mirrors
-  // pipeline.ts Step 1b. Resolved ONCE per run, here at the top rather than at
-  // the prompt-assembly step, so the streaming path resolves it at the SAME
-  // point in the sequence as the non-streaming path does (pipeline.ts must
-  // resolve before its Step-2 cache lookup; the streaming path has no cache
-  // tier, but keeping the ordering identical is what stops the two pipelines
-  // from drifting). Foxy-only → zero new I/O for every other caller.
-  const everydayExamples = request.caller === 'foxy'
-    ? await isEverydayExamplesEnabled(sb)
-    : false;
-
   // Step 3 (RCA-FIX CRITICAL-4, 2026-06-26): Global kill switch.
   // Mirrors pipeline.ts Step 3. The streaming pipeline previously skipped this
   // check — operators can now disable ALL AI responses (blocking + streaming)
@@ -623,13 +606,9 @@ export async function* runStreamingPipeline(
   // Mid-stream we cannot validate; the parse + validate step runs ONCE at
   // stream close and emits the result on the `done` event. Appended to the
   // LAST segment too so segments stay byte-identical to systemPrompt.
-  //
-  // Composed through the SAME buildStructuredOutputPrompt helper, with the SAME
-  // per-run `everydayExamples` boolean (Step 1b), that pipeline.ts uses — the
-  // two pipelines' prompt CONTENT must stay byte-identical in both flag states.
   const isFoxyStructured = request.caller === 'foxy';
   if (isFoxyStructured) {
-    const addendum = `\n\n${buildStructuredOutputPrompt({ everydayExamples })}`;
+    const addendum = `\n\n${FOXY_STRUCTURED_OUTPUT_PROMPT}`;
     systemPrompt = `${systemPrompt}${addendum}`;
     if (promptSegments.length > 0) {
       const last = promptSegments[promptSegments.length - 1];

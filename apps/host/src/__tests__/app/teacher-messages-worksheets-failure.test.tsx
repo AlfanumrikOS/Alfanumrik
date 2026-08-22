@@ -191,12 +191,40 @@ describe('/teacher/messages — a failed thread read never reads as "no parents 
 /* ══════════════════════════════════════════════════════════════════════════
    /teacher/worksheets
    ══════════════════════════════════════════════════════════════════════════ */
+/**
+ * R2 step C (2026-08-11) — these cases used to drive the page by stubbing the
+ * BROWSER Supabase client, because the page read `question_bank` (including
+ * `correct_answer_index`) directly from the browser. That read now lives behind
+ * `GET /api/teacher/worksheets/answer-key`, gated by
+ * `authorizeRequest('worksheet.create')` plus a server-side (subject, grade)
+ * scope check, so the stub moves to `fetch`.
+ *
+ * This is not a cosmetic re-point. Left on the Supabase stub, the three FAILURE
+ * cases kept passing for the WRONG reason — the page's `fetch` hit jsdom's
+ * real (absent) network, threw, and landed on the error banner by accident,
+ * which would have gone on "passing" even if the error branch were deleted. The
+ * EMPTY case is what exposed it: it cannot be faked by a network error, and it
+ * failed. Every case below now asserts against a real HTTP shape.
+ */
+function stubAnswerKey(res: { status: number; body: unknown }) {
+  global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : String(input);
+    if (!url.includes('/api/teacher/worksheets/answer-key')) {
+      throw new Error(`unexpected fetch: ${url}`);
+    }
+    return {
+      ok: res.status >= 200 && res.status < 300,
+      status: res.status,
+      json: async () => res.body,
+    } as Response;
+  }) as unknown as typeof fetch;
+}
+
+const KEY_500 = { status: 500, body: { success: false, error: 'Failed to read the question bank' } };
+
 describe('/teacher/worksheets — a failed question_bank read never becomes printed placeholders', () => {
   it('FAILURE: surfaces the read error and generates NO worksheet at all', async () => {
-    tableResults.set('question_bank', {
-      data: null,
-      error: { message: 'question_bank unavailable', code: '500', details: '', hint: '' },
-    });
+    stubAnswerKey(KEY_500);
 
     render(React.createElement(TeacherWorksheetsPage));
     fireEvent.click(screen.getByText('Generate Worksheet'));
@@ -208,10 +236,7 @@ describe('/teacher/worksheets — a failed question_bank read never becomes prin
   });
 
   it('FAILURE: reports the read failure with a distinguishable reason (no PII)', async () => {
-    tableResults.set('question_bank', {
-      data: null,
-      error: { message: 'question_bank unavailable', code: '500', details: '', hint: '' },
-    });
+    stubAnswerKey(KEY_500);
 
     render(React.createElement(TeacherWorksheetsPage));
     fireEvent.click(screen.getByText('Generate Worksheet'));
@@ -226,26 +251,74 @@ describe('/teacher/worksheets — a failed question_bank read never becomes prin
   });
 
   it('EMPTY: a genuinely empty bank still produces the sample worksheet (unchanged)', async () => {
-    tableResults.set('question_bank', { data: [], error: null });
+    stubAnswerKey({ status: 200, body: { success: true, data: { questions: [] } } });
 
     render(React.createElement(TeacherWorksheetsPage));
     fireEvent.click(screen.getByText('Generate Worksheet'));
 
     expect(await screen.findByText('Sample questions')).toBeTruthy();
     expect(screen.queryByTestId('worksheets-bank-error')).toBeNull();
+    // …and the empty condition is stated outright, not left to an 11px chip.
+    expect(screen.getByTestId('worksheets-bank-empty')).toBeTruthy();
+  });
+
+  it('DENIED: a 403 is neither a retry banner nor a placeholder sheet', async () => {
+    stubAnswerKey({
+      status: 403,
+      body: { success: false, error: 'out of scope', code: 'out_of_scope' },
+    });
+
+    render(React.createElement(TeacherWorksheetsPage));
+    fireEvent.click(screen.getByText('Generate Worksheet'));
+
+    expect(await screen.findByTestId('worksheets-bank-denied')).toBeTruthy();
+    // Retrying a scope denial can never succeed, so the retry surface is absent…
+    expect(screen.queryByTestId('worksheets-bank-error')).toBeNull();
+    // …and no sheet is produced at all.
+    expect(screen.queryByText(/Sample MCQ question for this topic/)).toBeNull();
+    expect(screen.queryByText('Print Worksheet')).toBeNull();
+  });
+
+  it('LOADING: announces a pending read instead of silently relabelling the button', async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((r) => { release = r; });
+    global.fetch = vi.fn(async () => {
+      await gate;
+      return {
+        ok: true, status: 200,
+        json: async () => ({ success: true, data: { questions: [] } }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    render(React.createElement(TeacherWorksheetsPage));
+    fireEvent.click(screen.getByText('Generate Worksheet'));
+
+    expect(await screen.findByTestId('worksheets-loading')).toBeTruthy();
+    release!();
+    await waitFor(() => expect(screen.queryByTestId('worksheets-loading')).toBeNull());
   });
 
   it('P7: the read-failure surface is bilingual', async () => {
     authState.isHi = true;
-    tableResults.set('question_bank', {
-      data: null,
-      error: { message: 'question_bank unavailable', code: '500', details: '', hint: '' },
-    });
+    stubAnswerKey(KEY_500);
 
     render(React.createElement(TeacherWorksheetsPage));
     fireEvent.click(screen.getByText('वर्कशीट बनाएं'));
 
     expect(await screen.findByText('CBSE प्रश्न बैंक तक नहीं पहुंच सके')).toBeTruthy();
+  });
+
+  it('P7: the scope-denial surface is bilingual', async () => {
+    authState.isHi = true;
+    stubAnswerKey({
+      status: 403,
+      body: { success: false, error: 'out of scope', code: 'out_of_scope' },
+    });
+
+    render(React.createElement(TeacherWorksheetsPage));
+    fireEvent.click(screen.getByText('वर्कशीट बनाएं'));
+
+    expect(await screen.findByText('आप जो कक्षाएं पढ़ाते हैं, उनसे बाहर')).toBeTruthy();
   });
 });
 

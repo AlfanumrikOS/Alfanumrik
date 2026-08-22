@@ -34,13 +34,12 @@ const fetchMock = vi.fn();
 // authorizeRequest (v1/admin routes) get the same treatment.
 vi.mock('@alfanumrik/lib/admin-auth', () => ({
   authorizeAdmin: (...args: unknown[]) => authMock(...args),
-  authorizeOperator: (...args: unknown[]) => authMock(...args),
   logAdminAudit: (...args: unknown[]) => logAuditMock(...args),
   supabaseAdminUrl: (table: string, params?: string) => {
     const base = `https://test.supabase.co/rest/v1/${table}`;
     return params ? `${base}?${params}` : base;
   },
-  supabaseAdminHeaders: (_prefer?: string) => ({ apikey: '***', Authorization: 'Bearer test-key' }),
+  supabaseAdminHeaders: (_prefer?: string) => ({ apikey: 'test-key', Authorization: 'Bearer test-key' }),
 }));
 
 const authorizeRequestMock = vi.fn();

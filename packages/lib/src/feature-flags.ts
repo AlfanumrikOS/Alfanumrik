@@ -47,54 +47,77 @@ export function invalidateFlagCache(): void {
 }
 
 /**
- * Load all flags from Supabase (server-side, uses service role).
- * Cached for 5 minutes.
+ * Load all flags from Supabase (server-side, uses service role), and report
+ * WHETHER THE READ ACTUALLY SUCCEEDED alongside the rows.
+ *
+ * The `ok` half is the whole reason this function exists separately from
+ * `loadFlags()`. `isFeatureEnabled` collapses "the flag is off" and "we could
+ * not find out" into the same `false`, which is the right default for a
+ * feature ramp but is exactly WRONG for a flag used as a SAFETY INTERLOCK —
+ * there, "could not find out" must fail CLOSED. `readFeatureFlagStrict` below
+ * is the interlock-grade reader, and this is the signal it needs.
+ *
+ * `ok: false` means: no Supabase env, a non-2xx response with no cache to fall
+ * back on, a malformed (non-array) body, or a thrown fetch. A SERVED CACHE is
+ * `ok: true` — a five-minute-old snapshot of the flag table is a successful
+ * read of the flag table, and `isFeatureEnabled` has always treated it as
+ * authoritative. Refusing to act on a warm cache would take the whole product
+ * down on one slow response, which is not what fail-closed means here.
+ *
+ * Cached for 5 minutes. Behaviour is otherwise IDENTICAL to the original
+ * `loadFlags` — same cache writes, same fallbacks, same expiry handling.
  */
-async function loadFlags(): Promise<FeatureFlagRow[]> {
+async function loadFlagsWithStatus(): Promise<{ ok: boolean; flags: FeatureFlagRow[] }> {
   const now = Date.now();
-  if (_flagCache && now < _flagCacheExpiry) return _flagCache;
+  if (_flagCache && now < _flagCacheExpiry) return { ok: true, flags: _flagCache };
 
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) return [];
+    if (!url || !key) return { ok: false, flags: [] };
 
     const res = await fetch(
       `${url}/rest/v1/feature_flags?select=flag_name,is_enabled,target_roles,target_environments,target_institutions,rollout_percentage`,
       { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
     );
 
-    if (!res.ok) return _flagCache || [];
+    if (!res.ok) return { ok: _flagCache !== null, flags: _flagCache || [] };
     // Coerce ANY non-array / malformed flags payload to a safe empty list so a
     // bad response can never make `_flagCache` a non-array (which would throw
     // out of the `.find()` / `for...of` consumers below). On a malformed body
-    // every flag then falls back to its default (OFF for all ff_* flags).
+    // every flag then falls back to its default (OFF for all ff_* flags) —
+    // and `ok: false` lets an interlock-grade caller tell that apart.
     const parsed: unknown = await res.json();
-    _flagCache = Array.isArray(parsed) ? (parsed as FeatureFlagRow[]) : [];
+    const isArray = Array.isArray(parsed);
+    _flagCache = isArray ? (parsed as FeatureFlagRow[]) : [];
     _flagCacheExpiry = now + CACHE_TTL.STATIC; // 5 min
-    return _flagCache;
+    return { ok: isArray, flags: _flagCache };
   } catch {
-    return _flagCache || [];
+    return { ok: _flagCache !== null, flags: _flagCache || [] };
   }
 }
 
 /**
- * Evaluate a single feature flag with scoping.
- *
- * Returns true if the flag is enabled for the given context.
- * Returns false if disabled, scoped out, or not found.
+ * Load all flags from Supabase (server-side, uses service role).
+ * Cached for 5 minutes.
  */
-export async function isFeatureEnabled(
-  flagName: string,
-  context: FlagContext = {}
-): Promise<boolean> {
-  const flags = await loadFlags();
-  // Defensive: never let a non-array flags payload throw out of this function.
-  // A malformed/unexpected response must fall back to the flag's default
-  // (OFF for all ff_* flags) rather than crash the caller.
-  const flag = Array.isArray(flags) ? flags.find(f => f.flag_name === flagName) : undefined;
+async function loadFlags(): Promise<FeatureFlagRow[]> {
+  return (await loadFlagsWithStatus()).flags;
+}
 
-  if (!flag) return false; // Flag doesn't exist → disabled
+/**
+ * Apply the scoping precedence (environment → role → institution → rollout) to
+ * a flag row that has already been loaded.
+ *
+ * Extracted so `isFeatureEnabled` and `readFeatureFlagStrict` cannot drift into
+ * two different notions of "enabled for this caller". Callers must have already
+ * handled "row missing".
+ */
+function evaluateFlagRow(
+  flag: FeatureFlagRow,
+  flagName: string,
+  context: FlagContext,
+): boolean {
   if (!flag.is_enabled) return false; // Globally disabled
 
   // Environment scoping
@@ -126,6 +149,76 @@ export async function isFeatureEnabled(
   }
 
   return true;
+}
+
+/**
+ * Evaluate a single feature flag with scoping.
+ *
+ * Returns true if the flag is enabled for the given context.
+ * Returns false if disabled, scoped out, or not found.
+ *
+ * NOTE FOR SAFETY INTERLOCKS: this collapses "off" and "could not determine"
+ * into `false`. That is correct for a feature ramp (an unreachable flag service
+ * must not switch a half-built feature on) and WRONG for a flag that gates a
+ * refusal. If a `false` from this function would let something unsafe proceed,
+ * use `readFeatureFlagStrict` and decide explicitly.
+ */
+export async function isFeatureEnabled(
+  flagName: string,
+  context: FlagContext = {}
+): Promise<boolean> {
+  const flags = await loadFlags();
+  // Defensive: never let a non-array flags payload throw out of this function.
+  // A malformed/unexpected response must fall back to the flag's default
+  // (OFF for all ff_* flags) rather than crash the caller.
+  const flag = Array.isArray(flags) ? flags.find(f => f.flag_name === flagName) : undefined;
+
+  if (!flag) return false; // Flag doesn't exist → disabled
+  return evaluateFlagRow(flag, flagName, context);
+}
+
+/**
+ * The outcome of a flag read that keeps "we know it is off" and "we could not
+ * find out" APART.
+ *
+ * `determined: false` carries a reason so a caller can log which of the two
+ * undetermined worlds it hit:
+ *   - `flags_unavailable` — the flag table could not be read at all (no
+ *     Supabase env, unreachable, malformed body, thrown fetch).
+ *   - `flag_not_found`    — the table read fine but carries no such row. For a
+ *     flag that a migration is supposed to have seeded, this means our model of
+ *     the world is wrong, which is not the same as "the feature is off".
+ */
+export type FeatureFlagReadResult =
+  | { determined: true; enabled: boolean }
+  | { determined: false; reason: 'flags_unavailable' | 'flag_not_found' };
+
+/**
+ * Interlock-grade flag read: returns `determined: true` ONLY when the flag
+ * table was genuinely readable AND contains the named flag. Scoping is applied
+ * by the same `evaluateFlagRow` that `isFeatureEnabled` uses, so the two can
+ * never disagree about what "enabled for this caller" means.
+ *
+ * The CALLER decides what an undetermined read means. That is the point: there
+ * is no safe universal default, so this function refuses to pick one.
+ */
+export async function readFeatureFlagStrict(
+  flagName: string,
+  context: FlagContext = {}
+): Promise<FeatureFlagReadResult> {
+  let loaded: { ok: boolean; flags: FeatureFlagRow[] };
+  try {
+    loaded = await loadFlagsWithStatus();
+  } catch {
+    return { determined: false, reason: 'flags_unavailable' };
+  }
+  if (!loaded.ok) return { determined: false, reason: 'flags_unavailable' };
+
+  const flags = Array.isArray(loaded.flags) ? loaded.flags : [];
+  const flag = flags.find(f => f.flag_name === flagName);
+  if (!flag) return { determined: false, reason: 'flag_not_found' };
+
+  return { determined: true, enabled: evaluateFlagRow(flag, flagName, context) };
 }
 
 /**

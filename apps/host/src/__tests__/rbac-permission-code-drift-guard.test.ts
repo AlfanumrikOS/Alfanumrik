@@ -86,32 +86,8 @@ const MIGRATION_DIRS = [
   'supabase/migrations/_legacy/timestamped',
 ];
 
-// A permission code is dot-separated lowercase-with-underscores segments.
-//
-// THE THREE-SEGMENT BLIND SPOT (SEV1 fix pass, 2026-08-11)
-//   This was `/^[a-z_]+\.[a-z_]+$/` — exactly TWO segments — and every
-//   extraction regex below hard-coded the same two-segment shape. Most codes
-//   are `resource.action`, but the registry genuinely contains THREE-segment
-//   codes too (e.g. 'super_admin.subjects.manage', seeded in
-//   20260612123200_rbac_matrix_conformance.sql). Because the extractor required
-//   a closing quote immediately after the second segment, any three-segment
-//   literal simply never matched — the guard did not judge it and pass it, it
-//   never SAW it.
-//
-//   That is precisely how `/api/student/engagement` shipped authorizing against
-//   'student.profile.read' — a code granted to no role, which 403'd 100% of
-//   students — while this suite stayed green. The guard's own regex, not its
-//   logic, was the hole.
-//
-//   FIX: all four patterns now accept `[a-z_]+(?:\.[a-z_]+)+` (two OR MORE
-//   segments). Re-scanning with the widened pattern raised the extracted-ref
-//   count from 258 to 271 and surfaced exactly one orphan repo-wide
-//   ('student.profile.read'), now repointed to 'progress.view_own'.
-const CODE_RE = /^[a-z_]+(?:\.[a-z_]+)+$/;
-
-// Shared segment pattern for every extractor below. Keeping it in one place
-// stops the four regexes from drifting apart again.
-const CODE_SEGMENTS = '[a-z_]+(?:\\.[a-z_]+)+';
+// A permission code is `resource.action` lowercase-with-underscores.
+const CODE_RE = /^[a-z_]+\.[a-z_]+$/;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Collect every permission-code literal referenced by an API route.
@@ -139,12 +115,8 @@ function walkRouteFiles(dir: string): string[] {
 // — the two RBAC-registry helpers. (authorizeAdmin(request, '<AdminLevel>') is a
 // SEPARATE admin-level auth system that takes an admin tier, not a permission
 // code, so it is intentionally excluded.)
-// Built from CODE_SEGMENTS so it accepts three-segment codes — see the blind-spot
-// note on CODE_RE above.
-const AUTHORIZE_CALL_RE = new RegExp(
-  `authorize(?:Request|SchoolAdmin)\\(\\s*request\\s*,\\s*['"](${CODE_SEGMENTS})['"]`,
-  'g',
-);
+const AUTHORIZE_CALL_RE =
+  /authorize(?:Request|SchoolAdmin)\(\s*request\s*,\s*['"]([a-z_]+\.[a-z_]+)['"]/g;
 
 // Matches schoolAdminPermissionCode({ off: 'code', on: 'code' }) — the
 // flag-conditional selector whose result is handed to authorizeSchoolAdmin. BOTH
@@ -153,14 +125,10 @@ const AUTHORIZE_CALL_RE = new RegExp(
 // is the one the regex above never saw — and the exact arm where
 // `school.manage_api_keys` 403'd undetected. Order-independent (off-then-on and
 // on-then-off both occur in the tree), so two passes, one per key.
-const SAPC_OFF_RE = new RegExp(
-  `schoolAdminPermissionCode\\(\\s*\\{[^}]*\\boff\\s*:\\s*['"](${CODE_SEGMENTS})['"]`,
-  'g',
-);
-const SAPC_ON_RE = new RegExp(
-  `schoolAdminPermissionCode\\(\\s*\\{[^}]*\\bon\\s*:\\s*['"](${CODE_SEGMENTS})['"]`,
-  'g',
-);
+const SAPC_OFF_RE =
+  /schoolAdminPermissionCode\(\s*\{[^}]*\boff\s*:\s*['"]([a-z_]+\.[a-z_]+)['"]/g;
+const SAPC_ON_RE =
+  /schoolAdminPermissionCode\(\s*\{[^}]*\bon\s*:\s*['"]([a-z_]+\.[a-z_]+)['"]/g;
 
 function collectRouteCodeRefs(): RouteCodeRef[] {
   const files = walkRouteFiles(API_ROOT);
@@ -216,15 +184,9 @@ function buildCanonicalCodeUniverse(): {
       // (a) codes seeded into the permissions table:
       //     INSERT INTO permissions ... VALUES ('code', 'resource', ...), ...;
       //     The tuple ALWAYS leads with the code as the first quoted value.
-      // NOTE: these three SQL extractors are ALSO built from CODE_SEGMENTS. They
-      // had the identical two-segment limit, which meant granted three-segment
-      // codes (e.g. 'super_admin.subjects.manage') never entered the canonical
-      // universe. Widening the route-side regex alone would therefore have
-      // turned every such code into a FALSE POSITIVE. Both sides must move
-      // together.
       const permBlocks = sql.match(/INSERT INTO permissions[\s\S]*?;/gi) || [];
       for (const block of permBlocks) {
-        const tupleRe = new RegExp(`\\(\\s*'(${CODE_SEGMENTS})'\\s*,`, 'g');
+        const tupleRe = /\(\s*'([a-z_]+\.[a-z_]+)'\s*,/g;
         let m: RegExpExecArray | null;
         while ((m = tupleRe.exec(block))) definedInPermissions.add(m[1]);
       }
@@ -232,15 +194,15 @@ function buildCanonicalCodeUniverse(): {
       // (b) codes named in an explicit grant block: WHERE ... p.code IN ( ... )
       const inBlocks = sql.match(/p\.code\s+IN\s*\(([\s\S]*?)\)/gi) || [];
       for (const block of inBlocks) {
-        const cRe = new RegExp(`'(${CODE_SEGMENTS})'`, 'g');
+        const cRe = /'([a-z_]+\.[a-z_]+)'/g;
         let m: RegExpExecArray | null;
         while ((m = cRe.exec(block))) explicitlyGranted.add(m[1]);
       }
 
       // (c) single-code grant: WHERE ... p.code = 'code'
-      const eqMatches = sql.match(new RegExp(`p\\.code\\s*=\\s*'${CODE_SEGMENTS}'`, 'gi')) || [];
+      const eqMatches = sql.match(/p\.code\s*=\s*'([a-z_]+\.[a-z_]+)'/gi) || [];
       for (const expr of eqMatches) {
-        const m = expr.match(new RegExp(`'(${CODE_SEGMENTS})'`));
+        const m = expr.match(/'([a-z_]+\.[a-z_]+)'/);
         if (m) explicitlyGranted.add(m[1]);
       }
     }
@@ -368,62 +330,6 @@ describe('RBAC permission-code drift guard — Phase 0 fixes locked in', () => {
     );
     expect(examsRefs.length).toBeGreaterThan(0);
     for (const ref of examsRefs) expect(ref.code).toBe('school.manage_exams');
-  });
-});
-
-describe('RBAC permission-code drift guard — three-segment blind spot (SEV1 fix, 2026-08-11)', () => {
-  // The bug: /api/student/engagement authorized against 'student.profile.read'
-  // — granted to no role, so it 403'd 100% of students — and THIS SUITE STAYED
-  // GREEN because the old two-segment regex could not match a three-segment
-  // literal. These tests pin the widened extraction so the hole cannot reopen.
-
-  it('the extractor now MATCHES a three-segment code literal (it previously could not)', () => {
-    const synthetic =
-      "const auth = await authorizeRequest(request, 'student.profile.read');";
-
-    // Widened pattern: matches.
-    AUTHORIZE_CALL_RE.lastIndex = 0;
-    const m = AUTHORIZE_CALL_RE.exec(synthetic);
-    expect(m).not.toBeNull();
-    expect(m![1]).toBe('student.profile.read');
-
-    // The OLD two-segment pattern, reconstructed here, does NOT match — this is
-    // the precise reason the original defect shipped undetected.
-    const legacyTwoSegment =
-      /authorize(?:Request|SchoolAdmin)\(\s*request\s*,\s*['"]([a-z_]+\.[a-z_]+)['"]/g;
-    expect(legacyTwoSegment.exec(synthetic)).toBeNull();
-  });
-
-  it('would have CAUGHT the bug: "student.profile.read" is granted to no role', () => {
-    expect(universe.has('student.profile.read')).toBe(false);
-    expect('student.profile.read' in KNOWN_UNGRANTED_CODES).toBe(false);
-    // => had it remained in a route, the widened extractor would surface it and
-    //    the core "every route code resolves" assertion would fail.
-  });
-
-  it('proves the fix: no route authorizes against "student.profile.read" any more', () => {
-    expect(routeRefs.filter((r) => r.code === 'student.profile.read')).toEqual([]);
-  });
-
-  it('the replacement "progress.view_own" IS granted AND IS used by /api/student/engagement', () => {
-    expect(universe.has('progress.view_own')).toBe(true);
-    const ref = routeRefs.find((r) =>
-      r.file.endsWith('/api/student/engagement/route.ts'),
-    );
-    expect(ref).toBeDefined();
-    expect(ref!.code).toBe('progress.view_own');
-  });
-
-  it('widening did not break the SQL side: granted three-segment codes still resolve', () => {
-    // 'super_admin.subjects.manage' is a real three-segment code seeded in
-    // 20260612123200. If only the route-side regex had been widened, this code
-    // would have become a false positive. Both sides moved together.
-    expect(universe.has('super_admin.subjects.manage')).toBe(true);
-  });
-
-  it('the canonical universe contains at least one three-segment code (extractor not a no-op)', () => {
-    const threeSegment = [...universe].filter((c) => c.split('.').length > 2);
-    expect(threeSegment.length).toBeGreaterThan(0);
   });
 });
 

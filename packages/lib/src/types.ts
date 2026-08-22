@@ -41,14 +41,7 @@ export interface Student {
   last_device_hash: string | null;
   device_change_count: number | null;
   is_demo: boolean | null;
-  // NO `class_id` HERE. `students` has no class_id column — verified against
-  // the baseline schema and stated in-repo at
-  // `supabase/migrations/20260504200100_stem_lab_badges.sql:499`. The field was
-  // declared here anyway, which let `(student as any).class_id` type-check on
-  // the leaderboard page; `AuthContext` does `select('*')`, so it arrived as
-  // undefined and every enrolled student was told "You're not in a class yet."
-  // Class membership lives in `class_students` — resolve it server-side
-  // (`GET /api/v1/leaderboard/my-class`), never off the student row.
+  class_id: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

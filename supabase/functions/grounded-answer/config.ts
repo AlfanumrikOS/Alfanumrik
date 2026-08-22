@@ -125,20 +125,6 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // existing request, and gen_ctx keys on system_prompt_template so it cannot
 // collide with a cached entry. Per the bump rule above, this does NOT bump
 // PROMPT_REV (a bump would needlessly flush every Foxy cache tier).
-// NOTE (everyday-Indian-life examples, ff_foxy_everyday_examples_v1): this also
-// does NOT bump PROMPT_REV, even though it DOES change prompt text — because it
-// only changes it for flag-ON requests. buildStructuredOutputPrompt returns
-// FOXY_STRUCTURED_OUTPUT_PROMPT byte-for-byte when the flag is OFF, so every
-// cache entry written before this deploy remains CORRECT (it was generated
-// under exactly the prompt a flag-OFF request still produces today). The
-// flag-ON case is handled by gen_ctx instead: `everyday_examples` is folded
-// into the hashed tuple and PRESENT ONLY WHEN TRUE, so flag-ON requests rotate
-// the key and miss naturally while flag-OFF requests keep their existing key.
-// Bumping would flush every Foxy cache tier — including the DURABLE L3
-// ncert_solver_solutions store — for the ~100% of users who see no change,
-// which is the same trade this comment block declines above. If the flag is
-// ever promoted to unconditional (directive always appended, flag removed),
-// THAT change MUST bump PROMPT_REV.
 export const PROMPT_REV = 3;
 
 // ── Model fallback ordering (edge mirror of the TS gateway registry) ─────────

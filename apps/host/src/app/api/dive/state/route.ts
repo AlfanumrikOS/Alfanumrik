@@ -29,7 +29,7 @@
  * Plan: docs/superpowers/plans/2026-05-09-pedagogy-v2-wave-2-weekly-dive.md
  */
 import { NextResponse } from 'next/server';
-import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
+import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@alfanumrik/lib/feature-flags';
 import {
@@ -94,16 +94,10 @@ function gradeInBand(studentGrade: string, band: string): boolean {
   return grade >= min && grade <= max;
 }
 
-export async function GET(request: Request) {
-  // Bearer-AWARE, RLS-respecting client. The cookie-only
-  // createSupabaseServerClient() NULLed auth.uid() for `Authorization: Bearer`
-  // callers (the entire Flutter app), so the `students` lookup silently returned
-  // no row and this route degraded to an empty picker (studentDbId null → no
-  // dive history, no weak topics) rather than the student's real state. Never
-  // service-role; RLS enforced on both transports.
-  const supabase = await createSupabaseRouteClient(request);
+export async function GET(_request: Request) {
+  const supabase = await createSupabaseServerClient();
 
-  const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
+  const auth = await authorizeRequest(_request, 'study_plan.view', { requireStudentId: true });
   if (!auth.authorized || !auth.userId) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
@@ -145,7 +139,7 @@ export async function GET(request: Request) {
  * so the result is safe to memoize in the per-student server cache above.
  */
 async function buildDiveState(
-  supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   userId: string,
   currentIsoWeek: string,
 ): Promise<DiveStateResponse> {

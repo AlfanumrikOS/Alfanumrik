@@ -3,33 +3,7 @@
 **Date filed:** 2026-06-27
 **Owner:** ops
 **Severity:** HIGH (release integrity)
-**Status:** APPLIED (partially). `main` enforces one independent approval, stale-review dismissal, approval after the last push, conversation resolution, administrator enforcement, and no force-push/deletion.
-
-> **CORRECTION 2026-08-11 — the required-check half of the 2026-07-12 status line was wrong.**
-> It claimed `main` requires "the strict, GitHub-Actions-app-bound aggregate `CI Gate`".
-> Re-probed live against ruleset `main-protection` (id `20528052`):
->
-> ```bash
-> gh api repos/AlfanumrikOS/Alfanumrik/rulesets/20528052 \
->   --jq '.rules[] | select(.type=="required_status_checks")'
-> ```
->
-> Actual required contexts: **`Secret Scanning`, `Lint, Type-check & Test`,
-> `Production Build`, `CodeQL Analysis`** — four checks, and
-> `strict_required_status_checks_policy` is **`false`** (not strict). `CI Gate`
-> is **not** a required context; the aggregate gate is advisory today.
->
-> This is the third recorded drift of this status line (see the 2026-07-11
-> note below about the earlier "five required checks" claim that was also
-> false on re-audit). **Do not restate the required-check list from memory or
-> from prose — run the probe above.** The cost of believing it: commit
-> `409123b5` skipped four governance jobs and `CI Gate` on pull requests
-> because "the ruleset enforces the required checks directly", leaving them
-> unenforced pre-merge. PR #1514 merged 100% green and turned `main` red on
-> the next push (#1517 was the repair); the PR runs were restored 2026-08-11.
->
-> **Open action:** add `CI Gate` to the required contexts (and consider
-> `strict: true`) to make the aggregate gate merge-blocking.
+**Status:** APPLIED, live-verified 2026-07-12. `main` requires the strict, GitHub-Actions-app-bound aggregate `CI Gate`, one independent approval, stale-review dismissal, approval after the last push, conversation resolution, administrator enforcement, and no force-push/deletion.
 
 This runbook captures a verified architect finding from the 2026-06-27 release-integrity
 audit so it is durably actionable. It documents why `main` is currently unprotected, the

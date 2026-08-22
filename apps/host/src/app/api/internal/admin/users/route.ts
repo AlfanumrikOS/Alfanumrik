@@ -107,7 +107,7 @@ export async function PATCH(request: NextRequest) {
     const { error } = await supabase.from(table).update(updates).eq('id', user_id);
     if (error) throw error;
 
-    await logAdminAction({ action: 'update_user', entity_type: table, entity_id: user_id, details: updates, ip, actorUserId: auth.userId });
+    await logAdminAction({ action: 'update_user', entity_type: table, entity_id: user_id, details: updates, ip });
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });

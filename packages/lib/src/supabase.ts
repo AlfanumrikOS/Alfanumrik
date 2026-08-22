@@ -232,28 +232,6 @@ export async function getDashboardData(studentId: string) {
   return data;
 }
 
-/**
- * States of `question_bank.verification_state` that mean the automated NCERT
- * verifier DISPROVED the row (or is mid-repair on a disproved row). A
- * disproved question must never reach a student — there is no fallback rung
- * that relaxes this (migration 20260802100000, spec §3.4).
- *
- * This list is the complete set of disproved states. It used to be wider than
- * the database's own gates: the CHECK was widened to six states by migration
- * 20260510064952 (`failed_fix_in_flight`, `failed_unfixable`) while every
- * serving RPC kept testing only the literal `'failed'`. Migration
- * 20260814000014 closed that on `select_quiz_questions_rag`,
- * `select_quiz_questions_v2` and both `get_quiz_questions` overloads, so all
- * four SQL rungs and this TS rung now exclude the same three states. If a
- * seventh state is ever added to the CHECK, it must be added here AND to those
- * four RPCs in the same change.
- */
-const DISPROVED_VERIFICATION_STATES = [
-  'failed',
-  'failed_fix_in_flight',
-  'failed_unfixable',
-] as const;
-
 export async function getQuizQuestions(subject: string, grade: string, count = 10, difficulty?: number | null, chapterNumber?: number | null) {
   // Try RPC first, fall back to direct query
   const params: Record<string, unknown> = { p_subject: subject, p_grade: grade, p_count: count };
@@ -261,34 +239,7 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
   if (chapterNumber != null) params.p_chapter_number = chapterNumber;
   try {
     const { data, error } = await supabase.rpc('get_quiz_questions', params);
-    // An EMPTY ARRAY IS TRUTHY in JavaScript. `get_quiz_questions` returns
-    // `COALESCE(jsonb_agg(q), '[]'::JSONB)`, and it used to also filter
-    // `is_verified = true` (migration 20260505155525), so a chapter whose
-    // questions carried no human SME sign-off came back as `[]` — which
-    // satisfied the old `data` guard and RETURNED ZERO QUESTIONS to the
-    // student, never reaching the direct-`question_bank` fallback below.
-    //
-    // Migration 20260814000014 (Decision A option 3, tiered verification)
-    // removed that `is_verified` filter and gave the RPC the same Tier-0 floor
-    // the fallback below applies, so the two rungs now query the same
-    // population. The non-empty guard is KEPT anyway: it is what makes this
-    // ladder robust to the RPC ever being narrowed again (and to the 4-arg /
-    // 5-arg overload resolution), and it costs one extra query only in the
-    // genuinely-empty case. Only a NON-EMPTY result may short-circuit the
-    // ladder. (Contrast getLeaderboard/getReviewCards below, where the RPC and
-    // its fallback query the same population and empty IS the final answer.)
-    if (!error && Array.isArray(data) && data.length > 0) {
-      const validated = await validateQuestions(data);
-      if (validated.length > 0) return validated;
-      // Every row the RPC returned failed the P6 gate. Serving `[]` here would
-      // be the same silent-zero. Fall through and re-run the SAME gate over the
-      // wider pool — the gate is not relaxed anywhere on this path.
-      console.warn(
-        `get_quiz_questions returned ${data.length} row(s), all rejected by the P6 gate — falling through to question_bank`,
-      );
-    } else if (!error) {
-      console.warn('get_quiz_questions returned no servable rows — falling through to question_bank');
-    }
+    if (!error && data) return validateQuestions(data);
   } catch { /* RPC may not exist — fall back */ }
 
   // Fetch seen question IDs for dedup (best-effort, ignore errors)
@@ -315,42 +266,21 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
     }
   } catch { /* History fetch failed — proceed without dedup */ }
 
-  // Direct table query fallback — fetch more to ensure enough unseen questions.
-  //
-  // TIER-0 FLOOR (added 2026-08-11 with the truthy-`[]` fix above): this rung
-  // is now genuinely reachable, so it must enforce the same never-serve floor
-  // the rung above it enforces (`select_quiz_questions_rag`, migration
-  // 20260802100000 §2.1): not soft-deleted, not draft/review/archived, not
-  // verifier-disproved. Previously this query filtered `is_active` only, so a
-  // soft-deleted or verifier-DISPROVED row was servable here.
-  //
-  // These predicates only ever REMOVE rows — this is a narrowing, not a
-  // relaxation. `is_verified` (the human SME flag) is deliberately NOT filtered
-  // here: neither this rung nor either RPC rung above it has ever gated serving
-  // on it (20260802100000 records it as "ranking/administrative metadata only"),
-  // and adding it would simply re-create the empty quiz this fix removes.
-  // Whether SME sign-off should gate serving at all is a CEO decision
-  // (Decision A, 2026-08-11 content brief), not something to settle here.
-  //
-  // `content_status` is nullable with DEFAULT 'published', so it is matched by
-  // "NULL or published" rather than strict equality: a strict `eq` would drop
-  // every legacy row that carries an explicit NULL and could silently re-empty
-  // the very quizzes this fix restores. Census before tightening:
-  //   SELECT content_status, count(*) FROM question_bank
-  //    WHERE is_active AND deleted_at IS NULL GROUP BY 1;
-  // `verification_state` is NOT NULL, so plain `neq` is safe there.
+  // Direct table query fallback — fetch more to ensure enough unseen questions
   const fetchLimit = Math.min(count * 4, 120);
+  // KEYLESS (migration 20260814000023): `correct_answer_index` is deliberately
+  // absent from this projection. It used to be here so the client-side P6 gate
+  // could check "index 0-3"; that check now runs SERVER-side —
+  // `public.question_bank_p6_valid` filters the serving RPCs, and
+  // `start_quiz_session` (which every question served from this fallback passes
+  // through before it is rendered) skips any row that fails it. Do NOT re-add
+  // the column: it is the ~12.8k-row answer key and this is a browser query.
   let query = supabase.from('question_bank')
-    .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
+    .select('id, question_text, question_hi, question_type, options, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
     .eq('subject', subject)
     .eq('grade', grade)
     .eq('is_active', true)
-    .is('deleted_at', null)
-    .or('content_status.is.null,content_status.eq.published')
     .limit(fetchLimit);
-  for (const state of DISPROVED_VERIFICATION_STATES) {
-    query = query.neq('verification_state', state);
-  }
   if (difficulty != null) query = query.eq('difficulty', difficulty);
   if (chapterNumber != null) query = query.eq('chapter_number', chapterNumber);
   const { data, error } = await query;
@@ -395,7 +325,13 @@ interface QuestionRecord {
   question_hi: string | null;
   question_type: string;
   options: string | string[];
-  correct_answer_index: number;
+  /**
+   * KEYLESS SERVING (migration 20260814000023). Neither the RPC payloads nor the
+   * direct-query fallback return the answer key any more, so this is optional
+   * and is `undefined` on every live serving path. It survives in the type only
+   * because super-admin/CMS callers reuse this shape with the real row.
+   */
+  correct_answer_index?: number;
   explanation: string | null;
   explanation_hi: string | null;
   hint: string | null;
@@ -409,8 +345,15 @@ async function validateQuestions(questions: QuestionRecord[]): Promise<QuestionR
   // Dynamic import (P10): keeps the canonical gate out of the shared first-load
   // bundle; only the question-fetch path loads it, at call time. Same canonical
   // module, same defaults (allowNonMcq: false, enforceBloomLevel: false).
+  //
+  // `keylessServing: true` (migration 20260814000023): every row reaching here
+  // came from `get_quiz_questions` or from the direct-query fallback above,
+  // both of which now filter on `public.question_bank_p6_valid` server-side and
+  // return NO `correct_answer_index`. Without this flag the gate would reject
+  // 100% of MCQs on `missing_answer_index` and the quiz would be empty. Every
+  // other P6 check — including a PRESENT-but-out-of-range index — still applies.
   const { validateQuestions: validateQuestionsP6 } = await import('./quiz/question-validation');
-  return validateQuestionsP6(questions);
+  return validateQuestionsP6(questions, { keylessServing: true });
 }
 
 /**
@@ -557,6 +500,62 @@ export async function checkQuizAnswer(
 }
 
 /**
+ * Server-side verdict for ONE formative (un-scored) question — the /learn
+ * chapter "Quick Check".
+ *
+ * WHY THIS EXISTS (migration 20260814000023): the Quick Check used to grade in
+ * the browser (`state.selectedOption === q.correct_answer_index`), which is the
+ * only reason `getChapterQuestions` had to select the answer key for up to 50
+ * questions on every chapter open. The comparison now happens in
+ * `public.check_formative_answer`, so the page never receives the key.
+ *
+ * NOT `checkQuizAnswer`: that RPC grades against a `quiz_session_shuffles` row,
+ * which only exists for a session minted by `start_quiz_session`. Minting one
+ * here would make the /today "Continue where you stopped" card suppress a
+ * genuinely resumable older quiz (`resolveResumableQuiz` reads the student's
+ * NEWEST snapshot row and refuses on an unrecognised `session_mode`). A
+ * formative surface must not be able to cancel a summative affordance.
+ *
+ * Touches NO scoring state — no XP, no quiz_sessions, no quiz_responses. The
+ * Quick Check's only learner-state sink remains `recordLearningEvent`
+ * (P1/P2/P4 untouched).
+ *
+ * Returns null on any failure so the caller can degrade to a neutral
+ * "answer recorded" state rather than blocking the page.
+ */
+export interface FormativeAnswerCheck {
+  question_id: string;
+  is_correct: boolean;
+  correct_answer_index: number;
+  explanation: string | null;
+  explanation_hi: string | null;
+}
+export async function checkFormativeAnswer(
+  questionId: string,
+  selectedIndex: number,
+): Promise<FormativeAnswerCheck | null> {
+  try {
+    const { data, error } = await supabase.rpc('check_formative_answer', {
+      p_question_id: questionId,
+      p_selected_index: selectedIndex,
+    });
+    if (error) {
+      console.warn('check_formative_answer RPC failed:', error.message);
+      return null;
+    }
+    if (!data || typeof data !== 'object') return null;
+    const parsed = (typeof data === 'string' ? JSON.parse(data) : data) as Partial<FormativeAnswerCheck>;
+    if (typeof parsed?.is_correct !== 'boolean' || typeof parsed?.correct_answer_index !== 'number') {
+      return null;
+    }
+    return parsed as FormativeAnswerCheck;
+  } catch (e) {
+    console.warn('check_formative_answer error:', e);
+    return null;
+  }
+}
+
+/**
  * v2 response payload — client sends ONLY the displayed index it clicked.
  * No more is_correct, no more shuffle_map. Server is the single source of truth.
  */
@@ -621,6 +620,25 @@ export async function submitQuizResults(studentId: string, subject: string, grad
       p_chapter: chapter,
       p_responses: _mapV2(responses),
       p_time: time,
+      // ONE GRADED SUBMISSION PER SERVER SESSION, FOREVER (Phase 4 resume).
+      //
+      // The server session id is already a fresh per-session UUID minted by
+      // start_quiz_session, so using it as the idempotency key makes
+      // quiz_sessions' partial unique index on (student_id, idempotency_key)
+      // — migration 20260504100200 — enforce exactly that. Any second submit
+      // of the same session (retrySubmit, a network retry, or a resumed tab
+      // reaching the end again) short-circuits to the cached result with
+      // `idempotent_replay: true` instead of inserting a second quiz_sessions
+      // row and awarding XP twice.
+      //
+      // This is the P2/P4 backstop that makes resume safe: the only guard
+      // before this was `_quizDedup`, an in-memory Set that a page refresh —
+      // the exact event resume exists to survive — wipes.
+      //
+      // `null` when there is no server session (the legacy no-shuffle
+      // fallback path), which is the RPC's documented pre-existing default:
+      // behaviour there is byte-identical to before.
+      p_idempotency_key: sessionId ?? null,
     });
     if (!v2.error && v2.data) return v2.data;
     throw new Error(v2.error?.message || 'Quiz submission failed.');
@@ -1253,8 +1271,13 @@ export async function getChapterTopics(
  * /learn/[subject]/[chapter] — an assertion about the question bank, false when
  * the read failed. P1/P6: the select list, filters and shuffle are unchanged. */
 export async function getChapterQuestions(subject: string, grade: string, chapterNumber: number, count = 20, difficulty?: number | null): Promise<ServiceResult<any[]>> {
+  // KEYLESS (migration 20260814000023): `correct_answer_index` removed. This
+  // query fed the /learn chapter "Quick Check", which compared the student's tap
+  // against the key IN THE BROWSER — so it was pulling the answer key for up to
+  // 50 questions on every chapter open. Grading now goes through the
+  // `check_formative_answer` RPC (see `checkFormativeAnswer` below).
   let query = supabase.from('question_bank')
-    .select('id, question_text, question_hi, question_type, options, correct_answer_index, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
+    .select('id, question_text, question_hi, question_type, options, explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number')
     .eq('subject', subject)
     .eq('grade', grade)
     .eq('is_active', true)
@@ -1295,17 +1318,7 @@ export interface AllowedChapterOption {
   chapter_number: number;
   title: string;
   title_hi?: string | null;
-  // BADGE GUIDANCE — mirrors useAllowedChapters.AllowedChapter. Readiness
-  // signal only ("an agent proved this against NCERT"); it is NOT a count of
-  // what the quiz can serve, and badging with it is what made the chapter
-  // picker advertise questions the platform could not deliver. Kept for
-  // back-compat; no surface renders it.
   verified_question_count?: number;
-  // What the practice / daily-quiz path can actually serve today. THIS is the
-  // student-facing chapter badge number.
-  practice_ready_count?: number;
-  // practice floor AND the human SME gate. Exam / mock surfaces only.
-  exam_ready_count?: number;
 }
 export async function getChaptersForSubject(subject: string, _grade: string): Promise<ServiceResult<AllowedChapterOption[]>> {
   void _grade;
@@ -1345,26 +1358,13 @@ export async function getChaptersForSubject(subject: string, _grade: string): Pr
         // Legacy shape kept for back-compat with older server revisions.
         title?: string;
         verified_question_count?: number;
-        practice_ready_count?: number;
-        exam_ready_count?: number;
       }>;
     };
     return ok((body.chapters ?? []).map((c) => ({
       chapter_number: c.chapter_number,
       title: c.chapter_title ?? c.title ?? `Chapter ${c.chapter_number}`,
       title_hi: c.chapter_title_hi ?? null,
-      // `?? 0` retained ONLY because this field is now back-compat surface
-      // area that nothing renders. Do not copy this coercion to the two
-      // fields below.
       verified_question_count: c.verified_question_count ?? 0,
-      // Passed through verbatim, deliberately WITHOUT `?? 0`. Against a
-      // database predating migration 20260814000014 the RPC omits these and
-      // they arrive `undefined`, which means "unknown" — not "zero". Coercing
-      // here would make the chapter picker render "0 questions" on chapters
-      // that are full of them, which is the same class of defect (a failure
-      // dressed up as a reassuring empty state) this split exists to fix.
-      practice_ready_count: c.practice_ready_count,
-      exam_ready_count: c.exam_ready_count,
     })));
   } catch (e) {
     return fail(
@@ -1775,9 +1775,14 @@ export async function getQuestionHistoryStats(
   try {
     const studentId = await resolveStudentId();
 
-    // Total questions available
+    // Total questions available.
+    // `select('id', ...)` NOT `select('*')`: this is a head-only COUNT, so the
+    // projection is never materialised — but `*` names every column, including
+    // `correct_answer_index`, and PostgreSQL requires SELECT privilege on every
+    // column a query names. Under the question_bank answer-key column ACL a
+    // `*` count would 403 outright (migration 20260814000023 companion).
     let totalQuery = supabase.from('question_bank')
-      .select('*', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true })
       .eq('subject', subject)
       .eq('grade', grade)
       .eq('is_active', true);

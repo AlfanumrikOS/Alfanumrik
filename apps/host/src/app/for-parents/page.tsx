@@ -64,10 +64,14 @@ const WHAT_YOU_GET: FeatureGridItem[] = [
     icon: <IconTarget />,
     titleEn: 'Exam Readiness Scores',
     titleHi: 'परीक्षा तैयारी स्कोर',
+    // CATALOGUE-CLAIM FIX (2026-08-12): read "readiness scores across all
+    // subjects" / "सभी विषयों में". `subjects.is_active` is true for five codes
+    // only (math, science, physics, chemistry, biology), so "all subjects" reads
+    // as a whole-timetable readiness score we do not produce.
     bodyEn:
-      'Know whether your child is on track for board exams with readiness scores across all subjects.',
+      'Know whether your child is on track for board exams with readiness scores in Maths and Science.',
     bodyHi:
-      'जानें कि आपका बच्चा बोर्ड परीक्षा के लिए तैयार है या नहीं, सभी विषयों में तैयारी स्कोर के साथ।',
+      'जानें कि आपका बच्चा बोर्ड परीक्षा के लिए तैयार है या नहीं, गणित और विज्ञान में तैयारी स्कोर के साथ।',
   },
   {
     icon: <IconBell />,

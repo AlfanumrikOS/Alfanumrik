@@ -296,10 +296,17 @@ test.describe('Today home — flag OFF (parity)', () => {
   });
 });
 
-// ── 2. Flag ON — TodayHomeV2 renders: focus hero + Continue navigation ─────
+// ── 2. Flag ON — TodayHomeV2 renders: primary card + Start navigation ──────
+//
+// Phase 4 (2026-08-11) rebuilt the loaded surface as a prioritised action
+// queue. The two mutually-exclusive heroes (`today-v2-focus-hero` /
+// `today-v2-resume-hero`, plus the resume "Later" dismiss) are gone: there is
+// now ONE primary card (`today-primary`) with ONE CTA (`today-primary-cta`)
+// whose verb switches between Start and Continue, followed by the plan,
+// reminder, progress statement and Foxy entry. The testids below track that.
 
 test.describe('Today home — flag ON (TodayHomeV2, the sole loaded-state render)', () => {
-  test('renders the TodayHomeV2 focus hero with a Continue CTA', async ({ page }) => {
+  test('renders the TodayHomeV2 primary card with a single CTA', async ({ page }) => {
     test.fixme(
       !hasRealStudentCreds(),
       'Rendering /today past the auth+flag gate needs an authenticated session. ' +
@@ -322,17 +329,48 @@ test.describe('Today home — flag ON (TodayHomeV2, the sole loaded-state render
 
     // The loaded shell renders TodayHomeV2 (root + greeting testids).
     await expect(page.getByTestId('today-loaded')).toBeVisible({ timeout: 15_000 });
-    const greeting = page.getByTestId('today-v2-greeting');
+    const greeting = page.getByTestId('today-greeting');
     await expect(greeting).toBeVisible();
     await expect(greeting.getByRole('heading', { name: 'What should I learn now?' })).toBeVisible();
 
-    // Primary item (weak_topic_zpd, non-resume) → the focus hero.
-    await expect(page.getByTestId('today-v2-focus-hero')).toBeVisible();
-    await expect(page.getByText("Today's focus")).toBeVisible();
+    // The single primary recommendation card.
+    await expect(page.getByTestId('today-primary')).toBeVisible();
+    await expect(page.getByText('Start here')).toBeVisible();
     await expect(page.getByText("Today's challenge")).toBeVisible();
 
-    // The Continue CTA exists and is clickable.
-    await expect(page.getByTestId('today-v2-focus-continue')).toBeVisible();
+    // It states WHY, in approved learner language — never the machine reason.
+    await expect(page.getByTestId('today-primary-reason')).toHaveText(/Build this prerequisite/);
+    await expect(page.getByText('todays_zpd')).toHaveCount(0);
+
+    // Exactly ONE primary CTA on the screen.
+    await expect(page.getByTestId('today-primary-cta')).toHaveCount(1);
+
+    // The compact progress statement and the Foxy entry close the surface.
+    await expect(page.getByTestId('today-progress')).toBeVisible();
+    await expect(page.getByTestId('today-foxy')).toBeVisible();
+  });
+
+  test('caps the plan at three activities and shows no leaderboard above learning', async ({ page }) => {
+    test.fixme(
+      !hasRealStudentCreds(),
+      'Same auth-gate dependency as the render test above. Mocks installed; promote ' +
+      'with the test-student fixture. Unit-covered in ' +
+      'src/__tests__/components/today/TodayHomeV2.test.tsx.',
+    );
+
+    await mockStudentSession(page, { xpTotal: 250, streakDays: 5 });
+    await installTodayMocks(page, { todayHomeOn: true });
+
+    if (hasRealStudentCreds()) {
+      await loginViaUI(page);
+    }
+
+    await page.goto('/today');
+    await page.waitForLoadState('domcontentloaded');
+
+    await expect(page.getByTestId('today-loaded')).toBeVisible({ timeout: 15_000 });
+    expect(await page.getByTestId('today-plan-item').count()).toBeLessThanOrEqual(3);
+    await expect(page.getByText(/leaderboard/i)).toHaveCount(0);
   });
 
   test('clicking Continue navigates to the resolver deep-link target', async ({ page }) => {
@@ -365,11 +403,11 @@ test.describe('Today home — flag ON (TodayHomeV2, the sole loaded-state render
     await page.goto('/today');
     await page.waitForLoadState('domcontentloaded');
 
-    const continueCta = page.getByTestId('today-v2-focus-continue');
+    const continueCta = page.getByTestId('today-primary-cta');
     await expect(continueCta).toBeVisible({ timeout: 15_000 });
     await continueCta.click();
 
-    // The focus hero builds the href from the primary deepLink via
+    // The primary card builds the href from the primary deepLink via
     // deepLinkToHref → /quiz?subject=science&chapter=3, then router.push()es it.
     await page.waitForURL(/\/quiz\?subject=science&chapter=3/, { timeout: 15_000 });
     expect(page.url()).toContain('/quiz');
@@ -408,16 +446,25 @@ test.describe('Today home — flag ON (TodayHomeV2, the sole loaded-state render
     await page.goto('/today');
     await page.waitForLoadState('domcontentloaded');
 
-    const greeting = page.getByTestId('today-v2-greeting');
+    const greeting = page.getByTestId('today-greeting');
     await expect(greeting).toBeVisible({ timeout: 15_000 });
     await expect(greeting.getByRole('heading', { name: 'मुझे अभी क्या सीखना चाहिए?' })).toBeVisible();
+    // Every block is bilingual (P7), not just the heading.
+    await expect(page.getByTestId('today-primary-reason')).toHaveText(/यह बुनियाद मज़बूत करो/);
   });
 });
 
-// ── 4. TodayHomeV2 — resume vs focus hero selection (rendered /today page) ─
+// ── 4. TodayHomeV2 — an in-progress session in the one primary card ────────
+//
+// There is no longer a separate "resume hero" / "focus hero" pair. A
+// resume_in_progress primary renders through the SAME `today-primary` card;
+// only the CTA verb ("Continue" rather than "Start") and the resume status
+// chip differ. The "Later" dismiss was removed with the second hero: the plan
+// block below the card is now how a student chooses something else, which
+// keeps one dominant action per screen.
 
-test.describe('TodayHomeV2 rendered on /today — resume vs focus hero', () => {
-  test('renders the v2 testids: root, greeting, and a resume hero for an in-progress session', async ({ page }) => {
+test.describe('TodayHomeV2 rendered on /today — an in-progress session', () => {
+  test('renders the primary card with a Continue CTA and an in-progress status', async ({ page }) => {
     test.fixme(
       !hasRealStudentCreds(),
       'Rendering /today past the auth+flag gate needs an authenticated session — same ' +
@@ -471,15 +518,16 @@ test.describe('TodayHomeV2 rendered on /today — resume vs focus hero', () => {
     await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByTestId('today-v2')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('today-v2-greeting')).toBeVisible();
-    await expect(page.getByTestId('today-v2-resume-hero')).toBeVisible();
-    await expect(page.getByTestId('today-v2-resume-continue')).toBeVisible();
-    await expect(page.getByTestId('today-v2-resume-later')).toBeVisible();
-    // Focus hero must NOT also render — the two heroes are mutually exclusive.
-    await expect(page.getByTestId('today-v2-focus-hero')).toHaveCount(0);
+    await expect(page.getByTestId('today-greeting')).toBeVisible();
+    await expect(page.getByTestId('today-primary')).toBeVisible();
+    await expect(page.getByTestId('today-primary-cta')).toHaveText(/Continue/);
+    await expect(page.getByTestId('today-primary-status')).toHaveText(/In progress/);
+    // Still exactly one primary action — there is no second hero, and no
+    // "Later" dismiss competing with it.
+    await expect(page.getByTestId('today-primary-cta')).toHaveCount(1);
   });
 
-  test('clicking today-v2-resume-continue navigates to the resume deep link', async ({ page }) => {
+  test('clicking the primary CTA navigates to the resume deep link', async ({ page }) => {
     test.fixme(
       !hasRealStudentCreds(),
       'Same auth-gate dependency as the render test above. Mocks installed; promote with ' +
@@ -516,14 +564,14 @@ test.describe('TodayHomeV2 rendered on /today — resume vs focus hero', () => {
     await page.goto('/today');
     await page.waitForLoadState('domcontentloaded');
 
-    const continueCta = page.getByTestId('today-v2-resume-continue');
+    const continueCta = page.getByTestId('today-primary-cta');
     await expect(continueCta).toBeVisible({ timeout: 15_000 });
     await continueCta.click();
     await page.waitForURL(/\/learn\/science\/7/, { timeout: 15_000 });
     expect(page.url()).toContain('/learn/science/7');
   });
 
-  test('renders today-v2-focus-hero (not the resume hero) for a non-resume primary item', async ({ page }) => {
+  test('a non-resume primary uses the SAME card with a Start CTA', async ({ page }) => {
     test.fixme(
       !hasRealStudentCreds(),
       'Same auth-gate dependency as the other v2 render tests. Mocks installed; promote ' +
@@ -540,9 +588,9 @@ test.describe('TodayHomeV2 rendered on /today — resume vs focus hero', () => {
     await page.goto('/today');
     await page.waitForLoadState('domcontentloaded');
 
-    await expect(page.getByTestId('today-v2-focus-hero')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('today-v2-focus-continue')).toBeVisible();
-    await expect(page.getByTestId('today-v2-resume-hero')).toHaveCount(0);
+    await expect(page.getByTestId('today-primary')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('today-primary-cta')).toHaveText(/Start/);
+    await expect(page.getByTestId('today-primary-status')).toHaveText(/Not started/);
   });
 });
 
