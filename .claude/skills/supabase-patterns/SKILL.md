@@ -1,6 +1,6 @@
 ---
 name: supabase-patterns
-description: Migration, RLS, RPC, and Edge Function patterns for the Alfanumrik Supabase database.
+description: Migration, RLS, RPC, and Edge Function patterns for the Alfanumrik Supabase database, plus the security and governance review checklist (SECURITY DEFINER, search_path, least privilege, forward-only migrations).
 user-invocable: false
 ---
 
@@ -8,14 +8,13 @@ user-invocable: false
 
 Patterns for working with the Alfanumrik Supabase database. Reference when writing migrations, RLS policies, RPCs, or Edge Functions.
 
-**Owning agent**: architect (schema/RLS), backend (non-AI Edge Functions), ai-engineer (AI Edge Functions).
+**Owning agent**: architect (schema/RLS), backend (non-AI Edge Functions), ai-engineer (AI Edge Functions). Release timing and full-platform audits are not this skill's job -- see `release-gates` (per-change) and `alfanumrik-release-audit` (manual, full-platform) instead.
 
 ## Migration Template
 ```sql
 -- Migration: YYYYMMDDHHMMSS_descriptive_name.sql
 -- Purpose: [one sentence]
 
--- Tables
 CREATE TABLE IF NOT EXISTS new_table (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -23,22 +22,19 @@ CREATE TABLE IF NOT EXISTS new_table (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- RLS (mandatory for every new table)
+-- RLS (mandatory for every new table, in the SAME migration file)
 ALTER TABLE new_table ENABLE ROW LEVEL SECURITY;
 
--- Student reads own
 CREATE POLICY "new_table_student_select" ON new_table
   FOR SELECT USING (
     student_id IN (SELECT id FROM students WHERE auth_user_id = auth.uid())
   );
 
--- Student inserts own
 CREATE POLICY "new_table_student_insert" ON new_table
   FOR INSERT WITH CHECK (
     student_id IN (SELECT id FROM students WHERE auth_user_id = auth.uid())
   );
 
--- Parent reads linked child
 CREATE POLICY "new_table_parent_select" ON new_table
   FOR SELECT USING (
     student_id IN (
@@ -48,30 +44,7 @@ CREATE POLICY "new_table_parent_select" ON new_table
     )
   );
 
--- Teacher reads assigned class
-CREATE POLICY "new_table_teacher_select" ON new_table
-  FOR SELECT USING (
-    student_id IN (
-      SELECT student_id FROM class_enrollments
-      WHERE class_id IN (
-        SELECT id FROM classes WHERE teacher_id IN (
-          SELECT id FROM teachers WHERE auth_user_id = auth.uid()
-        )
-      )
-    )
-  );
-
--- Indexes (on columns used in WHERE/JOIN/ORDER BY)
 CREATE INDEX IF NOT EXISTS idx_new_table_student ON new_table(student_id);
-CREATE INDEX IF NOT EXISTS idx_new_table_created ON new_table(created_at);
-
--- Updated_at trigger
-CREATE OR REPLACE FUNCTION update_new_table_updated_at()
-RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_new_table_updated_at ON new_table;
-CREATE TRIGGER trg_new_table_updated_at BEFORE UPDATE ON new_table
-  FOR EACH ROW EXECUTE FUNCTION update_new_table_updated_at();
 ```
 
 ## RPC Template
@@ -82,22 +55,19 @@ CREATE OR REPLACE FUNCTION my_rpc_name(
 )
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY INVOKER  -- default; use DEFINER only with documented justification
+SECURITY INVOKER  -- default; use DEFINER only with documented justification and a pinned search_path
 SET search_path = public
 AS $$
 DECLARE
   v_result JSONB;
 BEGIN
-  -- Verify caller owns this student
   IF NOT EXISTS (
     SELECT 1 FROM students WHERE id = p_student_id AND auth_user_id = auth.uid()
   ) THEN
     RAISE EXCEPTION 'Access denied';
   END IF;
 
-  -- Business logic here
   SELECT jsonb_build_object('key', 'value') INTO v_result;
-
   RETURN v_result;
 END;
 $$;
@@ -105,51 +75,56 @@ $$;
 
 ## Edge Function Template (Deno)
 ```typescript
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
-serve(async (req: Request) => {
-  // CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: "No auth" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
-  try {
-    // Auth check
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No auth" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: authHeader } } }
+  );
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    // Business logic
-    const { data, error } = await supabase.from("table").select("*");
-    if (error) throw error;
-
-    return new Response(JSON.stringify({ success: true, data }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ success: false, error: err.message }), {
+  const { data, error } = await supabase.from("table").select("*");
+  if (error) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+  return new Response(JSON.stringify({ success: true, data }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 });
 ```
 
+## Security & Governance Review
+
+This is the checklist `release-gates` Gate 5b and `alfanumrik-release-audit` both defer to -- keep it here, don't let it re-spread into either of those.
+
+- **Forward-only migrations.** Never rewrite an already-applied migration to "fix" it, even to make local setup pass -- write a new, forward migration instead. An applied migration is a historical fact, not a draft.
+- **RLS and least privilege.** Every new table gets RLS enabled and policies in the same migration. Grants should be as narrow as the reading/writing role actually needs -- do not grant broader than the template above without a stated reason.
+- **No undocumented schema/console drift.** A change made directly in the Supabase dashboard/console without a corresponding migration is invisible to every other environment and to this repo's history. If it must happen operationally, it needs a follow-up migration that codifies it, or it needs to be recorded in `docs/architecture/EXCEPTIONS.md` as a deliberate, dated exception.
+- **Never expose the service-role key to client code.** `packages/lib/src/supabase-admin.ts` (bypasses RLS) is server-only -- never imported in client components. Client code uses `packages/lib/src/supabase.ts`; server components/middleware use `supabase-server.ts`.
+- **Review every SECURITY DEFINER function for a pinned `search_path`.** A DEFINER function without an explicit `SET search_path` is a privilege-escalation risk (a caller could manipulate name resolution). Use INVOKER by default; DEFINER only with a documented reason and a pinned search_path, per the RPC template above.
+- **Review RPC authorisation.** Every RPC that touches student/parent/teacher data verifies the caller owns the resource it's asked to touch (see the RPC template's ownership check) -- do not rely on the caller only being authenticated.
+- **Evidence, not memory.** `docs/audits/FIX-LEDGER.md` documents concrete, previously-found instances of exactly these failure modes (RLS-bypassing grants, self-grant-capable policies, broad TRUNCATE grants, SECURITY DEFINER functions with no matching migration). Treat it as a worked example of what to look for -- do not copy its specific counts or findings into new work as if they were current; re-check the live state yourself.
+
 ## Checklist: Before Applying a Migration
-- [ ] File is idempotent (IF NOT EXISTS, CREATE OR REPLACE)
-- [ ] New tables have RLS enabled
-- [ ] RLS policies cover: student own, parent linked, teacher assigned
+- [ ] File is idempotent (`IF NOT EXISTS`, `CREATE OR REPLACE`) and forward-only (never edits a prior applied migration)
+- [ ] New tables have RLS enabled, in the same migration
+- [ ] RLS policies cover: student own, parent linked, teacher assigned (as applicable)
 - [ ] Indexes on FK columns and frequently queried columns
 - [ ] Grade columns are TEXT, not INTEGER
+- [ ] Any SECURITY DEFINER function has a pinned `search_path` and a documented reason for DEFINER over INVOKER
 - [ ] No DROP TABLE/COLUMN without user approval
-- [ ] Tested mentally against the 160+ existing migration chain
+- [ ] No service-role key referenced from client-importable code
+- [ ] Tested mentally against the existing migration chain -- re-count it yourself (`git ls-files supabase/migrations | wc -l`) rather than quoting a remembered number

@@ -42,7 +42,7 @@ When a critical file is modified, specific downstream agents MUST review before 
 | testing | Cognitive threshold tests updated |
 
 ### 4. LLM / AI Tutor Behavior Changes
-**Trigger files**: `supabase/functions/foxy-tutor/`, `supabase/functions/ncert-solver/`
+**Trigger files**: `apps/host/src/app/api/foxy/route.ts`, `supabase/functions/ncert-solver/`
 **Making agent**: ai-engineer
 | Reviewer | What They Check |
 |---|---|

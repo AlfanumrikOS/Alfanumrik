@@ -1,135 +1,64 @@
 ---
 name: ai-integration
-description: Claude API usage patterns, RAG pipeline rules, prompt template conventions, and AI safety checklist for Alfanumrik Edge Functions.
+description: Claude/model provider integration, typed gateway contracts, Foxy pedagogy and learner-state governance, and NCERT RAG ingestion/retrieval architecture. Use for Edge Function AI work (ncert-solver, quiz-generator, cme-engine), the Foxy Next.js route, the provider gateway, RAG retrieval architecture, or AI evaluation design.
 user-invocable: false
 ---
 
 # Skill: AI Integration
 
-Patterns for the AI-powered features. Reference when modifying foxy-tutor, ncert-solver, quiz-generator, or cme-engine.
+Routing hub for three related but distinct responsibilities. Read only the reference you need -- do not read both references for a task that touches only one.
 
-**Owning agent**: ai-engineer. Assessment reviews correctness.
+## Load the right reference
 
-## AI Edge Functions
-| Function | Model | Purpose | Daily Limit |
-|---|---|---|---|
-| `foxy-tutor` | Claude Haiku | Conversational tutoring (6 modes) | Per plan: 5/30/unlimited |
-| `ncert-solver` | Claude Haiku | Step-by-step NCERT solutions | Shared with foxy |
-| `quiz-generator` | None (algorithmic) | Adaptive question selection | No limit |
-| `cme-engine` | None (algorithmic) | BKT/IRT mastery computation | No limit |
+- Read `references/foxy-pedagogy-and-learner-state.md` for: Foxy tutor behavior, pedagogy decisions, adaptive learner state, tutor memory, structured model output, grounding/citations, or AI evaluation design.
+- Read `references/ncert-rag-architecture.md` for: NCERT ingestion, provenance, chunking, figures, hybrid retrieval, reranking, corpus versioning, or RAG architecture work.
+- For the **18-cell math/science coverage audit and retrieval-tuning gate procedure specifically**, this skill does not own that workflow -- go to `rag-math-science-tuning`.
+- For **student-data consent, retention, deletion, or safeguarding-escalation policy**, this skill does not own that either -- go to `alfanumrik-student-safety`. This skill owns the AI *mechanics* of safety (what the model call pipeline enforces); that skill owns the *policy*.
 
-## Claude API Usage Pattern
-```typescript
-const response = await fetch("https://api.anthropic.com/v1/messages", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "x-api-key": Deno.env.get("ANTHROPIC_API_KEY"),
-    "anthropic-version": "2023-06-01",
-  },
-  body: JSON.stringify({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
-    system: systemPrompt,    // Foxy persona + CBSE scope + safety rails + RAG context
-    messages: conversationHistory,
-    stream: true,            // Always stream for tutoring
-  }),
-});
-```
+## AI surfaces (current, verified -- re-verify before quoting elsewhere)
 
-## RAG Pipeline
-```
-Input: student question + grade + subject + topic
-  ↓
-1. Extract keywords / topic from question
-2. Query rag_content_chunks:
-   - Filter: grade = student grade, subject = student subject
-   - Match: keyword similarity or embedding similarity
-   - Limit: top 3-5 chunks
-  ↓
-3. Build system prompt:
-   "You are Foxy, a friendly CBSE tutor for Class {grade} {subject}.
-    Use ONLY the following reference material:
-    ---
-    {chunk_1}
-    {chunk_2}
-    {chunk_3}
-    ---
-    If the answer is not in the reference material, say so."
-  ↓
-4. Send to Claude with conversation history
-  ↓
-5. Post-process response:
-   - Verify no hallucinated facts (if detectable)
-   - Add NCERT chapter references
-   - Ensure age-appropriate language
-  ↓
-6. Stream to student
-```
-
-## Prompt Template Conventions
-1. **System prompt** defines: persona (Foxy), scope (CBSE grade+subject), safety rails, RAG context
-2. **Temperature**: 0.3 for factual (solving, explaining), 0.7 for motivational (encouragement)
-3. **Max tokens**: varies by mode — quiz answers: 256, explanations: 1024, notes: 2048
-4. **Language**: respond in the language the student uses (English, Hindi, or Hinglish)
-5. **Safety rails in system prompt**:
-   - "You are a tutor for Class {grade}. Stay within CBSE {subject} curriculum."
-   - "Do not discuss topics outside academics."
-   - "If unsure, say 'I'm not sure about this — check with your teacher.'"
-   - "Keep explanations age-appropriate."
-
-## Circuit Breaker Rules
-```
-Failure tracking:
-- Count Claude API failures in a 60-second window
-- If ≥ 3 failures in 60 seconds → OPEN circuit
-
-When circuit is OPEN:
-- Return cached response or fallback message
-- Fallback: "Foxy is taking a short break. Try again in a minute!"
-- Log circuit open event
-
-Recovery:
-- After 30 seconds, allow ONE probe request → HALF-OPEN
-- If probe succeeds → CLOSE circuit
-- If probe fails → keep OPEN, reset 30s timer
-```
-
-## AI Safety Checklist (product invariant P12)
-- [ ] All responses age-appropriate for grades 6-12
-- [ ] No unfiltered LLM output — always post-process
-- [ ] Responses stay within CBSE curriculum scope
-- [ ] Daily usage limits enforced per subscription plan
-- [ ] Circuit breaker implemented for Claude API failures
-- [ ] No PII sent to Claude API (anonymize: session ID only, no name/email)
-- [ ] AI interactions logged for quality audit (session_id, topic, mode, quality_score — no PII)
-
-## Foxy Tutor Modes
-| Mode | Behavior | Temperature |
+| Surface | Status | Notes |
 |---|---|---|
-| Learn | Explain topic step-by-step | 0.3 |
-| Practice | Guide through practice problems | 0.3 |
-| Quiz | Generate and evaluate quiz questions | 0.3 |
-| Doubt | Answer specific doubts with references | 0.3 |
-| Revise | Create revision summaries | 0.5 |
-| Notes | Generate structured notes | 0.3 |
+| `apps/host/src/app/api/foxy/route.ts` | **Canonical** Foxy path | RAG-grounded (`grounded-answer` pipeline). Model routing is **OpenAI-primary with Claude as automatic fallback** (`gpt-4o-mini`->`gpt-4o` primary, `claude-haiku-4-5`->`claude-sonnet-4` fallback) -- a CEO-approved, cost-driven swap. Source of truth: `MODEL_FALLBACK_ORDER` in `supabase/functions/grounded-answer/config.ts` (mirrored from `packages/lib/src/ai/gateway/registry.ts`). Do not assume "Claude" is Foxy's current primary model -- verify against that constant, it has changed before and can change again. A rollback path to Claude-primary (`CLAUDE_PRIMARY_FALLBACK_ORDER`, same file) exists behind `ff_foxy_openai_primary_rollout_v1`, seeded at 0% rollout -- check the flag's live rollout percentage before assuming either order is in effect for a given request |
+| Legacy AI Edge Functions | May still be deployed | Do not add new logic to a superseded AI Edge Function. Older installed mobile app builds may still call a legacy path -- verify what is actually deployed with `supabase functions list` before assuming a superseded function is gone, never from this doc |
+| `supabase/functions/ncert-solver/` | Active | Step-by-step NCERT solutions. One file inside this directory is currently mid-edit (`index.ts`) and one path is untracked (`retrieval.ts`) -- treat this directory at the boundary level only; do not cite its current line-level behavior as permanent |
+| `supabase/functions/quiz-generator/` | Active | Adaptive question selection (tombstoned duplicates are not live -- verify deployed state, don't assume from disk) |
+| `supabase/functions/cme-engine/` | Active | BKT/IRT mastery computation |
+| `supabase/functions/grounded-answer/` | Active | The answer-generation pipeline (retrieval, citations, confidence, abstention, tracing, model routing) -- see the RAG reference for retrieval and the Foxy reference for grounding/citations. One file inside (`prompts/inline.ts`) is currently mid-edit; reference this directory at the boundary level, not by exact current line content |
 
-## CME Engine Algorithms
-| Algorithm | Purpose | Implementation |
-|---|---|---|
-| BKT (Bayesian Knowledge Tracing) | Estimate P(mastery) per concept | `p_mastery = p_mastery * (1 - p_slip) / p_correct` if correct |
-| IRT (Item Response Theory) | Estimate student ability | 2-parameter logistic model |
-| SM-2 (Spaced Repetition) | Schedule review intervals | Modified SuperMemo algorithm |
-| Error Classification | Categorize mistakes | Careless (fast+wrong), conceptual (slow+wrong), procedural |
-| Retention Decay | Model forgetting curve | Exponential decay with practice boosts |
+## Provider gateway (already provider-neutral -- do not rebuild this)
 
-## Key Files
-| File | Owner | Purpose |
-|---|---|---|
-| `supabase/functions/foxy-tutor/index.ts` | ai-engineer | Main tutor function |
-| `supabase/functions/ncert-solver/index.ts` | ai-engineer | Problem solver |
-| `supabase/functions/quiz-generator/index.ts` | ai-engineer | Question selection |
-| `supabase/functions/cme-engine/index.ts` | ai-engineer | Mastery computation |
-| `supabase/functions/_shared/` | ai-engineer | Shared utilities |
-| `src/lib/cognitive-engine.ts` | assessment (rules) | Client-side cognitive algorithms |
-| `src/lib/feedback-engine.ts` | assessment (rules) | Feedback generation rules |
+`packages/lib/src/ai/gateway/` is the real, already-implemented, provider-neutral typed contract layer: `gateway.ts`, `registry.ts` (mirrors the live `MODEL_FALLBACK_ORDER`/`CLAUDE_PRIMARY_FALLBACK_ORDER` routing tables), `router.ts`, `rollout.ts`, `telemetry.ts`, `types.ts`, `index.ts`, plus `adapters/{anthropic,openai,gemini}.ts`. A new model integration is a new adapter behind this gateway -- never a bespoke `fetch()` call to a provider API from application code. If a task needs a new provider or a new routing/rollout rule, extend this layer; do not fork a second gateway. When citing which provider is primary for a given surface, cite the live constant/flag rollout percentage, not a remembered vendor name -- this has already changed once (Claude-primary -> OpenAI-primary, 2026-08-02) and is flagged to change again.
+
+## AI safety mechanics (P12)
+
+- Responses are age-appropriate for grades 6-12, stay within CBSE scope, and respect per-plan daily usage limits.
+- `packages/lib/src/ai/validation/{safeguarding-classify.ts,safeguarding-screen.ts}` classify/screen model output and input before it reaches a student; `apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts` is the escalation path. The *policy* for what happens after escalation (human review, no diagnosis claims, consent) is owned by `alfanumrik-student-safety` -- this skill just ensures the pipeline calls into it.
+- No PII sent to a model provider, regardless of which provider is currently primary -- anonymize to session/request identifiers only.
+
+## Circuit breaker (provider API failures)
+
+Track provider-call failures in a rolling window; open the circuit past a threshold; serve a cached response or a clear fallback message while open; allow a single probe request after a cooldown to attempt recovery. This is a generic pattern applied per-adapter in the gateway above, not tied to any single surface or provider -- it must work identically regardless of which provider is currently primary.
+
+## Currently missing -- required, not yet implemented
+
+Do not describe any of the following as already working; they are gaps to close, not existing behavior:
+
+- **Durable `prompt_version`/`model_version` stamping.** No column or constant exists anywhere in the schema or code today that stamps which prompt/model version produced a given stored result, beyond the routing tables above (which record which provider *order* is active, not which model actually answered a given stored artifact). Any new AI-writing surface should add this rather than assume it already happens elsewhere.
+- **Corpus-level blue/green versioning.** Only chunk-level supersession exists (`rag_content_chunks.version` + `previous_chunk_id`) plus the model-routing rollout mechanism above (which is about LLM call routing, not the retrieval corpus). There is no mechanism to promote or roll back an entire corpus version. See `references/ncert-rag-architecture.md`.
+
+## Key files
+
+| File | Purpose |
+|---|---|
+| `packages/lib/src/ai/gateway/*` | Provider-neutral gateway, adapters, routing/rollout, telemetry |
+| `apps/host/src/app/api/foxy/route.ts` | Canonical Foxy chat route |
+| `supabase/functions/grounded-answer/*` | Answer generation pipeline (retrieval -> citations -> confidence -> abstain -> trace -> model routing) |
+| `supabase/functions/grounded-answer/config.ts` | Live model-routing source of truth (`MODEL_FALLBACK_ORDER`, `CLAUDE_PRIMARY_FALLBACK_ORDER`) |
+| `supabase/functions/{ncert-solver,quiz-generator,cme-engine}/` | Edge Function AI surfaces |
+| `packages/lib/src/ai/validation/*` | Safeguarding classify/screen |
+| `packages/lib/src/cognitive-engine.ts`, `packages/lib/src/feedback-engine.ts` | Client-side cognitive/feedback rules (assessment-owned) |
+
+## Review chain
+
+Making agent: ai-engineer. Required reviewers: assessment (correctness/curriculum scope), testing (AI regression tests), quality. Student-safety policy changes route through `alfanumrik-student-safety` as well. Model/provider routing changes are a P12/user-approval-relevant change (per CLAUDE.md's "AI model or provider changes" approval gate) -- do not flip a primary-provider order without confirming the change is already CEO-approved, per the live flag/constant.
