@@ -73,6 +73,29 @@ class QuizRepository {
         _cache = cache ?? CacheManager(),
         _v2 = v2Client;
 
+  /// Columns read from `question_bank` on the legacy (`useV2`-OFF) path.
+  ///
+  /// EXPLICIT, and deliberately WITHOUT `correct_answer_index`. This used to be
+  /// a bare `.select()` (i.e. `SELECT *`), which pulled the answer key onto the
+  /// device for every question even though nothing on this path can legitimately
+  /// use it: the rows fetched here are only a CANDIDATE POOL whose ids go to
+  /// `start_quiz_session`, and the session's server-shuffled questions then
+  /// replace them wholesale. Naming the columns closes two things at once —
+  ///
+  ///   * P6: no answer key crosses the wire on any mobile quiz path; and
+  ///   * a hard dependency on `SELECT *` succeeding. A column-level
+  ///     `REVOKE SELECT (correct_answer_index) ... FROM authenticated` makes
+  ///     `SELECT *` fail for the WHOLE row in Postgres, so the wildcard would
+  ///     have taken the entire legacy quiz path down with it.
+  ///
+  /// Every column here is verified present on `public.question_bank`
+  /// (`supabase/migrations/00000000000000_baseline_from_prod.sql`). Do not add
+  /// a speculative column name: PostgREST 400s the whole query on an unknown
+  /// column, where the old wildcard silently returned nothing for it.
+  static const _questionColumns =
+      'id, question_text, question_hi, options, explanation, explanation_hi, '
+      'subject, grade, chapter_number, difficulty, bloom_level, tags';
+
   /// Fetch quiz questions for a subject + grade.
   ///
   /// Returns questions in their CANONICAL (un-shuffled) form. Callers that
@@ -83,14 +106,34 @@ class QuizRepository {
   /// When a generated client is present this calls `GET /v2/quiz/questions` via
   /// the generated [v2.QuizApi]; the route already enforces subject-governance
   /// + academic-scope and NEVER returns `correct_answer_index` (P6). When OFF
-  /// it reads the `question_bank` table directly (byte-identical legacy path).
+  /// it reads the `question_bank` table directly (legacy path).
+  ///
+  /// ## [boardYear] — PYQ board-paper preference (R8, 2026-08-11)
+  ///
+  /// A question-SELECTION hint from the `/pyq` launcher, never a scoring input.
+  /// When set, the legacy path runs a PREFERRED fetch of rows tagged with that
+  /// year in `question_bank.tags` and tops the quiz up from the normal pool
+  /// when the year is thin — the same two-step the retired `PyqRepository` did,
+  /// and the mobile analogue of RUNG 0P in the web's `assembleQuiz`. A year
+  /// with no tagged rows is NOT an error; the student gets a full, in-scope,
+  /// fully-persisted quiz either way.
+  ///
+  /// KNOWN GAP (needs backend): `GET /v2/quiz/questions` accepts
+  /// `subject/grade/count/chapter/difficulty/mode` and has NO `year` parameter,
+  /// so on the `useV2`-ON path the board year cannot be honoured and is
+  /// ignored. It is threaded this far rather than dropped at the UI so that
+  /// adding the route param + regenerating the client is the only remaining
+  /// work. The launcher's copy is written to be true in BOTH cases — it
+  /// promises a saved, board-pattern practice run, not that year's exact paper.
   Future<ApiResult<List<QuizQuestion>>> getQuestions({
     required String subject,
     required String grade,
     int count = 10,
     String? chapterTitle,
+    int? boardYear,
   }) async {
     if (_v2 != null) {
+      // boardYear intentionally not forwarded — see the KNOWN GAP note above.
       return _getQuestionsV2(
         subject: subject,
         grade: grade,
@@ -100,29 +143,69 @@ class QuizRepository {
     }
 
     try {
+      final picked = <QuizQuestion>[];
+      final seenIds = <String>{};
+
+      void absorb(dynamic rows) {
+        if (rows is! List) return;
+        final parsed = rows
+            .whereType<Map>()
+            .map((e) => QuizQuestion.fromJson(Map<String, dynamic>.from(e)))
+            .where((q) => q.id.isNotEmpty)
+            .toList();
+        // Shuffle WITHIN the tier so the year-tagged rows keep their
+        // precedence over the top-up pool while still varying between runs.
+        parsed.shuffle();
+        for (final q in parsed) {
+          if (seenIds.add(q.id)) picked.add(q);
+        }
+      }
+
+      // ── Preferred tier: rows tagged with the requested board year ──────
+      // Additive and fail-soft: any error here, or a year with no tagged
+      // rows, leaves `picked` untouched and the normal pool supplies the
+      // whole quiz.
+      if (boardYear != null) {
+        try {
+          absorb(await _client
+              .from('question_bank')
+              .select(_questionColumns)
+              .eq('subject', subject)
+              .eq('grade', grade)
+              .eq('is_active', true)
+              .contains('tags', [boardYear.toString()]).limit(count * 2));
+        } catch (_) {
+          // Fall through to the normal pool.
+        }
+      }
+
+      // ── Normal pool (unchanged behaviour when boardYear is null) ───────
       var query = _client
           .from('question_bank')
-          .select()
+          .select(_questionColumns)
           .eq('subject', subject)
           .eq('grade', grade)
           .eq('is_active', true);
 
       if (chapterTitle != null) {
+        // PRE-EXISTING DEFECT, deliberately left as-is (reported, not fixed):
+        // `question_bank` has no `chapter_title` column — the chapter lives in
+        // `chapter_number`/`chapter_id`, and `chapter_title` exists only on
+        // `cbse_syllabus`. PostgREST therefore 400s this query whenever a
+        // chapter is requested on the legacy path. It is NOT silently rewritten
+        // to `chapter_number` here because callers pass a TITLE: parsing it and
+        // dropping the filter on failure would hand the student a whole-subject
+        // quiz labelled as one chapter, which is the exact silent-chapter-swap
+        // the web assembler removed its Rung 3 to stop. A loud failure is the
+        // correct interim behaviour. PYQ never sets a chapter, so this is
+        // unreachable from the launcher.
         query = query.eq('chapter_title', chapterTitle);
       }
 
-      // Random selection via Supabase — order by random()
-      final res = await query.limit(count * 3); // over-fetch for randomization
+      // Over-fetch for randomisation.
+      absorb(await query.limit(count * 3));
 
-      final allQuestions = (res as List<dynamic>)
-          .map((e) => QuizQuestion.fromJson(e as Map<String, dynamic>))
-          .toList();
-
-      // Shuffle and take `count`
-      allQuestions.shuffle();
-      final selected = allQuestions.take(count).toList(growable: false);
-
-      return ApiSuccess(selected);
+      return ApiSuccess(picked.take(count).toList(growable: false));
     } catch (e) {
       return ApiFailure('Failed to load questions: ${e.toString()}');
     }

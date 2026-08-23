@@ -1,0 +1,17 @@
+apps/host/src/__tests__/admin-ui/DetailDrawer.test.tsx
+apps/host/src/__tests__/admin-ui/StatusBadge.test.tsx
+apps/host/src/__tests__/api-admin-client-allowlist.test.ts
+apps/host/src/__tests__/api/quiz-session-progress.test.ts
+apps/host/src/__tests__/api/quiz-submit-session-bound-idempotency.test.ts
+apps/host/src/__tests__/api/student/daily-plan.test.ts
+apps/host/src/__tests__/api/super-admin/admin-route-auth-gate-sweep.test.ts
+apps/host/src/__tests__/api/super-admin/rbac-elevation.test.ts
+apps/host/src/__tests__/api/teacher/worksheet-answer-key-authz.test.ts
+apps/host/src/__tests__/api/v1/leaderboard/me.test.ts
+apps/host/src/__tests__/api/v2/contract-conformance.test.ts
+apps/host/src/__tests__/api/v2/learn-concept.test.ts
+apps/host/src/__tests__/api/v2/learn-curriculum.test.ts
+apps/host/src/__tests__/api/v2/quiz-questions.test.ts
+apps/host/src/__tests__/api/v2/quiz-submit.test.ts
+apps/host/src/__tests__/api/v2/student-leaderboard.test.ts
+apps/host/src/__tests__/api/v2/student-profile.test.ts

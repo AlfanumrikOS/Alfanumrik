@@ -440,10 +440,22 @@ If still tight, try **3584**. Do not raise this to match the workflows — diffe
   SIGKILLs), remaining options **in order**:
   1. Lower the cap again: 4096 → **3584** (same one-line code change).
   2. **Route production through the GH 16 GB prebuilt path** — repo variable
-     `USE_CLI_DEPLOY=true`. **Already set to `true` (2026-07-17T13:35Z); this is the CURRENT
-     ACTIVE production path.** Builds run on a 16 GB GH runner and deploy prebuilt, so the
-     8 GB Vercel build container is bypassed entirely. This is the parallel unblock — it is
-     independent of the heap cap, which still governs any Vercel-side build.
+     `USE_CLI_DEPLOY=true`. **CORRECTION 2026-08-23: this line's "already set to true,
+     current active production path" claim was stale for over a month.** The variable was
+     observed `false` (last updated 2026-07-18) on 2026-08-09 by the launch-readiness program's
+     production-release-gating audit (docs/runbooks/production-release-gating.md), meaning
+     Vercel's own Git integration — not this CLI path — was the actual production deploy
+     mechanism for that entire window. It was deliberately re-set to `true` on
+     2026-08-23T09:02:08Z as the second (GitHub-side) half of that runbook's Section 3 change,
+     coordinated with disabling Vercel's Git auto-deploy for `main` in the same maintenance
+     window (the first, Vercel-side half). As of this correction it genuinely is the current
+     active production path again, verified via `gh variable list`, but the runbook's own
+     Section 4 verification (confirm the next real push to `main` deploys exactly once via
+     this CLI job, not doubled by Vercel's Git integration) has not yet run — do not re-quote
+     "current active production path" as settled fact until that observation lands. Builds run
+     on a 16 GB GH runner and deploy prebuilt, so the 8 GB Vercel build container is bypassed
+     entirely. This is the parallel unblock — it is independent of the heap cap, which still
+     governs any Vercel-side build.
   3. **Sentry sourcemap isolation** (Phase 2): `withSentryConfig` is called with the v7
      3-argument signature against v10, which silently force-enables full source-map
      generation — a large share of build heap. Fixing the call is a real memory reduction,

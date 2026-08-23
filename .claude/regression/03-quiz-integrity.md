@@ -1872,6 +1872,248 @@ the one that actually occurs, from nullable columns such as
 
 ---
 
+## Phase 4 — working session resume + the `quiz_session_shuffles` answer-key ACL (2026-08-11)
+
+Two commits on `main`: `b008c20c7` (feat(student): Phase 4 — working session
+resume + Today as an action queue) and `86b033a41` (fix(security): deny the
+quiz answer key to client roles on `quiz_session_shuffles`). This section
+catalogues the quiz-integrity half; the `/today` half is in
+`15-cross-cutting.md` (REG-388..REG-392).
+
+**Why resume is a P1/P2/P3/P4 surface, not a UX nicety.** `start_quiz_session`
+writes NO `quiz_sessions` row — the row is first INSERTed by
+`submit_quiz_results_v2`, already `is_completed = true`. So the
+`is_completed = false` probe `student-state-builder` used to derive
+`live.kind === 'in_quiz'` could never match an in-flight quiz: the resume CTA
+was **unreachable by construction**, and its deep link was a bare `/quiz` that
+landed on the setup screen. Fixing it means (a) restoring the student's own
+prior answers WITHOUT restoring anything that reveals correctness, (b) keeping
+the P3 3s/question floor honest in BOTH directions across the interruption,
+and (c) making "one graded submission per session" survive the page refresh
+that resume exists to survive. Each is a separate entry below.
+
+### Verification (this pass, 2026-08-11)
+
+All eight Phase 4 test files re-run green in ONE vitest pass from `apps/host`
+(`npx vitest run --maxWorkers=2 …`): **206 passed | 6 skipped (212)** across 8
+files. The 6 skips are REG-380's Lane B and are the ONLY skips in the batch.
+
+| File | Passed | Skipped |
+|---|---|---|
+| `apps/host/src/__tests__/quiz/resume-payload.test.ts` | 18 | 0 |
+| `apps/host/src/__tests__/quiz/resume-wiring.test.ts` | 14 | 0 |
+| `apps/host/src/__tests__/state/resume-live-state.test.ts` | 6 | 0 |
+| `apps/host/src/__tests__/api/quiz-session-progress.test.ts` | 22 | 0 |
+| `apps/host/src/__tests__/security/quiz-session-shuffles-answer-key-acl.test.ts` | 11 | **6** |
+| `apps/host/src/__tests__/today/today-page-states.test.tsx` | 39 | 0 |
+| `apps/host/src/__tests__/lib/today/reason-copy.test.ts` | 42 | 0 |
+| `apps/host/src/__tests__/components/today/TodayHomeV2.test.tsx` | 54 | 0 |
+
+**Lane membership verified, not assumed.** `src/__tests__/security/**` IS
+collected by the normal `npm test` lane — unlike `src/__tests__/migrations/**`,
+which the root `vitest.config.ts` puts in `NORMAL_LANE_INTEGRATION_EXCLUDES`
+and reaches only under `RUN_INTEGRATION_TESTS=1`. Measured, from `apps/host`:
+
+```
+$ npx vitest list --filesOnly src/__tests__/security/
+src/__tests__/security/affective-profile-drop-migration.test.ts
+src/__tests__/security/parent-link-code-injection.test.ts
+src/__tests__/security/quiz-session-shuffles-answer-key-acl.test.ts
+src/__tests__/security/safeguarding-escalations-migration.test.ts
+src/__tests__/security/teacher-assignment-drafts-rls.test.ts
+src/__tests__/security/teachers-classes-rls-tenant-leak-fix.test.ts
+src/__tests__/security/tenant-isolation-role-scoped-apis.test.ts
+
+$ npx vitest list --filesOnly src/__tests__/migrations/
+(no output — excluded from the unit lane)
+```
+
+### Entries
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-380 | `quiz_session_shuffles_answer_key_column_acl` | **Lane A (static, always runs — 11 tests, `E`).** Migration `20260814000020` exists and sorts AFTER `20260814000019` — the asserting test is titled verbatim `the ACL migration exists and sorts AFTER 20260814000019`; **both versions moved +6 in the 2026-08-11 renumber (`…0014`→`…0020`, `…0013`→`…0019`), and `…0013` no longer exists on `main`, so the old wording named a file that is gone** (renumber rationale: REG-399 in `11-infrastructure.md`); is wrapped in ONE `BEGIN;…COMMIT;`; performs NO destructive/structural DDL (no `DROP`, no `ALTER TABLE`, no policy or function change); **REVOKEs the baseline table-level grant from BOTH `anon` and `authenticated`** — the step that makes column grants authoritative at all, since a column-level `REVOKE` alone is a no-op against a table-level grant; re-grants column-level `SELECT` to `authenticated` on EXACTLY the 10 non-key columns (literal allowlist, so a future answer-key-shaped column fails closed); grants NOTHING to `anon`; explicitly revokes both key columns (`correct_answer_index_snapshot` AND `integrity_hash` — the latter is `sha256(options_snapshot \|\| correct_idx)`, and `options_snapshot` is client-readable, making it a 4-candidate brute-force oracle for the same secret) from both client roles; carries in-transaction `has_column_privilege`/`has_table_privilege` post-conditions that RAISE (→ rollback) on a half-applied ACL; **DRIFT GUARD** — no later root migration may re-grant a table-level privilege or either key column to a client role; **CROSS-MODULE PARITY** — the Phase 4 resume-route column whitelist is a subset of what stays granted; **CALLER PARITY** — the only app-code read of the key is service-role (`whatsapp/_lib/daily6.ts`). **Lane B (6 live-DB PostgREST probes) — `M`, see below.** | `apps/host/src/__tests__/security/quiz-session-shuffles-answer-key-acl.test.ts`; migration `supabase/migrations/20260814000020_quiz_session_shuffles_answer_key_column_acl.sql` | **P** | P1, P3, P8 |
+| REG-381 | `resume_payload_answer_key_non_disclosure` | The resume payload NEVER carries a correctness signal, at three independent layers. (a) **Column whitelists**: `SHUFFLE_RESUME_COLUMNS` and `QUESTION_BANK_RESUME_COLUMNS` each fail `.not.toMatch(/correct/i)`, while still naming `shuffle_map` + `options_snapshot` (what the rebuild needs). (b) **Builder never spreads an input row**: a row deliberately carrying `correct_answer_index_snapshot: 3` and a meta row carrying `correct_answer_index: 3` produce a payload whose per-question keys are EXACTLY the 14 authorised names, with `JSON.stringify(result)` matching neither `/correct/` nor `"3"`. (c) **Indistinguishability**: an answered-correct and an answered-wrong question are byte-identical in the payload apart from `selected_displayed_index` — proven by building two payloads that differ only in the student's own pick and asserting equality after nulling that one field. Serialized payloads also match none of `correct_answer_index`, `correct_answer_index_snapshot`, `is_correct`, `"correct`. At the route layer: every `select()` the GET issues is asserted to contain neither key column and to never be `'*'`, the response body carries no correctness token, and the snapshot read is scoped to `(session_id, student_id)` — the service-role client bypasses RLS here, so that ownership probe IS the boundary. Option order is rebuilt from `options_snapshot` + `shuffle_map` so the resumed student sees the same options in the same positions (`selected_displayed_index` stays meaningful); degenerate maps and JSON-string snapshots degrade to a safe value or `null`, never a silent reorder. | `apps/host/src/__tests__/quiz/resume-payload.test.ts` (§1 security, §2 restore/order); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (GET SECURITY + scoping tests) | E | P1, P6, P8, P13 |
+| REG-382 | `p3_anticheat_survives_resume_both_directions` | P3's 3s/question floor is unaffected by an interruption, in BOTH directions. **Direction 1 (no banking idle time):** `elapsed_seconds` is the SUM of server-persisted per-question times, never wall clock — a student who answers two questions 6 hours apart contributes 24s, not 6h (`expect(elapsed).toBe(24)` and `toBeLessThan(6*3600)`); the resume effect in `quiz/page.tsx` seeds the counter via `setTimer(result.elapsed_seconds)` and contains no `Date.now() -` arithmetic. **Direction 2 (no false positives):** restoring 9 × 20s of real thinking means an honest resumer submits at avg 18.5s/question instead of the 0.5s a zero-restart counter would produce — the entry pins BOTH the pass and the counterfactual that would have flagged them. **Clamping:** a persisted time of 999,999 clamps to `MAX_QUESTION_SECONDS` (3600) in the pure builder AND is clamped to 3600 before the POST route persists it; a negative or non-numeric time contributes 0, never a negative offset. **First-write-wins:** the POST `UPDATE` is filtered on `student_selected_displayed_index IS NULL`, so a re-answer after resume cannot overwrite a recorded time; an already-answered question is a benign `{saved:false}` 200, not an error. | `apps/host/src/__tests__/quiz/resume-payload.test.ts` (§3); `apps/host/src/__tests__/quiz/resume-wiring.test.ts` (`seeds the total-time counter from persisted on-task time`); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (clamp + first-write-wins) | E | **P3** |
+| REG-383 | `one_graded_submission_per_session_server_enforced` | The direct client submit path now passes the server session id as `p_idempotency_key` (`p_idempotency_key: sessionId ?? null`, alongside the pre-existing `p_session_id: sessionId`), so `quiz_sessions`' partial unique index `quiz_sessions_idempotency_key_uniq ON (student_id, idempotency_key) WHERE idempotency_key IS NOT NULL` (migration `20260504100200`) makes one graded submission per session a SERVER-enforced invariant. Behavioural pin: two `submitQuizResults` calls with the same session id both reach `submit_quiz_results_v2` carrying that key; the second returns `idempotent_replay: true` with the SAME `xp_earned` — no second XP award (P2), no second graded row (P4). The legacy no-session path still passes `null`. Before this, the only guard on the direct path was the in-memory `_quizDedup` Set, which a page refresh — the exact event resume exists to survive — wipes. The SLC-8 trip-wire pin in `quiz-submit-idempotency-contract-pin.test.ts` was consciously FLIPPED in the same commit (it previously asserted the key was ABSENT), which is precisely the behaviour that trip-wire was built to force. Complements REG-62, which pins the same guarantee at the `/api/quiz/submit` wire layer; this entry covers the direct L1 RPC path REG-62 does not reach. Resume itself also refuses an already-graded session: the GET handler looks the session up by `(student_id, idempotency_key)` and returns `{resumable:false, reason:'already_submitted'}`, and `student-state-builder` returns `live.kind === 'idle'` for a graded session so the CTA is never offered. | `apps/host/src/__tests__/quiz/resume-wiring.test.ts` (§3, incl. the mocked-RPC replay test); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`already_submitted` + the `(student_id, idempotency_key)` lookup); `apps/host/src/__tests__/state/resume-live-state.test.ts` (graded → idle); `apps/host/src/__tests__/quiz-submit-idempotency-contract-pin.test.ts` (flipped SLC-8 pin) | E | **P2, P4** |
+| REG-384 | `resume_refused_while_ff_quiz_v2_on` | `submit_quiz_results_v2` grades from client-supplied responses, NOT from the persisted `student_selected_displayed_index` columns. That is harmless while the live path never reveals correctness before submit — but it becomes a real P1/P2 exploit the moment `ff_quiz_v2` turns on per-question feedback ("answer, see it's wrong, refresh, resume, re-answer"). The GET handler therefore MECHANICALLY refuses to resume whenever `ff_quiz_v2` is enabled for the caller: `{resumable:false, reason:'blocked_immediate_feedback'}`, `isFeatureEnabled('ff_quiz_v2', …)` is proven to be consulted, and the handler is proven to bail BEFORE reading any snapshot content (no `options_snapshot` select is issued). This is an interlock, not a doc note — one console flag toggle cannot defeat it. **Lifting it requires `submit_quiz_results_v2` to prefer the persisted column, which is a P1-surface change needing assessment + architect sign-off; do not delete this entry to unblock a flag ramp.** | `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`INTERLOCK: refuses to resume while ff_quiz_v2 (immediate correctness) is ON`) | E | P1, P2 |
+| REG-385 | `resume_deep_link_and_practice_mode_routing` | The resume CTA is actually resumable and `?mode=practice` actually reaches Practice. (a) `resolveTodayQueue` on an `in_quiz` state emits `/quiz?session=<id>` and explicitly NOT the bare `/quiz` that used to land on the setup screen; an idle learner gets no `resume_in_progress` action; the raw `resolveNextLearnerAction` is unchanged (only the Today queue prepends the resume). (b) The session id survives `mapActionToTodayItem`'s URL → DTO projection: `deepLink.route === '/quiz'` and `deepLink.params` carries `session`. (c) `/quiz` reads both `?session=` and the `?sessionId=` alias; the resume effect calls `fetchQuizResume` and NEVER `startQuizSession(` or `assembleQuiz(` (a second server session would mint a second shuffle snapshot and break the one-session-one-submission basis of REG-383), and pins `correct_answer_index: -1` on the client side. (d) The `mode === 'practice'` branch now EXISTS — it had none and silently fell through to `cognitive`, so `PracticeRunner` was unreachable from `/assignments` and `learn/[chapter]`, both of which emit `params.set('mode','practice')`; the three sibling branches (`cognitive`, `exam`) are pinned unchanged. (e) Answer durability is NOT behind a flag: `confirmAnswer` calls `saveQuizAnswerProgress(` guarded only by "there is a server session" + "not an MCQ already owned by the practice-v2 writer" — never by `ff_quiz_v2` alone (which is seeded OFF, which is why ZERO rows carried `student_selected_displayed_index` before this phase). **Scope limit, stated not hidden:** (c), (d) and (e) are SOURCE-TEXT pins against `apps/host/src/app/(student)/quiz/page.tsx` (a ~2.6k-line client component whose full render needs the entire auth/SWR/Supabase stack), the same technique `auth-flows.test.ts` uses for redirect targets. They prove the seam is PRESENT, not that a browser executes it. (a) and (b) are behavioural. | `apps/host/src/__tests__/quiz/resume-wiring.test.ts` (§1, §2, §4) | E (a,b behavioural; c,d,e static source pins) | P1, P4 |
+| REG-386 | `live_in_quiz_derived_from_shuffle_snapshot` | `live.kind === 'in_quiz'` is derived from `quiz_session_shuffles` (written at session start) and no longer from an `is_completed = false` `quiz_sessions` row (which never exists mid-quiz, making the signal dead by construction). Pins: a fresh session with ≥1 confirmed answer surfaces `in_quiz` carrying `quizSessionId` (the id the deep link needs), `subjectCode`, `chapterNumber`, `questionCount` and `questionsAnswered`; a session with NO confirmed answer stays `idle` (nothing to preserve); an already-graded session stays `idle` (found via its idempotency key — offering to "continue" a finished quiz walks the student into a session the submit RPC can only replay); a session older than the 24h window stays `idle`; a missing chapter number stays `idle`; and a failed snapshot read degrades to `idle` rather than throwing. The 24h window is the same `RESUME_MAX_AGE_MS` the payload builder and the GET route enforce (`isResumeExpired`, `reason:'expired'`). | `apps/host/src/__tests__/state/resume-live-state.test.ts`; `apps/host/src/__tests__/quiz/resume-payload.test.ts` (`isResumeExpired honours the 24h window`); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`refuses a session older than the 24h resume window`) | E | P4 |
+| REG-387 | `quiz_progress_route_authz_and_write_containment` | `GET/POST /api/quiz/session/[sessionId]/progress` — the resume substrate route, which uses `getSupabaseAdmin()` (RLS-bypassing) and therefore carries its own boundary. **AuthZ:** unauthenticated → 401 on both verbs; `authorizeRequest(request, 'quiz.attempt')` is the required permission; no linked student profile → 403 `student_profile_required`; a session owned by another student → 403 `forbidden` with ZERO writes; unknown session → 404; a non-UUID session id → 400 `invalid_session_id` (path-traversal shapes such as `../../etc/passwd` are rejected by `isResumeSessionId`). **Input validation:** out-of-range selected index → 400 `invalid_selected_index`; negative time → 400 `invalid_time_spent`. **Write containment (P1/P2/P4):** the POST writes ONLY `quiz_session_shuffles`, ONLY the three durability columns (`student_selected_displayed_index`, `student_time_spent_seconds`, `student_answered_at`), and calls NO RPC; `quiz_sessions`, `quiz_responses`, `students` and `xp_transactions` are asserted untouched. The GET writes nothing and calls no RPC. | `apps/host/src/__tests__/api/quiz-session-progress.test.ts` | E | P8, P9, P1, P2, P4 |
+
+### REG-380 — status is `P`, and exactly why
+
+Two clauses of REG-380 are NOT evidence-backed, and the entry is marked `P`
+rather than `E` for that reason. Do not upgrade it without executing them.
+
+1. **Lane B has NEVER run.** Its 6 tests (`the student's OWN session:
+   selecting correct_answer_index_snapshot / integrity_hash is refused with
+   42501` ×2, `a wildcard select(*) is also refused`, `the legitimate resume
+   read still succeeds for the owner`, `server-side scoring still can: the
+   service-role client reads the answer key`, `P1 INTACT:
+   submit_quiz_results_v2 still grades the session server-side`) self-skip via
+   `skipIfNoSubstrate` when there are no real Supabase credentials, and there
+   are none in this environment. The verification run above shows them as the
+   only `↓` skips in the batch: **`11 passed | 6 skipped`**. A green run of
+   this file is evidence about SQL TEXT, not about a database.
+2. **Migration `20260814000020` (renumbered from `…0014` on 2026-08-11) has
+   never been applied to any database.** The commit message says so explicitly
+   ("NOT EXECUTED — no DB in this environment. Syntax validated with
+   libpg_query (PG13 grammar)"). Every claim about its RUNTIME effect — that
+   `authenticated` actually gets 42501, that the in-transaction post-condition
+   actually rolls a bad apply back, that no consumer actually broke — is
+   therefore `P`.
+
+   **This is no longer an inference. It was MEASURED against production on
+   2026-08-11, behaviourally, with an anon-key PostgREST probe.** The
+   migration's first act is `REVOKE ALL … FROM anon`, which would make EVERY
+   column of `quiz_session_shuffles` return `42501` for that role — including
+   ones the ACL never mentions. A control `select=question_id` returned `[]`
+   (an empty result set, not a permission error), which proves the baseline
+   TABLE-LEVEL grant to `anon` is still intact and therefore that the REVOKE
+   has not run. **`20260814000020` is CONFIRMED NOT APPLIED in production, and
+   R1 — the live answer-key leak this entry catalogues the fix for — is
+   CONFIRMED LIVE.** Do not read this entry as "the leak is closed"; the fix
+   exists as SQL text on disk and nowhere else.
+
+**Discharge condition (what turns REG-380 into `E`):** apply the migration on
+staging, then run
+`RUN_INTEGRATION_TESTS=1`-equivalent Lane B with real
+`NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + a real student JWT
+and record `11 passed | 6 passed`. Until that output exists, no report may
+describe REG-380 as passing without naming the 6 skips.
+
+### Known gap carried forward, NOT closed by REG-380
+
+`question_bank_authenticated_read` (`20260728090000:311`) still lets ANY
+authenticated user read `question_bank.correct_answer_index` for all ~12.8k
+questions — a strictly WIDER path than the per-session one REG-380 closes.
+It was deliberately deferred in `20260814000000` because closing it needs
+server-side P6 validation, session-gated serving, and repointing PYQ plus two
+mobile repositories. **A green REG-380 must never be read as "the answer key
+is unreachable by a student".** The test file states this in its own header;
+it is restated here so the catalog does not over-claim. This is the top
+remaining answer-key risk.
+
+**Total catalog after this section's eight (REG-380..REG-387): see
+`00-header.md` — this shard's historical running counter (359, above) has been
+stale for many passes and is NOT updated here rather than have it drift
+further.**
+
+---
+
+## Phase 4 blocker fixes + two P0 submission defects (2026-08-11)
+
+Commit `6a67ca8ed` ("fix(student): close 4 blocking defects in Phase 4 resume +
+Today") closed four blockers raised by the assessment review of `b008c20c7`.
+Two further P0 defects were found in the same review and fixed in the tree
+(migration `20260814000022`, `packages/lib/src/quiz/session-contract.ts`, and
+two new test files). Neither batch was catalogued by the REG-380..REG-392 pass,
+which predates both.
+
+**Read the status column literally.** `E` is used ONLY where a test that
+actually executes under `npm test` asserts the clause. Every clause whose truth
+depends on a migration is `P`, because **none of `20260814000020`,
+`20260814000021` or `20260814000022` has ever been executed against any
+database** — there is no Postgres in this environment, and for `…0020` that
+non-application has since been CONFIRMED against production by measurement (see
+the REG-380 note above). For those, what is green
+is SQL TEXT, and the discharge condition is stated per entry.
+
+**Verification (2026-08-11), real output:** the security + quiz + today suites
+re-run in ONE vitest pass from `apps/host` —
+`Test Files 36 passed (36) | Tests 815 passed | 6 skipped (821)`. The 6 skips
+are REG-380's Lane B live-DB probes and nothing else.
+
+### Entries
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-393 | `ff_quiz_v2_interlock_at_producer_and_fail_closed` | REG-384 put the `ff_quiz_v2` interlock on the resume GET only — i.e. on the CONSUMER. `resolveResumableQuiz` (which decides whether `/today` offers "Continue where you stopped") did not consult it, so for a student on the flag ramp the card RENDERED, the tap was refused by the route, and the consumer failed soft with no message onto the setup screen — exactly the dead-end Phase 4 existed to kill, reintroduced for the flagged cohort. The gate now runs where the card is **PRODUCED**; the route keeps its check as defence in depth (both are pinned, so removing either is a failure). Second half: the flag read used to fail **OPEN** — `isFeatureEnabled` collapses "off", "row missing", "malformed" and "fetch failed" to the same `false`, so a flag-read failure ALLOWED resume. `readFeatureFlagStrict` returns `{determined:true, enabled}` vs `{determined:false, reason}`, and BOTH undetermined shapes (`flags_unavailable`, `flag_not_found`) refuse. `isFeatureEnabled` is behaviour-identical and both readers now share one `evaluateFlagRow`, so the two cannot drift. The route also passes the caller's REAL roles instead of a hardcoded `'student'`. | `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`INTERLOCK: refuses to resume while ff_quiz_v2 … is ON`, `INTERLOCK: scopes the flag read to the caller's REAL roles…`, + the FLAG_UNAVAILABLE / FLAG_MISSING_ROW fail-closed cases); `apps/host/src/__tests__/state/resume-live-state.test.ts` (`suppresses the card when the ff_quiz_v2 interlock blocks resume`, `offers the card when the interlock does NOT block…`) | E | P1, P2, P9 |
+| REG-394 | `session_mode_persisted_exam_and_unknown_refuse_resume` | The exam safeguard in `quiz/page.tsx` was DEAD CODE: `if (quizMode === 'exam') setQuizMode('cognitive')` could never fire, because on a fresh `/quiz?session=<uuid>` load the URL carries no `?mode` and `quizMode` is already the default. The instrument was persisted nowhere, so a TIMED exam resumed UNTIMED and was written to `quiz_sessions` as though it were the same instrument — and the system could not even detect the swap afterwards. Migration `20260814000021` adds `session_mode TEXT` with a closed-vocabulary CHECK (`practice`\|`cognitive`\|`exam`\|NULL), stamped **first-write-wins in the SAME `UPDATE` that persists the first confirmed answer** — a session is only resumable once it has ≥1 persisted answer, so there is no window in which a session is resumable with an unknown instrument (a separate writer would have created exactly that window). Behaviour: an `exam` session refuses outright (`exam_not_resumable`); a NULL mode refuses (`mode_unknown`) rather than assuming `cognitive` — a value we cannot map is not evidence of safety; an unrecognised string refuses too; the gate runs BEFORE any per-question work; a resumable payload carries the real instrument so the runtime restores it; `/today` suppresses the card for all three refusal cases. Dead line deleted. | `apps/host/src/__tests__/quiz/resume-payload.test.ts` (§ `a resumed session runs the instrument it was started as`, 5 tests + `resolveSessionMode`); `apps/host/src/__tests__/state/resume-live-state.test.ts` (exam / never-recorded / unrecognised suppression + practice still offered); `apps/host/src/__tests__/api/quiz-session-progress.test.ts` (`refuses an EXAM session…`, `refuses a session whose instrument was never recorded…`, `stamps the session instrument in the SAME first-write-wins UPDATE as the answer`, `400 on an unrecognised mode rather than silently coercing it`); migration `supabase/migrations/20260814000021_quiz_session_shuffles_session_mode.sql` | **P** | P1, P4 |
+| REG-396 | `resume_never_fabricates_bloom_or_difficulty` | The resume builder stamped `bloom_level ?? 'remember'` (and a difficulty default). `classifyQuizError` branches on `bloom_level` — `'remember'` → `knowledge_gap`, `apply\|analyze\|evaluate\|create` → `conceptual`, otherwise `procedural` — and `question_bank.bloom_level` is NULLABLE. So **the same question, answered wrong the same way, produced a DIFFERENT `error_type` depending on whether the session had been interrupted** (`knowledge_gap` on resume vs `procedural` fresh). That value is persisted to `quiz_responses.error_type` and feeds `update_learner_state_post_quiz` and misconception analysis: silent learner-state corruption as a function of an interruption. Both fields now pass through VERBATIM including `null`; the types were widened honestly through `QuizResumeQuestion`, the orchestrator's `Question`, and three UI declarations that already coped with `null` at runtime. The ONE site that needs a concrete number takes the fallback AT the shared consumption point, so fresh and resumed flow through the same call — which is what actually kills the divergence rather than moving it. | `apps/host/src/__tests__/quiz/resume-payload.test.ts` (§6 `nullable question metadata passes through VERBATIM`: `a NULL bloom_level stays NULL instead of becoming "remember"`, `a real bloom_level / difficulty is preserved exactly`) | E | P1 (learner-state integrity), P6 |
+| REG-397 | `written_answer_quiz_is_submittable_at_all` | **P0.** Any quiz containing a non-MCQ question COULD NOT BE SUBMITTED AT ALL, and a pure written quiz was worse. Four-part defect: (1) `quiz/page.tsx` handed `start_quiz_session` only `qs.filter(isQuestionMCQ)`, so `quiz_session_shuffles` had NO row for any SA/MA/LA/NCERT-exercise question; (2) `submit_quiz_results_v2`'s per-response loop RAISEd `session_not_started` (P0001) the moment a response had no snapshot row — **before any anti-cheat check could run**; (3) the v1 fallback and client-side scoring were removed in the 2026-08-06 audit, so the exception reached the student as *"Connection lost — your answers are saved. Please retry."*, which was FALSE — nothing was saved, no `quiz_sessions` row was written, XP was 0, and every retry re-raised; (4) with `mcqIds.length === 0` a pure written quiz never called `startQuizSession` at all, so `p_session_id` was NULL and the lookup missed for every response. Reachable from the live product: `quiz-assembler.ts` validates with `allowNonMcq: true` and QuizSetup exposes Mixed / Short Answer / Long Answer / NCERT Exercise pickers. **Fix, both halves pinned:** CLIENT — `collectSessionQuestionIds` snapshots EVERY served question (`start_quiz_session` already handles non-MCQ rows via identity shuffle + empty options snapshot, `20260801100800`), the MCQ-only filter is proven GONE from executable code, and the false "your answers are saved" copy is gone in EN + HI; RPC — the written lane is chosen from the SERVER snapshot + `question_bank` type, **never from a client flag**, written correctness comes from the AI-evaluated marks using the same ≥50% rule the student was shown, marks arrive through a regex guard so a malformed payload cannot abort the transaction (P4) and are clamped into `[0, marks_possible]`, and **the `session_not_started` RAISE is PRESERVED for MCQ** (an MCQ with no snapshot row still raises P0001 — the tamper guard is intact). P1 score formula, P2 XP literals, P3's 3.0s threshold and Check 3's served-row comparison, and the P4 idempotency short-circuit are each asserted BYTE-IDENTICAL. | `apps/host/src/__tests__/quiz/written-answer-submission-p0.test.ts` (26 tests); `packages/lib/src/quiz/session-contract.ts`; migration `supabase/migrations/20260814000022_submit_quiz_v2_written_answer_scoring.sql` | **P** | P1, P2, P3, P4, P6 |
+| REG-398 | `exam_anticheat_not_inverted_elapsed_vs_remaining` | **P0.** `quiz/page.tsx` passed the raw `timer` state as `p_time` to `submit_quiz_results_v2`. In exam mode that timer counts **DOWN**, so `p_time` was the time REMAINING, not elapsed — and P3 Check 1 (`p_time / v_total < 3` → flag → XP 0) therefore ran BACKWARDS in exam mode: a student who used nearly the whole window submitted `p_time ≈ 0` and was FLAGGED; **every exam that auto-submitted at `timer === 0` was flagged BY CONSTRUCTION, i.e. guaranteed 0 XP**; a rusher who left 25 minutes on the clock submitted `p_time = 1500` and passed comfortably. The check punished thoroughness and rewarded rushing. The same file already knew the correction (`exam_simulations` wrote `examTimeLimit * 60 - timer`) — two call sites, one of them wrong. Fix: `computeElapsedSeconds` derives elapsed ONCE and every consumer (submit RPC, client-side advisory anti-cheat, `exam_simulations`, `quiz_completed` analytics) reads that one value; the duplicate inline conversion is DELETED so there is no second site left to forget. Pinned in both directions: the thorough student and the auto-submit-at-0 case are no longer flagged (with the counterfactual that they WERE), a genuine rusher IS still caught, exactly 3s/question is still the unflagged boundary in exam mode, practice mode is unaffected, and the value is clamped to `[0, limit]` so a clock glitch cannot mint a negative or oversized `p_time`. **The 3s/question threshold is NOT changed** — only the value fed into it is corrected to the elapsed time it was always documented to be. | `apps/host/src/__tests__/quiz/exam-elapsed-time-p0.test.ts` (21 tests); `packages/lib/src/quiz/session-contract.ts` (`computeElapsedSeconds`) | E | **P3**, P1, P2 |
+
+REG-395 (the three deliberately-silent `/today` reasons) is the fourth Phase 4
+blocker fix and is filed in `15-cross-cutting.md` alongside its siblings
+REG-388..REG-392.
+
+### Why REG-394 and REG-397 are `P` — and what discharges them
+
+Both entries' SERVER halves are pins on SQL TEXT. Neither
+`20260814000021` nor `20260814000022` has been executed against a database,
+here or anywhere. Specifically **unverified at runtime**:
+
+* REG-394: that `session_mode` actually exists, that its CHECK actually
+  rejects a fourth token, that the column-level `GRANT` in step 3 actually
+  makes `authenticated` able to read it (without which the `/today` exam
+  suppression **fails silently open**, because `student-state-builder` reads
+  that table under the CALLER's role), and that post-conditions 4a-4e actually
+  roll a bad apply back.
+* REG-397: that the written lane actually scores, that the preserved
+  `session_not_started` RAISE actually still fires for a snapshot-less MCQ,
+  and that the regex guard actually prevents a transaction abort.
+
+**Discharge condition (identical for both):** apply the migration on staging,
+then submit (a) a mixed MCQ+written quiz and (b) a pure written quiz end to
+end, and record a real `score_percent` / `xp_earned` plus a `quiz_responses`
+row carrying the written answer and its marks. For REG-394, additionally
+resume an `exam` session as a real `authenticated` caller and observe
+`exam_not_resumable` rather than a silently-untimed resume.
+
+### REG-380 — parity mechanism REPAIRED (2026-08-11), and a new architect-owned gap
+
+**The `CROSS-MODULE PARITY` clause of REG-380 was wrong by construction and has
+been rewritten.** It froze `20260814000020`'s 10-column literal as if that were
+the complete set `authenticated` may ever read. But the entire design of that
+migration is that later migrations ADD columns via additive column-level grants
+— that is the fail-closed mechanism working as intended, and `20260814000021`
+uses it correctly (it grants `session_mode` at `:121` and asserts the grant in
+its own in-transaction post-condition 4b, with 4d re-asserting the answer key is
+still denied). `SHUFFLE_RESUME_COLUMNS` legitimately gained `session_mode`, so
+the parity assertion failed on a codebase that was RIGHT — and would have
+failed again on **every** future additive grant.
+
+The granted set is now DERIVED by replaying the migration chain
+(`deriveChainAcl`): 0020's allowlist ∪ every later column grant, minus every
+later column revoke, using the same statement-parsing approach as the DRIFT
+GUARD. **The assertion was not weakened.** All of these still fail, and each has
+a committed mutation proof in the same file plus a recorded live-file
+tamper/restore run: a column-less (table-level) grant to `authenticated`, to
+`anon`, or to `PUBLIC`; a grant naming `correct_answer_index_snapshot` or
+`integrity_hash`; any grant to `anon`; and `SHUFFLE_RESUME_COLUMNS` naming a
+column no migration in the chain grants. A `CHAIN DERIVATION self-check` pins
+the simulator against 0020's hand-written literal so a parser that stopped
+understanding a GRANT form fails BEFORE the derived set is trusted.
+
+**New known gap, architect-owned, NOT fixed here.** Migration `20260814000020`
+GRANTs 10 columns (`:149-160`) but its own post-condition `v_open_cols`
+(`:180-184`) enumerates only **9** — `options_version_at_serve` is granted and
+never asserted. If that one grant were dropped or misspelled the migration would
+still COMMIT green and the resume path would break at RUNTIME instead of at
+migration time. Testing does not own migrations, so this is pinned in its
+CURRENT state by a test whose title is, verbatim, `KNOWN GAP (architect-owned):
+20260814000020 post-condition 4c asserts only 9 of the 10 columns it grants`
+(`quiz-session-shuffles-answer-key-acl.test.ts:416`), using the same technique as
+REG-369's dead-link allowlist: **the moment architect adds the missing column,
+that test FAILS and forces this note to be updated** rather than quietly
+outliving the defect. REG-380's status is unchanged at `P` — for the reasons
+already recorded above, not for this one.
+
+---
+
+> **Restored + renumbered 2026-08-23 (launch-readiness catalog reconciliation).**
+> Filed as REG-385/REG-386 on 2026-08-11; deleted wholesale by `b00b9c872`'s
+> stale-base merge resolution, which kept a PARALLEL lineage's Phase 4 content
+> (below) that independently claimed REG-380..REG-398 for unrelated work — the
+> two lineages' REG counters were never reconciled before merging. Restored
+> verbatim from `origin/main` (pre-`b00b9c872`) and renumbered to REG-405/406
+> (`+20`, the shift applied to every id in the 383-397 collision range this
+> pass — see `00-header.md` for the full old→new map). Re-verified 2026-08-23:
+> `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` — **15/15
+> passing.** Do not re-use REG-385/REG-386.
+
 ## Quiz serving — the truthy-`[]` silent zero, and the Tier-0 floor it exposed — 2026-08-11
 
 `getQuizQuestions()` short-circuits an RPC ladder. Its top rung read:
@@ -1901,12 +2143,12 @@ the RPC rung above it enforces.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-385 | `quiz_serving_truthy_empty_rpc_falls_through` | Ladder semantics, against the REAL `getQuizQuestions` with a recording query-builder double: an RPC result of `[]` runs the `question_bank` fallback and serves questions (the silent zero); a NON-empty RPC result short-circuits and issues NO second read; RPC rows that ALL fail the P6 gate also fall through rather than serving zero; a MISSING RPC (older env) and an RPC ERROR both reach the fallback; a genuinely empty bank still returns `[]` (emptiness stays representable); a FAILED fallback read THROWS rather than degrading to an empty quiz. The fallback re-runs the SAME P6 gate and is not a relaxation — a six-row pool containing a `[BLANK]` marker, duplicate options, an empty explanation, an out-of-range `correct_answer_index` and a 3-option row yields exactly the one valid question. Verified to FAIL against the pre-fix `if (!error && data) return validateQuestions(data)`. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P6 |
-| REG-386 | `quiz_fallback_tier0_never_serve_floor` | The now-reachable fallback query enforces the floor, asserted on the predicates the function actually issues (a double that honoured nothing would let the floor be deleted silently): EVERY verifier-disproved state is excluded — `failed`, `failed_fix_in_flight` AND `failed_unfixable`, not just the literal `failed` (the CHECK was widened to six states by migration `20260510064952`, and a row mid-repair on a disproved question is still disproved); `deleted_at IS NULL`; `content_status` matched as "NULL or published" rather than by strict equality, because the column is nullable with `DEFAULT 'published'` and a strict `eq` would drop every legacy row carrying an explicit NULL and re-empty the very quizzes this fix restores; subject/grade/`is_active` scoping retained with grade asserted as a STRING (P5); the optional chapter filter forwarded; and the serving projection asserted free of `student_id`, `created_by`, `verification_state`, `deleted_at`. DELIBERATE NON-ASSERTION, recorded so it is not "fixed" by accident: `is_verified` is NOT filtered on this rung. Neither this rung nor either RPC rung above it has ever gated serving on the human SME flag (migration `20260802100000` records it as ranking/administrative metadata only), and adding it would recreate the empty quiz REG-385 removes. Whether SME sign-off should gate serving at all is a CEO decision, not a test's. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P5, P6 |
+| REG-405 | `quiz_serving_truthy_empty_rpc_falls_through` | Ladder semantics, against the REAL `getQuizQuestions` with a recording query-builder double: an RPC result of `[]` runs the `question_bank` fallback and serves questions (the silent zero); a NON-empty RPC result short-circuits and issues NO second read; RPC rows that ALL fail the P6 gate also fall through rather than serving zero; a MISSING RPC (older env) and an RPC ERROR both reach the fallback; a genuinely empty bank still returns `[]` (emptiness stays representable); a FAILED fallback read THROWS rather than degrading to an empty quiz. The fallback re-runs the SAME P6 gate and is not a relaxation — a six-row pool containing a `[BLANK]` marker, duplicate options, an empty explanation, an out-of-range `correct_answer_index` and a 3-option row yields exactly the one valid question. Verified to FAIL against the pre-fix `if (!error && data) return validateQuestions(data)`. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P6 |
+| REG-406 | `quiz_fallback_tier0_never_serve_floor` | The now-reachable fallback query enforces the floor, asserted on the predicates the function actually issues (a double that honoured nothing would let the floor be deleted silently): EVERY verifier-disproved state is excluded — `failed`, `failed_fix_in_flight` AND `failed_unfixable`, not just the literal `failed` (the CHECK was widened to six states by migration `20260510064952`, and a row mid-repair on a disproved question is still disproved); `deleted_at IS NULL`; `content_status` matched as "NULL or published" rather than by strict equality, because the column is nullable with `DEFAULT 'published'` and a strict `eq` would drop every legacy row carrying an explicit NULL and re-empty the very quizzes this fix restores; subject/grade/`is_active` scoping retained with grade asserted as a STRING (P5); the optional chapter filter forwarded; and the serving projection asserted free of `student_id`, `created_by`, `verification_state`, `deleted_at`. DELIBERATE NON-ASSERTION, recorded so it is not "fixed" by accident: `is_verified` is NOT filtered on this rung. Neither this rung nor either RPC rung above it has ever gated serving on the human SME flag (migration `20260802100000` records it as ranking/administrative metadata only), and adding it would recreate the empty quiz REG-405 removes. Whether SME sign-off should gate serving at all is a CEO decision, not a test's. | `apps/host/src/__tests__/lib/quiz-serving-silent-zero.test.ts` (15 tests) | E | P5, P6 |
 
 ### Invariants covered by this section
 
-- **P6 (question quality)** — REG-385 pins that the quality gate is applied identically on
+- **P6 (question quality)** — REG-405 pins that the quality gate is applied identically on
   BOTH rungs. The fix widened which rows are REACHED, never which rows are ACCEPTABLE.
 - **P5 (grade format)** — the fallback is asserted to scope on the STRING `'8'`.
 
@@ -1915,20 +2157,34 @@ the RPC rung above it enforces.
 `packages/lib/src/supabase.ts` documents that the Tier-0 predicate inside the
 `select_quiz_questions_rag` RPC excludes only the literal `'failed'`, so the two other
 disproved states (`failed_fix_in_flight`, `failed_unfixable`) still pass THAT rung's gate.
-REG-386 covers the TypeScript fallback rung only. Closing the RPC-side gap is a migration
+REG-406 covers the TypeScript fallback rung only. Closing the RPC-side gap is a migration
 and is architect/DB-owned; it is deliberately not asserted here, because a test that
 claimed to cover it would be claiming coverage the fix does not have.
 
 ### Catalog total
 
-Pre-REG-385: 384 entries (through REG-384, the support thread P13 batch — see
-`10-rbac-rls.md`). This section adds REG-385 and REG-386.
-**Total catalog: 386 entries (target: 35 — TARGET EXCEEDED). REG-387 is the next free id**
+Pre-REG-405: 384 entries (through REG-404, the support thread P13 batch — see
+`10-rbac-rls.md`). This section adds REG-405 and REG-406.
+**Total catalog: 386 entries (target: 35 — TARGET EXCEEDED). REG-407 is the next free id**
 (REG-371..REG-377 remain RESERVED).
 **Superseded 2026-08-11** by the tiered-verification section below, which takes
-REG-387..REG-389.
+REG-407..REG-409.
 
 ---
+
+> **Restored + renumbered 2026-08-23 (launch-readiness catalog reconciliation).**
+> Filed as REG-387/388/389 on 2026-08-11; deleted wholesale by `b00b9c872`'s
+> stale-base merge resolution alongside the parallel Phase 4 lineage kept
+> below. Restored verbatim from `origin/main` and renumbered to
+> REG-407/408/409 (`+20`, same shift as the rest of this collision range —
+> see `00-header.md`). Re-verified 2026-08-23:
+> `reg-387-mock-test-sme-gate.test.ts` **13/13 passing**,
+> `reg-388-tier0-floor-serving-rung-totality.test.ts` **24/24 passing**, and
+> `select-quiz-questions-rag-tier0-floor.test.ts` **15/15 passing** — all
+> unchanged from when filed. **REG-409 is NOT unchanged — see the dedicated
+> note below the table: its two test files now fail 10/12 tests against a
+> real production regression in `getChaptersForSubject()`, found during this
+> restoration.** Do not re-use REG-387/388/389.
 
 ## Tiered verification: the exam SME gate, Tier-0 floor totality, and the truthful badge — 2026-08-11
 
@@ -1957,11 +2213,26 @@ as a scoring-integrity risk.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-387 | `mock_test_sme_gate_all_three_rungs` | **The exam gate.** `start_mock_test_attempt`'s three-step question-assembly fallback ladder keeps `is_verified = true` on ALL THREE rungs — exact target difficulty, the ±1 band, and the "any difficulty" last-resort top-up. The effective definition is RESOLVED AT TEST TIME (every migration that CREATE-OR-REPLACEs the function, last one wins, exactly as Postgres applies them) rather than read from a hardcoded path, so a future `..._relax_mock_test_gate.sql` is read and FAILS instead of leaving the pin passing against a superseded definition. Also: exactly three gates (none added, none lost); each paired with `is_active = true` so it is a real row filter; the three rungs are the documented widening ladder (`difficulty = v_target`, `BETWEEN v_target-1 AND v_target+1`, then no difficulty predicate at all); no migration DROPs the function; and migration `20260814000014` issues NO DDL against it. **Mutation-tested:** the contract routine is re-run against five corrupted copies of the real SQL — all three gates removed, EACH ONE removed individually, and a whole rung deleted — and every mutant is asserted to fail. Additionally spot-checked against the real file: removing ladder-step 3's predicate turns the suite red 8/13 with the diagnostic naming step 3. | `apps/host/src/__tests__/regressions/reg-387-mock-test-sme-gate.test.ts` (13 tests) | E | P1 (score integrity), P6 |
-| REG-388 | `tier0_floor_serving_rung_totality` | **Cross-rung totality.** A verifier-disproved row is never servable on ANY rewritten rung. The floor is THREE states, not one: the CHECK was widened four→six by `20260510064952_qb_fixer.sql`, and `failed_fix_in_flight` (proven wrong, claimed by the repair agent) and `failed_unfixable` (proven wrong AND unrepairable) are both disproved, not "in progress". Asserts the six-state CHECK really allows exactly the six states this test partitions and that the two halves are disjoint + exhaustive; that EVERY `question_bank` row-filter block in all four rewritten functions (`get_quiz_questions` BOTH overloads, `select_quiz_questions_rag`, `select_quiz_questions_v2`) excludes all three states and also `deleted_at IS NULL`; that no rung narrows back to the pre-fix `verification_state != 'failed'` dialect; that the four rungs agree LITERALLY (one set, not four coincidentally-equal ones — this is the assertion per-rung tests structurally cannot make); and SQL/TS literal parity with `DISPROVED_VERIFICATION_STATES` in `packages/lib/src/supabase.ts`, including that the constant is APPLIED (`.neq` per state) and not merely declared. One deliberate, documented allowance: a block may satisfy the floor IMPLICITLY by pinning `verification_state = 'verified'` (the RAG rung's `v_verified_pool` count query), since an equality to a non-disproved state is strictly narrower than the `NOT IN` — the equality target is itself asserted to be in the non-disproved half, so pinning to `= 'failed'` still fails. | `apps/host/src/__tests__/regressions/reg-388-tier0-floor-serving-rung-totality.test.ts` (24 tests) | E | P6 |
-| REG-389 | `chapter_badge_unknown_is_never_zero` | **Badge honesty, three-valued.** The `/learn` chapter badge renders `practice_ready_count` (what practice can actually serve), never `verified_question_count` (a readiness signal) and never `exam_ready_count`. The third state is the one that matters: against a database predating migration `20260814000014` the column is absent and arrives `undefined`, meaning UNKNOWN. `undefined` → NO badge; `0` → NO badge; `n > 0` → "n questions". A `?? 0` anywhere would paint "0 questions" onto chapters full of them — a fresh instance of the defect class (a failure rendered as a confident, reassuring, wrong empty state) this whole effort exists to eliminate; a student reading "0 questions" does not retry, they leave. Pinned BEHAVIOURALLY on the REAL page component in JSDOM, in both languages (P7, with Hindi numerals asserted to stay Arabic), with per-row independence so one unknown chapter cannot suppress a known sibling, and with the row asserted to stay rendered — unknown count is not a broken chapter. Companion seam test drives the REAL `getChaptersForSubject` over a mocked transport: `undefined`→`undefined`, `0`→`0`, `n`→`n`, plus the DELIBERATE ASYMMETRY that `verified_question_count` keeps its `?? 0` back-compat coercion (pinned so a future "harmonise these three fields" refactor cannot move the two honest fields onto the coercing branch). **Both spot-checked:** reverting the guard to `(x ?? verified_question_count) !== undefined` with a `?? 0` render turns the render suite red 5/6. | `apps/host/src/__tests__/regressions/reg-389-chapter-badge-honesty.test.tsx` (6 tests) + `apps/host/src/__tests__/regressions/reg-389-chapter-count-transport-seam.test.ts` (6 tests) | E | P7, P6 |
+| REG-407 | `mock_test_sme_gate_all_three_rungs` | **The exam gate.** `start_mock_test_attempt`'s three-step question-assembly fallback ladder keeps `is_verified = true` on ALL THREE rungs — exact target difficulty, the ±1 band, and the "any difficulty" last-resort top-up. The effective definition is RESOLVED AT TEST TIME (every migration that CREATE-OR-REPLACEs the function, last one wins, exactly as Postgres applies them) rather than read from a hardcoded path, so a future `..._relax_mock_test_gate.sql` is read and FAILS instead of leaving the pin passing against a superseded definition. Also: exactly three gates (none added, none lost); each paired with `is_active = true` so it is a real row filter; the three rungs are the documented widening ladder (`difficulty = v_target`, `BETWEEN v_target-1 AND v_target+1`, then no difficulty predicate at all); no migration DROPs the function; and migration `20260814000014` issues NO DDL against it. **Mutation-tested:** the contract routine is re-run against five corrupted copies of the real SQL — all three gates removed, EACH ONE removed individually, and a whole rung deleted — and every mutant is asserted to fail. Additionally spot-checked against the real file: removing ladder-step 3's predicate turns the suite red 8/13 with the diagnostic naming step 3. | `apps/host/src/__tests__/regressions/reg-387-mock-test-sme-gate.test.ts` (13 tests) | E | P1 (score integrity), P6 |
+| REG-408 | `tier0_floor_serving_rung_totality` | **Cross-rung totality.** A verifier-disproved row is never servable on ANY rewritten rung. The floor is THREE states, not one: the CHECK was widened four→six by `20260510064952_qb_fixer.sql`, and `failed_fix_in_flight` (proven wrong, claimed by the repair agent) and `failed_unfixable` (proven wrong AND unrepairable) are both disproved, not "in progress". Asserts the six-state CHECK really allows exactly the six states this test partitions and that the two halves are disjoint + exhaustive; that EVERY `question_bank` row-filter block in all four rewritten functions (`get_quiz_questions` BOTH overloads, `select_quiz_questions_rag`, `select_quiz_questions_v2`) excludes all three states and also `deleted_at IS NULL`; that no rung narrows back to the pre-fix `verification_state != 'failed'` dialect; that the four rungs agree LITERALLY (one set, not four coincidentally-equal ones — this is the assertion per-rung tests structurally cannot make); and SQL/TS literal parity with `DISPROVED_VERIFICATION_STATES` in `packages/lib/src/supabase.ts`, including that the constant is APPLIED (`.neq` per state) and not merely declared. One deliberate, documented allowance: a block may satisfy the floor IMPLICITLY by pinning `verification_state = 'verified'` (the RAG rung's `v_verified_pool` count query), since an equality to a non-disproved state is strictly narrower than the `NOT IN` — the equality target is itself asserted to be in the non-disproved half, so pinning to `= 'failed'` still fails. | `apps/host/src/__tests__/regressions/reg-388-tier0-floor-serving-rung-totality.test.ts` (24 tests) | E | P6 |
+| REG-409 | `chapter_badge_unknown_is_never_zero` | **Badge honesty, three-valued.** The `/learn` chapter badge renders `practice_ready_count` (what practice can actually serve), never `verified_question_count` (a readiness signal) and never `exam_ready_count`. The third state is the one that matters: against a database predating migration `20260814000014` the column is absent and arrives `undefined`, meaning UNKNOWN. `undefined` → NO badge; `0` → NO badge; `n > 0` → "n questions". A `?? 0` anywhere would paint "0 questions" onto chapters full of them — a fresh instance of the defect class (a failure rendered as a confident, reassuring, wrong empty state) this whole effort exists to eliminate; a student reading "0 questions" does not retry, they leave. Pinned BEHAVIOURALLY on the REAL page component in JSDOM, in both languages (P7, with Hindi numerals asserted to stay Arabic), with per-row independence so one unknown chapter cannot suppress a known sibling, and with the row asserted to stay rendered — unknown count is not a broken chapter. Companion seam test drives the REAL `getChaptersForSubject` over a mocked transport: `undefined`→`undefined`, `0`→`0`, `n`→`n`, plus the DELIBERATE ASYMMETRY that `verified_question_count` keeps its `?? 0` back-compat coercion (pinned so a future "harmonise these three fields" refactor cannot move the two honest fields onto the coercing branch). **Both spot-checked:** reverting the guard to `(x ?? verified_question_count) !== undefined` with a `?? 0` render turns the render suite red 5/6. | `apps/host/src/__tests__/regressions/reg-389-chapter-badge-honesty.test.tsx` (6 tests) + `apps/host/src/__tests__/regressions/reg-389-chapter-count-transport-seam.test.ts` (6 tests) | E (RESOLVED 2026-08-23 — see note below; was briefly regressed same day) | P7, P6 |
 
-### Stale-mirror repair (no new id — REG-386's neighbourhood)
+### REG-409 regression found and closed same-day (2026-08-23 launch-readiness pass)
+
+Re-running this entry's two test files during the launch-readiness catalog
+reconciliation (2026-08-23) initially found 10 of 12 tests failing (both
+`reg-389-chapter-badge-honesty.test.tsx` and
+`reg-389-chapter-count-transport-seam.test.ts`), on a single root cause:
+`getChaptersForSubject()` was not selecting/mapping `practice_ready_count`.
+This was a genuine production-code regression, plausibly downstream of the
+same `b00b9c872` stale-base merge. It was closed later the same session by
+the concurrent frontend/backend remediation pass touching
+`packages/lib/src/supabase.ts` (a Shape B reconciliation of the same file for
+an unrelated feature, which restored this passthrough too). Re-verified
+2026-08-23: `grep -c practice_ready_count packages/lib/src/supabase.ts` now
+returns 3, and both files pass 12/12. No further action needed.
+
+### Stale-mirror repair (no new id — REG-406's neighbourhood)
 
 `apps/host/src/__tests__/regressions/select-quiz-questions-rag-tier0-floor.test.ts`
 was **stale while still passing** — the most dangerous state a mirror can be in,
@@ -1980,9 +2251,9 @@ have leaked exactly `['failed_fix_in_flight','failed_unfixable']`. 10 tests → 
 
 ### Upstream gap CLOSED by this batch
 
-REG-386's "Known defect reported upstream, NOT pinned here" — that
+REG-406's "Known defect reported upstream, NOT pinned here" — that
 `select_quiz_questions_rag` excluded only the literal `'failed'` — **is now closed**
-by migration `20260814000014` §3, and is pinned by REG-388. The parallel note in
+by migration `20260814000014` §3, and is pinned by REG-408. The parallel note in
 `packages/lib/src/supabase.ts` was rewritten by the same change.
 
 ### Known gaps — recorded so these entries never read as full coverage
@@ -1993,12 +2264,12 @@ by migration `20260814000014` §3, and is pinned by REG-388. The parallel note i
    `supabase/functions/quiz-generator/index.ts`). It is the fifth of the five
    dialects ai-engineer's audit found, and it was out of scope for migration
    `20260814000014` (an Edge Function, not SQL). ai-engineer owns the follow-up.
-   REG-388 carries an explicit **defect witness** asserting the gap STILL EXISTS, so
-   a passing REG-388 can never be misread as "the floor is total"; the witness FAILS
+   REG-408 carries an explicit **defect witness** asserting the gap STILL EXISTS, so
+   a passing REG-408 can never be misread as "the floor is total"; the witness FAILS
    the moment the floor is added, which is the trigger to delete it and fold
    `quiz-generator` into the totality assertions. **Do not relax the witness — fix
    the Edge Function.**
-2. **No live Postgres.** REG-387 and REG-388 are SOURCE-TEXT contract pins in the
+2. **No live Postgres.** REG-407 and REG-408 are SOURCE-TEXT contract pins in the
    style this repo already uses for SQL contracts
    (`__tests__/contract/select-quiz-questions-rag-verification-gate.test.ts`) and for
    SQL/TS literal parity (REG-48). They cannot execute the RPCs, so they prove the
@@ -2013,7 +2284,7 @@ by migration `20260814000014` §3, and is pinned by REG-388. The parallel note i
    null-tolerant (`IS NULL OR = 'published'`), because the column is nullable with
    `DEFAULT 'published'` and legacy rows carry explicit NULLs. Relaxing the RAG
    predicate would WIDEN what serves, and no widening ships during a SEV1 without a
-   census. Architect owns it. REG-388 pins the divergence so that changing it is a
+   census. Architect owns it. REG-408 pins the divergence so that changing it is a
    deliberate, visible act rather than a drive-by consistency edit.
 4. **Migration `20260814000013` (cbse_syllabus corpus reconciliation) is NOT pinned
    — OWED.** It was still being actively revised by architect at the time of writing
@@ -2023,14 +2294,26 @@ by migration `20260814000014` §3, and is pinned by REG-388. The parallel note i
 
 ### Catalog total
 
-Pre-REG-387: 386 entries (through REG-386, the truthy-`[]` serving batch above).
-This section adds REG-387, REG-388 and REG-389.
-**Total catalog: 389 entries (target: 35 — TARGET EXCEEDED). REG-390 is the next
+Pre-REG-407: 386 entries (through REG-406, the truthy-`[]` serving batch above).
+This section adds REG-407, REG-408 and REG-409.
+**Total catalog: 389 entries (target: 35 — TARGET EXCEEDED). REG-410 is the next
 free id** (REG-371..REG-377 remain RESERVED).
 **Superseded 2026-08-12** by the live-P0 Bearer section below, which takes
-REG-390..REG-393.
+REG-410..REG-413.
 
 ---
+
+> **Restored + renumbered 2026-08-23 (launch-readiness catalog reconciliation).**
+> Filed as REG-390/391 on 2026-08-12; deleted wholesale by `b00b9c872`'s
+> stale-base merge resolution alongside the parallel Phase 4 lineage kept
+> below. Restored verbatim from `origin/main` and renumbered to REG-410/411
+> (`+20`, same shift as the rest of this collision range — see
+> `00-header.md`). Re-verified 2026-08-23:
+> `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` +
+> `apps/host/src/__tests__/lib/quiz/rpc-error-classification.test.ts` —
+> **108/108 passing**, unchanged from when filed. Do not re-use REG-390/391
+> (the current REG-390..REG-392 in `15-cross-cutting.md` are unrelated `/today`
+> entries from the parallel lineage that was kept).
 
 ## Bearer quiz submit: mobile has never scored — 2026-08-12
 
@@ -2061,8 +2344,8 @@ one request per app-foreground, on metered Indian 4G, for a missing GRANT.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-390 | `bearer_submit_reaches_rpc_as_authenticated` | **The P0, asserted at the MODULE BOUNDARY rather than by reading the route's source.** Both submit routes are driven twice through the SAME assertions. Bearer + no cookie: `submit_quiz_results_v2` runs on a client built by `@supabase/supabase-js` `createClient` with the **anon** key and the caller's JWT forwarded as `global.headers.Authorization` — and the cookie-only client is proven NOT to be the one `.rpc()` landed on (`createSupabaseServerClient` is never even called). The two doubles expose an IDENTICAL `rpc` surface, so the only thing that can distinguish them is which spy recorded the call; a route that silently reverted to the cookie client fails on the spy, not on a string match. P8 rider: the transported key is asserted `=== NEXT_PUBLIC_SUPABASE_ANON_KEY` and `!==` the service-role key, so the fix can never be "solved" by reaching for the admin client. Transport-neutrality of the PAYLOAD is pinned separately: the RPC args sent on the Bearer path `toEqual` those sent on the cookie path (transport changes who PostgREST thinks is calling, never what is written). A non-Bearer `Authorization: Basic` still takes the cookie path (no silent downgrade). **Behaviour-neutrality for web is pinned explicitly, not assumed:** a cookie-only caller still runs on the cookie client, never builds a Bearer client, and still gets the same 200 body (score/XP/`idempotent_replay`/`marking_authenticity_path`, and no stray `retryable` key on a success envelope), the same 409 on P0001, the same 503 on a transient, and the same cached idempotent replay on a 23505 race. | `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (48 tests, `describe.each` over both routes) | E | P4, P8, P9 |
-| REG-391 | `rpc_permanent_vs_transient_retryable_contract` | **A permanent failure must stop the client without eating the student's work.** Unit half (`packages/lib/src/quiz/rpc-error-classification.ts`): SQLSTATE `42501` / `42883` / `23514` and PostgREST `PGRST202` / `PGRST203` classify PERMANENT (the PostgREST codes matter because a missing function surfaces as `PGRST202`/404, never as a raw 42883, so a SQLSTATE-only check would misfile an undeployed RPC as transient); the exported set is asserted to be EXACTLY those three SQLSTATEs, so widening it is a visible, reviewed act. **FAIL-OPEN TOWARD TRANSIENT is pinned as a DIRECTION, not a list:** fourteen enumerated non-matches (deadlock, serialization failure, connection loss, statement timeout, 23505, P0001, unknown SQLSTATEs, empty object, null/undefined error, null fields) plus a noise sweep all assert `false`. That asymmetry is the safety property — a wrong "permanent" verdict stops a client retrying a recoverable failure and quarantines a real completed quiz; a wrong "transient" verdict costs one idempotent retry the RPC short-circuits anyway. Route half, on BOTH submit routes: permanent → HTTP **500** + `code:'RPC_PERMANENT'` + **top-level** `retryable:false`; transient → **503** + `RPC_FAILED` + `retryable:true`; `EMPTY_RESPONSE` stays 503/`retryable:true`; and a 409 `SESSION_NOT_STARTED` carries **no** `retryable` field at all (the field is emitted only in the 5xx band where the client's status-code matrix is ambiguous — a `retryable:true` on an already-refused 4xx would be an infinite loop by another name). `retryable` is asserted as a top-level BOOLEAN with `hasOwnProperty`, because the Flutter drain reads exactly `body['retryable']` at exactly that position: the field's NAME and POSITION are a cross-client contract. The permanent message is asserted NOT to carry the retry instruction and to positively say "do not retry"; P13 rider — neither client-facing body matches `42501|42883|23514|PGRST|submit_quiz_results_v2`. Ops separation pinned (`submit_quiz_results_v2_failed_permanent` + `failure_class:'permanent'`), and a cross-route parity pair asserts the two routes translate an identical error to an identical status/code/`retryable`/message so they cannot drift. | `apps/host/src/__tests__/lib/quiz/rpc-error-classification.test.ts` (29 tests) + `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (48 tests) | E | P4, P13 |
+| REG-410 | `bearer_submit_reaches_rpc_as_authenticated` | **The P0, asserted at the MODULE BOUNDARY rather than by reading the route's source.** Both submit routes are driven twice through the SAME assertions. Bearer + no cookie: `submit_quiz_results_v2` runs on a client built by `@supabase/supabase-js` `createClient` with the **anon** key and the caller's JWT forwarded as `global.headers.Authorization` — and the cookie-only client is proven NOT to be the one `.rpc()` landed on (`createSupabaseServerClient` is never even called). The two doubles expose an IDENTICAL `rpc` surface, so the only thing that can distinguish them is which spy recorded the call; a route that silently reverted to the cookie client fails on the spy, not on a string match. P8 rider: the transported key is asserted `=== NEXT_PUBLIC_SUPABASE_ANON_KEY` and `!==` the service-role key, so the fix can never be "solved" by reaching for the admin client. Transport-neutrality of the PAYLOAD is pinned separately: the RPC args sent on the Bearer path `toEqual` those sent on the cookie path (transport changes who PostgREST thinks is calling, never what is written). A non-Bearer `Authorization: Basic` still takes the cookie path (no silent downgrade). **Behaviour-neutrality for web is pinned explicitly, not assumed:** a cookie-only caller still runs on the cookie client, never builds a Bearer client, and still gets the same 200 body (score/XP/`idempotent_replay`/`marking_authenticity_path`, and no stray `retryable` key on a success envelope), the same 409 on P0001, the same 503 on a transient, and the same cached idempotent replay on a 23505 race. | `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (48 tests, `describe.each` over both routes) | E | P4, P8, P9 |
+| REG-411 | `rpc_permanent_vs_transient_retryable_contract` | **A permanent failure must stop the client without eating the student's work.** Unit half (`packages/lib/src/quiz/rpc-error-classification.ts`): SQLSTATE `42501` / `42883` / `23514` and PostgREST `PGRST202` / `PGRST203` classify PERMANENT (the PostgREST codes matter because a missing function surfaces as `PGRST202`/404, never as a raw 42883, so a SQLSTATE-only check would misfile an undeployed RPC as transient); the exported set is asserted to be EXACTLY those three SQLSTATEs, so widening it is a visible, reviewed act. **FAIL-OPEN TOWARD TRANSIENT is pinned as a DIRECTION, not a list:** fourteen enumerated non-matches (deadlock, serialization failure, connection loss, statement timeout, 23505, P0001, unknown SQLSTATEs, empty object, null/undefined error, null fields) plus a noise sweep all assert `false`. That asymmetry is the safety property — a wrong "permanent" verdict stops a client retrying a recoverable failure and quarantines a real completed quiz; a wrong "transient" verdict costs one idempotent retry the RPC short-circuits anyway. Route half, on BOTH submit routes: permanent → HTTP **500** + `code:'RPC_PERMANENT'` + **top-level** `retryable:false`; transient → **503** + `RPC_FAILED` + `retryable:true`; `EMPTY_RESPONSE` stays 503/`retryable:true`; and a 409 `SESSION_NOT_STARTED` carries **no** `retryable` field at all (the field is emitted only in the 5xx band where the client's status-code matrix is ambiguous — a `retryable:true` on an already-refused 4xx would be an infinite loop by another name). `retryable` is asserted as a top-level BOOLEAN with `hasOwnProperty`, because the Flutter drain reads exactly `body['retryable']` at exactly that position: the field's NAME and POSITION are a cross-client contract. The permanent message is asserted NOT to carry the retry instruction and to positively say "do not retry"; P13 rider — neither client-facing body matches `42501|42883|23514|PGRST|submit_quiz_results_v2`. Ops separation pinned (`submit_quiz_results_v2_failed_permanent` + `failure_class:'permanent'`), and a cross-route parity pair asserts the two routes translate an identical error to an identical status/code/`retryable`/message so they cannot drift. | `apps/host/src/__tests__/lib/quiz/rpc-error-classification.test.ts` (29 tests) + `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (48 tests) | E | P4, P13 |
 
 ### Mobile half — REVIEWED, not duplicated
 
@@ -2114,25 +2397,45 @@ Two mobile gaps found and REPORTED rather than pinned:
 
 ### Catalog total
 
-Pre-REG-390: 389 entries (through REG-389, the tiered-verification batch above).
-This section adds REG-390 and REG-391. REG-392 and REG-393 are taken by the same
+Pre-REG-410: 389 entries (through REG-409, the tiered-verification batch above).
+This section adds REG-410 and REG-411. REG-412 and REG-413 are taken by the same
 batch in `10-rbac-rls.md` and `11-infrastructure.md`.
-**Total catalog: 393 entries (target: 35 — TARGET EXCEEDED). REG-394 is the next
+**Total catalog: 393 entries (target: 35 — TARGET EXCEEDED). REG-414 is the next
 free id** (REG-371..REG-377 remain RESERVED).
 
 > Numbering note: the task brief for this batch stated "latest id is REG-369, so
 > start at REG-370". That is stale — REG-370 is the Foxy MasteryAwareness ring
-> no-shrink entry in `02-foxy-ai.md`, and `00-header.md` already declared REG-390
+> no-shrink entry in `02-foxy-ai.md`, and `00-header.md` already declared REG-410
 > the next free id. Starting at 370 would have collided with four filed entries
-> and with the reserved 371..377 block, so this batch takes REG-390..REG-393.
+> and with the reserved 371..377 block, so this batch takes REG-410..REG-413.
 > No existing entry was renumbered.
 
 ---
 
-## REG-394 — the P0001 collision: an ownership-guard denial answered as "session not started"
+> **Restored + renumbered 2026-08-23 (launch-readiness catalog reconciliation).**
+> Filed as REG-394 on 2026-08-12; deleted wholesale by `b00b9c872`'s stale-base
+> merge resolution alongside the parallel Phase 4 lineage's OWN, unrelated
+> REG-394 (`session_mode_persisted_exam_and_unknown_refuse_resume`, kept in
+> this shard above) — a direct id collision. Restored verbatim from
+> `origin/main` and renumbered to REG-414 (`+20`, same shift as the rest of
+> this collision range — see `00-header.md`). Re-verified 2026-08-23: the two
+> primary files (`rpc-error-classification.test.ts` +
+> `quiz-submit-bearer-transport.test.ts`) still carry the
+> `isOwnershipGuardDenial` / P0001-disambiguation assertions this entry
+> describes and pass (part of the 108/108 confirmed for REG-410/411 above,
+> same files). The THIRD cited file, `apps/host/src/__tests__/api/v2/contract-
+> conformance.test.ts`, passes (34/34) but no longer contains a
+> `STUDENT_OWNERSHIP_DENIED`/`retryable` envelope-conformance assertion by that
+> name — it appears to have been reverted independently of this entry's core
+> claim (that file is outside this pass's scope; flagged to
+> assessment/backend, not fixed here). The core entry (route + classifier
+> behaviour) stands; the companion OpenAPI-envelope pin does not, currently.
+> Do not re-use REG-394 for anything new.
+
+## REG-414 — the P0001 collision: an ownership-guard denial answered as "session not started"
 
 **Filed 2026-08-12, same branch (`Alfanumrik/e2e-p0-bearer-quiz-submit`), as
-architect Condition B on the REG-390/391 fix.**
+architect Condition B on the REG-410/411 fix.**
 
 **The defect.** Every quiz RPC opens with the same SECURITY DEFINER guard:
 
@@ -2154,13 +2457,13 @@ submission attempt** was answered:
 ```
 
 The single most security-relevant outcome the RPC can produce was indistinguish-
-able on the wire from the most routine one, it bypassed the REG-391 classifier
+able on the wire from the most routine one, it bypassed the REG-411 classifier
 entirely, and it wrote **nothing** to `ops_events` — the 409 branch logs nothing
 at all. This is the only signal that the route-layer `STUDENT_ID_MISMATCH` 403
 was bypassed, or that the route layer and the database disagree about who owns a
 student row. It was invisible.
 
-**Why it surfaced now.** Before the REG-390 transport fix, Bearer callers reached
+**Why it surfaced now.** Before the REG-410 transport fix, Bearer callers reached
 PostgREST as `anon` with `auth.uid()` NULL, so the `auth.uid() IS NOT NULL`
 conjunct short-circuited the guard and mobile could never trigger it. Cookie/web
 callers always could. The fix makes the guard live on both transports, which
@@ -2168,7 +2471,7 @@ makes swallowing it materially worse.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-394 | `ownership_guard_denial_is_403_not_409` | **The two P0001 meanings are separated by MESSAGE, and the split is pinned in both directions.** Unit half (`packages/lib/src/quiz/rpc-error-classification.ts` → `isOwnershipGuardDenial`): matches the guard's own server-generated wording including the `student auth %` variant (migration `20260814000000`), with no code at all (transports that drop the SQLSTATE), case-insensitively, and with extra whitespace. **Fail-CLOSED in the opposite direction to `isPermanentRpcFailure`** — `session_not_started` (bare and with a suffix), an unrelated P0001, a 42501, the bare `'Access denied'` template form, an empty message, `null` and `undefined` all assert `false`, so no other `RAISE EXCEPTION` can be mis-reported as a security event. The two classifiers are asserted **DISJOINT on their own inputs**: the denial is not "permanent" (must not become a 500 + `retryable:false`) and a permanent failure is not a denial (must not become a 403) — overlap either way would silently reroute a whole class. Route half, on BOTH submit routes via `describe.each`: 403 + `code:'STUDENT_OWNERSHIP_DENIED'` (asserted `!== 'SESSION_NOT_STARTED'`), **no `hint`**, and **no `retryable` field** (that field exists only for the ambiguous 5xx band; a 403 already means discard to the mobile drain). **Branch ORDER is pinned as its own property** — the denial is asserted `!== 500`/`RPC_PERMANENT`, and an unrecognised P0001 is asserted to still reach 409 — because ordering is the only thing separating the branches. P13 rider: the response body is stringified and asserted to contain neither the probed student id, nor the caller's own id, nor `caller does not own`, nor `P0001|submit_quiz_results_v2|students` — echoing the guard's raw message back would confirm to a prober that the id they supplied exists. Ops half: an `ops_events` row at severity **`error`**, category **`security`** (not `quiz` — it is an authorization event that merely originates in the quiz funnel, and must route to security triage without dragging in every scoring failure), message `submit_quiz_results_v2_ownership_denied`, carrying `guard`, `session_id`, `auth_user_id` and the **transport** — and asserted NOT to carry the raw SQL text, which would only duplicate the id already in `student_id`. The write is **`await`ed**, unlike the `void`ed sibling RPC-failure event: a serverless invocation can be torn down the moment the response returns, and a fire-and-forget write is acceptable for a scoring metric but not for the only record that a cross-student attempt happened (the path is rare and abnormal, so the latency is free; `logOpsEvent` never throws, so awaiting cannot turn the 403 into a 500). The `transport` label is computed by the shared `authTransportLabel()` — one copy, so the two routes cannot drift — and is pinned to **MIRROR** `createSupabaseRouteClient`'s own `startsWith('Bearer ')` test: `Authorization: Basic …`, `Bearertoken` and a lowercase `bearer ` all label **`cookie`**, because a truthiness check on the header (the obvious shortcut, and what the first cut of this code did) would label a Basic caller "bearer" and send a forensic investigation after the wrong client. Asserted on both the bearer and cookie paths so a web denial is attributable too. **The legitimate case is pinned unchanged:** a real `session_not_started` is still 409 + `SESSION_NOT_STARTED` on both routes and both transports, and emits no denial event. Cross-route parity pair asserts both routes translate the denial to an identical status/code/message. | `apps/host/src/__tests__/lib/quiz/rpc-error-classification.test.ts` (+18 tests) + `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (+17 tests) + `apps/host/src/__tests__/api/v2/contract-conformance.test.ts` (envelope conformance for the new code, plus `retryable` boolean-type drift guards) | E | P8, P9, P13 |
+| REG-414 | `ownership_guard_denial_is_403_not_409` | **The two P0001 meanings are separated by MESSAGE, and the split is pinned in both directions.** Unit half (`packages/lib/src/quiz/rpc-error-classification.ts` → `isOwnershipGuardDenial`): matches the guard's own server-generated wording including the `student auth %` variant (migration `20260814000000`), with no code at all (transports that drop the SQLSTATE), case-insensitively, and with extra whitespace. **Fail-CLOSED in the opposite direction to `isPermanentRpcFailure`** — `session_not_started` (bare and with a suffix), an unrelated P0001, a 42501, the bare `'Access denied'` template form, an empty message, `null` and `undefined` all assert `false`, so no other `RAISE EXCEPTION` can be mis-reported as a security event. The two classifiers are asserted **DISJOINT on their own inputs**: the denial is not "permanent" (must not become a 500 + `retryable:false`) and a permanent failure is not a denial (must not become a 403) — overlap either way would silently reroute a whole class. Route half, on BOTH submit routes via `describe.each`: 403 + `code:'STUDENT_OWNERSHIP_DENIED'` (asserted `!== 'SESSION_NOT_STARTED'`), **no `hint`**, and **no `retryable` field** (that field exists only for the ambiguous 5xx band; a 403 already means discard to the mobile drain). **Branch ORDER is pinned as its own property** — the denial is asserted `!== 500`/`RPC_PERMANENT`, and an unrecognised P0001 is asserted to still reach 409 — because ordering is the only thing separating the branches. P13 rider: the response body is stringified and asserted to contain neither the probed student id, nor the caller's own id, nor `caller does not own`, nor `P0001|submit_quiz_results_v2|students` — echoing the guard's raw message back would confirm to a prober that the id they supplied exists. Ops half: an `ops_events` row at severity **`error`**, category **`security`** (not `quiz` — it is an authorization event that merely originates in the quiz funnel, and must route to security triage without dragging in every scoring failure), message `submit_quiz_results_v2_ownership_denied`, carrying `guard`, `session_id`, `auth_user_id` and the **transport** — and asserted NOT to carry the raw SQL text, which would only duplicate the id already in `student_id`. The write is **`await`ed**, unlike the `void`ed sibling RPC-failure event: a serverless invocation can be torn down the moment the response returns, and a fire-and-forget write is acceptable for a scoring metric but not for the only record that a cross-student attempt happened (the path is rare and abnormal, so the latency is free; `logOpsEvent` never throws, so awaiting cannot turn the 403 into a 500). The `transport` label is computed by the shared `authTransportLabel()` — one copy, so the two routes cannot drift — and is pinned to **MIRROR** `createSupabaseRouteClient`'s own `startsWith('Bearer ')` test: `Authorization: Basic …`, `Bearertoken` and a lowercase `bearer ` all label **`cookie`**, because a truthiness check on the header (the obvious shortcut, and what the first cut of this code did) would label a Basic caller "bearer" and send a forensic investigation after the wrong client. Asserted on both the bearer and cookie paths so a web denial is attributable too. **The legitimate case is pinned unchanged:** a real `session_not_started` is still 409 + `SESSION_NOT_STARTED` on both routes and both transports, and emits no denial event. Cross-route parity pair asserts both routes translate the denial to an identical status/code/message. | `apps/host/src/__tests__/lib/quiz/rpc-error-classification.test.ts` (+18 tests) + `apps/host/src/__tests__/api/quiz-submit-bearer-transport.test.ts` (+17 tests) + `apps/host/src/__tests__/api/v2/contract-conformance.test.ts` (envelope conformance for the new code, plus `retryable` boolean-type drift guards) | E | P8, P9, P13 |
 
 ### Honest limits
 
@@ -2187,10 +2490,9 @@ makes swallowing it materially worse.
 
 ### Catalog total
 
-Pre-REG-394: 393 entries (through REG-393, the LIVE-P0 Bearer batch above).
-This section adds REG-394; REG-395 is taken by the same follow-up batch in
+Pre-REG-414: 393 entries (through REG-413, the LIVE-P0 Bearer batch above).
+This section adds REG-414; REG-415 is taken by the same follow-up batch in
 `10-rbac-rls.md`.
-**Total catalog: 395 entries (target: 35 — TARGET EXCEEDED). REG-396 is the next
+**Total catalog: 395 entries (target: 35 — TARGET EXCEEDED). REG-416 is the next
 free id** (REG-371..REG-377 remain RESERVED).
 
----

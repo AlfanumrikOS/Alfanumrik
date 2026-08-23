@@ -14,7 +14,13 @@ import {
   getKnowledgeGaps,
 } from '@alfanumrik/lib/supabase';
 import { logger } from '@alfanumrik/lib/logger';
-import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@alfanumrik/lib/cognitive-engine';
+// NOTE: `predictMasteryDate` is deliberately NOT imported. It is a sound
+// function with a (currentMastery, velocity) contract this page could not
+// satisfy — it only has a weekly rate — so the page used to pass that rate as
+// both arguments and print the meaningless result as a date. Predictions now
+// come from the server (`learning_velocity.predicted_mastery_date`) or not
+// at all. The engine function itself is unchanged and still used elsewhere.
+import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom } from '@alfanumrik/lib/cognitive-engine';
 import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@alfanumrik/lib/types';
 import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, Button, EmptyState, PremiumCard, GlowButton } from '@alfanumrik/ui/ui';
@@ -1082,8 +1088,13 @@ function LegacyProgressPage() {
                     </SectionHeader>
                     <div className="space-y-2">
                       {decayTopics.map((dt) => {
-                        const retentionPct = Math.round((dt.mastery_probability ?? 0) * 100);
-                        const isLow = retentionPct < 30;
+                        /* `concept_mastery.mastery_probability` is a BKT mastery
+                         * POSTERIOR. It was rendered as "<n>% retained", which
+                         * relabels a mastery estimate as a memory-retention
+                         * measurement the app never took. Same number, honest
+                         * name. (Phase 6 / Risk R4.) */
+                        const masteryPct = Math.round((dt.mastery_probability ?? 0) * 100);
+                        const isLow = masteryPct < 30;
                         return (
                           <PremiumCard key={dt.id} className="!p-3">
                             <div className="flex items-center gap-3">
@@ -1094,13 +1105,17 @@ function LegacyProgressPage() {
                                     <div
                                       className="h-full rounded-full transition-all"
                                       style={{
-                                        width: `${retentionPct}%`,
+                                        width: `${masteryPct}%`,
                                         background: isLow ? 'var(--red)' : 'var(--gold)',
                                       }}
                                     />
                                   </div>
-                                  <span className="text-[10px] font-semibold shrink-0" style={{ color: isLow ? 'var(--red)' : 'var(--gold)' }}>
-                                    {retentionPct}% {isHi ? 'याद' : 'retained'}
+                                  <span
+                                    className="text-[10px] font-semibold shrink-0"
+                                    data-testid="decay-mastery-value"
+                                    style={{ color: isLow ? 'var(--red)' : 'var(--gold)' }}
+                                  >
+                                    {masteryPct}% {isHi ? 'महारत' : 'mastered'}
                                   </span>
                                 </div>
                               </div>
@@ -1174,7 +1189,16 @@ function LegacyProgressPage() {
                   )}
                 </div>
 
-                {/* Mastery Predictions */}
+                {/* Mastery Predictions
+                    The client no longer manufactures a date. It used to call
+                    `predictMasteryDate(rate, rate)` — whose signature is
+                    (currentMastery, velocity) — passing the WEEKLY mastery rate
+                    as BOTH the current mastery AND the DAILY velocity, so the
+                    arithmetic was (0.95 - weeklyRate) / weeklyRate days. The
+                    resulting date had no defensible meaning and was printed
+                    under "Predicted by". Only `learning_velocity.
+                    predicted_mastery_date`, computed server-side, is shown; when
+                    the server has none, we say so. (Phase 6 / Risk R4.) */}
                 {weakestTopics.length > 0 && (
                   <div>
                     <SectionHeader icon="🔮">{isHi ? 'महारत की भविष्यवाणी' : 'Mastery Predictions'}</SectionHeader>
@@ -1183,7 +1207,7 @@ function LegacyProgressPage() {
                         const rate = v.weekly_mastery_rate ?? 0;
                         const predicted = v.predicted_mastery_date
                           ? new Date(v.predicted_mastery_date)
-                          : predictMasteryDate(rate, rate);
+                          : null;
 
                         return (
                           <PremiumCard key={v.id} className="!p-3">
@@ -1194,13 +1218,30 @@ function LegacyProgressPage() {
                                   {isHi ? 'गति' : 'Rate'}: {(rate * 100).toFixed(1)}%/wk
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <div className="text-[10px] text-[var(--text-3)]">
-                                  {isHi ? 'अनुमानित तिथि' : 'Predicted by'}
-                                </div>
-                                <div className="text-xs font-semibold" style={{ color: 'var(--teal)' }}>
-                                  {predicted ? formatDate(predicted) : (isHi ? 'अनिश्चित' : 'Uncertain')}
-                                </div>
+                              <div className="text-right max-w-[45%]">
+                                {predicted ? (
+                                  <>
+                                    <div className="text-[10px] text-[var(--text-3)]">
+                                      {isHi ? 'अनुमानित तिथि' : 'Predicted by'}
+                                    </div>
+                                    <div
+                                      className="text-xs font-semibold"
+                                      data-testid="mastery-prediction-date"
+                                      style={{ color: 'var(--teal)' }}
+                                    >
+                                      {formatDate(predicted)}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div
+                                    className="text-[10px] text-[var(--text-3)] leading-relaxed"
+                                    data-testid="mastery-prediction-none"
+                                  >
+                                    {isHi
+                                      ? 'भविष्यवाणी के लिए अभी पर्याप्त डेटा नहीं'
+                                      : 'Not enough data to predict yet'}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </PremiumCard>
@@ -1330,9 +1371,11 @@ function LegacyProgressPage() {
                 <div className="space-y-2">
                   {velocityData.slice(0, 8).map((v) => {
                     const rate = v.weekly_mastery_rate ?? 0;
+                    /* Server-supplied date only — see the Mastery Predictions
+                       note above for why the client-side fallback was removed. */
                     const predicted = v.predicted_mastery_date
                       ? new Date(v.predicted_mastery_date)
-                      : predictMasteryDate(rate, rate);
+                      : null;
 
                     return (
                       <Card key={v.id} className="!p-3">
@@ -1348,7 +1391,7 @@ function LegacyProgressPage() {
                               {Math.round(rate * 100)}%
                             </div>
                             {predicted && (
-                              <div className="text-[9px] text-[var(--text-3)]">
+                              <div className="text-[9px] text-[var(--text-3)]" data-testid="velocity-predicted-date">
                                 {isHi ? 'तक' : 'by'} {formatDate(predicted)}
                               </div>
                             )}

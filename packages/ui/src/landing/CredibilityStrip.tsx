@@ -29,7 +29,14 @@ export function CredibilityStrip() {
         <FadeIn>
           <p className="text-sm font-medium text-center" style={{ color: 'var(--text-2)' }}>
             {[
-              { val: '16', label: t('subjects', 'विषय') },
+              // CATALOGUE-CLAIM FIX (2026-08-12): the first metric read
+              // "16 subjects" / "16 विषय". `subjects.is_active` is true for
+              // exactly five codes — math, science, physics, chemistry,
+              // biology. This component has ZERO importers (verified by grep),
+              // so nobody is shown it today; corrected rather than left to be
+              // re-mounted carrying a falsehood. An empty `val` renders the
+              // label alone, which the map below already supports.
+              { val: '', label: t('Maths & Science', 'गणित और विज्ञान') },
               { val: '7', label: t('grades', 'कक्षाएँ') },
               { val: '115', label: t('STEM experiments', 'STEM प्रयोग') },
               { val: '6', label: t('Bloom\'s levels in every quiz', 'हर क्विज़ में Bloom\'s स्तर') },

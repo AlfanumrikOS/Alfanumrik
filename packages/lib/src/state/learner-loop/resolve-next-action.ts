@@ -826,10 +826,19 @@ export function resolveNextLearnerAction(
  * Derive the live-session resume action from `state.live`. Returns null
  * when the learner is idle. The URL reuses the live state's existing
  * target derivation — no new routes are invented here:
- *   - in_quiz   → /quiz   (the runtime resumes from the open session)
+ *   - in_quiz   → /quiz?session={quizSessionId}
  *   - in_foxy   → /foxy   (the chat resumes the open thread)
  *   - in_lesson → /learn/{subjectCode}/{chapterNumber}  (same shape the
  *                 continue_lesson branch already builds)
+ *
+ * PHASE 4 FIX — the in_quiz link used to be a bare `/quiz`, which lands on
+ * the QuizSetup SELECTION screen. The CTA said "resume" and started the
+ * student over on a brand-new question set: the single most user-visible
+ * expression of "no session survives a refresh". `/quiz` now honours a
+ * `session` param and rebuilds the interrupted session from the server-owned
+ * snapshot (see packages/lib/src/quiz/resume.ts), so the id must be carried.
+ * When the session id is somehow absent the bare `/quiz` is still emitted —
+ * a setup screen is a worse CTA than a resume, but it is not a broken link.
  */
 function resumeActionFromLive(state: StudentState): LearnerAction | null {
   const live = state.live;
@@ -837,7 +846,9 @@ function resumeActionFromLive(state: StudentState): LearnerAction | null {
     case 'in_quiz':
       return {
         kind: 'resume_in_progress',
-        url: '/quiz',
+        url: live.quizSessionId
+          ? `/quiz?session=${encodeURIComponent(live.quizSessionId)}`
+          : '/quiz',
         liveKind: 'in_quiz',
         subjectCode: live.subjectCode,
         chapterNumber: live.chapterNumber,

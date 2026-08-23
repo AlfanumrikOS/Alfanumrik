@@ -1,0 +1,6 @@
+eval/teacher-skills/harness/cli.ts
+supabase/functions/alfabot-answer/__tests__/integration.test.ts
+supabase/functions/alfabot-answer/prompt.ts
+requirements.txt
+test_api.py
+test_legacy_api_contract.py

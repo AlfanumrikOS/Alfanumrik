@@ -607,6 +607,25 @@ describe('classifyImageText — content type detection', () => {
 
 // ─── computeMonthlyReportMetrics — aggregator ──────────────────
 
+/* CONTRACT UPDATE (Phase 6 / Risk R4, assessment-owned): these assertions were
+ * rewritten when `computeMonthlyReportMetrics` stopped returning a number for
+ * evidence it does not have. Changes pinned below:
+ *   • `masteries[].topic` → `masteries[].label` (the caller passes SUBJECTS;
+ *     the old key claimed they were topics).
+ *   • `weakChapters`/`strongChapters` → `weakAreas`/`strongAreas`.
+ *   • `retentionScore` → `recentQuizAveragePct` + `recentQuizCount` (it was
+ *     always avg-of-last-5-quiz-scores, never a retention measurement).
+ *   • empty input now yields `null`, not `0` — "we don't know" vs "you scored
+ *     zero".
+ *   • `chapters`/`totalMarks` are OPTIONAL; without them `predictedScore` and
+ *     `syllabusCompletionPct` are null instead of being invented.
+ *   • `improvementAreas`/`achievements` (English prose) → `improvements`/
+ *     `achievements` as bilingual-renderable codes (P7).
+ *   • syllabus completion now counts `isCovered`, matching the SQL definition
+ *     in `generate_monthly_report()` (`COUNT(*) FILTER (WHERE ec.is_covered)`),
+ *     instead of the looser `studentMastery > 0`.
+ * Deeper contract tests live in packages/lib/src/__tests__/monthly-report-honesty.test.ts.
+ */
 describe('computeMonthlyReportMetrics — full aggregation', () => {
   const chapters: ExamChapter[] = [
     {
@@ -630,8 +649,8 @@ describe('computeMonthlyReportMetrics — full aggregation', () => {
   it('computes concept mastery as rounded average', () => {
     const result = computeMonthlyReportMetrics({
       masteries: [
-        { mastery: 0.8, topic: 'A' },
-        { mastery: 0.6, topic: 'B' },
+        { mastery: 0.8, label: 'A' },
+        { mastery: 0.6, label: 'B' },
       ],
       quizScores: [80, 75, 90],
       weeklyAccuracies: [0.7, 0.75, 0.8, 0.85],
@@ -649,9 +668,9 @@ describe('computeMonthlyReportMetrics — full aggregation', () => {
   it('identifies weak chapters (mastery < 0.5)', () => {
     const result = computeMonthlyReportMetrics({
       masteries: [
-        { mastery: 0.2, topic: 'Weak1' },
-        { mastery: 0.3, topic: 'Weak2' },
-        { mastery: 0.9, topic: 'Strong1' },
+        { mastery: 0.2, label: 'Weak1' },
+        { mastery: 0.3, label: 'Weak2' },
+        { mastery: 0.9, label: 'Strong1' },
       ],
       quizScores: [80],
       weeklyAccuracies: [0.7],
@@ -662,14 +681,14 @@ describe('computeMonthlyReportMetrics — full aggregation', () => {
       chapters,
       totalMarks: 100,
     });
-    expect(result.weakChapters).toContain('Weak1');
-    expect(result.weakChapters).toContain('Weak2');
-    expect(result.strongChapters).toContain('Strong1');
+    expect(result.weakAreas).toContain('Weak1');
+    expect(result.weakAreas).toContain('Weak2');
+    expect(result.strongAreas).toContain('Strong1');
   });
 
   it('emits improvement areas for low consistency / efficiency', () => {
     const result = computeMonthlyReportMetrics({
-      masteries: [{ mastery: 0.4, topic: 'X' }],
+      masteries: [{ mastery: 0.4, label: 'X' }],
       quizScores: [50],
       weeklyAccuracies: [0.5],
       totalMinutes: 100,
@@ -679,16 +698,16 @@ describe('computeMonthlyReportMetrics — full aggregation', () => {
       chapters,
       totalMarks: 100,
     });
-    expect(result.improvementAreas.length).toBeGreaterThan(0);
+    expect(result.improvements.length).toBeGreaterThan(0);
   });
 
   it('emits achievements for high mastery + consistency', () => {
     const result = computeMonthlyReportMetrics({
       masteries: [
-        { mastery: 0.85, topic: 'A' },
-        { mastery: 0.85, topic: 'B' },
-        { mastery: 0.85, topic: 'C' },
-        { mastery: 0.85, topic: 'D' },
+        { mastery: 0.85, label: 'A' },
+        { mastery: 0.85, label: 'B' },
+        { mastery: 0.85, label: 'C' },
+        { mastery: 0.85, label: 'D' },
       ],
       quizScores: [90, 92, 88],
       weeklyAccuracies: [0.85, 0.9, 0.88, 0.92],
@@ -700,10 +719,12 @@ describe('computeMonthlyReportMetrics — full aggregation', () => {
       totalMarks: 100,
     });
     expect(result.achievements.length).toBeGreaterThan(0);
-    expect(result.achievements).toContain('High overall mastery');
+    // Codes, not prose — the words are chosen by the UI in the reader's
+    // language (P7). See the contract note above this describe block.
+    expect(result.achievements.map((a) => a.code)).toContain('high_overall_mastery');
   });
 
-  it('handles empty masteries / quizScores gracefully (defensive)', () => {
+  it('reports absence as null, not zero, when there is nothing to aggregate', () => {
     const result = computeMonthlyReportMetrics({
       masteries: [],
       quizScores: [],
@@ -715,16 +736,22 @@ describe('computeMonthlyReportMetrics — full aggregation', () => {
       chapters: [],
       totalMarks: 100,
     });
-    expect(result.conceptMasteryPct).toBe(0);
-    expect(result.retentionScore).toBe(0);
-    expect(result.weakChapters).toEqual([]);
-    expect(result.strongChapters).toEqual([]);
-    expect(result.timeEfficiency).toBe(0);
+    // "We have no evidence" must not be rendered to a student as "you scored
+    // zero" — that is the whole point of the R4 honesty pass.
+    expect(result.conceptMasteryPct).toBeNull();
+    expect(result.recentQuizAveragePct).toBeNull();
+    expect(result.recentQuizCount).toBe(0);
+    expect(result.timeEfficiency).toBeNull();
+    // An EMPTY chapter list is not a blueprint either.
+    expect(result.predictedScore).toBeNull();
+    expect(result.syllabusCompletionPct).toBeNull();
+    expect(result.weakAreas).toEqual([]);
+    expect(result.strongAreas).toEqual([]);
   });
 
   it('computes time efficiency as questions per minute', () => {
     const result = computeMonthlyReportMetrics({
-      masteries: [{ mastery: 0.5, topic: 'A' }],
+      masteries: [{ mastery: 0.5, label: 'A' }],
       quizScores: [],
       weeklyAccuracies: [],
       totalMinutes: 100,
@@ -738,12 +765,18 @@ describe('computeMonthlyReportMetrics — full aggregation', () => {
   });
 
   it('computes syllabus completion percentage from covered chapters', () => {
+    // `isCovered` is the field that means "covered" — this now matches the SQL
+    // definition in generate_monthly_report()
+    // (COUNT(*) FILTER (WHERE ec.is_covered = true)). The previous
+    // implementation counted `studentMastery > 0`, which answers a different
+    // question ("has the student touched it") and made the /reports caller's
+    // fabricated blueprint read ~100% by construction.
     const partialChapters: ExamChapter[] = [
-      { ...chapters[0], studentMastery: 0.5 },
-      { ...chapters[1], studentMastery: 0 },
+      { ...chapters[0], studentMastery: 0.5, isCovered: true },
+      { ...chapters[1], studentMastery: 0, isCovered: false },
     ];
     const result = computeMonthlyReportMetrics({
-      masteries: [{ mastery: 0.5, topic: 'A' }],
+      masteries: [{ mastery: 0.5, label: 'A' }],
       quizScores: [],
       weeklyAccuracies: [],
       totalMinutes: 100,

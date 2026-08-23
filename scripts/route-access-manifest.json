@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 406,
+  "routeCount": 409,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -427,6 +427,14 @@
       "owner": "ai-learning-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/foxy/feedback/dimension",
+      "file": "apps/host/src/app/api/foxy/feedback/dimension/route.ts",
+      "access": "student",
+      "owner": "ai-learning-backend",
+      "rationale": "Phase A.2 dimension-level Foxy feedback endpoint. Authenticated student endpoint; gated by authorizeRequest(request, 'progress.view_own', { requireStudentId: true }) before any DB access. Recorded 2026-08-23 during the b00b9c872 reconciliation (untracked/in-flight at time of recording) — ai-engineer/backend should confirm and formalize in a follow-up.",
+      "serviceRoleUse": "Service-role is used to invoke the record_message_dimension_feedback RPC; the route itself is the trust boundary (the RPC's auth.uid() guard does not fire under a service-role JWT). Bounded surface: BEFORE the RPC call, the route performs an explicit ownership check (SELECT id, student_id, role FROM foxy_chat_messages WHERE id = messageId, then verifies student_id equals the caller's own studentId AND role = 'assistant'), collapsing 'not found' and 'wrong owner' into the same 404 so the route cannot be used to probe other students' message UUIDs. dimension is validated against a 4-value allowlist; reason is length-capped and never logged (P13). Recorded provisionally — see path rationale."
     },
     {
       "path": "/api/foxy/learning-action",
@@ -1049,6 +1057,14 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/quiz/session/[sessionId]/progress",
+      "file": "apps/host/src/app/api/quiz/session/[sessionId]/progress/route.ts",
+      "access": "auth",
+      "owner": "assessment-backend",
+      "rationale": "Phase 4 quiz-resume substrate for the authenticated student. POST persists ONE confirmed answer (first-write-wins); GET returns the payload needed to rebuild an interrupted session and NOTHING that reveals the answer key. Both verbs run authorizeRequest('quiz.attempt') and then an explicit owner check of quiz_session_shuffles.student_id against the SESSION-derived studentId (404 unknown session, 403 mismatch). No student id is ever accepted from the request.",
+      "serviceRoleUse": "Required, not convenience: quiz_session_shuffles has RLS enabled with three policies that are ALL 'FOR SELECT' (student/parent/teacher) and NO INSERT/UPDATE/DELETE policy, and migration 20260814000020 revoked the table-level grant from authenticated (post-condition 4d asserts it retains no write verb). An RLS-scoped client would be silently zero-rowed on the POST's UPDATE. Bounded to one UPDATE of four durability columns (student_selected_displayed_index, student_time_spent_seconds, student_answered_at, session_mode) plus column-whitelisted reads that exclude correct_answer_index_snapshot and integrity_hash. Ratchet-down path: an auth.uid()-anchored SECURITY DEFINER persist_quiz_answer_progress RPC granted to authenticated, after which both verbs move to the RLS-scoped client. Full record in scripts/admin-client-allowlist.json."
+    },
+    {
       "path": "/api/quiz/submit",
       "file": "apps/host/src/app/api/quiz/submit/route.ts",
       "access": "auth",
@@ -1630,6 +1646,14 @@
     {
       "path": "/api/super-admin/adaptive-loops",
       "file": "apps/host/src/app/api/super-admin/adaptive-loops/route.ts",
+      "access": "super_admin",
+      "owner": "admin-platform",
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/super-admin/ai-quality",
+      "file": "apps/host/src/app/api/super-admin/ai-quality/route.ts",
       "access": "super_admin",
       "owner": "admin-platform",
       "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
@@ -2780,6 +2804,14 @@
       "owner": "teacher-backend",
       "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks.",
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/teacher/worksheets/answer-key",
+      "file": "apps/host/src/app/api/teacher/worksheets/answer-key/route.ts",
+      "access": "teacher",
+      "owner": "teacher-backend",
+      "rationale": "Teacher endpoint; read-only answer key for the worksheet generator. Two gates, both server-side: authorizeRequest('worksheet.create') — an existing permission already granted to the teacher role by 20260612123200 — runs above any parsing or DB access, then resolveTeacherContentScope restricts the read to (subject, grade) pairs the caller actually teaches (teachers.subjects_taught/grades_taught UNION active class assignments via the canonical resolveTeacherRosterScope). Fails closed on both: no active teachers row or an empty scope union denies 403 with no answer key in the body. Exists to replace a browser-side question_bank.correct_answer_index read on /teacher/worksheets, unblocking the answer-key column ACL.",
+      "serviceRoleUse": "Service-role is structurally required, not RCA-01/XC-3 compatibility debt: the pending question_bank ACL revokes SELECT (correct_answer_index) from authenticated (mirroring 20260814000020 on quiz_session_shuffles), so an RLS-scoped client running as the caller's authenticated role is denied the column by construction. Bounded surface: one table, SELECT only, six columns, filtered subject + grade + is_active with a count*3 limit (count validated to [1,30]); question_bank carries no student_id/school_id/class_id so no tenant data or PII is reachable. Ratchet-down path recorded in scripts/admin-client-allowlist.json."
     },
     {
       "path": "/api/telemetry/irt-shadow",

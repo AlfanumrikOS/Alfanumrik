@@ -1,0 +1,11 @@
+.claude/regression/00-header.md
+.claude/regression/01-subject-governance.md
+.claude/regression/03-quiz-integrity.md
+.claude/regression/06-auth-onboarding.md
+.claude/regression/10-rbac-rls.md
+.claude/regression/11-infrastructure.md
+.claude/regression/15-cross-cutting.md
+e2e/helpers/viewport-audit.ts
+e2e/today-home.spec.ts
+e2e/ui-error-states.spec.ts
+e2e/ui-nav-contract.spec.ts

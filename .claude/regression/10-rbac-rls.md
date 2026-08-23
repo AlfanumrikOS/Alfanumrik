@@ -1148,6 +1148,17 @@ deletion with lock-step ledger ratchets).
 
 ## Support thread P13 — a student must 404 on a parent-authored ticket — 2026-08-11
 
+> **Renumbered 2026-08-23 (launch-readiness catalog reconciliation).** This
+> section's two entries were originally filed as REG-383/REG-384 on
+> 2026-08-11. Commit `b00b9c872` deleted this whole section from this shard
+> during a stale-base merge resolution while a parallel lineage (the Phase 4
+> quiz-resume work in `03-quiz-integrity.md`) independently claimed REG-380
+> through REG-398 for unrelated content and was the half b00b9c872 kept — so
+> REG-383/384 (among other ids in this range) are claimed twice across the
+> shards. Restored from `origin/main` and renumbered to REG-403/REG-404 (next
+> free ids after the kept lineage's own declared ceiling of REG-400 — see
+> `00-header.md` for the full old→new id map). Do not re-use REG-383/REG-384.
+
 A support ticket is scoped by TWO columns, not one:
 
 ```
@@ -1174,15 +1185,15 @@ enforcement.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-383 | `support_ticket_parent_thread_no_student_read` | BEHAVIOURAL, not structural: the supabaseAdmin double is FILTER-AWARE (it holds a two-ticket table and applies the route's own `.in()` / `.eq()` predicates AND its `.select()` column projection), so "the student gets 404" is decided by whether the route's filters actually exclude the row — not by whether an `.eq()` was called. Pins: a student 404s on their parent's ticket while still reading their OWN; the parent reads their own ticket about the child but NOT the child's; an unlinked parent and a guardian with no children 404 (never 403 — ticket existence is not leaked); a non-existent ticket and a not-yours ticket return byte-identical bodies; no deny path carries the subject, the message or the child's `student_id`. Internal notes: an `is_internal` reply never appears in the student-facing payload, replies expose exactly `{id, author_role, body, created_at}`, and `author_user_id` / `is_internal` never ride along. Failure honesty: a failed thread read sets `replies_unavailable: true`, and a SUCCESSFUL empty read does NOT set it — the two are distinguishable, which is what lets the UI tell silence from failure. Writes: POST is guarded by the SAME two-column scope (a student replying into the parent thread 404s and performs NO insert), and every security-relevant field (`author_role`, `is_internal`, `author_user_id`, `ticket_id`) is server-derived with hostile payload values ignored. Verified to FAIL (4 tests) with the `user_role` narrowing removed from the shared helper. | `apps/host/src/__tests__/api/support/ticket-detail-cross-role-leak.test.ts` (18 tests) + `apps/host/src/__tests__/api/support/tickets.test.ts` (filter-level pins) | E | P8, P13 |
-| REG-384 | `support_thread_and_operator_composer_honesty` | UI half. `replies_unavailable: true` renders a DISTINCT retry state — never "No replies yet" — and the copy explicitly denies the empty reading ("This does not mean there are no replies"); the conversation COUNT is suppressed while unavailable so the lie is not restated as a number; Retry re-reads and recovers; a genuinely empty thread renders the empty state and NOT the retry state (both directions, because a new ticket really has no replies); bilingual per P7. Authorship renders from `author_role` only — "Alfanumrik Support" vs "You", never a name. Operator composer (internal-admin `SupportTab`): opens in INTERNAL mode; an untouched composer posts `is_internal: true`; student-visible is honoured when chosen; it RESETS to internal after every SUCCESSFUL send; it deliberately does NOT reset after a FAILED send (the operator will retry the same message, and silently flipping the mode would route a student reply into a private note); switching tickets reopens internal and clears the draft; a failed student-visible send says "The student did NOT receive it" and a failed note says "Nothing was sent to the student"; a failed thread/list read says so rather than rendering silence. Verified to FAIL (1 test) with the post-send reset removed. Also pins the reply rate limiter (20/hour/user, 429 carrying `code: RATE_LIMITED` + `retry_after_ms` + a `Retry-After` header so the UI can say HOW LONG, limited BEFORE any DB write, keyed per user, body free of ticket/student ids), the operator reply POST (`author_role` server-pinned to `operator`, strict `=== true` on `is_internal`, student-visible reply moves an OPEN ticket to `pending` while a note does not, 404 on a missing ticket, and an audit row carrying ids + the visibility flag but NEVER the reply text) and support category-alias normalisation (`payment→billing`, `feature→other`; alias targets are canonical, no alias chains, no key collisions, idempotent and total over the accepted-input set — so the two intake routes can no longer write mutually-incompatible strings into the same free-TEXT column). | `apps/host/src/__tests__/app/support-thread-honesty.test.tsx` (11) + `apps/host/src/__tests__/app/internal-admin-support-composer-safety.test.tsx` (11) + `apps/host/src/__tests__/api/support/reply-limits-and-category-aliases.test.ts` (21) | E | P7, P13 |
+| REG-403 | `support_ticket_parent_thread_no_student_read` | BEHAVIOURAL, not structural: the supabaseAdmin double is FILTER-AWARE (it holds a two-ticket table and applies the route's own `.in()` / `.eq()` predicates AND its `.select()` column projection), so "the student gets 404" is decided by whether the route's filters actually exclude the row — not by whether an `.eq()` was called. Pins: a student 404s on their parent's ticket while still reading their OWN; the parent reads their own ticket about the child but NOT the child's; an unlinked parent and a guardian with no children 404 (never 403 — ticket existence is not leaked); a non-existent ticket and a not-yours ticket return byte-identical bodies; no deny path carries the subject, the message or the child's `student_id`. Internal notes: an `is_internal` reply never appears in the student-facing payload, replies expose exactly `{id, author_role, body, created_at}`, and `author_user_id` / `is_internal` never ride along. Failure honesty: a failed thread read sets `replies_unavailable: true`, and a SUCCESSFUL empty read does NOT set it — the two are distinguishable, which is what lets the UI tell silence from failure. Writes: POST is guarded by the SAME two-column scope (a student replying into the parent thread 404s and performs NO insert), and every security-relevant field (`author_role`, `is_internal`, `author_user_id`, `ticket_id`) is server-derived with hostile payload values ignored. Verified to FAIL (4 tests) with the `user_role` narrowing removed from the shared helper. | `apps/host/src/__tests__/api/support/ticket-detail-cross-role-leak.test.ts` (18 tests) + `apps/host/src/__tests__/api/support/tickets.test.ts` (filter-level pins) | E | P8, P13 |
+| REG-404 | `support_thread_and_operator_composer_honesty` | UI half. `replies_unavailable: true` renders a DISTINCT retry state — never "No replies yet" — and the copy explicitly denies the empty reading ("This does not mean there are no replies"); the conversation COUNT is suppressed while unavailable so the lie is not restated as a number; Retry re-reads and recovers; a genuinely empty thread renders the empty state and NOT the retry state (both directions, because a new ticket really has no replies); bilingual per P7. Authorship renders from `author_role` only — "Alfanumrik Support" vs "You", never a name. Operator composer (internal-admin `SupportTab`): opens in INTERNAL mode; an untouched composer posts `is_internal: true`; student-visible is honoured when chosen; it RESETS to internal after every SUCCESSFUL send; it deliberately does NOT reset after a FAILED send (the operator will retry the same message, and silently flipping the mode would route a student reply into a private note); switching tickets reopens internal and clears the draft; a failed student-visible send says "The student did NOT receive it" and a failed note says "Nothing was sent to the student"; a failed thread/list read says so rather than rendering silence. Verified to FAIL (1 test) with the post-send reset removed. Also pins the reply rate limiter (20/hour/user, 429 carrying `code: RATE_LIMITED` + `retry_after_ms` + a `Retry-After` header so the UI can say HOW LONG, limited BEFORE any DB write, keyed per user, body free of ticket/student ids), the operator reply POST (`author_role` server-pinned to `operator`, strict `=== true` on `is_internal`, student-visible reply moves an OPEN ticket to `pending` while a note does not, 404 on a missing ticket, and an audit row carrying ids + the visibility flag but NEVER the reply text) and support category-alias normalisation (`payment→billing`, `feature→other`; alias targets are canonical, no alias chains, no key collisions, idempotent and total over the accepted-input set — so the two intake routes can no longer write mutually-incompatible strings into the same free-TEXT column). | `apps/host/src/__tests__/app/support-thread-honesty.test.tsx` (11) + `apps/host/src/__tests__/app/internal-admin-support-composer-safety.test.tsx` (11) + `apps/host/src/__tests__/api/support/reply-limits-and-category-aliases.test.ts` (21) | E | P7, P13 |
 
 ### Invariants covered by this section
 
-- **P13 (data privacy)** — REG-383 is the disclosure boundary itself. Note which side of the
+- **P13 (data privacy)** — REG-403 is the disclosure boundary itself. Note which side of the
   line the enforcement sits on: because the route uses the service-role client, the RLS
   policy is NOT the guard. Deleting `.eq('is_internal', false)` "because the policy covers
-  it" would ship every operator note to the requester, and REG-383 is what says so.
+  it" would ship every operator note to the requester, and REG-403 is what says so.
 - **P8 (RLS boundary)** — the new `support_ticket_replies` policies exist and are correct,
   but they are defence in depth behind an RLS-BYPASSING client. The catalog records this
   explicitly so a future reader does not mistake the policy for the enforcement.
@@ -1200,14 +1211,14 @@ already documented at length on `FEATURE_PERMISSION` in
 `apps/host/src/app/api/usage/daily/route.ts` (fixed there by switching to a `Map`). It is
 NOT currently exploitable — the intake route validates `z.enum(SUPPORT_TICKET_CATEGORY_INPUTS)`
 BEFORE calling it, so a prototype key is rejected with a 400 and never reaches the function
-— and REG-384 pins THAT boundary rather than the function's own broken totality claim.
+— and REG-404 pins THAT boundary rather than the function's own broken totality claim.
 TODO(backend): make the alias table a `Map` (or `Object.create(null)`), then fold the three
 prototype keys back into the ordinary unknown-value test.
 
 ### Catalog total
 
-Pre-REG-383: 382 entries (through REG-382, the leaderboard SEV1 batch — see
-`15-cross-cutting.md`). This section adds REG-383 and REG-384.
+Pre-REG-403: 382 entries (through REG-382, the leaderboard SEV1 batch — see
+`15-cross-cutting.md`). This section adds REG-403 and REG-404.
 **Total catalog: 384 entries (target: 35 — TARGET EXCEEDED). REG-385 is the next free id**
 (REG-371..REG-377 remain RESERVED).
 **Superseded** — REG-385..REG-389 were taken on 2026-08-11 (see
@@ -1218,9 +1229,19 @@ REG-390..REG-393, so REG-394 is the next free id.
 
 ## The identity-route family: Bearer callers silently had no student — 2026-08-12
 
+> **Renumbered 2026-08-23 (launch-readiness catalog reconciliation).** Filed
+> as REG-392 on 2026-08-12; deleted by `b00b9c872`'s stale-base merge
+> resolution while the parallel Phase 4 lineage's own REG-392 (`today_analytics_
+> pii_free`, `15-cross-cutting.md`) was kept — a direct id collision. Restored
+> from `origin/main` and renumbered to REG-412. See `00-header.md` for the
+> full old→new id map; do not re-use REG-392.
+
 Added 2026-08-12 (testing agent), same live-P0 batch as REG-390/REG-391
 (`03-quiz-integrity.md`) and REG-393 (`11-infrastructure.md`), branch
-`Alfanumrik/e2e-p0-bearer-quiz-submit`.
+`Alfanumrik/e2e-p0-bearer-quiz-submit`. (Those sibling ids from the same
+original batch are reconciled separately — REG-390/391 in
+`03-quiz-integrity.md` → REG-410/411, REG-393 in `11-infrastructure.md` →
+REG-413.)
 
 **The defect.** Twelve request-scoped routes built their student-scoped Supabase
 client with the cookie-only `createSupabaseServerClient()`. The Flutter app
@@ -1248,7 +1269,7 @@ symptom by deleting the boundary.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-392 | `identity_routes_bearer_resolves_own_student` | **Part 1 — BEHAVIOURAL, on the three prioritised routes** (`/api/v2/today`, `/api/rhythm/today`, `/api/learner/next`). Two doubles with identical surfaces are installed at the module boundary — one returned by `@supabase/supabase-js` `createClient` (the Bearer/anon path), one by `createSupabaseServerClient` (the cookie path) — and the canonical state builder / rhythm-queue builder RECORDS which client it was constructed with. With a Bearer header and no cookie, the recorded client is the Bearer one, the cookie factory is never called at all, and the response is the student's real state — explicitly `not.toBe(404)` on `/api/v2/today`, a real `schemaVersion:1` action on `/api/learner/next`, the real queue on `/api/rhythm/today`. The forwarded header is asserted verbatim (`Bearer <jwt>`) against the **anon** key and the project URL. Every route is then re-run cookie-only to pin that web is byte-identical: the cookie client is recorded, `createClient` is never called, and the status is unchanged. **Part 2 — STRUCTURAL, over all twelve routes.** Each route file is asserted to import `@alfanumrik/lib/supabase-route` and to call `createSupabaseRouteClient(request)` WITH the request threaded in (a zero-arg call cannot read the header and silently reverts to the cookie path), and to have no UNDOCUMENTED `createSupabaseServerClient()` construction left. Comments are stripped before matching, deliberately: every one of these routes now carries a long comment naming the old client in prose, and matching raw source would make the documentation fail the test and tempt someone to delete the explanation to go green. Exactly one holdout is allowed and is named with its reason — `POST /api/rhythm/today`, which authenticates via session-based `supabase.auth.getUser()` that cannot work on a stateless Bearer client (`persistSession:false`); moving it onto `authorizeRequest()` is an auth-semantics change deferred to architect. A list-drift guard pins the family at twelve distinct routes so a thirteenth migration cannot silently escape the check. | `apps/host/src/__tests__/api/identity-routes-bearer-transport.test.ts` (32 tests) | E | P8, P9, P13 |
+| REG-412 | `identity_routes_bearer_resolves_own_student` | **Part 1 — BEHAVIOURAL, on the three prioritised routes** (`/api/v2/today`, `/api/rhythm/today`, `/api/learner/next`). Two doubles with identical surfaces are installed at the module boundary — one returned by `@supabase/supabase-js` `createClient` (the Bearer/anon path), one by `createSupabaseServerClient` (the cookie path) — and the canonical state builder / rhythm-queue builder RECORDS which client it was constructed with. With a Bearer header and no cookie, the recorded client is the Bearer one, the cookie factory is never called at all, and the response is the student's real state — explicitly `not.toBe(404)` on `/api/v2/today`, a real `schemaVersion:1` action on `/api/learner/next`, the real queue on `/api/rhythm/today`. The forwarded header is asserted verbatim (`Bearer <jwt>`) against the **anon** key and the project URL. Every route is then re-run cookie-only to pin that web is byte-identical: the cookie client is recorded, `createClient` is never called, and the status is unchanged. **Part 2 — STRUCTURAL, over all twelve routes.** Each route file is asserted to import `@alfanumrik/lib/supabase-route` and to call `createSupabaseRouteClient(request)` WITH the request threaded in (a zero-arg call cannot read the header and silently reverts to the cookie path), and to have no UNDOCUMENTED `createSupabaseServerClient()` construction left. Comments are stripped before matching, deliberately: every one of these routes now carries a long comment naming the old client in prose, and matching raw source would make the documentation fail the test and tempt someone to delete the explanation to go green. Exactly one holdout is allowed and is named with its reason — `POST /api/rhythm/today`, which authenticates via session-based `supabase.auth.getUser()` that cannot work on a stateless Bearer client (`persistSession:false`); moving it onto `authorizeRequest()` is an auth-semantics change deferred to architect. A list-drift guard pins the family at twelve distinct routes so a thirteenth migration cannot silently escape the check. | `apps/host/src/__tests__/api/identity-routes-bearer-transport.test.ts` (32 tests) | E | P8, P9, P13 |
 
 ### Deliberate limits — stated so a green run is never over-read
 
@@ -1264,20 +1285,29 @@ failure mode is the silent-empty 200 rather than a 404.
 
 ### Catalog total
 
-Pre-REG-392: 391 entries (through REG-391 — see `03-quiz-integrity.md`, same
-batch). This section adds REG-392; REG-393 is taken by the same batch in
+Pre-REG-412: 391 entries (through REG-391 — see `03-quiz-integrity.md`, same
+batch). This section adds REG-412; REG-393 is taken by the same batch in
 `11-infrastructure.md`.
 **Total catalog: 393 entries (target: 35 — TARGET EXCEEDED). REG-394 is the next
 free id** (REG-371..REG-377 remain RESERVED).
 
 ---
 
-## REG-395 — the ownership-guard RPC family: a SECURITY DEFINER check silently disarmed for every mobile caller
+## REG-415 — the ownership-guard RPC family: a SECURITY DEFINER check silently disarmed for every mobile caller
+
+> **Renumbered 2026-08-23 (launch-readiness catalog reconciliation).** Filed
+> as REG-395 on 2026-08-12; deleted by `b00b9c872`'s stale-base merge
+> resolution while the parallel Phase 4 lineage's own REG-395
+> (`today_enumerated_silent_reason_set_both_directions`, `15-cross-cutting.md`)
+> was kept — a direct id collision. Restored from `origin/main` and renumbered
+> to REG-415. See `00-header.md` for the full old→new id map; do not re-use
+> REG-395.
 
 **Filed 2026-08-12, same branch (`Alfanumrik/e2e-p0-bearer-quiz-submit`), as
-architect Condition A on the REG-390/391 fix.**
+architect Condition A on the REG-390/391 fix** (those sibling ids →
+REG-410/411 in `03-quiz-integrity.md` under the same reconciliation).
 
-**The defect, and why it is not the same one as REG-392.** REG-392 covers routes
+**The defect, and why it is not the same one as REG-412.** REG-412 covers routes
 that *resolved the caller's own profile* and degraded to `404 no_student_profile`
 or an empty 200. This entry covers three routes whose SECURITY DEFINER RPCs carry
 the ownership guard:
@@ -1314,7 +1344,7 @@ migration away from the same outage.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-395 | `ownership_guard_rpc_routes_use_bearer_client` | **Behavioural half (`/api/v2/quiz/start`, the priority route), asserted at the MODULE BOUNDARY:** with a Bearer header and no cookie, `start_quiz_session` runs on a client built by `@supabase/supabase-js` `createClient` with the **anon** key and the caller's JWT forwarded, and the cookie-only client is proven NOT to be what `.rpc()` landed on (`createSupabaseServerClient` is never called). Both doubles expose an identical `rpc` surface, so only the spy distinguishes them — a silent revert fails the spy, not a string match. P8 rider: the transported key is asserted `=== NEXT_PUBLIC_SUPABASE_ANON_KEY` and `!==` the service-role key, which matters doubly here because service-role ALSO has `auth.uid()` NULL and would re-disarm the very guard this fix re-arms. Payload transport-neutrality pinned (`p_student_id` / `p_question_ids` identical on both paths). `Authorization: Basic` still takes the cookie path (no silent downgrade). RBAC order pinned: an unauthorized caller gets 401 and **no client is constructed at all**. The `students` cross-check is asserted to REMAIN on the service-role client — a documented holdout, because it maps `auth_user_id → student id` before we know who the caller is (exactly what RLS cannot help with) and its only effect is to refuse requests. **Behaviour-neutrality for web pinned explicitly:** a cookie caller still runs on the cookie client, gets the same 200 envelope with `shuffle_map`/`correct_answer_index` still absent (P6), the same `503 START_SESSION_FAILED` on a null RPC, and `STUDENT_ID_MISMATCH` still fires **before** the RPC on BOTH transports (asserted with zero `.rpc()` calls on either spy) — the route-layer guard is what actually contained the disarmed DB guard, so it must keep firing first. **Structural half:** the family conformance check in `identity-routes-bearer-transport.test.ts` is extended from 12 to 15 routes — each must import `@alfanumrik/lib/supabase-route` and call `createSupabaseRouteClient(request)` **with the request threaded in** (a no-arg call cannot read the Authorization header and silently reverts to cookie), with no undocumented `createSupabaseServerClient()` left. Comments are stripped before matching, so the long explanatory notes naming the old client do not fail the test (and nobody is tempted to delete the explanation to go green). Two list drift-guards: the counts (12 / 3 / 15, all distinct) and a disjointness assertion that no route is in both families, since the two lists mean different things. | `apps/host/src/__tests__/api/quiz-start-bearer-transport.test.ts` (13 tests) + `apps/host/src/__tests__/api/identity-routes-bearer-transport.test.ts` (extended to 15 routes) | E | P6, P8, P9 |
+| REG-415 | `ownership_guard_rpc_routes_use_bearer_client` | **Behavioural half (`/api/v2/quiz/start`, the priority route), asserted at the MODULE BOUNDARY:** with a Bearer header and no cookie, `start_quiz_session` runs on a client built by `@supabase/supabase-js` `createClient` with the **anon** key and the caller's JWT forwarded, and the cookie-only client is proven NOT to be what `.rpc()` landed on (`createSupabaseServerClient` is never called). Both doubles expose an identical `rpc` surface, so only the spy distinguishes them — a silent revert fails the spy, not a string match. P8 rider: the transported key is asserted `=== NEXT_PUBLIC_SUPABASE_ANON_KEY` and `!==` the service-role key, which matters doubly here because service-role ALSO has `auth.uid()` NULL and would re-disarm the very guard this fix re-arms. Payload transport-neutrality pinned (`p_student_id` / `p_question_ids` identical on both paths). `Authorization: Basic` still takes the cookie path (no silent downgrade). RBAC order pinned: an unauthorized caller gets 401 and **no client is constructed at all**. The `students` cross-check is asserted to REMAIN on the service-role client — a documented holdout, because it maps `auth_user_id → student id` before we know who the caller is (exactly what RLS cannot help with) and its only effect is to refuse requests. **Behaviour-neutrality for web pinned explicitly:** a cookie caller still runs on the cookie client, gets the same 200 envelope with `shuffle_map`/`correct_answer_index` still absent (P6), the same `503 START_SESSION_FAILED` on a null RPC, and `STUDENT_ID_MISMATCH` still fires **before** the RPC on BOTH transports (asserted with zero `.rpc()` calls on either spy) — the route-layer guard is what actually contained the disarmed DB guard, so it must keep firing first. **Structural half:** the family conformance check in `identity-routes-bearer-transport.test.ts` is extended from 12 to 15 routes — each must import `@alfanumrik/lib/supabase-route` and call `createSupabaseRouteClient(request)` **with the request threaded in** (a no-arg call cannot read the Authorization header and silently reverts to cookie), with no undocumented `createSupabaseServerClient()` left. Comments are stripped before matching, so the long explanatory notes naming the old client do not fail the test (and nobody is tempted to delete the explanation to go green). Two list drift-guards: the counts (12 / 3 / 15, all distinct) and a disjointness assertion that no route is in both families, since the two lists mean different things. | `apps/host/src/__tests__/api/quiz-start-bearer-transport.test.ts` (13 tests) + `apps/host/src/__tests__/api/identity-routes-bearer-transport.test.ts` (extended to 15 routes) | E | P6, P8, P9 |
 
 ### Honest limits of this entry
 
@@ -1339,14 +1369,22 @@ migration away from the same outage.
 
 ### Catalog total
 
-Pre-REG-395: 394 entries (through REG-394 — see `03-quiz-integrity.md`, same
-follow-up batch). This section adds REG-395.
+Pre-REG-415: 394 entries (through REG-394 — see `03-quiz-integrity.md`, same
+follow-up batch). This section adds REG-415.
 **Total catalog: 395 entries (target: 35 — TARGET EXCEEDED). REG-396 is the next
 free id** (REG-371..REG-377 remain RESERVED).
 
 ---
 
-## Leadership route: authorize BEFORE the flag gate (2026-08-12, E2E Batch 2 P2-5) — REG-397
+## Leadership route: authorize BEFORE the flag gate (2026-08-12, E2E Batch 2 P2-5) — REG-417
+
+> **Renumbered 2026-08-23 (launch-readiness catalog reconciliation).** Filed
+> as REG-397 on 2026-08-12; deleted by `b00b9c872`'s stale-base merge
+> resolution while the parallel Phase 4 lineage's own REG-397
+> (`written_answer_quiz_is_submittable_at_all`, `03-quiz-integrity.md`) was
+> kept — a direct id collision. Restored from `origin/main` and renumbered to
+> REG-417. See `00-header.md` for the full old→new id map; do not re-use
+> REG-397.
 
 Source: the 2026-08-12 production E2E report, finding P2-5.
 `GET /api/school-admin/leadership` ran its `ff_school_pulse_v1` gate as step 0,
@@ -1362,7 +1400,7 @@ gate second, for authorized callers only.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-397 | `leadership_auth_before_flag_gate` | With the flag OFF (the defect's exact posture, set in `beforeEach`): an unauthenticated caller gets the resolver's **401 UNCHANGED** — the body has NO `gated` property, the flag reader is NEVER consulted, and no read-model RPC fires; an unauthorized caller (student token) gets the resolver's **403 unchanged**, flag reader never consulted; the resolver's **400 multi-school `{school_ids}` hint propagates unchanged** before the flag gate. For an AUTHORIZED school admin: flag OFF keeps the fail-soft `200 {success:true, data:null, gated:true}` contract byte-identical WITH the `Cache-Control: private, max-age=30` header and zero read-model RPCs; flag ON proceeds to the read model (all three RPCs — `get_school_overview`, `get_school_safeguarding_counts`, `get_school_competency_summary` — fire with `p_school_id` scoped to the resolved school); a flag-READER failure fails soft to `200 {gated:true}` (never 500s the dashboard mid-toggle). Only the resolution seam + flag reader are stubbed (mock pattern mirrors `command-center-routes.test.ts`). | `apps/host/src/__tests__/api/school-admin/leadership-route-auth.test.ts` (6 tests) | E | P9, P13-adjacent |
+| REG-417 | `leadership_auth_before_flag_gate` | With the flag OFF (the defect's exact posture, set in `beforeEach`): an unauthenticated caller gets the resolver's **401 UNCHANGED** — the body has NO `gated` property, the flag reader is NEVER consulted, and no read-model RPC fires; an unauthorized caller (student token) gets the resolver's **403 unchanged**, flag reader never consulted; the resolver's **400 multi-school `{school_ids}` hint propagates unchanged** before the flag gate. For an AUTHORIZED school admin: flag OFF keeps the fail-soft `200 {success:true, data:null, gated:true}` contract byte-identical WITH the `Cache-Control: private, max-age=30` header and zero read-model RPCs; flag ON proceeds to the read model (all three RPCs — `get_school_overview`, `get_school_safeguarding_counts`, `get_school_competency_summary` — fire with `p_school_id` scoped to the resolved school); a flag-READER failure fails soft to `200 {gated:true}` (never 500s the dashboard mid-toggle). Only the resolution seam + flag reader are stubbed (mock pattern mirrors `command-center-routes.test.ts`). | `apps/host/src/__tests__/api/school-admin/leadership-route-auth.test.ts` (6 tests) | E | P9, P13-adjacent |
 
 ### Honest limits of this entry
 
@@ -1381,8 +1419,8 @@ gate second, for authorized callers only.
 
 ### Catalog total
 
-Pre-REG-397: 396 entries (REG-396 in `06-auth-onboarding.md`, same batch).
-This section adds REG-397; REG-398 lands in `01-subject-governance.md`.
+Pre-REG-417: 396 entries (REG-396 in `06-auth-onboarding.md`, same batch).
+This section adds REG-417; REG-398 lands in `01-subject-governance.md`.
 **Total catalog: 398 entries (target: 35 — TARGET EXCEEDED). REG-399 is the next
 free id** (REG-371..REG-377 remain RESERVED).
 

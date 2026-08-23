@@ -49,8 +49,15 @@ import { shuffle } from '@alfanumrik/lib/shuffle';
 // CHECK, and neither `select_quiz_questions_rag` nor `select_quiz_questions_v2`
 // filters on it. See the option's TODO(assessment) for the flip condition.
 
+// `keylessServing: true` (migration 20260814000023): every source below —
+// the quiz-generator Edge Function, both serving RPCs, and the direct
+// `question_bank` query — now withholds `correct_answer_index`, because the
+// "index 0-3" half of P6 moved server-side into `question_bank_p6_valid`
+// (a filter inside the RPCs, and a hard skip inside `start_quiz_session`).
+// Without this flag the gate rejects every MCQ on `missing_answer_index`.
+// A PRESENT-but-invalid index is still rejected exactly as before.
 function validateQuestions(questions: unknown[]): QuizQuestion[] {
-  return validateQuestionsP6(questions as QuizQuestion[]);
+  return validateQuestionsP6(questions as QuizQuestion[], { keylessServing: true });
 }
 
 // ── Question fetch ────────────────────────────────────────────────────────────
@@ -211,8 +218,10 @@ export async function fetchQuizQuestions(
   const fetchLimit = Math.min(input.count * 4, 120);
   let query = supabase
     .from('question_bank')
+    // KEYLESS (migration 20260814000023): `correct_answer_index` is deliberately
+    // absent. The P6 "index 0-3" check it existed for now runs server-side.
     .select(
-      'id, question_text, question_hi, question_type, options, correct_answer_index, ' +
+      'id, question_text, question_hi, question_type, options, ' +
       'explanation, explanation_hi, hint, difficulty, bloom_level, chapter_number'
     )
     .eq('subject', input.subject)

@@ -56,7 +56,18 @@ interface PlanDef {
   features: { en: string; hi: string; included: boolean }[];
 }
 
-/** Feature lists lifted verbatim from the legacy PricingCards.tsx. */
+/**
+ * Feature lists lifted from the legacy PricingCards.tsx.
+ *
+ * SUBJECT COUNT IS NOT A DIFFERENTIATOR (corrected 2026-08-11). These lists
+ * previously read "2 subjects" / "4 subjects" / "All subjects" down the tiers.
+ * Migration 20260814000018 made that false in production: `max_subjects` is
+ * NULL on all four plans and `plan_subject_access` grants all five subject
+ * codes to every plan, free included. The product is Mathematics and Science
+ * only, so every card now carries the SAME subject line and the ladder is what
+ * actually differs — chats, quizzes, STEM Lab, support.
+ * Pinned by apps/host/src/__tests__/plan-subject-count-copy-guard.test.ts.
+ */
 const PLANS: PlanDef[] = [
   {
     nameEn: 'Explorer',
@@ -70,7 +81,7 @@ const PLANS: PlanDef[] = [
     features: [
       { en: '5 Foxy chats / day', hi: '5 Foxy चैट / दिन', included: true },
       { en: '5 quizzes / day', hi: '5 क्विज़ / दिन', included: true },
-      { en: '2 subjects', hi: '2 विषय', included: true },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल', included: true },
       { en: 'Progress reports', hi: 'प्रगति रिपोर्ट', included: true },
       { en: 'Spaced repetition', hi: 'स्पेस्ड रिपीटिशन', included: true },
       { en: 'STEM Lab', hi: 'STEM लैब', included: false },
@@ -80,15 +91,15 @@ const PLANS: PlanDef[] = [
     nameEn: 'Starter',
     nameHi: 'स्टार्टर',
     code: 'starter',
-    taglineEn: 'More chats, more subjects',
-    taglineHi: 'ज़्यादा चैट, ज़्यादा विषय',
+    taglineEn: 'More chats, more quizzes',
+    taglineHi: 'ज़्यादा चैट, ज़्यादा क्विज़',
     ctaEn: 'Get started',
     ctaHi: 'शुरू करें',
     ctaStyle: 'neutral',
     features: [
       { en: 'Unlimited Foxy chats', hi: 'असीमित Foxy चैट', included: true },
       { en: '20 quizzes / day', hi: '20 क्विज़ / दिन', included: true },
-      { en: '4 subjects', hi: '4 विषय', included: true },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल', included: true },
       { en: 'Progress reports', hi: 'प्रगति रिपोर्ट', included: true },
       { en: 'Spaced repetition', hi: 'स्पेस्ड रिपीटिशन', included: true },
       { en: 'STEM Lab', hi: 'STEM लैब', included: true },
@@ -107,7 +118,7 @@ const PLANS: PlanDef[] = [
     features: [
       { en: 'Unlimited Foxy chats', hi: 'असीमित Foxy चैट', included: true },
       { en: 'Unlimited quizzes', hi: 'असीमित क्विज़', included: true },
-      { en: 'All subjects', hi: 'सभी विषय', included: true },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल', included: true },
       { en: 'Progress reports', hi: 'प्रगति रिपोर्ट', included: true },
       { en: 'Spaced repetition', hi: 'स्पेस्ड रिपीटिशन', included: true },
       { en: 'STEM Lab', hi: 'STEM लैब', included: true },
@@ -125,7 +136,7 @@ const PLANS: PlanDef[] = [
     features: [
       { en: 'Unlimited Foxy chats', hi: 'असीमित Foxy चैट', included: true },
       { en: 'Unlimited quizzes', hi: 'असीमित क्विज़', included: true },
-      { en: 'All subjects', hi: 'सभी विषय', included: true },
+      { en: 'Maths & Science included', hi: 'गणित और विज्ञान शामिल', included: true },
       { en: 'Progress reports', hi: 'प्रगति रिपोर्ट', included: true },
       { en: 'Spaced repetition', hi: 'स्पेस्ड रिपीटिशन', included: true },
       { en: 'STEM Lab', hi: 'STEM लैब', included: true },

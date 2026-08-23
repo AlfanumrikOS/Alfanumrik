@@ -3,8 +3,21 @@
 /**
  * MissionStepList — the ordered list of steps inside a MissionCard. Each step
  * carries a bilingual label + an optional deep-link (href) to the canonical
- * activity page. When the target page reads `?mission=<id>` it can render a
- * read-only breadcrumb linking back to /missions (non-blocking).
+ * activity page.
+ *
+ * ⚠️ NOT CURRENTLY MOUNTED (R6, 2026-08-11). The only consumer was the student
+ * `/missions` page, which was deleted: it read progress from
+ * `/api/play/mission-progress`, an endpoint that does not exist, and its
+ * fetcher returned null on `!res.ok` — so every mission rendered "0/N steps"
+ * with green todo chips, permanently, while looking functional. The page was
+ * also absent from the student nav after Phase 3, so nothing linked to it.
+ *
+ * This component and `packages/lib/src/play/*` (still unit-tested) are kept so
+ * the surface can be re-mounted UNCHANGED once backend/assessment ship the
+ * endpoint. Whoever does: `stepHref()` in the old page also ignored
+ * `step.subject` / `chapterNumber` / `phenomenonSlug` and deep-linked every
+ * step to a bare `/quiz` | `/dive` | `/simulations` | `/foxy` while the label
+ * promised "Concept · Science · ch. 4" — fix that too, don't restore it.
  *
  * P7 bilingual.
  */

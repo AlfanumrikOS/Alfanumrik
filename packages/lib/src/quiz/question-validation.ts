@@ -223,6 +223,42 @@ export interface ValidateQuestionOptions {
    * student), OFF for every serving caller.
    */
   enforceBloomLevel?: boolean;
+
+  /**
+   * The row came from a KEYLESS serving path — one where the server has already
+   * enforced the `correct_answer_index` half of P6 and then deliberately
+   * withheld the column, so the client cannot see it.
+   *
+   * WHAT THIS DOES, PRECISELY: an ABSENT (`null`/`undefined`) answer index stops
+   * being a rejection. A PRESENT one is still validated exactly as before —
+   * still must be an integer in 0..3, still rejected otherwise. So this option
+   * can only ever affect rows that carry no index at all, and it never lets a
+   * *bad* index through.
+   *
+   * WHY IT IS NOT A WEAKENING OF P6 (read this before setting it):
+   * Before migration 20260814000023, `question_bank.correct_answer_index` was
+   * shipped to the browser on every serving path — the whole ~12.8k-row answer
+   * key was one `select=` away for any signed-in student. The ONLY reason it was
+   * shipped is the check on lines below: the browser needed the key to prove the
+   * question was gradeable. That migration moved the check to the server
+   * (`public.question_bank_p6_valid`, applied as a filter inside
+   * `select_quiz_questions_rag` / `select_quiz_questions_v2` /
+   * `get_quiz_questions`, and as a hard skip inside `start_quiz_session`, which
+   * is the last server checkpoint every direct-`question_bank` student path
+   * funnels through). The rule is enforced in strictly MORE places than before —
+   * it now also rejects rows the client never receives — and it is enforced
+   * where it cannot be bypassed by a modified client.
+   *
+   * SET IT ONLY WHEN BOTH ARE TRUE:
+   *   1. the rows came from a server path that runs `question_bank_p6_valid`, and
+   *   2. that path does not return `correct_answer_index`.
+   * Ingestion, authoring, super-admin CMS and quiz-generator validation callers
+   * MUST NOT set it: they hold the real row, the key is present and mandatory
+   * there, and a missing key at ingest time is a genuine defect to reject.
+   *
+   * DEFAULT: `false` (OFF) — i.e. forgetting it keeps the strictest behaviour.
+   */
+  keylessServing?: boolean;
 }
 
 // ── Single-question validation ────────────────────────────────────────────────
@@ -292,9 +328,17 @@ export function validateQuestion(
     const answerIndex = row.correct_answer_index;
     // P6 / forensic-audit fix: `null < 0` and `null > 3` are BOTH false in JS,
     // so the null guard must come first or a keyless question passes the gate.
-    if (answerIndex == null)
-      return { valid: false, reason: 'missing_answer_index' };
-    if (
+    //
+    // `keylessServing` (migration 20260814000023) is the ONE case where an
+    // ABSENT index is legitimate: the server ran `question_bank_p6_valid` and
+    // then withheld the column so the browser can no longer harvest the answer
+    // key. See the option's doc comment for why that is stronger, not weaker.
+    // A PRESENT index is validated identically either way — the range check
+    // below is NEVER skipped.
+    if (answerIndex == null) {
+      if (!options.keylessServing)
+        return { valid: false, reason: 'missing_answer_index' };
+    } else if (
       typeof answerIndex !== 'number' ||
       !Number.isInteger(answerIndex) ||
       answerIndex < 0 ||

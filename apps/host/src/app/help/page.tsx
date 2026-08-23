@@ -10,12 +10,6 @@ import {
   categoryRequiresReference,
   referenceEntityTypeForCategory,
 } from '@alfanumrik/lib/support/ticket-categories';
-import {
-  supportSlaLine,
-  supportSlaFull,
-  supportFirstResponseText,
-  supportCoverageText,
-} from '@alfanumrik/lib/support/response-sla';
 
 /* ══════════════════════════════════════════════════════════════
    HELP & SUPPORT — Alfanumrik Support Center
@@ -41,9 +35,14 @@ const FAQ_CATEGORIES = [
   {
     id: 'learning' as const, icon: '🦊', label: 'Foxy & Learning', labelHi: 'फॉक्सी और पढ़ाई', color: '#E8581C',
     items: [
-      { q: 'How does Foxy work?', qHi: 'फॉक्सी कैसे काम करता है?', a: 'Foxy is your personal tutor. Select a subject and chapter, then ask any question in Hindi or English. Foxy explains step-by-step, gives practice problems, and tracks what you know using Bayesian mastery tracking.', aHi: 'फॉक्सी आपका निजी ट्यूटर है। विषय और अध्याय चुनें, फिर हिंदी या अंग्रेज़ी में कोई भी प्रश्न पूछें।' },
-      { q: 'What subjects does Alfanumrik cover?', qHi: 'अल्फान्यूमरिक में कौन से विषय हैं?', a: 'We cover 16 subjects: Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, Social Studies, Computer Science, Economics, Accountancy, Business Studies, Political Science, History, Geography, and Coding — all aligned to CBSE curriculum for Grades 6-12.', aHi: '16 विषय: गणित, विज्ञान, भौतिकी, रसायन, जीवविज्ञान, अंग्रेज़ी, हिंदी, सामाजिक विज्ञान, कंप्यूटर, अर्थशास्त्र, लेखांकन, व्यापार, राजनीति, इतिहास, भूगोल, और कोडिंग।' },
-      { q: 'How does spaced repetition work?', qHi: 'स्पेस्ड रिपिटिशन कैसे काम करता है?', a: 'After you learn a topic, the system schedules reviews at scientifically optimal intervals. You\'ll see "Due Reviews" on your dashboard. Completing these strengthens long-term memory and prevents forgetting.', aHi: 'किसी टॉपिक को सीखने के बाद, सिस्टम वैज्ञानिक अंतराल पर रिव्यू शेड्यूल करता है। डैशबोर्ड पर "Due Reviews" दिखाई देंगे।' },
+      { q: 'How does Foxy work?', qHi: 'फॉक्सी कैसे काम करता है?', a: 'Foxy is your personal tutor. Select a subject and chapter, then ask any question in Hindi or English. Foxy explains step-by-step, gives practice problems, and remembers which topics you have already got right, so it knows what to teach you next.', aHi: 'फॉक्सी आपका निजी ट्यूटर है। विषय और अध्याय चुनें, फिर हिंदी या अंग्रेज़ी में कोई भी प्रश्न पूछें। फॉक्सी कदम-दर-कदम समझाता है और याद रखता है कि आपने कौन से टॉपिक सही किए हैं, ताकि आगे क्या पढ़ाना है यह तय कर सके।' },
+      // CATALOGUE-CLAIM FIX (2026-08-12): this answer enumerated 16 subjects by
+      // name in both languages. Production `subjects.is_active` is true for
+      // exactly five codes — math, science, physics, chemistry, biology — so a
+      // parent could read this answer and then find two subjects. Replaced with
+      // the house wording from docs/alfabot/knowledge-base.md (product-features).
+      { q: 'What subjects does Alfanumrik cover?', qHi: 'अल्फान्यूमरिक में कौन से विषय हैं?', a: 'We teach Mathematics and Science, and nothing else. Grades 6 to 10 study Maths and Science; grades 11 and 12 study Maths plus Physics, Chemistry and Biology, presented together as one Science group. That is the whole catalogue, aligned to the CBSE curriculum — we would rather cover Maths and Science properly than spread thin across a timetable.', aHi: 'हम केवल गणित और विज्ञान पढ़ाते हैं, और कुछ नहीं। कक्षा 6 से 10 में गणित और विज्ञान; कक्षा 11 और 12 में गणित के साथ भौतिकी, रसायन और जीवविज्ञान, जो एक ही Science समूह के रूप में मिलते हैं। यही हमारा पूरा catalogue है, CBSE पाठ्यक्रम के अनुसार — हम गणित और विज्ञान को ठीक से पढ़ाना चुनते हैं, कई विषयों में बिखरना नहीं।' },
+      { q: 'Why do old topics come back for review?', qHi: 'पुराने टॉपिक दोबारा रिव्यू में क्यों आते हैं?', a: 'After you learn a topic, we bring it back a few days later — right around the time you would normally start forgetting it. You\'ll see "Due Reviews" on your dashboard. Finishing them is what makes a topic stay in your memory until the exam.', aHi: 'किसी टॉपिक को सीखने के बाद हम उसे कुछ दिन बाद दोबारा लाते हैं — ठीक उस समय जब आप उसे भूलना शुरू करते हैं। डैशबोर्ड पर "Due Reviews" दिखाई देंगे। उन्हें पूरा करने से टॉपिक परीक्षा तक याद रहता है।' },
       { q: 'Can Foxy help with board exam preparation?', qHi: 'क्या फॉक्सी बोर्ड परीक्षा की तैयारी में मदद कर सकता है?', a: 'Absolutely! Foxy is fully aligned with CBSE curriculum. Use "Quiz" mode for exam-style practice, "Notes" mode for revision summaries, and "Practice" mode for chapter-wise problem solving. Every question is mapped to board exam patterns.', aHi: 'बिल्कुल! फॉक्सी CBSE पाठ्यक्रम से पूरी तरह जुड़ा है। बोर्ड परीक्षा शैली के अभ्यास के लिए "Quiz" मोड का उपयोग करें।' },
       { q: 'How do I chat with Foxy?', qHi: 'फॉक्सी से कैसे बात करें?', a: 'Type your question in the chat box and press Enter. Foxy will respond with step-by-step explanations tailored to your grade and subject. You can ask follow-up questions, request examples, or ask Foxy to explain differently.', aHi: 'चैट बॉक्स में अपना प्रश्न टाइप करें और Enter दबाएं। फॉक्सी आपकी कक्षा और विषय के अनुसार जवाब देगा।' },
       { q: 'What are the learning modes?', qHi: 'लर्निंग मोड कौन-कौन से हैं?', a: 'Foxy has 6 modes: 📖 Learn (step-by-step lessons), ✏️ Practice (problem solving), ⚡ Quiz (test yourself), ❓ Doubt (clear confusion), 🔄 Revise (quick review), and 📝 Notes (summary notes). Switch between them using the pills below the subject selector.', aHi: '6 मोड हैं: 📖 सीखो, ✏️ अभ्यास, ⚡ क्विज़, ❓ डाउट, 🔄 रिवीज़, और 📝 नोट्स।' },
@@ -54,7 +53,7 @@ const FAQ_CATEGORIES = [
     items: [
       { q: 'How does the XP system work?', qHi: 'XP सिस्टम कैसे काम करता है?', a: 'You earn XP (Experience Points) for every learning activity — chatting with Foxy, completing quizzes, reviewing flashcards, and maintaining streaks. 500 XP = 1 Level up. XP is tracked per subject.', aHi: 'हर लर्निंग एक्टिविटी से XP (अनुभव अंक) मिलते हैं — फॉक्सी से चैट, क्विज़, फ्लैशकार्ड रिव्यू, और स्ट्रीक बनाए रखने से। 500 XP = 1 लेवल अप।' },
       { q: 'What are streaks?', qHi: 'स्ट्रीक क्या है?', a: 'Your streak counts consecutive days of learning. Study at least once per day to maintain it. A 7-day streak earns bonus XP. If you miss a day, the streak resets — but your XP and mastery are never lost.', aHi: 'आपकी स्ट्रीक लगातार पढ़ाई के दिन गिनती है। रोज़ कम से कम एक बार पढ़ें। 7 दिन की स्ट्रीक पर बोनस XP मिलता है।' },
-      { q: 'How is mastery calculated?', qHi: 'मास्टरी कैसे कैलकुलेट होती है?', a: 'We use Bayesian Knowledge Tracing — an AI model that estimates what you truly know based on your answers. Mastery levels: Not Started → Developing → Familiar → Proficient → Mastered. You can lose mastery if you forget (that\'s why reviews matter!).', aHi: 'हम Bayesian Knowledge Tracing का उपयोग करते हैं — एक AI मॉडल जो आपके उत्तरों के आधार पर अनुमान लगाता है कि आप क्या जानते हैं।' },
+      { q: 'How is mastery calculated?', qHi: 'मास्टरी कैसे तय होती है?', a: 'Every question you answer updates how well we think you know that topic. The five levels are: Not Started → Beginner → Developing → Proficient → Mastered. If you stop practising a topic you can slip back a level — that\'s why reviews matter!', aHi: 'आपके हर जवाब से यह अपडेट होता है कि आप उस टॉपिक को कितना जानते हैं। पाँच स्तर हैं: Not Started (शुरू नहीं) → Beginner (शुरुआती) → Developing (सीख रहे) → Proficient (अच्छी पकड़) → Mastered (महारत)। अभ्यास छोड़ने पर स्तर नीचे भी जा सकता है — इसीलिए रिव्यू ज़रूरी हैं!' },
       { q: 'Where can I see my leaderboard rank?', qHi: 'लीडरबोर्ड रैंक कहाँ देखें?', a: 'Tap the 🏆 Rankings icon from Quick Actions or the More menu. You can see weekly, monthly, and all-time rankings. Compete in olympiads and competitions for special badges!', aHi: 'Quick Actions या More मेनू से 🏆 Rankings आइकन टैप करें। साप्ताहिक, मासिक और ऑल-टाइम रैंकिंग देखें।' },
     ],
   },
@@ -88,7 +87,7 @@ const FAQ_CATEGORIES = [
     id: 'billing' as const, icon: '💳', label: 'Billing & Plans', labelHi: 'बिलिंग और योजना', color: '#D97706',
     items: [
       { q: 'How much does Alfanumrik cost?', qHi: 'अल्फान्यूमरिक की कीमत कितनी है?', a: 'Alfanumrik offers a free trial so you can experience AI-powered learning. After the trial, affordable plans are available — designed to cost less than a single tuition class. Every rupee goes into better AI, more content, and better learning outcomes for students.', aHi: 'Alfanumrik एक फ्री ट्रायल देता है ताकि आप AI-powered learning अनुभव कर सकें। ट्रायल के बाद, किफ़ायती प्लान उपलब्ध हैं — एक ट्यूशन क्लास से भी कम कीमत में।' },
-      { q: 'What plans are available?', qHi: 'कौन से प्लान उपलब्ध हैं?', a: 'We offer plans designed for Indian families. All plans include Foxy, adaptive quizzes, spaced repetition, and progress tracking. Visit the pricing section or contact us for current plan details.', aHi: 'हम भारतीय परिवारों के लिए डिज़ाइन किए गए प्लान पेश करते हैं। सभी प्लान में Foxy, एडैप्टिव क्विज़, स्पेस्ड रिपिटिशन और प्रगति ट्रैकिंग शामिल है।' },
+      { q: 'What plans are available?', qHi: 'कौन से प्लान उपलब्ध हैं?', a: 'We offer plans designed for Indian families. All plans include Foxy, adaptive quizzes, review reminders, and progress tracking. Visit the pricing section or contact us for current plan details.', aHi: 'हम भारतीय परिवारों के लिए डिज़ाइन किए गए प्लान पेश करते हैं। सभी प्लान में Foxy, एडैप्टिव क्विज़, रिव्यू रिमाइंडर और प्रगति ट्रैकिंग शामिल है।' },
     ],
   },
   {
@@ -120,34 +119,6 @@ const TICKET_CATEGORIES = [
   { value: 'synthesis_content_concern', label: 'Monthly Synthesis content concern', labelHi: 'मासिक सारांश सामग्री पर चिंता' },
   { value: 'other', label: 'Feature request / Other', labelHi: 'फीचर अनुरोध / अन्य' },
 ];
-
-// Same 5-state status vocabulary as the canonical thread view
-// (apps/host/src/app/support/page.tsx's statusLabel/statusColor) so a ticket
-// never reads as "open" here and something more specific there. Duplicated
-// rather than imported to keep this an edit-only, minimal-diff fix — a
-// shared module would be a new file. Keep both in sync if either changes.
-function helpTicketStatusLabel(status: string, isHi: boolean): string {
-  const map: Record<string, [string, string]> = {
-    open: ['Open', 'खुला'],
-    pending: ['Pending', 'लंबित'],
-    in_progress: ['In Progress', 'चल रहा है'],
-    resolved: ['Resolved', 'हल'],
-    closed: ['Closed', 'बंद'],
-  };
-  const pair = map[status];
-  return pair ? (isHi ? pair[1] : pair[0]) : status;
-}
-
-function helpTicketStatusColor(status: string): string {
-  switch (status) {
-    case 'open': return '#DC2626';
-    case 'pending': return '#D97706';
-    case 'in_progress': return '#7C3AED';
-    case 'resolved': return '#16A34A';
-    case 'closed': return 'var(--text-3)';
-    default: return 'var(--text-3)';
-  }
-}
 
 /* ── AI Support Bot via Foxy API route ── */
 async function askSupportBot(message: string, history: Array<{role: string; content: string}>, userContext: string, studentGrade?: string): Promise<string> {
@@ -324,7 +295,15 @@ export default function HelpPage() {
         }
         break;
       case 'reset-password':
-        router.push('/');
+        // A signed-in student changes their password from Settings (which also
+        // offers the "email me a reset link" fallback). A signed-out visitor
+        // needs the login screen's "Forgot Password?" flow. `/auth/reset` is
+        // NOT a valid target from here — it is the *set-a-new-password* screen
+        // and requires the one-time session minted by the emailed link, so a
+        // direct visit renders "this link has expired or is invalid".
+        // This control used to `router.push('/')`, dumping the student on the
+        // marketing homepage.
+        router.push(isLoggedIn ? '/settings' : '/login');
         break;
       case 'email':
         if (typeof window !== 'undefined') window.open('mailto:support@alfanumrik.com?subject=Support Request - Alfanumrik', '_blank');
@@ -457,11 +436,7 @@ export default function HelpPage() {
             <span className="text-xl">📝</span>
             <div className="text-left flex-1">
               <div className="text-sm font-bold">{isHi ? 'सपोर्ट टिकट भेजें' : 'Submit a Support Ticket'}</div>
-              {/* SLA copy comes from @alfanumrik/lib/support/response-sla — the
-                  ONLY place the numbers live (CEO-set). Never inline them here;
-                  never show the promise without the coverage window beside it. */}
-              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण दें' : 'Describe your issue'}</div>
-              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{supportSlaLine(isHi)}</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{isHi ? 'समस्या का विवरण दें, हम 24 घंटे में जवाब देंगे' : 'Describe your issue, we\'ll respond within 24 hours'}</div>
             </div>
           </button>
 
@@ -627,8 +602,7 @@ export default function HelpPage() {
               <div className="text-center mb-4">
                 <span className="text-3xl">📝</span>
                 <h3 className="text-base font-bold mt-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'सपोर्ट टिकट' : 'Support Ticket'}</h3>
-                {/* Promise + coverage window, both from response-sla.ts. */}
-                <p className="text-xs" style={{ color: 'var(--text-3)' }}>{supportSlaFull(isHi)}</p>
+                <p className="text-xs" style={{ color: 'var(--text-3)' }}>{isHi ? 'हम 24 घंटे में जवाब देंगे' : 'We\'ll respond within 24 hours'}</p>
               </div>
 
               <div className="space-y-3">
@@ -715,15 +689,9 @@ export default function HelpPage() {
                 {myTickets.map(ticket => {
                   const catObj = TICKET_CATEGORIES.find(c => c.value === ticket.category);
                   const catLabel = catObj ? (isHi ? catObj.labelHi : catObj.label) : ticket.category;
-                  const statusColor = helpTicketStatusColor(ticket.status);
+                  const isResolved = ticket.status === 'resolved';
                   return (
-                    <button
-                      key={ticket.id}
-                      onClick={() => router.push(`/support/${ticket.id}`)}
-                      className="w-full rounded-xl p-4 space-y-2 text-left transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
-                      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
-                      data-testid="help-ticket-row"
-                    >
+                    <div key={ticket.id} className="rounded-xl p-4 space-y-2" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-bold truncate">{ticket.subject}</div>
@@ -732,17 +700,17 @@ export default function HelpPage() {
                         <span
                           className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full"
                           style={{
-                            background: `color-mix(in srgb, ${statusColor} 16%, transparent)`,
-                            color: statusColor,
+                            background: isResolved ? '#D1FAE5' : '#FEF3C7',
+                            color: isResolved ? '#065F46' : '#92400E',
                           }}
                         >
-                          {helpTicketStatusLabel(ticket.status, isHi)}
+                          {isResolved ? (isHi ? 'हल हुआ' : 'Resolved') : (isHi ? 'खुला' : 'Open')}
                         </span>
                       </div>
                       <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>
                         {isHi ? 'भेजा:' : 'Submitted:'} {new Date(ticket.created_at).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -756,11 +724,7 @@ export default function HelpPage() {
             <div className="text-5xl mb-4">✅</div>
             <h3 className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'टिकट भेज दिया गया!' : 'Ticket Submitted!'}</h3>
             <p className="text-sm mb-6" style={{ color: 'var(--text-3)', maxWidth: 320, margin: '0 auto' }}>
-              {/* Promise + window from response-sla.ts, then a pointer at the
-                  in-product thread, which is where replies actually land. */}
-              {isHi
-                ? `हमने आपकी समस्या दर्ज कर ली है। हमारी टीम पहला जवाब ${supportFirstResponseText(true)} भेजेगी (${supportCoverageText(true)}) — जवाब आपको "मेरे टिकट" में दिखेगा।`
-                : `We've received your issue. Our team will send the first reply ${supportFirstResponseText(false)} (${supportCoverageText(false)}) — you'll see it under "My Tickets".`}
+              {isHi ? 'हमने आपकी समस्या दर्ज कर ली है। हम 24 घंटे में ईमेल द्वारा जवाब देंगे।' : 'We\'ve received your issue. Our team will respond to your email within 24 hours.'}
             </p>
             <div className="flex flex-col gap-2 items-center">
               <Button onClick={() => { setView('home'); setTicketCategory(''); setTicketSubject(''); setTicketMessage(''); }}>

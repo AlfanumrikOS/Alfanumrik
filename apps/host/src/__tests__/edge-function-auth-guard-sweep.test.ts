@@ -57,15 +57,29 @@ import { resolve } from 'node:path';
  * Phase 1 (2026-07-13).
  */
 
-// ── repo / file resolution (cwd or one level up, matching the sibling pins) ──
-function resolveRepo(rel: string): string | null {
-  for (const c of [resolve(process.cwd(), rel), resolve(process.cwd(), '..', rel)]) {
-    if (existsSync(c)) return c;
-  }
-  return null;
-}
-
-const FUNCTIONS_ABS = resolveRepo('supabase/functions');
+// ── repo / file resolution ──────────────────────────────────────────────────
+// __dirname-relative, NOT cwd-relative. This file lives at
+// apps/host/src/__tests__/, four levels below the repo root. The previous
+// implementation here resolved candidates off `process.cwd()` (`cwd/rel` then
+// `cwd/../rel`) -- every supported invocation of this suite runs with
+// `cwd = apps/host` (see vitest.config.ts: "test.root = CWD = apps/host in
+// every [supported invocation]"), and from apps/host NEITHER
+// `apps/host/supabase/functions` NOR (one hop up) `apps/supabase/functions`
+// is the real repo-root `supabase/functions` -- the real directory is TWO
+// hops up from apps/host, one hop past what that helper checked. Two
+// consequences: (1) the intended repo-root directory could never be reached
+// through either candidate, and (2) if unrelated tooling ever created a stray
+// directory at exactly `apps/host/supabase/functions` (e.g. a script invoked
+// with the wrong working directory), `existsSync` would silently accept that
+// bogus, near-empty directory as FUNCTIONS_ABS instead of falling through --
+// which is what produced this suite's spurious "ledger has no stale entries"
+// failure (every real ledger entry looked "deleted" against that wrong
+// directory's near-empty listing). `__dirname` is fixed at authoring time and
+// is immune to both the wrong-depth bug and the cwd-dependent hijack.
+const FUNCTIONS_ABS = (() => {
+  const abs = resolve(__dirname, '../../../../supabase/functions');
+  return existsSync(abs) ? abs : null;
+})();
 
 type Mechanism =
   | 'ai-admission'

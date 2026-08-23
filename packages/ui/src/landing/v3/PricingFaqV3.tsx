@@ -22,8 +22,11 @@ const FAQS = [
   {
     qEn: 'Can I try Alfanumrik for free before upgrading?',
     qHi: 'क्या मैं अपग्रेड करने से पहले Alfanumrik मुफ़्त में आज़मा सकता हूँ?',
-    aEn: 'Yes! The Explorer plan is completely free with 5 Foxy chats and 5 quizzes per day across 2 subjects. No credit card required. Upgrade anytime when you need more.',
-    aHi: 'हाँ! Explorer प्लान 2 विषयों में प्रतिदिन 5 Foxy चैट और 5 क्विज़ के साथ पूरी तरह मुफ़्त है। क्रेडिट कार्ड की ज़रूरत नहीं। जब ज़रूरत हो तब अपग्रेड करें।',
+    // SUBJECT-COUNT COPY FIX (2026-08-11): "across 2 subjects" removed. Every
+    // plan grants every subject code since migration 20260814000018, so the
+    // free tier is not subject-limited — the limits are chats and quizzes.
+    aEn: 'Yes! The Explorer plan is completely free with 5 Foxy chats and 5 quizzes per day, in both Mathematics and Science. No credit card required. Upgrade anytime when you need more.',
+    aHi: 'हाँ! Explorer प्लान पूरी तरह मुफ़्त है — प्रतिदिन 5 Foxy चैट और 5 क्विज़, गणित और विज्ञान दोनों में। क्रेडिट कार्ड की ज़रूरत नहीं। जब ज़रूरत हो तब अपग्रेड करें।',
   },
   {
     qEn: 'How does the annual billing work?',

@@ -39,6 +39,8 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { RESUME_MAX_AGE_MS, resolveSessionMode } from '../quiz/resume';
+import { isResumeBlockedByImmediateFeedback } from '../quiz/resume-gate';
 import type {
   StudentState,
   StudentStateBuilder,
@@ -78,6 +80,28 @@ interface QuizSessionRow {
   total_answered: number | null;
   started_at: string | null;
   is_completed: boolean | null;
+}
+
+/**
+ * One in-flight quiz, derived from the server-owned per-question snapshot
+ * (`quiz_session_shuffles`) rather than from `quiz_sessions`.
+ *
+ * PHASE 4 FIX — `quiz_sessions` cannot express "mid-quiz". `start_quiz_session`
+ * writes NO `quiz_sessions` row (verified in the RPC body, latest definition
+ * 20260801100900); the row is INSERTed for the first time by
+ * `submit_quiz_results_v2`, already `is_completed = true`. So the
+ * `is_completed = false` probe below could only ever match legacy/foreign rows,
+ * and `live.kind === 'in_quiz'` — the thing the whole `resume_in_progress`
+ * branch keys off — was effectively unreachable for a real in-flight quiz.
+ * The snapshot table IS written at session start and carries a durable
+ * per-question answer record, so it is the honest source for "there is a quiz
+ * in progress".
+ */
+interface OpenQuizSnapshotRow {
+  session_id: string;
+  question_id: string;
+  student_answered_at: string | null;
+  created_at: string | null;
 }
 
 interface FoxySessionRow {
@@ -163,6 +187,18 @@ export interface BuilderOptions {
    * phase). Pure projection — does not write to DB.
    */
   consentDefaults?: StudentState['consent'];
+  /**
+   * The `ff_quiz_v2` resume interlock, injected so tests can pin both the
+   * "flag on → no card" and "flag off → card" halves without a live flag
+   * service. Defaults to the real FAIL-CLOSED reader; see
+   * `packages/lib/src/quiz/resume-gate.ts` for why undetermined means refuse.
+   *
+   * Returns true when the resume card must NOT be offered.
+   */
+  isResumeBlocked?: (ctx: {
+    userId?: string;
+    roles?: string[];
+  }) => Promise<boolean>;
 }
 
 export function createStudentStateBuilder(
@@ -174,6 +210,13 @@ export function createStudentStateBuilder(
     parentLinkVerified: false,
     analyticsConsent: true,
   };
+  const isResumeBlocked =
+    opts.isResumeBlocked ??
+    (ctx =>
+      isResumeBlockedByImmediateFeedback({
+        ...ctx,
+        environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
+      }));
 
   return async function buildStudentState(
     authUserId: string,
@@ -205,6 +248,7 @@ export function createStudentStateBuilder(
       masteryRes,
       openQuizRes,
       activeFoxyRes,
+      latestSnapshotRes,
       guardiansRes,
       tenantModulesRes,
     ] = await Promise.all([
@@ -229,6 +273,16 @@ export function createStudentStateBuilder(
         .eq('student_id', student.id)
         .order('last_active_at', { ascending: false })
         .limit(1),
+      // Newest quiz snapshot row → the candidate in-flight session id. One
+      // indexed row (idx_quiz_session_shuffles_student is (student_id,
+      // created_at DESC)); the follow-up reads below only run when this
+      // candidate is fresh, so the idle case costs exactly one extra row.
+      sb
+        .from('quiz_session_shuffles')
+        .select('session_id, question_id, student_answered_at, created_at')
+        .eq('student_id', student.id)
+        .order('created_at', { ascending: false })
+        .limit(1),
       sb
         .from('guardian_student_links')
         .select('parent_auth_user_id, verified_at')
@@ -242,8 +296,28 @@ export function createStudentStateBuilder(
     ]);
 
     const masteryRows = (masteryRes.data ?? []) as MasteryRow[];
-    const openQuiz = (openQuizRes.data?.[0] ?? null) as QuizSessionRow | null;
+    const legacyOpenQuiz = (openQuizRes.data?.[0] ?? null) as QuizSessionRow | null;
     const activeFoxy = (activeFoxyRes.data?.[0] ?? null) as FoxySessionRow | null;
+
+    // Resumable in-flight quiz (see OpenQuizSnapshotRow). Best-effort: any
+    // failure degrades to "no live quiz", never a thrown builder.
+    let openQuiz = legacyOpenQuiz;
+    try {
+      const resumable = await resolveResumableQuiz(
+        sb,
+        student.id,
+        (latestSnapshotRes.data?.[0] ?? null) as OpenQuizSnapshotRow | null,
+        now(),
+        // The person who will TAP the card is the student this state belongs
+        // to — the builder resolves `students` by `auth_user_id`, so the
+        // subject and the actor are the same person by construction. Their
+        // real role for flag scoping is 'student'.
+        () => isResumeBlocked({ userId: authUserId, roles: ['student'] }),
+      );
+      if (resumable) openQuiz = resumable;
+    } catch {
+      // Peripheral read — keep the legacy probe's answer.
+    }
     const guardians = (guardiansRes.data ?? []) as GuardianRow[];
     const tenantModules = (tenantModulesRes.data ?? []) as TenantModuleRow[];
 
@@ -378,6 +452,117 @@ function rollupMastery(rows: MasteryRow[]): SubjectMastery[] {
     });
   }
   return subjects.sort((a, b) => a.subjectCode.localeCompare(b.subjectCode));
+}
+
+/**
+ * Turn the newest quiz-snapshot row into a `QuizSessionRow`-shaped "there is
+ * a quiz in progress" signal, or null when there is nothing to resume.
+ *
+ * Deliberately returns the SAME shape the legacy `quiz_sessions` probe returns
+ * so `deriveLiveState` stays untouched — this adds a source, not a branch.
+ *
+ * A session counts as resumable only when ALL of:
+ *   1. its snapshot is younger than RESUME_MAX_AGE_MS (a day-old "continue"
+ *      card is worse than a fresh start),
+ *   2. the student has confirmed at least one answer (otherwise there is
+ *      literally no progress to preserve — start fresh),
+ *   3. it has NOT already been graded. `submitQuizResults` passes the server
+ *      session id as the submit RPC's idempotency key, so a `quiz_sessions`
+ *      row carrying that key is the definitive "already submitted" marker.
+ *      Without this check the Today CTA would keep offering to resume a quiz
+ *      the student already finished, and tapping it would walk them into a
+ *      session the submit RPC can only ever replay.
+ *   4. the questions carry a positive chapter number — `LiveSessionState`'s
+ *      `in_quiz` variant requires one, and the resume CTA copy is
+ *      chapter-anchored.
+ *   5. THE RESUME ROUTE WOULD ACTUALLY HONOUR IT. Two gates were previously
+ *      enforced ONLY on the route that consumes the card, never on the
+ *      producer, so the product offered "Continue where you stopped" and then
+ *      refused it — and the client's fail-soft path shows no message, so the
+ *      student silently landed on the setup screen with their progress
+ *      apparently gone. That is exactly the defect Phase 4 existed to kill.
+ *      Both now gate the CARD:
+ *        (a) the `ff_quiz_v2` immediate-feedback interlock, read fail-closed
+ *            (undetermined → suppress) via `isResumeBlockedByImmediateFeedback`;
+ *        (b) the INSTRUMENT. An `exam` session is not resumable at all (a
+ *            timed test is taken in one sitting), and a session whose
+ *            `session_mode` is unrecorded cannot be proven not to have been
+ *            one, so both suppress the card. Migration 20260814000021 added
+ *            the column; the resume route returns `exam_not_resumable` /
+ *            `mode_unknown` for the same two cases.
+ *      RULE: never promise what you will refuse.
+ *
+ * Read-only. No writes, no scoring, no XP.
+ */
+async function resolveResumableQuiz(
+  sb: SupabaseClient,
+  studentId: string,
+  latest: OpenQuizSnapshotRow | null,
+  now: Date,
+  isBlockedByImmediateFeedback: () => Promise<boolean>,
+): Promise<QuizSessionRow | null> {
+  if (!latest?.session_id) return null;
+
+  const startedAt = latest.created_at ?? null;
+  if (startedAt) {
+    const t = Date.parse(startedAt);
+    if (Number.isFinite(t) && now.getTime() - t > RESUME_MAX_AGE_MS) return null;
+  }
+
+  const rowsRes = await sb
+    .from('quiz_session_shuffles')
+    .select('question_id, student_answered_at, session_mode')
+    .eq('session_id', latest.session_id)
+    .eq('student_id', studentId);
+  const rows = (rowsRes.data ?? []) as Array<{
+    question_id: string;
+    student_answered_at: string | null;
+    session_mode?: string | null;
+  }>;
+  if (rows.length === 0) return null;
+
+  const answered = rows.filter(r => r.student_answered_at !== null).length;
+  if (answered === 0) return null;
+
+  // (5b) INSTRUMENT GATE — cheap, local, and decided before any further IO.
+  // `resolveSessionMode` returns null for both "no row carries a mode" and
+  // "the value is not one we recognise"; neither is evidence the attempt was
+  // untimed, so both suppress.
+  const mode = resolveSessionMode(rows);
+  if (mode === null || mode === 'exam') return null;
+
+  // (5a) FLAG INTERLOCK — the resume route would refuse this session, so the
+  // card must never be offered. Fail-closed inside the gate.
+  if (await isBlockedByImmediateFeedback()) return null;
+
+  const gradedRes = await sb
+    .from('quiz_sessions')
+    .select('id')
+    .eq('student_id', studentId)
+    .eq('idempotency_key', latest.session_id)
+    .limit(1);
+  if ((gradedRes.data ?? []).length > 0) return null;
+
+  const metaRes = await sb
+    .from('question_bank')
+    .select('subject, chapter_number')
+    .eq('id', rows[0].question_id)
+    .maybeSingle();
+  const meta = (metaRes.data ?? null) as {
+    subject: string | null;
+    chapter_number: number | null;
+  } | null;
+  if (!meta?.subject || !meta.chapter_number || meta.chapter_number <= 0) return null;
+
+  return {
+    id: latest.session_id,
+    subject: meta.subject,
+    chapter_number: meta.chapter_number,
+    total_questions: rows.length,
+    total_answered: answered,
+    started_at: startedAt,
+    is_completed: false,
+  };
 }
 
 function deriveLiveState(

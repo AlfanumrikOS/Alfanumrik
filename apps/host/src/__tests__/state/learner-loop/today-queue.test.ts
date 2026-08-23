@@ -316,7 +316,7 @@ describe('resolveTodayQueue — cold-start short-circuit', () => {
 // ── (e) live-resume exception + de-dup ───────────────────────────────
 
 describe('resolveTodayQueue — live-resume exception', () => {
-  it('in_quiz live → resume url is /quiz and primary differs from raw first-match', () => {
+  it('in_quiz live → resume url carries the session id and primary differs from raw first-match', () => {
     const live: LiveSessionState = {
       kind: 'in_quiz',
       quizSessionId: '55555555-5555-5555-5555-555555555555',
@@ -332,7 +332,11 @@ describe('resolveTodayQueue — live-resume exception', () => {
     const q = resolveTodayQueue(state, aug, { now: WEEKDAY_NOON_IST });
 
     expect(q.primary.kind).toBe('resume_in_progress');
-    expect(q.primary.url).toBe('/quiz');
+    // PHASE 4 FIX (restored during b00b9c872 forensic recovery): a bare
+    // `/quiz` lands on the setup screen and starts a new quiz, defeating the
+    // resume CTA. See resolve-next-action.ts's resumeActionFromLive doc and
+    // src/__tests__/quiz/resume-wiring.test.ts for the behavioural pin.
+    expect(q.primary.url).toBe(`/quiz?session=${live.quizSessionId}`);
     // primary differs from raw first-match (the only case this is allowed).
     expect(q.primary).not.toEqual(raw);
     // branch still reflects the raw resolver pick.

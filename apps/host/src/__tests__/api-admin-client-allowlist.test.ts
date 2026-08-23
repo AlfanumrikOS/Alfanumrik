@@ -324,7 +324,81 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // (authorizeRequest) BEFORE any minting; signed URLs carry a 300s TTL; the
 // object path shape is validated; no PII is logged. Ledger entry added in the
 // same change in scripts/admin-client-allowlist.json.
-const EXPECTED_COUNT = 271;
+// Phase 4 quiz session resume (2026-08-11, architect-reviewed, recorded
+// 2026-08-23 during b00b9c872 reconciliation): 271 -> 272 for NEW route
+// src/app/api/quiz/session/[sessionId]/progress/route.ts. Service-role is
+// REQUIRED, not convenience: quiz_session_shuffles has RLS ENABLED with
+// exactly THREE policies and ALL THREE are FOR SELECT (student/parent/
+// teacher) — there is NO INSERT/UPDATE/DELETE policy at all, and migration
+// 20260814000020 made that denial explicit at the privilege layer too
+// (post-condition 4d asserts `authenticated` retains no write privilege). An
+// RLS-scoped client issuing this route's UPDATE would be silently zero-rowed
+// — indistinguishable from the route's own legitimate first-write-wins
+// 'saved:false' no-op, i.e. a silent durability failure, not a security win.
+// Bounded surface: ONE table, ONE write verb (UPDATE) touching only
+// student_selected_displayed_index / student_time_spent_seconds /
+// student_answered_at / session_mode — NEVER shuffle_map, options_snapshot,
+// correct_answer_index_snapshot, integrity_hash or options_version_at_serve.
+// Auth gate: requireOwnedSession() runs authorizeRequest('quiz.attempt')
+// FIRST, then an owner-vs-session studentId probe (404 unknown, 403
+// mismatch). RATCHET-DOWN PATH: an auth.uid()-anchored SECURITY DEFINER
+// persist_quiz_answer_progress RPC, after which the route moves to the
+// RLS-scoped client and this entry is pruned. Pinned by REG-213 (P8/P9).
+// Teacher worksheet answer key (2026-08-11, architect-reviewed, recorded
+// 2026-08-23 during b00b9c872 reconciliation): 272 -> 273 for NEW route
+// src/app/api/teacher/worksheets/answer-key/route.ts, created expressly to
+// UNBLOCK the question_bank answer-key column ACL. Service-role is
+// REQUIRED, not convenient: question_bank.correct_answer_index is today
+// SELECTable by every signed-in user (students, parents and teachers all
+// authenticate as the SAME `authenticated` Postgres role), so neither RLS
+// nor a column ACL can distinguish "teacher printing an answer key" from
+// "student reading the key mid-quiz". Bounded surface: ONE table, ONE verb
+// (SELECT), READ-ONLY, over exactly six columns. Gated by
+// authorizeRequest('worksheet.create') — an EXISTING permission already
+// granted to the teacher role by 20260612123200 — plus a second,
+// content-side tenancy gate (resolveTeacherContentScope) that restricts the
+// read to (subject, grade) pairs the caller actually teaches. RATCHET-DOWN
+// PATH: an auth.uid()-anchored SECURITY DEFINER get_worksheet_answer_key
+// RPC, after which the route moves to the RLS-scoped client and this entry
+// is pruned. Pinned by REG-213 (P8/P9).
+// Foxy dimension feedback (recorded 2026-08-23, architect-reviewed during
+// b00b9c872 reconciliation — NOT yet independently reviewed by
+// ai-engineer/backend, flagged for follow-up): 273 -> 274 for NEW route
+// src/app/api/foxy/feedback/dimension/route.ts (Phase A.2 dimension-level
+// Foxy feedback). POST-only, gated by authorizeRequest('progress.view_own',
+// { requireStudentId: true }) BEFORE any DB access; performs an explicit
+// ownership check on foxy_chat_messages BEFORE invoking the
+// record_message_dimension_feedback RPC — the route's own header comment
+// states the RPC's auth.uid() guard does not fire under a service-role JWT,
+// so this ownership check is the actual trust boundary. Recorded
+// provisionally; see scripts/admin-client-allowlist.json for the full note.
+// student/profile regression-and-fix (recorded 2026-08-23, backend, during
+// b00b9c872 reconciliation): net no-op at 274. Commit b00b9c872 silently
+// reverted src/app/api/v2/student/profile/route.ts from the 2026-08-10
+// RLS-scoped implementation (createSupabaseRouteClient + the learners
+// repository composition root) back to a getSupabaseAdmin()-based one, as an
+// unrelated side effect of a stale-base merge — briefly recorded in the JSON
+// ledger as a flagged, non-approved 274 -> 275 entry so the guard would not
+// fail opaquely. That regression is now fixed: the route has been restored
+// (byte-identical to origin/main) to the RLS-scoped implementation, so no
+// service-role client remains in it, and the ledger entry has been pruned in
+// the same change (275 -> 274). See scripts/admin-client-allowlist.json.
+// Phase A.3 AI quality dashboard (2026-08-23, architect-reviewed): 274 -> 275
+// for NEW route src/app/api/super-admin/ai-quality/route.ts. Service-role is
+// justified by the same super-admin-by-design pattern as the already-ledgered
+// siblings foxy-quality/route.ts and foxy-report/[studentId]/route.ts: a
+// read-only, cross-student aggregate over 5 tables (foxy_quality_scores,
+// ops_events filtered to category='ai', foxy_message_feedback,
+// foxy_message_dimension_feedback, foxy_chat_messages) over the trailing 30
+// days, feeding the AiQualityData contract consumed by
+// super-admin/ai-quality/page.tsx. No RLS-scoped client can serve this: the
+// read spans ALL students, not the caller's own row. Gated by
+// authorizeRequest(request, 'super_admin.access') — the SAME existing
+// permission the sibling routes use; no new RBAC. Read-only, no writes/RPCs;
+// response is counts/averages/enum-like keys only, never message text,
+// `reason` free text, or student identifiers (P13). See
+// scripts/admin-client-allowlist.json for the full note.
+const EXPECTED_COUNT = 275;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

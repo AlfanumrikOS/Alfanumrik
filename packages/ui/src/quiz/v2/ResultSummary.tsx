@@ -98,7 +98,10 @@ export interface ResultSummaryQuestion {
   question_hi: string | null;
   explanation: string | null;
   explanation_hi: string | null;
-  bloom_level: string;
+  /** `question_bank.bloom_level` VERBATIM — a NULLABLE column. The consumer
+   *  below already applies `|| 'remember'`; the declaration simply used to
+   *  disagree with runtime. */
+  bloom_level: string | null;
   chapter_number: number | null;
 }
 

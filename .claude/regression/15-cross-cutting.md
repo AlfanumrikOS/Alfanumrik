@@ -545,6 +545,94 @@ that batch lands first, the next free id moves to REG-378).
 
 ---
 
+## Phase 4 — `/today` as a prioritized action queue (2026-08-11)
+
+Commit `b008c20c7`. `/today` is the DEFAULT student route — the first screen
+after login. It was rebuilt in place (no V3 fork) as a prioritized action
+queue, and the same commit added the surface's FIRST analytics events (it had
+zero). The quiz-resume half of the same commit is catalogued in
+`03-quiz-integrity.md` (REG-380..REG-387).
+
+The unifying property of every entry below is **honesty under uncertainty**:
+each pins a case where the previous surface asserted something it did not
+know — that the student had finished their day, that an activity takes 7
+minutes, that they had 0 unread updates, that a machine reason string was
+learner-facing copy.
+
+**Verification (2026-08-11):** re-run green from `apps/host` in the same
+8-file vitest pass recorded in `03-quiz-integrity.md` — `today-page-states`
+39 passed, `reason-copy` 42 passed, `TodayHomeV2` 54 passed; **0 skipped in
+all three.**
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-388 | `today_content_tree_and_three_item_plan_cap` | The loaded surface renders EXACTLY six blocks in ONE fixed DOM order — greeting → primary → plan → reminder → progress → foxy — asserted with `compareDocumentPosition`, not by index. Nothing sits above the primary card except the greeting (every direct child before `today-primary` is enumerated and must equal `['today-greeting']`), and no achievement / leaderboard / badge / `rank #` / `level N` hero appears anywhere (the streak survives ONLY inside the compact progress statement, block 5). **HARD CAP OF THREE:** a queue of six items renders exactly 3 plan rows, with `MAX_PLAN_ITEMS === 3` pinned as the exported constant so the cap cannot be raised silently in the component. The plan renders in SERVER order and is never re-sorted client-side; the block is omitted entirely when the queue holds only the primary. Exactly ONE primary CTA exists on the screen (`getAllByTestId('today-primary-cta')` has length 1) even with a 3-item queue, and it navigates to the resolver's own deep link. Exactly ONE reminder slot, resolved by urgency (exam > streak-at-risk > unread), and the streak reminder deliberately carries no competing CTA. A11y floor: 44px minimum tap target on every interactive control, labelled primary/plan landmarks, the plan as a real list, every decorative glyph `aria-hidden`. | `apps/host/src/__tests__/components/today/TodayHomeV2.test.tsx` | E | P7 (via REG-389), UX contract |
+| REG-389 | `today_reason_copy_completeness_self_extending` | The resolver emits opaque MACHINE reasons; `todayReasonCopy` is the ONLY bridge to something a child reads, and both halves are pinned. **Completeness is SELF-EXTENDING — this is the load-bearing property:** the reason list is EXTRACTED FROM SOURCE at test time by parsing every `reason: 'x' \| 'y';` literal out of `packages/lib/src/state/learner-loop/types.ts`, not hardcoded in the test. Adding a 13th resolver branch without adding a phrase FAILS the suite instead of shipping a card with no justification. The extractor is itself guarded against silent breakage (`expect(reasons.length).toBeGreaterThanOrEqual(12)` plus three spot-checked literals), so a broken regex cannot vacuously pass. Measured at this commit: exactly **12** reasons — `decay_above_threshold`, `in_progress_lesson`, `live_session`, `month_end_default`, `no_signals_yet`, `reviews_due_today`, `reviews_stacking`, `sunday_default`, `teacher_assigned`, `todays_zpd`, `unstarted_chapter_available`, `weakest_topic_practice`. Every one maps (`it.each`) to one of the 6 approved EN phrases, to a NON-EMPTY Hindi phrase that is Devanagari (`/[ऀ-ॿ]/`) and is NOT the English string echoed back (P7), and never to the machine reason itself. **An UNKNOWN reason returns `null` → renders NO chip, never the raw key** — pinned both at the copy function and on the rendered component. The 6th approved phrase ("Prepare for your test") is proven to come from the real exam schedule and from no resolver reason, so it is not fabricated from learner state. **No-jargon guard:** every `en:`/`hi:` literal in `packages/lib/src/today/copy.ts` (sanity floor: >40 strings found) is word-boundary-checked against IRT, BKT, DKT, CME, SRS, ZPD, theta, decay, probability, confidence, fatigue, cognitive load; and all 11 rendered item types × both languages are re-checked on the DOM in `TodayHomeV2`, which also proves the raw `todays_zpd` never prints. | `apps/host/src/__tests__/lib/today/reason-copy.test.ts`; `apps/host/src/__tests__/components/today/TodayHomeV2.test.tsx` (`no internal vocabulary on screen`, `renders no reason chip at all for a reason the copy table does not know`) | E | **P7** |
+| REG-390 | `today_no_fabricated_metrics` | Numbers with no reliable source are OMITTED, not invented. (a) **`estMinutes`**: the minutes badge is NOT rendered for a type whose estimate comes from `map-action`'s static per-type preset (authoring-time placeholders, not measurements); it IS rendered for `srs_due`, whose estimate is derived from a real `dueCount`; and it disappears again when `srs_due` arrives with no `dueCount`. (b) **Unread count**: a `null` unread count renders NO reminder — never a "0 updates" reminder. (c) **No weekly aggregate is claimed**: the progress statement is asserted to match none of `/this week\|quizzes this week\|% this week/i`, because no source for one exists. (d) The XP clause is omitted entirely at 0 XP and labelled explicitly as a TOTAL (not "earned today") when present; "No streak yet" is stated honestly at streak 0. (e) The primary card omits subject and concept rather than inventing them when absent. **Documented gap — clause (b) is `P` at the PAGE layer:** the component-level behaviour (null → no reminder) is genuinely asserted, but the page-level test that claims to pin "passes null for the unread count when the notifications read FAILED, never 0" asserts `expect(H.notifications.data).toBeUndefined()` — its own fixture — because the `next/dynamic` stub swallows props. Nothing currently fails if `/today`'s page maps a failed notifications read to `0` before handing it down. See the follow-up below. | `apps/host/src/__tests__/components/today/TodayHomeV2.test.tsx` (`estimated effort — shown only when reliable`, `renders NO reminder when the unread count never arrived (null)…`, `claims no weekly aggregate it does not have`, `progress statement`, `omits the subject and concept rather than inventing them`) | **P** (a,c,d,e = E; b = E at component, P at page) | honesty contract |
+| REG-391 | `today_state_machine_locked_state_distinct` | `/today` lands in exactly ONE honest state with at least one working control, whatever happens to the network, the flag or the learner model. **The `locked` state is the real fix and the reason this entry exists:** `ff_today_home_v1` gates BOTH the page (client flag → redirect) and `GET /api/v2/today` (server flag → 404 → `useTodayQueue` resolves `null`), and those two reads can disagree. The null case used to fall into the empty branch and render "You're all caught up ✅" — telling a student they had finished their day when the surface had in fact been switched off. It is now its own state: copy reads "Your plan is turned off right now" + "Nothing is lost", is asserted to match NEITHER `/caught up\|all done/i`, is proven DISTINCT from both `today-empty` and `today-complete`, and offers a working way out (`href="/dashboard"`). The other branches are likewise distinct and pinned: gate-loading (auth or flags resolving; emits NO state telemetry before the gate resolves), logged-out → `replace('/login')`, flag-off → `replace('/dashboard')`, loading (skeleton + `role="status"` "Loading your plan"), recoverable error (`role="alert"`, "Nothing has been lost", a retry that actually calls `mutate()`, and NEVER `today-complete`/`today-empty`), offline (reported as offline rather than a generic error when there is no connection AND no cache; a cached plan still serves rather than blanking; reacts to a post-mount `offline` event), empty vs complete (`practicedToday` false vs true → two different screens, both offering an action), and insufficient-evidence ("We don't know your level yet" — distinct from empty, still offering the one action that fixes it, and NOT fired once `masterySubjectCount > 0`). **Exclusivity is pinned mechanically:** across 6 scenarios the set of the 9 state roots present in the DOM must have length exactly 1, and at most one `today_state_shown` event may fire per render. All five copy-bearing states re-render in Hindi with Devanagari present (P7). | `apps/host/src/__tests__/today/today-page-states.test.tsx` | E | **P7**, honesty contract |
+| REG-392 | `today_analytics_pii_free` | `/today` emitted ZERO events before this commit — there was no evidence on which to ramp its own flag. Seven event types were added (`today_viewed`, `today_primary_cta_clicked`, `today_plan_item_clicked`, `today_foxy_clicked`, `today_reminder_clicked`, `today_state_shown`, `today_retry_clicked`), and P13 requires every property to be a closed-vocabulary enum or a count. Pinned: `today_viewed` fires exactly ONCE per resolved queue (a re-render with the same `resolvedAt` does not double-count) with the payload asserted by EXACT equality to `{branch, primary_type, primary_reason, plan_count, reminder}` plus a `JSON.stringify` negative match proving no chapter title (`Nutrition`), no deep link (`/quiz`), no student id (`stu-`) and no email (`@`); `today_primary_cta_clicked` = `{type, reason}` exactly; `today_plan_item_clicked` = `{type, reason, rank}` exactly (server rank, not a client index); `today_foxy_clicked` = `{has_subject: boolean}` — subject PRESENCE only, never the subject code; `today_state_shown` = `{state}` from a closed 8-value union, emitted for stale/loading/error/empty/complete/locked/offline/insufficient_evidence; `today_retry_clicked` = `{state: 'error'\|'offline'}`. Note `reason` is deliberately the MACHINE reason, not the learner phrase — analytics wants branch identity, and that string is proven (REG-389) never to reach a student. **Documented gap — why this is `P`: `today_reminder_clicked` has NO asserting test.** It is declared in `packages/lib/src/analytics.ts:174` and emitted at `packages/ui/src/today/v2/TodayHomeV2.tsx:517`, and a repo-wide grep finds no third reference. 6 of the 7 new events are pinned; that one is not. | `apps/host/src/__tests__/components/today/TodayHomeV2.test.tsx` (`analytics` describe); `apps/host/src/__tests__/today/today-page-states.test.tsx` (`reportedState()` assertions + `today_retry_clicked` + `today_primary_cta_clicked`) | **P** (6 of 7 events pinned) | **P13**, P7 |
+
+### Follow-ups opened by this section (recorded, not silently dropped)
+
+1. **REG-390 clause (b) — page-layer unread-count plumbing is unpinned.**
+   `today-page-states.test.tsx`'s "passes null for the unread count when the
+   notifications read FAILED, never 0" asserts its own fixture
+   (`expect(H.notifications.data).toBeUndefined()`), not the page's behaviour,
+   because the `next/dynamic` mock replaces `TodayHomeV2` with a stub that
+   discards props. Fix: have the stub record the props it receives and assert
+   `unreadCount === null`. Small, and it turns a tautology into a real pin.
+2. **REG-392 — `today_reminder_clicked` has no test.** Add a click assertion
+   on the reminder row for both the `exam` and `unread` variants; that closes
+   the entry to `E`.
+3. **REG-385 (in `03-quiz-integrity.md`) is partly source-text.** The `/quiz`
+   URL contract, the `mode=practice` branch and the always-on persistence call
+   are pinned by reading `page.tsx` as a string. A Playwright spec that
+   deep-links `/quiz?session=<id>` and `/quiz?mode=practice` against a seeded
+   session would be strictly stronger and is not part of this pass.
+
+**Catalog impact of this section: 5 entries added (REG-388..REG-392). See
+`00-header.md` for the reconciled total — this shard's own running counters
+above are historical and are deliberately not re-derived here.**
+
+---
+
+## `/today` reason honesty — the deliberately-silent set (2026-08-11)
+
+The third of the four Phase 4 blocker fixes in commit `6a67ca8ed`. Its three
+siblings are in `03-quiz-integrity.md` (REG-393, REG-394, REG-396) together
+with the two P0 submission defects (REG-397, REG-398).
+
+**Verification (2026-08-11), real output:** re-run from `apps/host` in the same
+pass as the whole security + quiz + today sweep —
+`Test Files 36 passed (36) | Tests 815 passed | 6 skipped (821)`; the 6 skips
+are REG-380's live-DB probes, none of them in this entry's file.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-395 | `today_enumerated_silent_reason_set_both_directions` | Three reason→copy mappings ASSERTED THINGS THE SYSTEM NEVER DETERMINED, and are now deliberately silent (`null` → the renderer omits the chip; it already handled a falsy reason). (a) `sunday_default` → *"Ready for the next concept"* was decided by `isSundayIst()` **and nothing else**, on a Curiosity Dive that sits OUTSIDE the concept sequence — telling a child we assessed them as ready when we looked at a calendar. (b) `month_end_default` → *"Review due"* was decided by `isMonthEndDayIst()`, on a monthly Synthesis where nothing is due and nothing is reviewed; it also COLLIDED with `today.item.srs_due.label` ("Reviews due"), actively misleading a student who had learned that phrase means flashcards. (c) `no_signals_yet` → silent because it fires precisely BECAUSE we know nothing about the learner, so any readiness claim from zero evidence contradicts its own card ("Find your starting point / a quick diagnostic"). All three cards are self-explanatory without a chip. **The test is NOT weakened — this is the load-bearing part.** REG-389's contract was "every resolver reason maps to an approved phrase"; a silent mapping would have satisfied a naive relaxation to "phrase OR null", which would have let ANY future reason go silent unnoticed. It instead asserts **"approved phrase OR a member of an ENUMERATED silent set"**, pinned in BOTH directions against an independent literal list held in the test: every enumerated reason MUST be silent in production, AND every non-enumerated resolver reason MUST NOT be silent, AND every enumerated reason must be a REAL resolver reason (not a stale literal). So a 13th resolver branch satisfies neither arm and FAILS, and silencing a fourth reason in production without a deliberate edit here also FAILS. Silence is symmetric across languages (`a silent reason renders nothing in BOTH languages` — no half-suppressed chip, P7), the two dishonest phrases are pinned ABSENT from the copy table, and REG-389's self-extending source-extraction of the reason set is preserved underneath. | `apps/host/src/__tests__/lib/today/reason-copy.test.ts` (`the deliberate no-chip set is exactly the three calendar-driven reasons`, the two `it.each` completeness sweeps EN + HI, `a silent reason renders nothing in BOTH languages`, `the two dishonest mappings are gone: no reason claims readiness or a due review from a DATE`); `packages/lib/src/today/copy.ts` (`isSilentTodayReason`) | E | **P7**, honesty contract |
+
+**Relationship to REG-389:** REG-389 remains valid and is NOT superseded — its
+completeness property (the reason list is extracted from source at test time,
+so a new resolver branch with no phrase fails the suite) is what makes REG-395
+meaningful. REG-395 narrows the ACCEPTED outcome of that sweep from "a phrase"
+to "a phrase, or one of exactly three enumerated silences". Do not merge the two
+entries: deleting REG-395's enumeration would silently re-widen REG-389.
+
+---
+
+> **Restored + renumbered 2026-08-23 (launch-readiness catalog reconciliation).**
+> Filed as REG-380/381/382 on 2026-08-11; deleted wholesale by `b00b9c872`'s
+> stale-base merge resolution while the parallel Phase 4 lineage's own
+> REG-380/381/382 (`quiz_session_shuffles_answer_key_column_acl` /
+> `resume_payload_answer_key_non_disclosure` /
+> `p3_anticheat_survives_resume_both_directions`, `03-quiz-integrity.md`) was
+> kept — a direct 3-way id collision. Restored verbatim from `origin/main` and
+> renumbered to REG-400/401/402 (`+20`, same shift as the rest of this
+> collision range — see `00-header.md`). Re-verified 2026-08-23 — see the
+> per-entry note below the table for exact current pass counts (one
+> regression found: REG-400's file has 1 new failure out of 23). Do not
+> re-use REG-380/381/382.
+
 ## Leaderboard SEV1 batch — envelope seam, band totality, no client-side cross-student reads — 2026-08-11
 
 Three defects took the whole `/leaderboard` page down or made it lie, and all three
@@ -577,15 +665,30 @@ reads ERRORED. They succeeded and returned almost nothing.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-380 | `leaderboard_me_envelope_seam` | The page and the route are tested TOGETHER, not each against a fixture: the page's `fetch` for `/api/v1/leaderboard/me` is answered by invoking the ROUTE's real exported `GET`, and `PercentileBandCard` is NOT mocked. Pins: (a) the real envelope renders a card carrying the route's OWN band, incl. the `bandFromPercentile()`-derived band when the RPC omits one; (b) the route emits exactly `{ success, data }` and `body.band` is `undefined` while `body.data.band` is not — the defect in one assertion; (c) fourteen degenerate payloads (`success:false`, `data:null`, `{}`, `null`, `[]`, string body, truncated envelope, `data` as a string, band as object/number/unknown-label, non-2xx, non-JSON, network rejection) each render NO card, NO boundary fallback and NO throw; (d) a FLAT un-enveloped body — the shape the page used to assume — produces no card, so reverting the fetcher to `res.json()` goes red; (e) blast radius: all six tab controls stay mounted in both the healthy and the degenerate case, i.e. the boundary never trips. Verified to FAIL (5 tests) against a working tree with the fetcher reverted. | `apps/host/src/__tests__/app/leaderboard-band-envelope-seam.test.tsx` (23 tests) | E | P7, P13 |
-| REG-381 | `percentile_band_union_totality` | TOTALITY + PRODUCER DRIFT. All seven bands (top_1, top_10, top_25, top_50, middle, bottom_25, keep_going) each resolve to THEMSELVES (asserted via the rendered `data-band`, so a band with no copy row resolves to the `keep_going` fallback and fails), carry non-empty EN copy, carry Devanagari (`/[ऀ-ॿ]/`) HI copy in both heading and body, differ between EN and HI, produce seven DISTINCT headings, and expose no absolute rank (`/#\d+/`, U10). Totality on hostile input: `undefined`, `null`, empty string, unknown label, number, object, array and the three prototype keys (`toString`, `constructor`, `__proto__`) all render the fallback without throwing. DRIFT GUARD — the declared union is asserted a SUPERSET of BOTH producers, read from source because neither is importable: the TS `bandFromPercentile()` in the me route (thresholds re-derived from its own source, then swept across percentiles 0..100 plus each threshold ±0.1) and the SQL `CASE` in migration `20260813000006` (the only emitter of `top_50`). Both extractors carry explicit non-vacuity assertions, plus a negative control proving the guard can fail. Verified to FAIL (3 tests) with the `top_1` copy row deleted. | `apps/host/src/__tests__/ui/percentile-band-card-totality.test.tsx` (46 tests) | E | P7 |
-| REG-382 | `leaderboard_no_client_cross_student_reads` | The `/leaderboard` page never calls `supabase.from()` for any of the four cross-student tables — `performance_scores`, `score_history`, `challenge_streaks`, `student_titles` — asserted against a spy on the client that is left in place PRECISELY so the absence is observable. Rankings render the SERVER's rank (a 4-row board with the caller at #4 renders `#4`, not `#1`, and the caller holds no medal) and the board is labelled from the server's `ranked_by`, never "Performance Score". Own-scoped replacements pinned separately: `/titles` (session-derived `student_id`, `?student_id` ignored, 7-field whitelist, 500-not-empty-list on read failure), `/streaks` (peer whitelist EXACTLY rank / student_id / name / grade / current_streak / badges; a peer's `best_streak` never on the wire while the caller's own is; badges filtered to those already implied by the exposed streak, unknown ids dropped fail-closed; threshold applied server-side; grade coerced to STRING per P5; students read scoped `.in(ids)`, never a full-table scan), `/my-class` (membership from `class_students`, never `students.class_id`; flag-OFF 404 vs `enrolled:false` vs `enrolled:true,items:[]` vs 5xx are FOUR distinguishable outcomes). All three routes are `Cache-Control: private` only. | `apps/host/src/__tests__/app/leaderboard-data-load-error.test.tsx` (25 tests) + `apps/host/src/__tests__/api/v1/leaderboard/own-scoped-routes.test.ts` (33 tests) + `e2e/ui-error-states.spec.ts` (re-pointed at `/api/v1/leaderboard`) | E | P5, P8, P13 |
+| REG-400 | `leaderboard_me_envelope_seam` | The page and the route are tested TOGETHER, not each against a fixture: the page's `fetch` for `/api/v1/leaderboard/me` is answered by invoking the ROUTE's real exported `GET`, and `PercentileBandCard` is NOT mocked. Pins: (a) the real envelope renders a card carrying the route's OWN band, incl. the `bandFromPercentile()`-derived band when the RPC omits one; (b) the route emits exactly `{ success, data }` and `body.band` is `undefined` while `body.data.band` is not — the defect in one assertion; (c) fourteen degenerate payloads (`success:false`, `data:null`, `{}`, `null`, `[]`, string body, truncated envelope, `data` as a string, band as object/number/unknown-label, non-2xx, non-JSON, network rejection) each render NO card, NO boundary fallback and NO throw; (d) a FLAT un-enveloped body — the shape the page used to assume — produces no card, so reverting the fetcher to `res.json()` goes red; (e) blast radius: all six tab controls stay mounted in both the healthy and the degenerate case, i.e. the boundary never trips. Verified to FAIL (5 tests) against a working tree with the fetcher reverted. | `apps/host/src/__tests__/app/leaderboard-band-envelope-seam.test.tsx` (23 tests) | **22/23 as of 2026-08-23 — see note below** | P7, P13 |
+| REG-401 | `percentile_band_union_totality` | TOTALITY + PRODUCER DRIFT. All seven bands (top_1, top_10, top_25, top_50, middle, bottom_25, keep_going) each resolve to THEMSELVES (asserted via the rendered `data-band`, so a band with no copy row resolves to the `keep_going` fallback and fails), carry non-empty EN copy, carry Devanagari (`/[ऀ-ॿ]/`) HI copy in both heading and body, differ between EN and HI, produce seven DISTINCT headings, and expose no absolute rank (`/#\d+/`, U10). Totality on hostile input: `undefined`, `null`, empty string, unknown label, number, object, array and the three prototype keys (`toString`, `constructor`, `__proto__`) all render the fallback without throwing. DRIFT GUARD — the declared union is asserted a SUPERSET of BOTH producers, read from source because neither is importable: the TS `bandFromPercentile()` in the me route (thresholds re-derived from its own source, then swept across percentiles 0..100 plus each threshold ±0.1) and the SQL `CASE` in migration `20260813000006` (the only emitter of `top_50`). Both extractors carry explicit non-vacuity assertions, plus a negative control proving the guard can fail. Verified to FAIL (3 tests) with the `top_1` copy row deleted. | `apps/host/src/__tests__/ui/percentile-band-card-totality.test.tsx` (46 tests) | E | P7 |
+| REG-402 | `leaderboard_no_client_cross_student_reads` | The `/leaderboard` page never calls `supabase.from()` for any of the four cross-student tables — `performance_scores`, `score_history`, `challenge_streaks`, `student_titles` — asserted against a spy on the client that is left in place PRECISELY so the absence is observable. Rankings render the SERVER's rank (a 4-row board with the caller at #4 renders `#4`, not `#1`, and the caller holds no medal) and the board is labelled from the server's `ranked_by`, never "Performance Score". Own-scoped replacements pinned separately: `/titles` (session-derived `student_id`, `?student_id` ignored, 7-field whitelist, 500-not-empty-list on read failure), `/streaks` (peer whitelist EXACTLY rank / student_id / name / grade / current_streak / badges; a peer's `best_streak` never on the wire while the caller's own is; badges filtered to those already implied by the exposed streak, unknown ids dropped fail-closed; threshold applied server-side; grade coerced to STRING per P5; students read scoped `.in(ids)`, never a full-table scan), `/my-class` (membership from `class_students`, never `students.class_id`; flag-OFF 404 vs `enrolled:false` vs `enrolled:true,items:[]` vs 5xx are FOUR distinguishable outcomes). All three routes are `Cache-Control: private` only. | `apps/host/src/__tests__/app/leaderboard-data-load-error.test.tsx` (25 tests) + `apps/host/src/__tests__/api/v1/leaderboard/own-scoped-routes.test.ts` (33 tests) + `e2e/ui-error-states.spec.ts` (re-pointed at `/api/v1/leaderboard`) | E | P5, P8, P13 |
+
+### REG-400 — one test now fails (found during 2026-08-23 restoration)
+
+`leaderboard-band-envelope-seam.test.tsx` → `the caller own performance score
+crosses the seam too` now fails with `Unable to find an element with the
+text: 84` (was passing 23/23 when filed 2026-08-11). Not investigated further
+in this pass — this file is outside test-infrastructure/catalog scope — but
+noted here rather than silently claimed as fully green: this could be a
+genuine display-format drift (own score no longer rendered as a bare `84`)
+or an unrelated brittleness in the text matcher; either way it is a real,
+reproducible failure as of 2026-08-23 and should be triaged by
+frontend/assessment. The other 22 tests in the file, and both REG-401/402's
+backing files (`percentile-band-card-totality.test.tsx` 46/46,
+`leaderboard-data-load-error.test.tsx` 25/25,
+`own-scoped-routes.test.ts` 33/33), are fully green.
 
 ### Invariants covered by this section
 
-- **P7 (bilingual UI)** — REG-381 reads the copy off the RENDERED DOM in both languages
+- **P7 (bilingual UI)** — REG-401 reads the copy off the RENDERED DOM in both languages
   rather than off the source table, so a band wired to the wrong language branch fails.
-- **P8 (RLS boundary)** — REG-382 pins the architectural correction: a peer board is
+- **P8 (RLS boundary)** — REG-402 pins the architectural correction: a peer board is
   STRUCTURALLY IMPOSSIBLE from the browser under own-row-only RLS. The fix was never to
   loosen a policy; it was to move the read server-side behind an explicit whitelist. No
   policy was weakened in this batch.
@@ -598,7 +701,7 @@ reads ERRORED. They succeeded and returned almost nothing.
 
 ### The durable lesson
 
-REG-380 exists because **two green suites either side of a contract prove nothing about the
+REG-400 exists because **two green suites either side of a contract prove nothing about the
 contract**. A fixture is written from the same understanding as the code that consumes it,
 so when that understanding is wrong the fixture is wrong in the same direction and the test
 agrees with the bug. The seam test therefore uses NO fixture for `/me`: it drives the real
@@ -608,8 +711,8 @@ be pinned the same way.
 
 ### Catalog total
 
-Pre-REG-380: 379 entries. This section adds REG-380, REG-381 and REG-382.
-**Total catalog: 382 entries (target: 35 — TARGET EXCEEDED). REG-383 is the next free id**
+Pre-REG-400: 379 entries. This section adds REG-400, REG-401 and REG-402.
+**Total catalog: 382 entries (target: 35 — TARGET EXCEEDED). REG-403 is the next free id**
 (REG-371..REG-377 remain RESERVED).
 
 ---

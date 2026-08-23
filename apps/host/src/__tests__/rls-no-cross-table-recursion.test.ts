@@ -168,6 +168,17 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'board_score_predictions::board_score_predictions_guardian_select',
   'board_score_predictions::board_score_predictions_student_select',
   'concept_attempts::concept_attempts_read_own',
+  // Phase A.2 dimension feedback (migration
+  // 20260818_01_create_foxy_message_dimension_feedback.sql, 2026-08-18):
+  // foxy_dim_feedback_read_self inlines the IDENTICAL `student_id IN (SELECT
+  // id FROM public.students WHERE auth_user_id = auth.uid())` pattern as the
+  // already-grandfathered sibling table's foxy_message_feedback_read_self
+  // directly below (foxy_message_dimension_feedback extends
+  // foxy_message_feedback with per-dimension signals — same ownership/RLS
+  // posture per the migration's own header comment). No students policy
+  // reads foxy_message_dimension_feedback back, so no cycle can close.
+  // Not a new risk class. Ledger: 222 -> 223.
+  'foxy_message_dimension_feedback::foxy_dim_feedback_read_self',
   'foxy_message_feedback::foxy_message_feedback_read_self',
   'foxy_pending_expectations::foxy_pending_expectations_student_read',
   'foxy_quality_scores::foxy_quality_scores_read_admin',
@@ -738,7 +749,7 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     ).toEqual([]);
   });
 
-  it('freezes the current blast radius at exactly 234 inline cross-table policies', () => {
+  it('freezes the current blast radius at exactly 223 inline cross-table policies', () => {
     // The audit found ~141 inline policies in the BASELINE; the whole effective
     // chain carried 242 AFTER Phase 0a.1 widened policy-NAME matching to also see
     // UNQUOTED-name policies (was 214 with the quoted-only regex; the 28 newly-visible
@@ -812,8 +823,14 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // counters (live exploit #6 on staging), STAGING-ONLY drift now converged DOWN to
     // production's 8-policy shape. Both leave the detected set, so the freeze ratchets
     // down by exactly the two pruned ledger entries: 224 -> 222.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(222);
-    expect(detectedRiskKeys().length).toBe(222);
+    // Phase A.2 dimension feedback (migration
+    // 20260818_01_create_foxy_message_dimension_feedback.sql, 2026-08-18): the new
+    // foxy_dim_feedback_read_self policy inlines the same reviewed
+    // `student_id IN (SELECT id FROM public.students WHERE auth_user_id = auth.uid())`
+    // shape as the already-grandfathered sibling foxy_message_feedback_read_self (see
+    // the ledger comment above) — not a new risk class. Ledger: 222 -> 223.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(223);
+    expect(detectedRiskKeys().length).toBe(223);
   });
 });
 

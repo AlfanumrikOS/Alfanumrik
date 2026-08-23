@@ -9,7 +9,27 @@ import { track } from '@alfanumrik/lib/analytics';
 import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession, checkQuizAnswer, type QuizAnswerCheck } from '@alfanumrik/lib/supabase';
 import { invalidateDashboard, useFeatureFlags } from '@alfanumrik/lib/swr';
 import { useNextTask } from '@alfanumrik/lib/quiz/v2/use-next-task';
-import { OPTION_LETTERS, parseOptions } from '@alfanumrik/lib/quiz/options';
+import { OPTION_LETTERS, parseOptions, isMcqQuestion } from '@alfanumrik/lib/quiz/options';
+import { isPyqYear } from '@alfanumrik/lib/quiz/pyq-years';
+// Phase 4 — session resume. `saveQuizAnswerProgress` makes every confirmed
+// answer durable server-side the instant it is confirmed (on EVERY mode, no
+// flag); `fetchQuizResume` rebuilds an interrupted session from that record.
+// See packages/lib/src/quiz/resume.ts for the substrate + security design.
+import {
+  saveQuizAnswerProgress,
+  fetchQuizResume,
+  isResumeSessionId,
+  writeResumeBreadcrumb,
+  readResumeBreadcrumb,
+  clearResumeBreadcrumb,
+} from '@alfanumrik/lib/quiz/resume';
+// P0 fix cluster (2026-08-11) — the two client→server submit-contract values
+// that were each re-derived inline at more than one call site, and wrong at
+// one of them. `collectSessionQuestionIds` guarantees EVERY served question
+// (MCQ or written) is snapshotted by start_quiz_session; `computeElapsedSeconds`
+// guarantees p_time is elapsed — not remaining — in exam mode. See
+// packages/lib/src/quiz/session-contract.ts for the full defect writeup.
+import { collectSessionQuestionIds, computeElapsedSeconds } from '@alfanumrik/lib/quiz/session-contract';
 import { assembleQuiz } from '@alfanumrik/lib/quiz-assembler';
 import { XP_RULES } from '@alfanumrik/lib/xp-config';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
@@ -33,19 +53,7 @@ import FeedbackOverlay from '@alfanumrik/ui/quiz/FeedbackOverlay';
 // prompt shown AFTER the answer is confirmed (P3 timing untouched).
 // Sampling is deterministic via shouldPromptConfidence (no Math.random).
 import ConfidencePrompt, { shouldPromptConfidence, type ConfidenceValue } from '@alfanumrik/ui/quiz/ConfidencePrompt';
-// P10: dynamic-imported (ssr:false) for the same reason as HintLadder above —
-// this is the SA/MA/LA answer pad and mounts ONLY on the written-answer branch
-// (`question_type` is not MCQ). An MCQ-only session never renders it, so on the
-// overwhelmingly common path its ~2 kB gz of CBSE hint tables, word-count and
-// review-step logic was being paid for nothing. `loading` renders LoadingFoxy
-// rather than null (unlike HintLadder) because this IS the primary input for a
-// written question — the student must see something occupying that slot.
-// Nothing about answer capture, timing (P3) or evaluation changes; only when
-// the module is fetched.
-const WrittenAnswerInput = dynamic(
-  () => import('@alfanumrik/ui/quiz/ncert/WrittenAnswerInput'),
-  { ssr: false, loading: () => <LoadingFoxy /> },
-);
+import WrittenAnswerInput from '@alfanumrik/ui/quiz/ncert/WrittenAnswerInput';
 // Canonical math renderer (P6/P12 fail-safe; P10: KaTeX loads lazily and
 // only when the text actually contains math — plain questions cost nothing).
 import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
@@ -119,12 +127,35 @@ interface Question {
   question_hi: string | null;
   question_type: string;
   options: string | string[];
-  correct_answer_index: number;
+  /**
+   * KEYLESS SERVING (migration 20260814000023). NOT populated on any live path
+   * any more — every serving RPC and every direct `question_bank` query on this
+   * page stopped returning `question_bank.correct_answer_index`, and the
+   * server-shuffle / resume paths stamp the fail-loud `-1` sentinel. Optional
+   * because "absent" is now the normal case; read it only through
+   * `clientHasAnswerKey()`, never by direct comparison.
+   */
+  correct_answer_index?: number;
   explanation: string | null;
   explanation_hi: string | null;
   hint: string | null;
-  difficulty: number;
-  bloom_level: string;
+  /**
+   * `question_bank.difficulty` / `question_bank.bloom_level` are NULLABLE
+   * columns, and the fresh-serve path has always passed their NULLs straight
+   * through — the old non-nullable declarations were simply untrue at runtime
+   * (see `classifyQuizError` below, which already handled `bloom_level` being
+   * absent). The lie mattered: it let the resume payload builder "safely"
+   * default a NULL bloom to `'remember'`, which made the SAME question answered
+   * wrong the SAME way classify as `'knowledge_gap'` on a resumed session and
+   * `'procedural'` on a fresh one. That `error_type` is persisted to
+   * `quiz_responses.error_type` and feeds `update_learner_state_post_quiz`.
+   *
+   * The types are now honest. Any fallback belongs at the point of CONSUMPTION
+   * (where the fresh and resumed paths share code and therefore cannot
+   * diverge), never at construction.
+   */
+  difficulty: number | null;
+  bloom_level: string | null;
   chapter_number: number;
   // Written answer fields (SA/MA/LA from NCERT sources)
   marks_possible?: number;
@@ -205,14 +236,17 @@ function getTimeEstimate(qt: string): number {
   return times[qt] ?? 180;
 }
 
-/** Detect whether a question is MCQ based on its type and available options */
-function isQuestionMCQ(q: Question): boolean {
-  if (q.question_type === 'mcq' || q.cbse_type === 'mcq') return true;
-  // Has valid MCQ options: array with 4 items
-  const opts = Array.isArray(q.options) ? q.options : (() => { try { return JSON.parse(q.options as string); } catch { return []; } })();
-  if (opts.length === 4 && typeof q.correct_answer_index === 'number' && q.correct_answer_index >= 0 && q.correct_answer_index <= 3) return true;
-  return false;
-}
+/**
+ * Detect whether a question is MCQ based on its type and available options.
+ *
+ * The body moved to `packages/lib/src/quiz/options.ts` as `isMcqQuestion`
+ * (Phase 5 track B) — this file's copy and the learn chapter page's
+ * `isLearnPageMCQ` were the same predicate, and the learn one had already
+ * drifted (it was missing the `cbse_type` branch below). THIS copy was the
+ * superset, so it is the one the shared module adopted: behaviour here is
+ * unchanged, and the alias keeps all 7 call sites in this file untouched.
+ */
+const isQuestionMCQ = isMcqQuestion;
 
 /** Classify error type for wrong answers — used by adaptive processing */
 function classifyQuizError(question: Question, response: Response): string {
@@ -267,6 +301,40 @@ function originalToShuffled(origIdx: number, _shuffleMap: number[]|null) {
   return origIdx;
 }
 
+/**
+ * Does the CLIENT hold a usable answer key for this question?
+ *
+ * KEYLESS SERVING (migration 20260814000023). After that migration NO student
+ * serving path returns `question_bank.correct_answer_index`:
+ *   - `select_quiz_questions_rag` / `select_quiz_questions_v2` /
+ *     `get_quiz_questions` dropped it from their JSON payloads;
+ *   - `start_quiz_session` never returned it (this page stamps -1 as a
+ *     fail-loud sentinel on that path);
+ *   - every direct `question_bank` query on this page and in
+ *     `packages/lib/src` stopped selecting the column.
+ *
+ * So this predicate is `false` for every question a student is served today.
+ * It exists — rather than being hard-coded to `false` — for two reasons:
+ *   1. it is the honest question to ask at each of the five decision sites
+ *      below, all of which previously asked the WRONG one ("is there a server
+ *      session?") and would silently mis-render if a session were missing;
+ *   2. the LEGACY fallback (start_quiz_session returned no session) used to
+ *      derive live correctness locally. It can no longer do that, and the
+ *      correct behaviour is the one the v2 path already has: show a neutral
+ *      "Submitted — check results at end" and let the SERVER reveal
+ *      correctness at submit. Claiming "wrong" because the key is absent would
+ *      be a lie shown to a student who may well have been right.
+ *
+ * P1 is unaffected either way: the score has always been re-derived
+ * server-side (`submit_quiz_results_v2` from the session snapshot, or
+ * `submit_quiz_results` from `question_bank` on the legacy path). This
+ * predicate only governs LIVE, in-quiz feedback.
+ */
+function clientHasAnswerKey(q: { correct_answer_index?: number | null }): boolean {
+  const k = q.correct_answer_index;
+  return typeof k === 'number' && Number.isInteger(k) && k >= 0 && k <= 3;
+}
+
 export default function QuizPage() {
   const experienceV3 = false;
   const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
@@ -298,6 +366,17 @@ export default function QuizPage() {
   const [examTimerActive, setExamTimerActive] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const [selectedQuestionTypes, setSelectedQuestionTypes] = useState<string[]>(['mcq']);
+  /**
+   * PYQ board-paper year from `?year=` (e.g. /quiz?subject=math&year=2019).
+   *
+   * `/pyq` used to be a SECOND quiz runtime: it fetched year-tagged rows, read
+   * `correct_answer_index` in the browser, graded there, and persisted nothing.
+   * It is now a launcher into THIS page, and the year is the one thing it still
+   * carries — a question-SELECTION hint handed to assembleQuiz. It changes
+   * WHICH questions are served and nothing else: shuffle snapshot, anti-cheat,
+   * scoring and the atomic submit are the standard path (P1/P2/P3/P4 untouched).
+   */
+  const [pyqYear, setPyqYear] = useState<number | null>(null);
 
   // Written answer evaluation state
   const [isEvaluating, setIsEvaluating] = useState(false);
@@ -368,6 +447,27 @@ export default function QuizPage() {
   const [noQuestionsMessage, setNoQuestionsMessage] = useState('');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const qTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── TRUE ELAPSED TIME — THE SINGLE DERIVATION (P0 fix, 2026-08-11) ───────
+  // `timer` counts UP in practice/cognitive but DOWN in exam mode, so it is
+  // the time REMAINING there, not elapsed. It was being passed raw as the
+  // RPC's `p_time`, which inverted P3 Check 1 (`p_time / questions < 3s` →
+  // flag → XP 0): a student who used almost the whole exam window submitted
+  // p_time ≈ 0 and was flagged, every exam that auto-submitted at `timer === 0`
+  // was flagged by construction, and a rusher who left 25 minutes on the clock
+  // sailed through. The correct conversion already existed a hundred lines
+  // below (the exam_simulations write) but the submit call never used it.
+  //
+  // Derive it ONCE, here. Every consumer — the submit RPC (both the happy path
+  // and the retry path), the client-side advisory anti-cheat check, the
+  // exam_simulations row and the quiz_completed analytics event — reads THIS
+  // value. There is deliberately no second site left that could forget the
+  // count-down conversion. P3's 3s/question threshold is unchanged.
+  const elapsedSeconds = computeElapsedSeconds({
+    quizMode,
+    timer,
+    examTimeLimitMinutes: examTimeLimit,
+  });
 
   // Results state.
   // Marking-Authenticity Wave 2: extended with optional xp_capped / xp_uncapped /
@@ -453,6 +553,20 @@ export default function QuizPage() {
     | null
   >(null);
   const deepLinkFiredRef = useRef(false);
+  // Phase 4 resume: the session id to rebuild, from ?session= or the
+  // same-device breadcrumb. Consumed exactly once (resumeFiredRef).
+  const [resumeSessionId, setResumeSessionId] = useState<string | null>(null);
+  const resumeFiredRef = useRef(false);
+  // Flips once the resume attempt has resolved either way. The ?qid= / ?mode=srs
+  // deep-link consumer waits on it so a pending resume and a "start this exact
+  // quiz" link can never both drive the same page instance.
+  const resumeSettledRef = useRef(false);
+  // True while THIS page instance is running a resumed session. Used to (a)
+  // skip the P6 "all served questions must be freshly assembled" path and
+  // (b) keep answered questions immutable — a resumed session starts at the
+  // first UNANSWERED question and the runtime has no backward navigation, so
+  // an already-recorded answer can never be revisited or changed.
+  const [isResumedSession, setIsResumedSession] = useState(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -463,14 +577,38 @@ export default function QuizPage() {
       setInitialSubject(subj);
     }
     const mode = params.get('mode');
+    // `practice` was the ONLY QuizMode with no branch here, so every
+    // `?mode=practice` deep link silently fell through to the 'cognitive'
+    // default. Two live surfaces emit it — /assignments (startAssignment) and
+    // learn/[subject]/[chapter] ("Take a Quiz") — and PracticeRunner's gate is
+    // `quizMode === 'practice'`, so Screen 07 Practice was unreachable from
+    // any deep link no matter what `ff_quiz_v2` was set to. Practice is a
+    // first-class mode in QuizSetup (its own card, its own difficulty picker),
+    // so the correct behaviour is simply to honour it exactly like the other
+    // two: preselect the mode and let the student confirm on the setup screen.
+    if (mode === 'practice') { setQuizMode('practice'); setInitialMode('practice'); }
     if (mode === 'cognitive') { setQuizMode('cognitive'); setInitialMode('cognitive'); }
     if (mode === 'exam') { setQuizMode('exam'); setInitialMode('exam'); }
     const qid = params.get('qid');
     const QID_UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const hasExplicitStart = Boolean((qid && QID_UUID_RE.test(qid)) || mode === 'srs');
     if (qid && QID_UUID_RE.test(qid)) {
       setDeepLink({ kind: 'qid', qid });
     } else if (mode === 'srs') {
       setDeepLink({ kind: 'srs', subject: subj });
+    }
+    // Phase 4 resume deep link: /quiz?session=<uuid>. Emitted by the Today
+    // `resume_in_progress` CTA (resolve-next-action.ts). Falls back to the
+    // same-device breadcrumb so closing the tab and reopening a bare /quiz
+    // still offers to continue — but ONLY when the URL isn't already asking
+    // for a specific new quiz (?qid= / ?mode=srs), which must win: an explicit
+    // navigation is a stronger signal of intent than a leftover breadcrumb.
+    const sessionParam = params.get('session') ?? params.get('sessionId');
+    if (isResumeSessionId(sessionParam)) {
+      setResumeSessionId(sessionParam);
+    } else if (!hasExplicitStart) {
+      const breadcrumb = readResumeBreadcrumb();
+      if (isResumeSessionId(breadcrumb)) setResumeSessionId(breadcrumb);
     }
     const countParam = params.get('count');
     if (countParam) {
@@ -487,6 +625,15 @@ export default function QuizPage() {
         setSelectedChapter(ch);
         setInitialChapter(ch);
       }
+    }
+    // PYQ launcher deep link: /quiz?subject=<code>&year=<board paper year>.
+    // Bounded to the range CBSE board papers plausibly exist in, so a junk or
+    // hostile `?year=` can never reach the assembler's tag filter. Out-of-range
+    // simply leaves pyqYear null and the quiz assembles normally.
+    const yearParam = params.get('year');
+    if (yearParam) {
+      const yr = parseInt(yearParam, 10);
+      if (isPyqYear(yr)) setPyqYear(yr);
     }
   }, []);
 
@@ -608,7 +755,26 @@ export default function QuizPage() {
     return () => { if (qTimerRef.current) clearInterval(qTimerRef.current); };
   }, [screen, currentIdx, showExplanation]);
 
-  /** P6: Runtime question quality gate — filter out malformed questions before serving */
+  /**
+   * P6: Runtime question quality gate — filter out malformed questions before
+   * serving.
+   *
+   * KEYLESS (migration 20260814000023): the `correct_answer_index` 0-3 clause
+   * that used to close the MCQ block is GONE FROM HERE. It is the single reason
+   * every serving path had to ship the answer key to the browser, and it now
+   * lives in `public.question_bank_p6_valid` — applied as a filter inside
+   * `select_quiz_questions_rag` / `select_quiz_questions_v2` /
+   * `get_quiz_questions`, and as a hard skip inside `start_quiz_session`.
+   *
+   * That relocation is only sound because `start_quiz_session` is on the path
+   * of EVERY question this page renders, including the pinned deep-link and SRS
+   * sets that never touch a serving RPC. The merge below drops any question the
+   * server declined to snapshot, which is how a P6 rejection reaches the UI.
+   *
+   * Every key-FREE check stays here (text, template markers, 4 non-empty
+   * options) — this is defence in depth against a malformed payload, not the
+   * primary gate.
+   */
   function isValidQuestion(q: Question): boolean {
     // Text must be non-empty and free of template markers
     if (!q.question_text || q.question_text.length < 5) return false;
@@ -619,7 +785,6 @@ export default function QuizPage() {
       const qOpts = Array.isArray(q.options) ? q.options : (() => { try { return JSON.parse(q.options as string); } catch { return []; } })();
       if (qOpts.length !== 4) return false;
       if (qOpts.some((o: string) => !o || String(o).trim() === '')) return false;
-      if (typeof q.correct_answer_index !== 'number' || q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
     }
 
     return true;
@@ -686,6 +851,9 @@ export default function QuizPage() {
             chapter: chapter ?? null,
             questionTypes: qTypes && qTypes.length > 0 ? qTypes : ['mcq'],
             mode: opts?.quizMode ?? quizMode,
+            // PYQ launcher (`/pyq` → `/quiz?...&year=`). Null for every other
+            // entry point, in which case the assembler behaves exactly as before.
+            pyqYear,
           });
 
       // Deep-link fail-soft: when a pinned question exists, tolerate a
@@ -792,12 +960,22 @@ export default function QuizPage() {
       // For MCQ questions, ask the server to generate the shuffle and snapshot
       // options + correct_answer_index. The server returns options already in
       // display order; selected_option is just the displayed index.
-      const mcqIds = qs
-        .filter((q: Question) => isQuestionMCQ(q) && typeof q.id === 'string')
-        .map((q: Question) => q.id);
+      //
+      // P0 fix (2026-08-11): the id list is EVERY served question, not just the
+      // MCQ ones. start_quiz_session writes one quiz_session_shuffles row per
+      // id it is handed, and that table is BOTH the per-response snapshot
+      // submit_quiz_results_v2 looks up AND the "how many questions were
+      // served" source for P3 anti-cheat Check 3. Passing only MCQ ids left
+      // written (SA/MA/LA/NCERT) questions with no row at all, so the RPC
+      // raised session_not_started and destroyed the whole submission — and a
+      // PURE written quiz produced an empty list, skipped the RPC entirely and
+      // submitted with p_session_id = NULL, which missed for every response.
+      // start_quiz_session already stores a non-MCQ row correctly (identity
+      // shuffle + empty options snapshot, migration 20260801100800).
+      const sessionQuestionIds = collectSessionQuestionIds(qs);
       let session: Awaited<ReturnType<typeof startQuizSession>> = null;
-      if (mcqIds.length > 0 && student) {
-        session = await startQuizSession(student.id, mcqIds);
+      if (sessionQuestionIds.length > 0 && student) {
+        session = await startQuizSession(student.id, sessionQuestionIds);
       }
 
       let displayQuestions = qs;
@@ -808,9 +986,39 @@ export default function QuizPage() {
         // order; we replace `options` so getShuffledOptions() (now an
         // identity helper) renders them as-is.
         const byId = new Map(session.questions.map(s => [s.question_id, s]));
-        displayQuestions = qs.map((q: Question) => {
+        // ── SERVER-SIDE P6 REJECTION CHANNEL (migration 20260814000023) ──────
+        // start_quiz_session now SKIPS any question that fails
+        // `public.question_bank_p6_valid` — no snapshot row, and absent from
+        // `session.questions`. Absence is therefore no longer just "unknown id";
+        // it is the server saying "this question is not gradeable, do not serve
+        // it". Previously this branch kept the question (`if (!s) return q`),
+        // which after the keyless change would render a question the client
+        // cannot validate and the server refused to snapshot.
+        //
+        // This is the ONLY way a P6 failure reaches the pinned deep-link / SRS
+        // sets, which never pass through a serving RPC.
+        const droppedByServerP6 = qs.filter((q: Question) => !byId.has(q.id));
+        if (droppedByServerP6.length > 0) {
+          // PII-free (P13): content-pool descriptors + counts only.
+          console.warn('[Quiz][P6] Server declined to snapshot questions; dropping before serve', {
+            subject: subj,
+            grade: student.grade,
+            requested: qs.length,
+            dropped: droppedByServerP6.length,
+          });
+        }
+        displayQuestions = qs.filter((q: Question) => byId.has(q.id)).map((q: Question) => {
           const s = byId.get(q.id);
-          if (!s) return q;
+          if (!s) return q; // unreachable after the filter above; keeps types honest
+          // Non-MCQ questions are now snapshotted too (see sessionQuestionIds
+          // above), and the server returns an EMPTY options_displayed for them.
+          // Only a real 4-option MCQ snapshot may rewrite the question object —
+          // otherwise a written question would have its options blanked and its
+          // correct_answer_index stamped, for no benefit. Leaving it untouched
+          // keeps the written-answer renderer byte-identical to before.
+          if (!Array.isArray(s.options_displayed) || s.options_displayed.length !== 4) {
+            return q;
+          }
           return {
             ...q,
             options: s.options_displayed,
@@ -823,11 +1031,37 @@ export default function QuizPage() {
           };
         });
         setServerSessionId(session.session_id);
+        // Phase 4: same-device resume breadcrumb (session id only — never any
+        // answer, option or correctness). Lets a student who simply closed the
+        // tab reopen a bare /quiz and be offered their session back, without
+        // routing through /today. The server still authorises every read.
+        writeResumeBreadcrumb(session.session_id);
       } else {
         // Server session unavailable — fall back to original-order render.
         // Without a shuffle, selected_option IS the original index, so
         // legacy v1 scoring still works correctly.
         setServerSessionId(null);
+        // No server session means nothing durable to come back to; drop any
+        // breadcrumb so a later visit can't offer to resume a DIFFERENT,
+        // older session while this un-resumable one is the live quiz.
+        clearResumeBreadcrumb();
+      }
+
+      // If the SERVER-side P6 gate emptied the set (every candidate was
+      // ungradeable), do not start a zero-question quiz — surface the same
+      // bilingual (P7) empty state the client-side gate above uses. Mirrors the
+      // `qs.length === 0` guard so both P6 layers fail the same way.
+      if (displayQuestions.length === 0) {
+        setServerSessionId(null);
+        clearResumeBreadcrumb();
+        setNoQuestionsError(true);
+        setNoQuestionsMessage(
+          isHi
+            ? 'मान्य प्रश्न लोड नहीं हो सके। कृपया फिर से कोशिश करें।'
+            : "Couldn't load valid questions. Please try again."
+        );
+        setLoading(false);
+        return;
       }
 
       // F2: an SRS card map only survives into a pinnedOnly (SRS review)
@@ -858,6 +1092,8 @@ export default function QuizPage() {
       setAnswerChecks({});
       setCheckingAnswer(false);
       confirmedPracticeQuestionIdsRef.current = new Set();
+      // Phase 4: this is a brand-new session, not a resumed one.
+      setIsResumedSession(false);
       setCogLoad(initialCognitiveLoad());
       setReflection(null);
       // B2C funnel: quiz-start activation event. Fires exactly once per
@@ -876,7 +1112,10 @@ export default function QuizPage() {
     }
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, selectedQuestionTypes, isHi, router]);
+  // `pyqYear` is in the deps deliberately: it is set by an effect that reads
+  // the URL AFTER first render, so a callback closed over the initial `null`
+  // would drop the board year on the very launch that asked for it.
+  }, [selectedSubject, student, questionCount, selectedDifficulty, selectedChapter, selectedQuestionTypes, pyqYear, isHi, router]);
 
   // ── Adaptive deep-link consumer (?qid= / ?mode=srs) ────────────────────────
   // Fires ONCE (deepLinkFiredRef) when the student profile is loaded and we
@@ -889,11 +1128,18 @@ export default function QuizPage() {
     if (!deepLink || deepLinkFiredRef.current) return;
     if (isLoading || !student) return;          // readiness: profile loaded
     if (screen !== 'select' || loading) return; // readiness: still on setup, idle
+    // Phase 4: never race a pending resume (see resumeSettledRef).
+    if (resumeSessionId && !resumeSettledRef.current) return;
     deepLinkFiredRef.current = true;
 
+    // KEYLESS (migration 20260814000023): `correct_answer_index` is deliberately
+    // absent. Both deep-link branches below feed startQuiz(), which routes
+    // through start_quiz_session — and THAT is where the P6 "index 0-3" check
+    // now runs (`public.question_bank_p6_valid`). A pinned question that fails
+    // it gets no snapshot and is dropped before render (see startQuiz).
     const QB_COLUMNS =
       'id, subject, question_text, question_hi, question_type, options, ' +
-      'correct_answer_index, explanation, explanation_hi, hint, difficulty, ' +
+      'explanation, explanation_hi, hint, difficulty, ' +
       'bloom_level, chapter_number';
 
     (async () => {
@@ -978,6 +1224,150 @@ export default function QuizPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fire-once consumer guarded by deepLinkFiredRef; isValidQuestion/questionCount are stable per render
   }, [deepLink, isLoading, student, screen, loading, startQuiz]);
 
+  // ── Phase 4: session RESUME consumer (/quiz?session=<uuid>) ───────────────
+  //
+  // Rebuilds an interrupted session from the server-owned snapshot instead of
+  // starting a new quiz. Deliberately does NOT call startQuiz/startQuizSession:
+  // a resume must never mint a second session id, a second shuffle snapshot,
+  // or a second row anywhere (idempotency). It re-hydrates the SAME session.
+  //
+  // What is restored, and from where:
+  //   - the exact question set, in the exact DISPLAYED option order the
+  //     student saw (server snapshot + shuffle map — the client is never told
+  //     which option is correct, before or after the interruption);
+  //   - each already-answered question's OWN selected index and the time the
+  //     student actually spent on it (both persisted server-side at answer
+  //     time, first-write-wins, so neither can be retro-edited);
+  //   - the total-time counter, seeded with the SUM of those per-question
+  //     times. That is on-task time, never wall clock: an hour spent away
+  //     from the tab contributes exactly zero, so the P3 3s/question floor
+  //     cannot be defeated by walking away — and an honest resumer is not
+  //     falsely flagged by a counter that restarted at zero.
+  //
+  // `is_correct` is seeded `false` for restored answers, exactly as
+  // confirmAnswer() does in server-shuffle mode: it is a provisional
+  // placeholder the submit response overwrites with server truth. It is not,
+  // and never becomes, a scoring input (P1).
+  //
+  // Fail-soft on every branch: any non-resumable reason (already submitted,
+  // expired, corrupt, or the immediate-feedback interlock) simply leaves the
+  // student on the normal setup screen with no error banner.
+  useEffect(() => {
+    if (!resumeSessionId || resumeFiredRef.current) return;
+    if (isLoading || !student) return;
+    if (screen !== 'select' || loading) return;
+    resumeFiredRef.current = true;
+
+    (async () => {
+      setLoading(true);
+      try {
+        const result = await fetchQuizResume(resumeSessionId, authHeader);
+        if (!result.resumable) {
+          // Nothing to come back to — drop the stale breadcrumb so we don't
+          // keep re-asking on every future /quiz visit.
+          clearResumeBreadcrumb();
+          resumeSettledRef.current = true;
+          setLoading(false);
+          return;
+        }
+
+        const restoredQuestions: Question[] = result.questions.map(q => ({
+          id: q.question_id,
+          question_text: q.question_text,
+          question_hi: q.question_hi,
+          question_type: q.question_type,
+          options: q.options_displayed,
+          // Same contract as the server-shuffle start path: the client does
+          // NOT know the correct index. -1 makes any accidental client-side
+          // comparison fail loudly rather than silently score wrong.
+          correct_answer_index: -1,
+          explanation: q.explanation,
+          explanation_hi: q.explanation_hi,
+          hint: q.hint,
+          difficulty: q.difficulty,
+          bloom_level: q.bloom_level,
+          chapter_number: q.chapter_number,
+        }));
+
+        // Answered questions lead the payload (see orderResumeRows), so the
+        // restored responses are a prefix and the cursor is their count.
+        const answered = result.questions.filter(q => q.answered);
+        if (answered.some(q => q.selected_displayed_index === null)) {
+          // Defensive: an answered row with no usable index would desync the
+          // cursor from the response list. Start fresh rather than guess.
+          clearResumeBreadcrumb();
+          resumeSettledRef.current = true;
+          setLoading(false);
+          return;
+        }
+
+        const restoredResponses: Response[] = answered.map(q => ({
+          question_id: q.question_id,
+          selected_option: q.selected_displayed_index as number,
+          is_correct: false, // provisional — server truth arrives at submit
+          time_spent: q.time_spent_seconds ?? 0,
+          shuffle_map: null,
+          hint_level: 0,
+          telemetry: {
+            latency_ms: (q.time_spent_seconds ?? 0) * 1000,
+            changed_answers_count: 0,
+            hints_used: 0,
+          },
+        }));
+
+        setQuestions(restoredQuestions);
+        setShuffleMaps(restoredQuestions.map(() => null));
+        setServerSessionId(result.session_id);
+        setResponses(restoredResponses);
+        setCurrentIdx(Math.min(restoredResponses.length, restoredQuestions.length - 1));
+        setSelectedOption(null);
+        setChangedAnswersCount(0);
+        setShowExplanation(false);
+        setHintLevel(0);
+        setCurrentEval(null);
+        setReflection(null);
+        setCogLoad(initialCognitiveLoad());
+        setAnswerChecks({});
+        setCheckingAnswer(false);
+        // Already-answered ids are pre-loaded into the "no retry after reveal"
+        // guard so the practice-v2 confirm path can never re-confirm one.
+        confirmedPracticeQuestionIdsRef.current = new Set(answered.map(q => q.question_id));
+        setSelectedSubject(result.subject);
+        setSelectedChapter(result.chapter_number);
+        setQuestionCount(restoredQuestions.length);
+        // P3: seed the total-time counter with real on-task time (see above).
+        setTimer(result.elapsed_seconds);
+        // The session's REAL instrument, read back from the server snapshot
+        // (`quiz_session_shuffles.session_mode`, migration 20260814000021).
+        // `result.mode` can only ever be 'practice' or 'cognitive': the payload
+        // builder refuses an `exam` session outright (`exam_not_resumable`) and
+        // refuses an unrecorded one (`mode_unknown`), both of which land on the
+        // `!result.resumable` branch above.
+        //
+        // This REPLACES a line that read `if (quizMode === 'exam')
+        // setQuizMode('cognitive')`, which was dead code: on a fresh
+        // `/quiz?session=<uuid>` load — the only way the resume CTA arrives —
+        // the URL carries no `?mode=exam`, so `quizMode` was already the
+        // default and the branch never fired. A timed exam attempt therefore
+        // resumed silently as an untimed one and was recorded in
+        // `quiz_sessions` as though it were the same instrument.
+        setQuizMode(result.mode);
+        setExamTimerActive(false);
+        examAutoSubmittedRef.current = false;
+        setIsResumedSession(true);
+        writeResumeBreadcrumb(result.session_id);
+        track('quiz_started', { subject: result.subject, grade: student.grade });
+        resumeSettledRef.current = true;
+        setScreen('quiz');
+      } catch {
+        clearResumeBreadcrumb();
+        resumeSettledRef.current = true;
+      }
+      setLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fire-once consumer guarded by resumeFiredRef
+  }, [resumeSessionId, isLoading, student, screen, loading]);
+
   // parseOptions is imported from @alfanumrik/lib/quiz/options (used by shuffle logic)
 
   const selectAnswer = (optIdx: number) => {
@@ -1003,7 +1393,11 @@ export default function QuizPage() {
     // Legacy fallback path (serverSessionId === null): no shuffle was
     // applied, so selectedOption is already the original index and we can
     // compare directly to correct_answer_index for live feedback.
-    const isV2 = serverSessionId !== null;
+    // KEYLESS (20260814000023): the legacy branch below can only run when the
+    // client actually holds a key, which no serving path supplies any more.
+    // `!clientHasAnswerKey(q)` folds that case into the same neutral, honest
+    // "server will tell us" behaviour instead of asserting "wrong".
+    const isV2 = serverSessionId !== null || !clientHasAnswerKey(q);
     const originalPicked = shuffledToOriginal(selectedOption, shuffleMaps[currentIdx] ?? null);
     const isCorrect = isV2
       ? false  // unknown until server response — see comment above
@@ -1044,7 +1438,14 @@ export default function QuizPage() {
     // (or the fire-and-forget fetch hasn't resolved / failed) — the previous
     // hardcoded 0.5 disabled classifyError's two mastery-dependent branches.
     const studentMastery = masteryByQidRef.current[q.id] ?? 0.5;
-    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty, studentMastery);
+    // `difficulty` is a NULLABLE column. The fallback lives HERE — at the
+    // single point of CONSUMPTION that the fresh and resumed paths both flow
+    // through — rather than in whichever loader built the question, which is
+    // what let the two paths diverge. It is also behaviour-preserving: this
+    // call site previously received a raw NULL on the fresh path, and
+    // `classifyError`'s only two difficulty branches (`<= 2`, `>= 3`) take the
+    // identical arm for `null` (coerces to 0) and for 2.
+    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty ?? 2, studentMastery);
 
     setResponses(prev => [...prev, {
       question_id: q.id,
@@ -1064,6 +1465,40 @@ export default function QuizPage() {
         hints_used: hintLevel,
       },
     }]);
+
+    // ── Phase 4: PERSIST-IMMEDIATELY (always on, every mode) ──────────────
+    // The instant an answer is confirmed it becomes durable server-side, so a
+    // refresh / tab close / connection drop between here and final submit no
+    // longer loses it. Fire-and-forget by contract: it never blocks the quiz
+    // and never throws, and its failure costs only resumability — grading
+    // still happens exactly once, at final submit, unchanged (P1/P2/P4).
+    //
+    // Server-side this is first-write-wins, so a double-tap or a retry cannot
+    // rewrite a recorded answer, and neither can a resumed tab.
+    //
+    // SKIPPED on the practice-v2 branch: there confirmAnswerPracticeV2 calls
+    // check_quiz_answer(), which persists the SAME three columns itself
+    // (migration 20260802130000). Both writers are replay-locked, so a double
+    // write would be harmless — but letting only one own the write keeps
+    // check_quiz_answer's `already_answered` flag meaningful for the UI.
+    // (The practice-v2 writer does NOT stamp `session_mode`, so such a session
+    // resolves to `mode_unknown` and is refused at resume. That is coherent
+    // rather than a gap: `practiceV2On` IS `ff_quiz_v2`, and the immediate-
+    // feedback interlock already refuses resume for that whole cohort.)
+    const practiceV2OwnsPersist = practiceV2On && quizMode === 'practice' && isQuestionMCQ(q);
+    if (serverSessionId && !practiceV2OwnsPersist && isQuestionMCQ(q) && selectedOption >= 0) {
+      void saveQuizAnswerProgress(
+        serverSessionId,
+        q.id,
+        selectedOption,
+        questionTimer,
+        authHeader,
+        // The instrument, recorded ATOMICALLY with the first persisted answer
+        // (migration 20260814000021). Without it a resumed exam attempt ran
+        // untimed and nothing on the record could even detect the swap.
+        quizMode,
+      );
+    }
 
     // In exam mode, skip explanation — go straight to next question
     if (quizMode === 'exam') {
@@ -1355,7 +1790,8 @@ export default function QuizPage() {
             // P0 fix (migration 20260428160000): in v2 mode, server re-derives
             // is_correct from the snapshot. In legacy mode, no shuffle is
             // applied so selected_option IS the original index.
-            const isV2 = serverSessionId !== null;
+            // KEYLESS (20260814000023) — see clientHasAnswerKey.
+            const isV2 = serverSessionId !== null || !clientHasAnswerKey(q);
             const lastIsCorrect = isV2
               ? false
               : (selectedOption === q.correct_answer_index);
@@ -1378,9 +1814,18 @@ export default function QuizPage() {
 
         // ── ANTI-CHEAT: Client-side validation before submission (P3) ──
         // SLC-5 convergence: the client is NOT a security boundary (P3/P9). The
-        // server RPC (submit_quiz_results / _v2) is the single authority — it
+        // server RPC (submit_quiz_results_v2) is the single authority — it
         // applies the SAME 3 P3 checks, sets `flagged=true`, zeros XP, but still
-        // RECORDS the session with the REAL score_percent. The client therefore
+        // RECORDS the session with the REAL score_percent.
+        //
+        // CORRECTION (2026-08-11): that last clause used to be false for one
+        // whole class of quiz. When a response had no quiz_session_shuffles
+        // row, the RPC RAISEd `session_not_started` BEFORE reaching any of the
+        // three checks — so nothing was recorded, no score, no session row. It
+        // hit every quiz containing at least one written question, because the
+        // client only ever snapshotted MCQ ids. Both halves are fixed (see
+        // `sessionQuestionIds` above and migration 20260814000022); the
+        // "still RECORDS the session" claim is true again. The client therefore
         // performs these checks ADVISORY-ONLY (warn + telemetry) and ALWAYS
         // proceeds to submitQuizResults. It must NEVER discard the attempt or
         // override the score to 0 — doing so silently destroyed a legitimately
@@ -1394,13 +1839,18 @@ export default function QuizPage() {
         // guard (mcqResponses.length > 0) silently bypassed the check on
         // those quizzes. P3 invariant requires the check whenever any
         // response exists, regardless of question type.
+        //
+        // `elapsedSeconds`, not `timer`: in exam mode the timer counts DOWN,
+        // so the raw value is the time REMAINING and this advisory check would
+        // disagree with the server's (see the single derivation at the top of
+        // the component).
         const mcqResponses = allResponses.filter(r => r.selected_option >= 0);
         const totalResponses = allResponses.length;
-        const avgTimePerQ = totalResponses > 0 ? timer / totalResponses : 0;
+        const avgTimePerQ = totalResponses > 0 ? elapsedSeconds / totalResponses : 0;
         if (totalResponses > 0 && avgTimePerQ < 3) {
           // ADVISORY ONLY — do NOT discard the attempt. The server re-checks
           // this same condition and is the authority on flag + zero-XP.
-          console.warn(`[AntiCheat] Quiz completed too fast: ${timer}s for ${totalResponses} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s) — submitting; server is authoritative`);
+          console.warn(`[AntiCheat] Quiz completed too fast: ${elapsedSeconds}s for ${totalResponses} questions (avg ${avgTimePerQ.toFixed(1)}s < 3s) — submitting; server is authoritative`);
         }
 
         // 2. Detect impossible response patterns — FLAG (warn but still submit)
@@ -1415,8 +1865,16 @@ export default function QuizPage() {
 
         // 3. Verify response count matches question count.
         // ADVISORY ONLY — do NOT discard the attempt. The server re-checks
-        // jsonb_array_length(p_responses) <> v_total and is the authority on
-        // flag + zero-XP; it still records the session with the real score.
+        // jsonb_array_length(p_responses) against the number of questions it
+        // actually SERVED (COUNT(*) over quiz_session_shuffles for this
+        // session — NOT v_total, which is derived from the payload itself and
+        // would be a tautology) and is the authority on flag + zero-XP; it
+        // still records the session with the real score.
+        //
+        // That served count is only correct because `sessionQuestionIds`
+        // above snapshots EVERY served question. When it snapshotted MCQs
+        // only, a mixed quiz had more responses than served rows and would
+        // have been flagged here even if it had survived submission at all.
         if (allResponses.length !== questions.length) {
           console.warn(`[AntiCheat] Response count (${allResponses.length}) != question count (${questions.length}) — submitting; server is authoritative`);
         }
@@ -1429,10 +1887,17 @@ export default function QuizPage() {
           subMeta?.name || selectedSubject!,
           questions[0]?.chapter_number || 1,
           allResponses,
-          timer,
+          elapsedSeconds,  // P0 fix: p_time is ELAPSED, never the exam-mode remainder
           serverSessionId,  // P0 fix: route to v2 RPC when present
         );
         setResults(res);
+        // Phase 4: the session is graded — retire the resume breadcrumb so no
+        // later visit offers to "continue" a finished quiz. Belt-and-braces
+        // only: the resume route independently refuses any session whose
+        // idempotency key already appears on a graded quiz_sessions row, so a
+        // stale breadcrumb could never reopen a submitted session anyway.
+        clearResumeBreadcrumb();
+        setIsResumedSession(false);
         // P0 fix: if v2 returned per-question review data, sync the
         // authoritative is_correct back into local responses so QuizResults
         // shows the correct/wrong banner derived from server truth.
@@ -1546,7 +2011,10 @@ export default function QuizPage() {
             total_marks: totalMarks,
             obtained_marks: obtainedMarks,
             percentage: totalMarks > 0 ? Math.round((obtainedMarks / totalMarks) * 100 * 100) / 100 : 0,
-            time_taken_seconds: examTimeLimit * 60 - timer,
+            // Was `examTimeLimit * 60 - timer` — the CORRECT conversion, but a
+            // second, independent copy of it. It is now the shared derivation
+            // so the submit RPC and this row can never disagree again.
+            time_taken_seconds: elapsedSeconds,
             time_limit_seconds: examTimeLimit * 60,
             is_completed: true,
             completed_at: new Date().toISOString(),
@@ -1558,7 +2026,7 @@ export default function QuizPage() {
           score: res?.score_percent ?? 0,
           questions: allResponses.length,
           grade: student!.grade,
-          time_seconds: timer,
+          time_seconds: elapsedSeconds,
         });
       } catch (e) {
         console.error('Submit error:', e);
@@ -1568,7 +2036,8 @@ export default function QuizPage() {
           const q = questions[currentIdx];
           if (isQuestionMCQ(q) && selectedOption !== null) {
             // P0 fix: same v2/v1 dispatch as the happy path.
-            const isV2 = serverSessionId !== null;
+            // KEYLESS (20260814000023) — see clientHasAnswerKey.
+            const isV2 = serverSessionId !== null || !clientHasAnswerKey(q);
             const lastIsCorrect = isV2
               ? false
               : (selectedOption === q.correct_answer_index);
@@ -1583,9 +2052,17 @@ export default function QuizPage() {
             });
           }
         }
+        // COPY CORRECTION (2026-08-11): this used to reassure the student
+        // that their answers had been stored. That was a false statement on
+        // every branch that reaches here — a failed submit writes NO
+        // quiz_sessions row and NO quiz_responses rows, so nothing durable
+        // exists anywhere. The
+        // answers are held in `pendingSubmissionRef` in this tab only, and
+        // they are lost on refresh. Say what is actually true: the submission
+        // failed, and retry is the way to save it. (P7: bilingual.)
         setNetworkError(isHi
-          ? 'कनेक्शन टूट गया — आपके उत्तर सुरक्षित हैं। पुनः प्रयास करें।'
-          : 'Connection lost — your answers are saved. Please retry.');
+          ? 'कनेक्शन की समस्या — तुम्हारे उत्तर अभी सहेजे नहीं जा सके। पुनः प्रयास करें।'
+          : "Connection problem — your answers couldn't be saved yet. Please retry.");
         const total = responses.length;
         const correct = responses.filter(r => r.is_correct).length;
         // SECURITY: When API fails, show score for display only but DO NOT award XP.
@@ -1623,7 +2100,7 @@ export default function QuizPage() {
         subMeta?.name || selectedSubject,
         questions[0]?.chapter_number || 1,
         allResponses,
-        timer,
+        elapsedSeconds,  // P0 fix: same single elapsed derivation as the happy path
         serverSessionId,  // P0 fix: v2 path on retry too
       );
       setResults(res);
@@ -1672,16 +2149,16 @@ export default function QuizPage() {
         score: res?.score_percent ?? 0,
         questions: allResponses.length,
         grade: student.grade,
-        time_seconds: timer,
+        time_seconds: elapsedSeconds,
       });
     } catch (e) {
       console.error('Retry submit error:', e);
       setNetworkError(isHi
-        ? 'कनेक्शन टूट गया — आपके उत्तर सुरक्षित हैं। पुनः प्रयास करें।'
-        : 'Connection lost — your answers are saved. Please retry.');
+        ? 'कनेक्शन की समस्या — तुम्हारे उत्तर अभी सहेजे नहीं जा सके। पुनः प्रयास करें।'
+        : "Connection problem — your answers couldn't be saved yet. Please retry.");
     }
     setLoading(false);
-  }, [student, selectedSubject, questions, timer, selectedChapter, isHi, refreshSnapshot, serverSessionId, allowedSubjects]);
+  }, [student, selectedSubject, questions, elapsedSeconds, selectedChapter, isHi, refreshSnapshot, serverSessionId, allowedSubjects]);
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
@@ -1795,7 +2272,11 @@ export default function QuizPage() {
     // banner shows "Submitted — check results at end" rather than
     // correct/wrong. In legacy mode (no server session), comparison still
     // works because no shuffle is applied (selected_option IS original).
-    const isV2Question = serverSessionId !== null;
+    // KEYLESS (20260814000023): `!clientHasAnswerKey(q)` folds the legacy
+    // no-server-session render into the same neutral treatment. Without it a
+    // keyless legacy question would highlight NO option as correct and label a
+    // right answer "Not quite" — see clientHasAnswerKey for the full note.
+    const isV2Question = serverSessionId !== null || !clientHasAnswerKey(q);
     const originalPicked = selectedOption !== null
       ? shuffledToOriginal(selectedOption, currentShuffleMap)
       : null;
@@ -1939,6 +2420,19 @@ export default function QuizPage() {
         </header>
 
         <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-5 flex flex-col gap-4">
+          {/* Phase 4: tell a resumed learner, in plain language, that their
+              earlier work is intact and where they are picking up (P7). */}
+          {isResumedSession && (
+            <div
+              role="status"
+              className="rounded-xl px-3 py-2 text-xs font-semibold"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}
+            >
+              {isHi
+                ? `▶ जहाँ छोड़ा था वहीं से — पहले के ${responses.length} जवाब सुरक्षित हैं।`
+                : `▶ Continuing where you stopped — your earlier ${responses.length} answer${responses.length === 1 ? '' : 's'} ${responses.length === 1 ? 'is' : 'are'} saved.`}
+            </div>
+          )}
           {/* Branch: MCQ vs Written Answer rendering */}
           {isQuestionMCQ(q) ? (
             <>
@@ -1957,11 +2451,15 @@ export default function QuizPage() {
                       </span>
                     );
                   })()}
-                  {quizMode === 'cognitive' && cogLoad.fatigueScore > 0.4 && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>
-                      {isHi ? 'थकान' : 'Fatigue'} {Math.round(cogLoad.fatigueScore * 100)}%
-                    </span>
-                  )}
+                  {/* R5 (2026-08-11) — the mid-quiz "Fatigue 47%" chip was REMOVED,
+                      not renamed. `fatigueScore` is an internal cognitive-load
+                      scalar; a percentage of it is not something a Class 6-12
+                      student can act on, and showing it mid-question invites
+                      self-doubt with no remedy. The COMPUTATION is untouched
+                      (`cogLoad.fatigueScore` still drives `fatigue_detected` on
+                      the session row and the existing cognitive pause prompt
+                      further down, which offers an actual action: take a break).
+                      Display only was deleted. Do not re-add a raw percentage. */}
                   {jeeNeetMode && (student?.grade === '11' || student?.grade === '12') && (() => {
                     const tag = getExamTag(q);
                     return (
@@ -1988,8 +2486,13 @@ export default function QuizPage() {
               // appears mid-quiz). Final review screen highlights the
               // correct option using the server's correct_option_text from
               // the v2 RPC response.
+              // `?? -1`: KEYLESS (20260814000023) — the field is optional now.
+              // -1 can never equal a rendered option index, and this branch is
+              // already unreachable when the key is absent (`!isV2Question`
+              // implies clientHasAnswerKey(q)); the fallback exists so the type
+              // is honest rather than asserted away.
               const isCorrectOpt = !isV2Question
-                && (idx === originalToShuffled(q.correct_answer_index, shuffleMaps[currentIdx] ?? null));
+                && (idx === originalToShuffled(q.correct_answer_index ?? -1, shuffleMaps[currentIdx] ?? null));
 
                   let bg = 'var(--surface-1)';
                   let border = 'var(--border)';
@@ -2426,21 +2929,10 @@ export default function QuizPage() {
             onNextTask={(href) => router.push(href)}
           />
           {networkErrorBanner}
-          {results.xp_earned === 0 && !results.flagged && (
-            <div className="fixed bottom-4 left-4 right-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-center z-30 shadow-sm animate-slide-up max-w-md mx-auto"
-              style={{ margin: '0 auto' }}>
-              <p className="text-sm">
-                {isHi
-                  ? 'कोई XP नहीं मिला — शायद नेटवर्क की समस्या थी। तुम्हारा स्कोर सहेज लिया गया है। XP कमाने के लिए दोबारा प्रयास करो!'
-                  : 'No XP earned — there may have been a network issue. Your score is saved. Try again to earn XP!'}
-              </p>
-            </div>
-          )}
         </>
       );
     }
 
-    // Legacy QuizResults branch — also show networkErrorBanner + xp_earned=0 messaging
     return (
       <>
         <QuizResults
@@ -2464,7 +2956,6 @@ export default function QuizPage() {
           }
           isHi={isHi}
           quizMode={quizMode}
-          cogLoad={cogLoad}
           selectedSubject={selectedSubject}
           studentName={student!.name}
           timer={timer}
@@ -2505,26 +2996,18 @@ export default function QuizPage() {
             </p>
           </div>
         )}
-        {/* Provisional result note when network error occurred but results were
-            still returned (server may have committed atomically). Shows in BOTH
-            v2 and legacy branches. */}
         {networkError && (
-          <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-center z-30 shadow-sm animate-slide-up">
-            <p className="text-sm">
-              {isHi
-                ? 'संपर्क की समस्या के कारण XP सही नहीं दिख सकता। अगर तुम्हें शून्य XP दिख रहा है, तो दोबारा प्रयास करो।'
-                : 'XP may not display correctly due to a connection issue. If you see zero XP, please try again.'}
-            </p>
-          </div>
-        )}
-        {results.xp_earned === 0 && !results.flagged && (
-          <div className="fixed bottom-4 left-4 right-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-center z-30 shadow-sm animate-slide-up max-w-md mx-auto"
-            style={{ margin: '0 auto' }}>
-            <p className="text-sm">
-              {isHi
-                ? 'कोई XP नहीं मिला — शायद नेटवर्क की समस्या थी। तुम्हारा स्कोर सहेज लिया गया है। XP कमाने के लिए दोबारा प्रयास करो!'
-                : 'No XP earned — there may have been a network issue. Your score is saved. Try again to earn XP!'}
-            </p>
+          <div className="fixed bottom-20 left-4 right-4 bg-amber-500 text-white rounded-xl p-4 text-center z-40 shadow-lg animate-slide-up">
+            <p className="text-sm font-medium mb-2">{networkError}</p>
+            <button
+              onClick={retrySubmit}
+              disabled={loading}
+              className="px-4 py-1.5 bg-white text-amber-700 rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              {loading
+                ? (isHi ? 'भेज रहे हैं...' : 'Submitting...')
+                : (isHi ? 'पुनः प्रयास करें' : 'Retry')}
+            </button>
           </div>
         )}
       </>

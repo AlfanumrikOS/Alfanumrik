@@ -82,6 +82,39 @@ regexes = [
     # value on the same lines still fails the gate.
     '^c36bf53d-13ec-492a-8af4-bd5bc1ada902$',
     '^d7881e43-542d-4d55-8221-dce4d638b85d$',
+    # 2026-08-23 (PR #1605): scripts/verify-20260814-migrations.mjs — the
+    # `MIGRATION_SET` array of migration FILENAMES. Implicated in three in-range
+    # commits: b00b9c872 L118, 145eed3e7 L70, aac11f027 L69. No credential is
+    # involved — every captured value is a migration filename that also exists
+    # on disk under supabase/migrations/.
+    #
+    # MECHANISM: generic-api-key needs a keyword adjacent to a high-entropy run.
+    # The word `access` inside the *filename*
+    # `20260814000018_plan_subject_access_restrict.sql` satisfies the keyword
+    # half, and the rule's `[\w.=-]{10,150}` capture group then runs past the
+    # closing quote, the comma and the NEWLINE to swallow the NEXT array element
+    # as its "Secret". The reported secret is therefore never the line that
+    # tripped the rule — it is the line after it. Verified locally with gitleaks
+    # v8.24.3: Secret = "20260814000019_trim_teacher_subjects_taught.sql",
+    # entropy 4.31, no assignment operator, no key material.
+    #
+    # CLASS-scoped, NOT literal-pinned, deliberately. The captured value is not
+    # stable: aac11f027 captured "20260814000013_trim_teacher_subjects_taught.sql"
+    # while the two later commits captured "20260814000019_…". Same line —
+    # renumbered mid-branch when colliding migrations were re-sequenced
+    # (145eed3e7). A literal anchor would already need two entries today and
+    # would re-break on the next renumber. The SHAPE is what is safe here, not
+    # the value: exactly 14 digits, one underscore, lowercase/digits/underscores,
+    # and a `.sql` terminator — a shape no API key, token, JWT, or Razorpay
+    # live-mode secret can take.
+    #
+    # NOT path-scoped: allowlisting scripts/** or supabase/migrations/** would
+    # blind the gate to a genuine leak in exactly the two trees where admin
+    # scripts and migrations live — the trees most likely to hold a real
+    # service-role key. A fingerprint ignore was rejected for the same reason as
+    # the entries above: fingerprints embed the finding's commit SHA and do not
+    # survive squash-merge. Anchored ^…$ so nothing wider can hide behind it.
+    '^[0-9]{14}_[a-z0-9_]+\.sql$',
 ]
 paths = [
     'src/__tests__/ai-prompt-pii\.test\.ts',

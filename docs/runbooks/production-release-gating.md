@@ -1,9 +1,15 @@
 # Runbook: Production Release Gating (database-before-code)
 
-> **Status of the owner-side change described in §3: NOT APPLIED — requires owner action.**
-> Nothing in this document has been executed. It records the exact settings, the
-> required values, the order they must be changed in, how to verify, and the risk
-> that remains until then.
+> **Status of the owner-side change described in §3: APPLIED 2026-08-23, pending §4 verification.**
+> Both settings changed in the required order during the launch-readiness program: the CEO
+> disabled Vercel Git production auto-deploy for `main` (setting A), then, after this program
+> added two missing prerequisite GitHub secrets (VERCEL_ORG_ID, VERCEL_PROJECT_ID) that would
+> otherwise have made the CLI deploy job fail, the CEO set `USE_CLI_DEPLOY=true` directly
+> (setting B, confirmed via `gh variable list`: true as of 2026-08-23T09:02:08Z). No in-flight
+> Vercel deployment spanned the change. What has NOT happened yet: the actual §4 verification
+> (observing a real push to `main` deploy exactly once via the CLI job, not doubled by Vercel's
+> Git integration) — this program deliberately did not manufacture a test push. Treat the next
+> real production push as the still-outstanding proof point, per §4 below.
 
 **Owner:** architect (pipeline) with ops (dashboard access)
 **Approver:** user (Pradeep) — §3 changes a GitHub repo variable and a Vercel project setting; both are outside the repo.
@@ -240,4 +246,4 @@ the only observation that actually proves the interlock rather than the ordering
 | Out-of-band remote-ledger drift is surfaced on the release that follows it | **Enforced** (parity check, `migration_parity=drift`, offending versions in the step summary) |
 | Edge Functions deploy success is asserted terminally | **Enforced** |
 | The release record names the migration set it shipped against | **Enforced** |
-| **New application code is not promoted to production when migrations fail** | **NOT ENFORCED — blocked on §3 (owner action, outside the repo)** |
+| **New application code is not promoted to production when migrations fail** | **APPLIED 2026-08-23, pending §4 real-push verification** (§3 settings both live; the observation that proves the interlock has not yet occurred) |

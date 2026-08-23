@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:alfanumrik_api_v2/alfanumrik_api_v2.dart' as v2;
 import 'package:equatable/equatable.dart';
 
@@ -39,27 +41,56 @@ class QuizQuestion extends Equatable {
     this.bloomLevel = 'remember',
   });
 
+  /// Build from a raw `question_bank` row on the legacy (`useV2`-OFF)
+  /// candidate-pool fetch in [QuizRepository.getQuestions].
+  ///
+  /// R8 (2026-08-11) corrected the column names. This factory previously read
+  /// `option_1`..`option_4`, `correct_option` and `question_text_hi` — NONE of
+  /// which exist on `public.question_bank` (verified against the baseline
+  /// migration; the real columns are the `options` jsonb array, `question_hi`,
+  /// and `correct_answer_index`). Every legacy-path question therefore
+  /// deserialised with an EMPTY options list. It was masked because
+  /// `start_quiz_session` normally replaces these rows with server-shuffled
+  /// ones before render; it only surfaced if that soft-failed.
+  ///
+  /// `correctIndex` is the `-1` "server-owned, do not consult" sentinel, the
+  /// same as every other factory on this class. The answer key is deliberately
+  /// NOT read even though the column exists: this row is a candidate for
+  /// `start_quiz_session`, and the server is the only thing that ever decides
+  /// correctness (P1/P6).
   factory QuizQuestion.fromJson(Map<String, dynamic> json) {
-    final optionsList = <String>[];
-    for (int i = 1; i <= 4; i++) {
-      final opt = json['option_$i'] as String?;
-      if (opt != null) optionsList.add(opt);
-    }
-
     return QuizQuestion(
-      id: json['id'] as String,
-      questionText: json['question_text'] as String,
-      questionTextHi: json['question_text_hi'] as String?,
-      options: optionsList,
-      correctIndex: (json['correct_option'] as int? ?? 1) - 1,
+      id: json['id'] as String? ?? '',
+      questionText: json['question_text'] as String? ?? '',
+      questionTextHi: json['question_hi'] as String?,
+      options: _parseOptions(json['options']),
+      // Sentinel — server-side authority, never derived on the device.
+      correctIndex: -1,
       explanation: json['explanation'] as String?,
       explanationHi: json['explanation_hi'] as String?,
       subject: json['subject'] as String? ?? '',
       grade: json['grade'] as String? ?? '',
       chapterTitle: json['chapter_title'] as String?,
-      difficulty: json['difficulty'] as int? ?? 1,
+      difficulty: (json['difficulty'] as num?)?.toInt() ?? 1,
       bloomLevel: json['bloom_level'] as String? ?? 'remember',
     );
+  }
+
+  /// `options` arrives as a native JSON array (normal PostgREST jsonb
+  /// deserialisation) or, for legacy rows, as a JSON-encoded string.
+  static List<String> _parseOptions(dynamic raw) {
+    if (raw is List) return raw.map((e) => e.toString()).toList(growable: false);
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          return decoded.map((e) => e.toString()).toList(growable: false);
+        }
+      } catch (_) {
+        // Fall through to empty.
+      }
+    }
+    return const [];
   }
 
   /// Build from a single entry in the `questions` array returned by the

@@ -53,10 +53,16 @@ import * as ts from 'typescript';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-// Resolve from the project root regardless of the test runner's cwd. Vitest
+// Resolve from the monorepo root regardless of the test runner's cwd. Vitest
 // runs from the package root so `process.cwd()` is reliable here, but using a
 // fixed anchor keeps the test stable if that ever changes.
-const ROOT = path.resolve(__dirname, '..', '..', '..');
+//
+// This file lives at apps/host/src/__tests__/edge-functions/, which is FIVE
+// path segments below the monorepo root (apps -> host -> src -> __tests__ ->
+// edge-functions). `supabase/functions/` was never moved under `apps/host/`
+// by the monorepo migration (see root CLAUDE.md's path-correction table), so
+// it must be resolved from the true repo root, not from `apps/host/`.
+const ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
 const FUNCTIONS_DIR = path.join(ROOT, 'supabase', 'functions');
 
 /** Recursive *.ts collector. Skips node_modules-style nested dirs (none today,

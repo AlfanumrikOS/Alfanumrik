@@ -6,10 +6,16 @@
  *
  * Hands off to the EXISTING /quiz engine. We do NOT modify the quiz page.
  *
- * /quiz reads these URL query params to pre-configure a session (verified in
- * src/app/quiz/page.tsx, ~line 305): `subject`, `mode` (accepts only
- * 'cognitive' | 'exam'), `count`, `chapter`. There is NO `mode=practice` value
- * and NO `difficulty` param. This generic Quick-Start deliberately deep-links
+ * /quiz reads these URL query params to pre-configure a session (see the URL
+ * effect in apps/host/src/app/(student)/quiz/page.tsx): `subject`, `mode`,
+ * `count`, `chapter`, plus `session` (Phase 4 resume). `mode` accepts
+ * 'practice' | 'cognitive' | 'exam' | 'srs'. NOTE (corrected 2026-08-11): this
+ * comment previously stated there was NO `mode=practice` value — that was an
+ * accurate observation of a DEFECT (the branch was missing, so every
+ * `?mode=practice` link silently fell through to 'cognitive' and Screen 07
+ * Practice was unreachable from any deep link), not a design decision. The
+ * branch now exists. There is still NO `difficulty` param. This generic
+ * Quick-Start deliberately deep-links
  * to /quiz with NO params, landing the student on the standard setup screen so
  * they pick subject/chapter/difficulty there. Scoped launches (subject+chapter)
  * are handled by WeakTopicLauncher.

@@ -1433,6 +1433,17 @@ export async function runPipeline(
   if (!vars.mode_directive) vars.mode_directive = vars.mode_instruction ?? '';
   if (!vars.next_topic) vars.next_topic = '';
   if (!vars.prereq) vars.prereq = '';
+  // Defense-in-depth for NCERT_SOLVER_V1's {{marks}} (Answer Depth block).
+  // ncert-solver/index.ts already passes an explicit default when the caller
+  // omits marks, but unlike the empty-string defaults above, {{marks}} sits
+  // inside a still-readable sentence ("Marks N -> adjust answer length...")
+  // when unset, so an empty string would render a broken "Marks  ->..." line
+  // rather than a harmless blank section. Default to '2' (the short-answer
+  // band) here too, matching ncert-solver's own default, so any future
+  // caller of ncert_solver_v1 that forgets to pass marks still gets a
+  // grammatically valid prompt instead of a literal unsubstituted
+  // "{{marks}}" or a broken sentence.
+  if (!vars.marks) vars.marks = '2';
 
   // Response-cache v2 (design item 9): resolve the template as ordered
   // prompt-cache segments — [static head] (cached) → [per-student sections]

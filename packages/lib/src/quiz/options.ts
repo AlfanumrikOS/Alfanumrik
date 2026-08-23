@@ -93,6 +93,80 @@
 export const OPTION_LETTERS: readonly string[] = Object.freeze(['A', 'B', 'C', 'D']);
 
 /**
+ * Minimal shape `isMcqQuestion` reads. Deliberately structural: the two
+ * originals this unifies each declared their own local `Question` interface
+ * (the quiz page's carries `cbse_type`, the learn page's does not), and
+ * neither of those interfaces is exportable from a Next.js page module.
+ */
+export interface McqCandidate {
+  question_type?: string | null;
+  cbse_type?: string | null;
+  options?: unknown;
+  correct_answer_index?: unknown;
+}
+
+/**
+ * Is this served question renderable as a four-option MCQ?
+ *
+ * ONE predicate. It had drifted into two copies, sitting on the two surfaces
+ * that both serve `question_bank` rows to a student:
+ *
+ *   1. `apps/host/src/app/(student)/quiz/page.tsx`            → `isQuestionMCQ`
+ *   2. `apps/host/src/app/(student)/learn/[subject]/[chapter]/page.tsx`
+ *                                                            → `isLearnPageMCQ`
+ *
+ * Copy 2's own doc comment admitted it was a copy of copy 1 ("Mirrors the
+ * check in src/app/quiz/page.tsx isQuestionMCQ()") — and it had already
+ * drifted: copy 1 accepts `cbse_type === 'mcq'` as an explicit-type match,
+ * copy 2 did not. This module adopts copy 1 (the SUPERSET). That widening is
+ * unobservable on the learn surface, whose only feed —
+ * `getChapterQuestions()` in `packages/lib/src/supabase.ts` — does not select
+ * a `cbse_type` column at all, so the field is always `undefined` there.
+ *
+ * The shape branch delegates to `parseOptions` above rather than re-inlining
+ * `Array.isArray(o) ? o : JSON.parse(o)`, which is what BOTH originals did.
+ * That is a strict safety gain and no behaviour change for in-contract input:
+ * for an array or a JSON string the two agree member-for-member, and for
+ * `null` the originals reached `JSON.parse(null) === null` and then threw a
+ * TypeError on `.length` — `parseOptions` returns `[]`.
+ *
+ * P6 NOTE: this is a RENDERABILITY test, not the quality gate. It answers
+ * "can this be drawn as A/B/C/D?" so a short/long-answer row is never fed to
+ * an option grid. The P6 contract (four DISTINCT non-empty options, non-empty
+ * text, non-empty explanation) is enforced by `./question-validation`.
+ *
+ * ── KEYLESS SERVING (migration 20260814000023) ───────────────────────────────
+ * The shape branch used to ALSO require `correct_answer_index` to be a number in
+ * 0..3. That clause is removed, and its removal is a BUG FIX rather than a
+ * loosening, for two independent reasons:
+ *
+ *   1. It was never a renderability signal. Whether a question can be drawn as
+ *      A/B/C/D depends on having four options — not on which one is right. The
+ *      module's own note above already said so; the clause contradicted it.
+ *
+ *   2. No serving path supplies the value any more. Every serving RPC and every
+ *      direct `question_bank` projection stopped returning the answer key, and
+ *      the server-shuffle / resume paths stamp the fail-loud `-1` sentinel. With
+ *      the clause in place, a legacy row whose `question_type` is NULL — i.e.
+ *      exactly the row shape detection exists FOR — would have been classified
+ *      NON-MCQ and rendered in a written-answer box. The same was already true
+ *      for any `-1`-stamped resumed question whose snapshot carried a NULL
+ *      `question_type`.
+ *
+ * The rule the clause was standing in for — "correct_answer_index is present
+ * and in 0..3" — is still enforced, in two places that cannot be bypassed by a
+ * client: `public.question_bank_p6_valid` filters it out of every serving RPC,
+ * and `start_quiz_session` refuses to snapshot a row that fails it. The
+ * TypeScript gate in `./question-validation` still rejects a PRESENT-but-
+ * out-of-range index too.
+ */
+export function isMcqQuestion(q: McqCandidate | null | undefined): boolean {
+  if (!q) return false;
+  if (q.question_type === 'mcq' || q.cbse_type === 'mcq') return true;
+  return parseOptions(q.options).length === 4;
+}
+
+/**
  * Parse a question's `options` column into a renderable array.
  *
  * Accepts the two shapes the DB actually hands back — a real array, or a

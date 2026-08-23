@@ -55,7 +55,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 
@@ -344,6 +344,42 @@ function walk(dir: string, depth: number, hit: (abs: string, name: string) => vo
     if (st.isDirectory()) walk(abs, depth - 1, hit);
     else hit(abs, name);
   }
+}
+
+/**
+ * Directories the walk must never descend into. These name locations INSIDE
+ * the repo — so they may only ever be matched against a repo-RELATIVE path
+ * (see `repoRelative`), never an absolute one.
+ */
+const FORBIDDEN_SCAN_FRAGMENTS = [
+  '/node_modules/',
+  '/.next/',
+  '/.claude/',
+  '/dist/',
+  '/build/',
+  '/coverage/',
+] as const;
+
+/**
+ * `abs` expressed relative to `repoRoot`, forward-slashed and '/'-prefixed so
+ * the fragments above anchor on a directory boundary at any depth (including
+ * immediately under the root: `/node_modules/x` still matches).
+ */
+function repoRelative(repoRoot: string, abs: string): string {
+  return `/${relative(repoRoot, abs).replace(/\\/g, '/')}`;
+}
+
+/**
+ * Why a scanned path is illegitimate, or null if it is fine.
+ *
+ * Pure and root-parameterised on purpose: it is exercised below against
+ * synthetic roots so the exclusions are provably enforced even on a machine
+ * whose real layout happens to contain none of them.
+ */
+function scanLeak(repoRoot: string, abs: string): string | null {
+  const rel = repoRelative(repoRoot, abs);
+  if (rel === '/..' || rel.startsWith('/../')) return 'escaped repo root';
+  return FORBIDDEN_SCAN_FRAGMENTS.find((frag) => rel.includes(frag)) ?? null;
 }
 
 function dockerfiles(): string[] {
@@ -833,14 +869,48 @@ describe('REG-378 scan exclusions', () => {
     // not a stricter guard — it is a FLAKY one, failing on files this repo does
     // not author and cannot fix. Assert the walk's output, not just the
     // constant, so a future edit to SKIP_DIRS is caught by behaviour.
-    const scanned = dockerfiles().map((p) => p.replace(/\\/g, '/'));
+    const scanned = dockerfiles();
     expect(scanned.length).toBeGreaterThan(0);
-    const forbidden = ['/node_modules/', '/.next/', '/.claude/', '/dist/', '/build/', '/coverage/'];
     for (const abs of scanned) {
-      for (const frag of forbidden) {
-        expect(abs.includes(frag), `scan leaked into ${frag}: ${abs}`).toBe(false);
-      }
+      expect(scanLeak(REPO_ROOT, abs), `scan leaked (${abs})`).toBeNull();
     }
+  });
+
+  it('judges leakage on the repo-RELATIVE path, so a checkout that LIVES in .claude/worktrees is not its own violation', () => {
+    // The regression this shape fixes (2026-08-11). The fragments above name
+    // directories *inside* the repo, but they used to be matched against the
+    // ABSOLUTE path. Every agent worktree is a full checkout whose own root is
+    // `<repo>/.claude/worktrees/<name>/`, so REPO_ROOT itself contains
+    // `/.claude/worktrees/` — and `<REPO_ROOT>/Dockerfile`, the single most
+    // load-bearing file rule (d) exists to read, was reported as a leak into
+    // `/.claude/`. The suite failed for every run executed from a worktree,
+    // with no defect behind it, while touching nothing in any change set.
+    //
+    // The guard's INTENT — never descend into a sibling/nested worktree — is
+    // preserved exactly and asserted below. What changed is only the frame of
+    // reference: "where inside the repo did the walk go", not "what string
+    // does this machine's home directory happen to contain".
+    const wtRoot = '/home/u/proj/.claude/worktrees/phase4';
+
+    // Its OWN root files are legitimate scan targets, worktree or not.
+    expect(scanLeak(wtRoot, `${wtRoot}/Dockerfile`)).toBeNull();
+    expect(scanLeak(wtRoot, `${wtRoot}/python/Dockerfile`)).toBeNull();
+
+    // …and every real exclusion still bites, from that same root.
+    expect(scanLeak(wtRoot, `${wtRoot}/.claude/worktrees/nested/Dockerfile`)).toBe('/.claude/');
+    expect(scanLeak(wtRoot, `${wtRoot}/node_modules/foo/Dockerfile`)).toBe('/node_modules/');
+    expect(scanLeak(wtRoot, `${wtRoot}/apps/host/.next/Dockerfile`)).toBe('/.next/');
+    expect(scanLeak(wtRoot, `${wtRoot}/packages/ui/dist/Dockerfile`)).toBe('/dist/');
+    expect(scanLeak(wtRoot, `${wtRoot}/build/Dockerfile`)).toBe('/build/');
+    expect(scanLeak(wtRoot, `${wtRoot}/coverage/Dockerfile`)).toBe('/coverage/');
+
+    // A path that is not under the root at all is a leak of its own kind —
+    // a sibling worktree reached by escaping upward would otherwise read as
+    // "clean" because it contains no forbidden fragment relative to itself.
+    expect(scanLeak(wtRoot, '/home/u/proj/.claude/worktrees/other/Dockerfile')).toBe(
+      'escaped repo root',
+    );
+    expect(scanLeak(wtRoot, '/home/u/elsewhere/Dockerfile')).toBe('escaped repo root');
   });
 
   it('excludes .claude/worktrees even though real node:20 Dockerfiles live there', () => {
@@ -849,19 +919,32 @@ describe('REG-378 scan exclusions', () => {
     // time of the 2026-08-09 pin-down) still carried `FROM node:20-alpine`.
     // Without the `.claude` skip, rule (d) would fail on every machine that has
     // ever run a worktree — a false failure with no defect behind it.
+    //
+    // NOTE the deliberate asymmetry with the test above: what must be excluded
+    // is a worktree *reached from* REPO_ROOT, i.e. `REPO_ROOT/.claude/worktrees/*`.
+    // REPO_ROOT itself is always in scope even when it IS a worktree.
     const wt = join(REPO_ROOT, '.claude/worktrees');
-    const scanned = dockerfiles().map((p) => p.replace(/\\/g, '/'));
-    expect(scanned.some((p) => p.includes('/.claude/worktrees/'))).toBe(false);
+    const scanned = dockerfiles();
+    for (const abs of scanned) {
+      expect(
+        repoRelative(REPO_ROOT, abs).startsWith('/.claude/worktrees/'),
+        `scan descended into a nested worktree: ${abs}`,
+      ).toBe(false);
+    }
 
     if (!existsSync(wt)) return; // worktrees are a local artefact; absent on CI
     for (const name of readdirSync(wt)) {
       const df = join(wt, name, 'Dockerfile');
       if (!existsSync(df)) continue;
       // Non-vacuity: prove there IS something in there the scan would have
-      // tripped on, so the exclusion is demonstrably doing work.
+      // tripped on, so the exclusion is demonstrably doing work. (When this
+      // suite runs FROM a worktree there are usually no nested worktrees to
+      // find — which is why the mutation proof above is unconditional.)
       const raw = readFileSync(df, 'utf8');
       if (/^\s*FROM\s+node:/im.test(raw)) {
-        expect(scanned).not.toContain(df.replace(/\\/g, '/'));
+        expect(scanned.map((p) => p.replace(/\\/g, '/'))).not.toContain(
+          df.replace(/\\/g, '/'),
+        );
         return;
       }
     }

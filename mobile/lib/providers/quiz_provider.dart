@@ -194,10 +194,17 @@ class QuizNotifier extends Notifier<QuizState> {
   /// (client-side shuffled questions, no session, legacy
   /// `submit_quiz_results` at submit time). This preserves backwards
   /// compatibility with older Supabase deployments.
+  /// R8 (2026-08-11): [boardYear] is the PYQ board-paper hint from the `/pyq`
+  /// launcher (`/quiz?...&year=`), already range-validated by the router. It is
+  /// forwarded to [QuizRepository.getQuestions] as a question-SELECTION
+  /// preference ONLY — it never reaches the session, the submit call, or any
+  /// scoring input, so P1/P2/P3/P4 are untouched by it. Null for every non-PYQ
+  /// launch, which leaves selection byte-identical to before.
   Future<void> startQuiz({
     required String subject,
     String? chapterTitle,
     int count = 10,
+    int? boardYear,
     // Phase 6 sub-phase 5 (Assignments): set ONLY when launched from the
     // Assignments screen's "Start"/"Retry" deep link. Threaded through to
     // [QuizState.assignmentId] — see that field's doc comment for the exact
@@ -226,6 +233,7 @@ class QuizNotifier extends Notifier<QuizState> {
       grade: student.grade,
       count: count,
       chapterTitle: chapterTitle,
+      boardYear: boardYear,
     );
 
     await fetchResult.when(

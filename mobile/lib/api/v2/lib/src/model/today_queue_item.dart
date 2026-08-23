@@ -178,8 +178,9 @@ class _$TodayQueueItemSerializer implements PrimitiveSerializer<TodayQueueItem> 
         case r'meta':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType(BuiltMap, [FullType(String), FullType.nullable(JsonObject)]),
-          ) as BuiltMap<String, JsonObject?>;
+            specifiedType: const FullType.nullable(BuiltMap, [FullType(String), FullType.nullable(JsonObject)]),
+          ) as BuiltMap<String, JsonObject?>?;
+          if (valueDes == null) continue;
           result.meta.replace(valueDes);
           break;
         case r'rank':

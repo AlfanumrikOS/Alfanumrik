@@ -79,3 +79,14 @@ already addressed as tracked follow-ups.
 ## Required fixes before COMPLETE (if REJECT)
 None. (The workflow is not marked fully COMPLETE only because PAY-2 is user-gated and the mobile-repoint
 + doc-fix + cosmetic-display follow-ups remain — none of which are validation failures; see `STATUS.md`.)
+
+---
+
+> **FORWARD POINTER (added subsequently — do not treat this file's PAY-2 characterization as current).**
+> This document is a point-in-time record of the 2026-06-29 Cycle-2 validation and is accurate to what
+> was true then. PAY-2 (the pricing-source de-dup, note 2 above) was subsequently carried forward through
+> a dedicated remediation cycle: `remediation/pay-2-pricing-source/` landed the L1/L2 code-mirror de-dup
+> on 2026-06-29 (PR #1167), and the canonical `unlimited` price called USER-GATED in note 2 was **resolved
+> the next day** via **PR #1179** (commit `9d19cd7618`, 2026-06-30) — converged to the DB-canonical
+> ₹1099/₹8799, with REG-196 tightened into REG-207. For current status, read
+> `remediation/pay-2-pricing-source/STATUS.md`, not this file.

@@ -293,7 +293,12 @@ describe.each(ROUTES)(
       expect(bearerArgs).toMatchObject({
         p_session_id: SESSION_ID,
         p_student_id: STUDENT_ID,
-        p_idempotency_key: IDEMPOTENCY_KEY,
+        // R9 (2026-08-11, packages/lib/src/quiz/idempotency.ts): the grading
+        // key is derived from body.sessionId via resolveGradingIdempotencyKey,
+        // never the raw client header — a stale client key here would be a
+        // pre-R9 regression (double-XP risk, P2). SESSION_ID is a valid UUID
+        // in this fixture, so it — not IDEMPOTENCY_KEY — is what the RPC sees.
+        p_idempotency_key: SESSION_ID,
         p_time: 42,
       });
     });

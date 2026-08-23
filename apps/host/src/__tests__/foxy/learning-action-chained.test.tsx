@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, prettyDOM, render, screen, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 /**
@@ -22,6 +22,54 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
  * (chip labels, overflow menu, dispatch mapping) is covered exhaustively in
  * learning-action-chat-bubble.test.tsx — so this file can drive the two chip taps
  * deterministically without depending on ChatBubble's internal layout.
+ *
+ * ── WAITING STRATEGY (rewritten 2026-08-23, CI merge-gate flake fix) ────────
+ *
+ * WHAT WAS WRONG. Every wait in this file was a WALL-CLOCK deadline: five
+ * `{ timeout: 5000 }` overrides on `findBy*` / `waitFor`. Nothing in this test
+ * is actually waiting for TIME to pass — every async seam here is an
+ * already-resolved promise (mocked `fetch`, mocked supabase builders, mocked
+ * flag hooks). What it is really waiting for is CPU: the page pulls two
+ * `next/dynamic` children that are deliberately NOT stubbed (the real
+ * `_components/MessageList`, which is the whole point of this file, and
+ * `ContextPanel`, which `osEnabled` mounts unconditionally), and Vite has to
+ * transform them on first import.
+ *
+ * `Unit Tests (shard N/4)` runs four vitest processes in parallel on one CI
+ * box. That transform + first render measures ~3 s of a 5 s budget in
+ * isolation — a 1.6x margin — and blows straight through 5 s under shard
+ * contention. Measured 4/6 failures under a loaded reproduction on 2026-08-23,
+ * every one of them on the FIRST wait (`la-simpler`) with "Unable to find an
+ * element by: [data-testid=la-simpler]". A slower box made a correct test red.
+ *
+ * (For the record: the five `{ timeout: 5000 }` literals were EQUAL to the
+ * global `asyncUtilTimeout: 5000` in setup.ts, so deleting them alone would
+ * have changed nothing. The budget was never the fixable part — the UNIT was.)
+ *
+ * WHAT IT DOES NOW, two changes:
+ *
+ *   1. `warmDynamicChildren()` imports the two unstubbed `next/dynamic`
+ *      children BEFORE `render()`, so their transform cost is paid outside
+ *      every wait window and `React.lazy` resolves them from Vite's module
+ *      cache. This changes nothing about WHAT renders — the real MessageList
+ *      and the real ContextPanel still mount, and the integration surface this
+ *      file exists to cover is untouched.
+ *
+ *   2. `flushUntil()` replaces `waitFor` / `findBy*`. Its budget is denominated
+ *      in EVENT-LOOP FLUSHES, not milliseconds. A slower machine does not get
+ *      fewer flushes — it gets the same number of flushes, each of which simply
+ *      takes longer, so CPU starvation can only make this test SLOWER, never
+ *      red. A genuinely missing state transition still exhausts the budget and
+ *      fails, with a DOM dump.
+ *
+ * NOTHING IS WEAKENED. Every `expect()` below is the same expectation it was
+ * before, in the same order — including `toBe(2)` on the tutor-bubble count and
+ * both `not.toBe` / `not.toContain` guards on the second re-send. `flushUntil`
+ * only decides WHEN the assertion is evaluated; the assertion itself still has
+ * to be literally true.
+ *
+ * DO NOT re-introduce `{ timeout: N }` here. If this file ever needs more room,
+ * the number to change is MAX_FLUSHES, which is CPU-speed independent.
  */
 
 function jsonOk(body: Record<string, unknown>) {
@@ -294,6 +342,62 @@ function foxyBodies(): Array<Record<string, unknown>> {
     .map((c) => JSON.parse((c[1] as RequestInit).body as string));
 }
 
+/**
+ * Number of event-loop flushes `flushUntil` will spend before declaring a state
+ * transition genuinely absent. This is a WORK budget, not a TIME budget — see
+ * the "WAITING STRATEGY" note at the top of this file. Every seam this test
+ * waits on is an already-resolved promise, so the real requirement is a couple
+ * of dozen flushes; 200 is deep headroom that still terminates fast on a real
+ * failure (each flush of a settled DOM is ~1 ms).
+ */
+const MAX_FLUSHES = 200;
+
+/**
+ * Deterministic replacement for `waitFor` / `findBy*`.
+ *
+ * Yields the event loop (macrotask, inside `act` so React flushes its work
+ * queue) until `ready()` holds. Because the budget counts flushes rather than
+ * milliseconds, a loaded CI box cannot exhaust it early: starvation stretches
+ * each flush, it does not remove flushes.
+ */
+async function flushUntil(what: string, ready: () => boolean): Promise<void> {
+  for (let i = 0; i < MAX_FLUSHES; i++) {
+    if (ready()) return;
+    // eslint-disable-next-line no-await-in-loop -- flushes are strictly ordered
+    await act(async () => {
+      await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    });
+  }
+  if (ready()) return;
+  throw new Error(
+    `flushUntil("${what}") — the condition never became true after ${MAX_FLUSHES} ` +
+    `event-loop flushes. This is a real missing state transition, not a timeout: ` +
+    `the budget is denominated in work, not wall clock.\n\nDOM:\n` +
+    `${prettyDOM(document.body, 30000)}`,
+  );
+}
+
+/**
+ * Import the two `next/dynamic` children this page mounts that are deliberately
+ * NOT stubbed, so Vite pays their transform cost here rather than inside a wait.
+ *
+ *   - `_components/MessageList` — the real one, on purpose: it is what paints
+ *     the directive pill and what skips it. Stubbing it would gut this file.
+ *   - `ContextPanel` — mounted unconditionally by `osEnabled`
+ *     (ff_student_os_v1 is permanently ON), so it is on the render path even
+ *     though nothing here asserts on it.
+ *
+ * Every other dynamic child on this path is already `vi.mock`ed above (a mocked
+ * module resolves from the registry with no transform), or is behind a flag /
+ * breakpoint / open-state gate that this test never trips.
+ */
+async function warmDynamicChildren(): Promise<void> {
+  await Promise.all([
+    import('@/app/foxy/_components/MessageList'),
+    import('@alfanumrik/ui/foxy/ContextPanel'),
+  ]);
+}
+
 beforeEach(() => {
   const now = Date.now();
   db.data.foxy_sessions = [
@@ -317,8 +421,21 @@ beforeEach(() => {
   global.fetch = fetchMock as unknown as typeof fetch;
 
   // Ensure streaming is OFF so the deterministic JSON branch runs.
+  //
+  // ⚠️ This USED TO BE `removeItem`, which did the OPPOSITE of what the line
+  // above says. `shouldUseStreaming()` (packages/ui/src/foxy-panel/useFoxyChat.ts:131)
+  // reads `localStorage.alfanumrik_foxy_stream` and returns `v !== '0'` — so an
+  // ABSENT key means streaming ON. The file has therefore been running the
+  // STREAMING branch all along, which appends an EMPTY tutor bubble optimistically
+  // (useFoxyChat.ts:973) before any reply arrives. That made the
+  // "the re-teach reply paints a SECOND tutor bubble" wait below VACUOUS: it was
+  // satisfied by the empty placeholder, so it passed even when /api/foxy never
+  // answered at all (measured 2026-08-23 with a never-resolving fetch mock — the
+  // whole test still went green). Setting the opt-out explicitly restores the
+  // documented JSON branch and makes that wait load-bearing again: the same
+  // never-resolving-fetch control now fails, as it should.
   if (typeof window !== 'undefined') {
-    try { window.localStorage.removeItem('alfanumrik_foxy_stream'); } catch { /* ignore */ }
+    try { window.localStorage.setItem('alfanumrik_foxy_stream', '0'); } catch { /* ignore */ }
   }
   if (!('randomUUID' in (globalThis.crypto ?? {}))) {
     Object.defineProperty(globalThis, 'crypto', {
@@ -330,35 +447,48 @@ beforeEach(() => {
 
 describe('chained learning action — the pill is skipped so the ORIGINAL question is re-taught', () => {
   it('after a directive pill, a SECOND action re-sends the ORIGINAL question, not the pill label', async () => {
+    // Pay the transform cost of the unstubbed dynamic children BEFORE the first
+    // wait window — see warmDynamicChildren()'s note.
+    await warmDynamicChildren();
     const { default: FoxyPage } = await import('@/app/foxy/page');
     render(<FoxyPage />);
 
     // The resumed session renders the ORIGINAL question + one tutor bubble; the
     // tutor bubble exposes the learning-action chips (flag ON).
-    const simpler = await screen.findByTestId('la-simpler', {}, { timeout: 5000 });
+    await flushUntil(
+      'the resumed session paints a tutor bubble with its learning-action chips',
+      () => screen.queryAllByTestId('la-simpler').length > 0,
+    );
+    const simpler = screen.getByTestId('la-simpler');
 
     // ── First learning action: "Explain simpler" ──
     fireEvent.click(simpler);
 
     // The display fix: a compact directive PILL is appended (not a re-echo of the
     // full question).
-    const pill = await screen.findByTestId('directive-echo-pill', {}, { timeout: 5000 });
+    await flushUntil(
+      'the directive echo pill is appended',
+      () => screen.queryByTestId('directive-echo-pill') !== null,
+    );
+    const pill = screen.getByTestId('directive-echo-pill');
     expect(pill.textContent).toBe(SIMPLER_LABEL_EN);
 
     // The first re-send still carried the ORIGINAL question to the server.
-    await waitFor(
-      () => expect(foxyBodies().some((b) => b.coachDirective === 'simplify')).toBe(true),
-      { timeout: 5000 },
+    await flushUntil(
+      'the first re-send reaches /api/foxy with coachDirective=simplify',
+      () => foxyBodies().some((b) => b.coachDirective === 'simplify'),
     );
+    expect(foxyBodies().some((b) => b.coachDirective === 'simplify')).toBe(true);
     const firstBody = foxyBodies().find((b) => b.coachDirective === 'simplify')!;
     expect(firstBody.message).toBe(ORIGINAL_Q);
 
     // The re-teach reply is a NEW tutor bubble → now TWO example chips exist
     // (original answer + re-teach answer).
-    await waitFor(
-      () => expect(screen.getAllByTestId('la-example').length).toBe(2),
-      { timeout: 5000 },
+    await flushUntil(
+      'the re-teach reply paints a SECOND tutor bubble',
+      () => screen.queryAllByTestId('la-example').length >= 2,
     );
+    expect(screen.getAllByTestId('la-example').length).toBe(2);
 
     // ── Second (chained) learning action on the NEWEST tutor bubble ──
     const examples = screen.getAllByTestId('la-example');
@@ -366,10 +496,11 @@ describe('chained learning action — the pill is skipped so the ORIGINAL questi
 
     // THE BONUS FIX: the prior-question lookup skips the directive pill and
     // re-sends the ORIGINAL question — never the pill label.
-    await waitFor(
-      () => expect(foxyBodies().some((b) => b.coachDirective === 'example')).toBe(true),
-      { timeout: 5000 },
+    await flushUntil(
+      'the chained re-send reaches /api/foxy with coachDirective=example',
+      () => foxyBodies().some((b) => b.coachDirective === 'example'),
     );
+    expect(foxyBodies().some((b) => b.coachDirective === 'example')).toBe(true);
     const secondBody = foxyBodies().find((b) => b.coachDirective === 'example')!;
     expect(secondBody.message).toBe(ORIGINAL_Q);
     expect(secondBody.message).not.toBe(SIMPLER_LABEL_EN);

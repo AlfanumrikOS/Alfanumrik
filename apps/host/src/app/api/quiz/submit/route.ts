@@ -40,7 +40,12 @@
  *   RPC call.
  *
  * Idempotency model
- *   - Idempotency-Key is persisted in `quiz_sessions.idempotency_key` (per-student
+ *   - R9: the GRADING key is the request's `sessionId`, never the client's
+ *     header value. The header stays required + UUID-validated (it is a client
+ *     retry token) but the server binds grading to the session so that one
+ *     session can only ever be graded once — see
+ *     packages/lib/src/quiz/idempotency.ts for the full rationale.
+ *   - That key is persisted in `quiz_sessions.idempotency_key` (per-student
  *     unique partial index). The RPC short-circuits on replay and returns the
  *     cached score.
  *   - On a unique-violation race (two concurrent retries arriving simultaneously),
@@ -68,6 +73,7 @@ import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { capture as posthogCapture } from '@alfanumrik/lib/posthog/server';
 import { validateBody } from '@alfanumrik/lib/validation';
 import { runQuizSubmitSideEffects } from '@alfanumrik/lib/quiz/submit-side-effects';
+import { resolveGradingIdempotencyKey } from '@alfanumrik/lib/quiz/idempotency';
 import {
   authTransportLabel,
   isPermanentRpcFailure,
@@ -161,6 +167,18 @@ export async function POST(request: NextRequest) {
   }
   const body = validation.data;
 
+  // ── 3b. R9 — bind the GRADING key to the session, not to the client ───
+  // The header above is a client-chosen retry token; it is NOT allowed to
+  // choose which key grades this quiz. `quiz_sessions_idempotency_key_uniq`
+  // is UNIQUE on (student_id, idempotency_key), so two different client keys
+  // for one session would be two legal rows → two gradings → DOUBLE XP (P2),
+  // and the resume route's already-submitted gate (which looks the SESSION ID
+  // up in that same column) would stop matching, making a graded session
+  // resumable again. `sessionId` is required by submitBodySchema, so from here
+  // the grading key IS the session id. Rationale for ignoring rather than
+  // rejecting a mismatch (live mobile clients) is in the helper's doc block.
+  const gradingKey = resolveGradingIdempotencyKey(body.sessionId, idempotencyKey);
+
   // ── 4. Cross-check JWT's student_id matches body.studentId ────────────
   // Defense-in-depth: RLS on quiz_session_shuffles would also reject this.
   const admin = getSupabaseAdmin();
@@ -210,7 +228,7 @@ export async function POST(request: NextRequest) {
         session_id: body.sessionId,
         flag_state: 'off',
       },
-      `quiz_server_submit_passthrough:${body.sessionId}:${idempotencyKey}`,
+      `quiz_server_submit_passthrough:${body.sessionId}:${gradingKey}`,
     ).catch(() => { /* never throw from telemetry */ });
   }
 
@@ -250,7 +268,8 @@ export async function POST(request: NextRequest) {
       p_chapter: body.chapter ?? null,
       p_responses: rpcResponses,
       p_time: body.totalTimeSeconds,
-      p_idempotency_key: idempotencyKey,
+      // R9: the SESSION id, never the client header. See step 3b.
+      p_idempotency_key: gradingKey,
     });
     rpcData = (data ?? null) as QuizV2Result | null;
     rpcErr = error
@@ -355,7 +374,9 @@ export async function POST(request: NextRequest) {
         .from('quiz_sessions')
         .select('id, total_questions, correct_answers, score_percent, score')
         .eq('student_id', body.studentId)
-        .eq('idempotency_key', idempotencyKey)
+        // R9: must be the SAME key the INSERT raced on, else the cached row is
+        // never found and a genuine retry 503s instead of replaying.
+        .eq('idempotency_key', gradingKey)
         .maybeSingle();
 
       if (cached.data) {
