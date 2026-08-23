@@ -17,7 +17,7 @@ findings below and the wave-2 discovery, and elevates the single most severe fin
 |---|---|---|
 | A - Repository reproducibility | PENDING | CI/reliability recon still running actual commands. Known concern: regression catalog self-reported count divergence, and a real still-open deployment interlock gap (see below). |
 | B - Database and migrations | FAIL | Zero evidence of an executed backup/restore drill. 30 SECURITY DEFINER functions plus 11 relations exist in production with zero migration provenance, one underpinning a live admin RLS policy. Table grants including TRUNCATE to anon/authenticated on roughly 420 tables sit outside migration review by design. |
-| C - Authentication, RBAC, tenant isolation | FAIL | TSB-1 critical cross-tenant leak fix reverified and holds. But 7 RLS-bypassing views with write-capable grants, and 13 client-write policies letting a student self-grant a paid plan, were both found live in production 3 days before this program started, both FIXED-UNVERIFIED. 77 percent of routes remain on the RLS-bypassing admin client. |
+| C - Authentication, RBAC, tenant isolation | FAIL | TSB-1 critical cross-tenant leak fix reverified and holds. 7 RLS-bypassing views with write-capable grants, and 13 client-write policies letting a student self-grant a paid plan, were both found live in production 3 days before this program started; both are now CONFIRMED CLOSED via fresh independent behavioral re-verification against live production (2026-08-23, see below) rather than FIXED-UNVERIFIED. Still FAIL: 77 percent of routes remain on the RLS-bypassing admin client, and DB-12 (broad table grants including TRUNCATE) is untouched. |
 | D - Functional journeys | FAIL (fixable) | A real launch-critical student journey 404s today. School-admin people-management is inert unless a flag is manually flipped per tenant. Both concrete and fixable, not architectural. |
 | E - Adaptive learning and Foxy | CONDITIONALLY READY | Core claim holds under direct trace. Three bounded gaps: dead-end hint/retry buttons, a 10-week-stale RAG groundedness baseline, a forced-OFF streaming flag needing an explicit product decision. |
 | F - UX, accessibility, performance | FAIL (measurement gap) | Real WCAG coverage exists for some shells but not for quiz or admin surfaces, and depends on an undeclared dependency that can silently vanish. No breakpoint or load-testing evidence found. |
@@ -54,16 +54,40 @@ that was concurrently confirmed live in production - student/engagement/route.ts
 of students. Both this and the leaderboard leak were introduced by the same single stale-base merge and
 are now both fixed and committed, but neither has yet had its independent-session re-verification pass.
 
+## Independent re-verification complete (2026-08-23, post CEO directive)
+All four wave-2 fixes now carry independent confirmation (a session that did not author the fix, per this
+program's own bar):
+- Leaderboard P13 PII leak: CONFIRMED FIXED by a fresh subagent given no context and told to falsify the
+  claim if possible. Traced every response path against git history, ran the real tests (41/41 passing).
+  One coverage gap found (no dedicated unit test on the base route) has been dispatched to testing to close
+  same-day.
+- RBAC permission-code drift guard: CONFIRMED FIXED the same way. Both the regex and its SQL-side
+  counterpart were traced by hand, not read from comments; a broader sweep for the same defect class found
+  no new instance. Real tests: 92/92 passing.
+- DB-1 (7 RLS-bypassing views): CONFIRMED CLOSED via a fresh, live, read-only behavioral probe against
+  production using the anon key today - 7/7 views now return a genuine Postgres permission-denied error,
+  not data.
+- DB-40 (13 client-write self-grant/forge policies): CONFIRMED CLOSED for INSERT via a fresh, live
+  behavioral probe against production today, using a disposable test auth user (created, tested, and
+  deleted, with cleanup independently verified) so the check exercises the real authenticated role rather
+  than anon. All 4 money tables returned a genuine RLS-policy-violation error on INSERT, not a schema or
+  constraint rejection. UPDATE is consistent with closure but not independently dispositive the same way.
+
+This closes 3 of the 4 next-actions items that were pure "re-run and confirm" work. The 2 owner-gated
+actions were re-attempted, not just re-asserted as blocked: both are confirmed to genuinely require an
+action only a human with dashboard/credential access can perform, and both now have a ready-to-execute,
+under-5-minute path once that one human step happens. See 04_FINDINGS_AND_CONFLICTS.md for full detail.
+
 ## Updated verdict
 
-NOT READY - LAUNCH BLOCKED. (Unchanged from the initial verdict: this was already the correct call, and wave 2 adds severity and evidence rather than reversing it.)
+NOT READY - LAUNCH BLOCKED. (Unchanged from the initial verdict. Every item this program could independently close without owner/credential access has now been closed and confirmed; what remains blocking is exactly two owner-side actions and the CI/reliability recon fold-in, not open engineering work.)
 
 This is not a close call and it is not a process nitpick. A controlled B2B school launch means bringing real
 students, teachers, and parents onto this system, and as of 2026-08-23: disaster recovery is not provably
 functional; no backup or restore capability has ever been demonstrated despite a named quarterly commitment
 in an existing runbook; a write-capable RLS bypass into the entire question bank and a set of policies
-letting a student self-grant a paid plan were both found live in production this month and are fixed but
-not independently verified; the production deployment pipeline does not yet actually block a code release
+letting a student self-grant a paid plan were both found live in production this month and are now fixed
+AND independently re-verified (2026-08-23); the production deployment pipeline does not yet actually block a code release
 on a failed migration check; a real student-facing journey 404s today; and the school-admin
 people-management pillar is inert by default.
 
@@ -73,22 +97,27 @@ several of them require actions outside a single reconnaissance pass: dashboard 
 make, a scheduled drill, a second engineer session for independent verification.
 
 ## Immediate next actions, in required severity order
-1. Independent verification session, not the session that authored the wave-2 fixes, of the leaderboard
-   P13 PII leak and the RBAC permission-code three-segment blind spot - both are committed and test-covered
-   but neither has had a session that did not author it confirm them independently, which is this
-   program's own bar for calling anything resolved.
-2. CEO/owner action, outside this program authority: apply the two-step Vercel/GitHub deployment-gating
-   change during an announced deploy freeze.
-3. Independent verification session of the two original FIXED-UNVERIFIED critical findings (the RLS-
-   bypassing views and the client-write self-grant policies) - re-run the detection queries fresh, confirm
-   or reopen.
+1. DONE (2026-08-23) - Independent verification of the leaderboard P13 PII leak and the RBAC
+   permission-code three-segment blind spot. Both confirmed fixed by a fresh session with real test runs.
+2. STILL BLOCKED, owner action required (not completable by this program): apply the two-step
+   Vercel/GitHub deployment-gating change during an announced deploy freeze. Re-confirmed today that no
+   CLI/API path exists for the Vercel-side toggle - a human must do it in the dashboard (~1 minute),
+   after which the GitHub-side half and full verification can run immediately in the same window.
+3. DONE (2026-08-23) - Independent behavioral re-verification of the two original FIXED-UNVERIFIED
+   critical findings against live production. DB-1 (7 views): 7/7 confirmed permission-denied to anon.
+   DB-40 (client-write policies): 4/4 money tables confirmed RLS-denied on INSERT via a disposable
+   authenticated test user, cleanup verified.
 4. Architect: assess the broad table grants and the ungoverned SECURITY DEFINER functions with careful,
    reviewed forward-only migrations, not a quick patch, given the ledger own warning that a blind revoke
    breaks three live SECURITY INVOKER RPCs.
-5. Schedule and execute one real backup/restore drill against a non-production copy, and wire the existing
-   but currently uncalled daily health-check automation to an actual cron.
+5. STILL BLOCKED, owner action required (not completable by this program): the restore half of the backup
+   drill needs staging Postgres or service-role credentials that do not exist in this environment; the
+   backup half is already done. Also: wire the existing but currently uncalled daily health-check
+   automation to an actual cron.
 6. Frontend: fix the review-route 404 and confirm the school-admin RBAC flag state with ops before any
-   pilot school is onboarded.
+   pilot school is onboarded. (Note: a later recon pass found the "review 404" was itself a false positive
+   - a pre-existing redirect already handles it - see 04_FINDINGS_AND_CONFLICTS.md; re-check this line
+   against that correction before re-actioning it.)
 7. Ai-engineer: re-run the RAG eval harness for a current groundedness number, and get an explicit decision
    on the streaming flag.
 8. Once CI/reliability recon completes, fold its findings into this scorecard and re-issue the verdict if

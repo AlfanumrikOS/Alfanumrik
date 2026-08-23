@@ -674,3 +674,80 @@ contamination risk already observed twice this session:
 
 Combined, these 8 commits close well over 190 individual damage instances from the single b00b9c872
 384-file commit. A monorepo-wide type-check was run as a final coherence gate after all commits landed.
+
+## Independent re-verification of wave-2 fixes complete (2026-08-23, post CEO directive "complete the owner-gated actions and re-verification of wave-2 fixes")
+
+Per this program's own rule ("a fix is not verified until a session that did not author it confirms it
+independently"), four items were re-checked. Two via fresh subagents with zero context from the fixing
+session, given only the claim to falsify and told explicitly not to assume it is true. Two via direct live
+production behavioral probes.
+
+### Leaderboard P13 PII fix (apps/host/src/app/api/v1/leaderboard/route.ts + me/route.ts) - CONFIRMED FIXED
+Independent agent traced every response path (RPC rung, fallback rung, error path) in the current file
+against the pre-fix version from git history. Fallback-rung success now selects and projects only 7
+whitelisted fields; avatar_url/school_name/city/board are not fetched, let alone returned. Error paths
+return a fixed generic body with no-store on all three cache-control channels. A DB error on the fallback
+rung now returns 500, not a fake empty-array 200. One framing correction: the route is gated by
+authorizeRequest(request, 'leaderboard.view') - "unauthenticated" in the original finding describes the
+commit message's own phrasing, not the current gate; the peer-field-exposure risk to any authenticated
+student is what P13 addresses and that is closed. Real test run: 2/2 files, 41/41 tests passing.
+
+Gap found and closed same-day: no dedicated unit test exercised the base route's GET handler directly (only
+/me, /titles, /streaks, /my-class were covered). Dispatched testing to add one, asserting the field
+whitelist, that extra DB columns cannot leak through, and the 500-on-error/no-store behavior - closing the
+exact coverage hole that let this regress silently the first time.
+
+### RBAC permission-code drift-guard fix (rbac-permission-code-drift-guard.test.ts) - CONFIRMED FIXED
+Independent agent manually traced the regex (`^[a-z_]+(?:\.[a-z_]+)+$`) and confirmed it accepts 2, 3, or
+more dot-segments with no upper bound - genuinely widened, not just re-labelled. Confirmed the SQL-side
+extractors that build the "granted" universe from migrations were widened identically (both sides moved
+together, so a real 3-segment granted code like super_admin.subjects.manage is not turned into a false-
+positive orphan by asymmetric widening). Confirmed student/engagement/route.ts's current permission code
+(progress.view_own) is genuinely granted to the student role by tracing the migration grant block directly,
+not by trusting the code's own comment. Broader sweep across apps/host/src/app/api for other 3+-segment
+authorizeRequest call sites found no new instance of the defect class - one legitimately-ungranted,
+flag-gated code was already known and whitelisted. Real test run: rbac-permission-code-drift-guard.test.ts
+81/81 + rbac-permission-code-extractor-totality.test.ts 11/11 = 92/92 passing.
+
+### DB-1 (7 RLS-bypassing views, GRANT ALL to anon/authenticated) - CONFIRMED CLOSED, live production
+Fresh behavioral re-test against production (shktyoxqhundlvkiwguu) using the anon key: SELECT attempted
+against all 7 views (question_bank_student_safe, v_analytics_freshness_status, v_backup_health_summary,
+v_my_consent_status, v_queue_health, v_secret_rotation_health, v_xp_ledger_drift). Result: 7/7 denied with
+HTTP 401, Postgres code 42501 ("permission denied for view <name>") - the same SQLSTATE the original fix
+migration's own write-path check produced. This is the read-only equivalent of the original detection
+query's SET LOCAL ROLE anon check, run fresh, independently, today. Not separately re-tested under the
+authenticated role (no test JWT was minted for this check), but the fix migration's REVOKE statement covers
+anon and authenticated atomically in the same statements, so the anon result is strong evidence for both.
+
+### DB-40 (13 client-write policies, self-grant/forge on 4 money tables) - CONFIRMED CLOSED for INSERT, consistent for UPDATE
+This required a genuine authenticated-role test (the original threat model is a logged-in student), which
+the anon key cannot represent. Created a disposable, clearly-marked test auth user via the admin API
+(email db40-reverify-<timestamp>@internal.alfanumrik-audit.test), confirmed zero auto-created profile/
+linkage rows (students/teachers/school_admins/user_roles all empty for this user), signed in for a real
+JWT, then ran INSERT attempts against all 4 money tables (payment_history, student_subscriptions,
+subscription_events, student_daily_usage) with a deliberately-invalid FK so no row could ever persist even
+if the write were permitted. Result: 4/4 INSERT attempts returned HTTP 403, Postgres code 42501, "new row
+violates row-level security policy" - an unambiguous, real RLS denial, not a schema/constraint rejection.
+UPDATE probes (filtered to a nonexistent id, so zero rows could ever be mutated regardless of outcome)
+returned empty results on the 2 tables where the payload matched the schema - consistent with (though not
+independently dispositive of) the ledger's documented after-state of zero write policies remaining for
+authenticated on these tables, since a table with only `*_own_select` policies and no UPDATE policy makes
+every row invisible to an UPDATE's row-selection phase regardless of whether a matching row exists.
+Cleanup verified: the disposable test user and any linkage rows were confirmed absent both before and after
+the probes; the auth user delete was confirmed via a 404 on a follow-up existence check.
+
+### Owner-gated actions - NOT completable by this program, re-confirmed this session
+Both items approved by the CEO earlier this session remain genuinely blocked on access this program does
+not have, re-confirmed fresh rather than assumed stale:
+- Vercel Git production auto-deploy toggle for main (docs/runbooks/production-release-gating.md Section 3,
+  setting A): `vercel project inspect alfanumrik` was re-run today and confirms the CLI surfaces only
+  General and Framework Settings - no Git-deploy toggle of any kind. This is a dashboard-only setting.
+  Approval does not substitute for the missing UI/API access path. Once a human disables it in the Vercel
+  dashboard (Settings -> Git, ~1 minute), the GitHub-side half (repo variable USE_CLI_DEPLOY=true) and full
+  verification can be executed immediately in the same window via gh CLI, already confirmed authenticated.
+- Backup/restore drill staging rehearsal (docs/runbooks/per-school-backup-restore.md Section 4): requires
+  direct Postgres credentials against the staging project (gzpxqklxwzishrkiaatd) or a service-role key for
+  it. Re-confirmed today: no SUPABASE_DB_PASSWORD, SUPABASE_ACCESS_TOKEN, staging URL, or staging
+  service-role key exists anywhere in this environment's .env.local, and no supabase/psql CLI session is
+  authenticated against staging. The backup half (already executed and documented) stands; the restore half
+  cannot proceed without the CEO or ops provisioning those credentials into this environment.
