@@ -121,7 +121,35 @@ const NAV_ITEMS: SidebarItem[] = [
   // ── 2. People & Support ─────────────────────────────────────────────────
   { type: 'section', label: 'People & Support', labelHi: 'लोग और सहायता' },
   { href: '/super-admin/users', label: 'Users & Roles', labelHi: 'उपयोगकर्ता और भूमिकाएँ', icon: '⊕' },
-  { href: '/super-admin/support', label: 'Support Center', labelHi: 'सहायता केंद्र', icon: '⊛' },
+  // ── Nav-truth fix (2026-08-11) ───────────────────────────────────────────
+  // /super-admin/support was labelled "Support Center" but never queries
+  // support_tickets — its four calls are failed_jobs / user_activity /
+  // parent_links / class_mappings (super-admin/support/page.tsx:102,125,146,166;
+  // the API enumerates no ticket action, api/super-admin/support/route.ts:129-131).
+  // An operator following the obvious nav path never saw a single ticket.
+  // Relabelled to what it actually is; the real queue gets its own entry below.
+  { href: '/super-admin/support', label: 'Ops Diagnostics', labelHi: 'ऑप्स डायग्नोस्टिक्स', icon: '⊛' },
+  // The REAL support-ticket queue. Originally only the legacy
+  // internal/admin/_components/SupportTab.tsx console (mounted at
+  // internal/admin/page.tsx under tab key 'support'). It was linked from
+  // nowhere in this panel until 2026-08-11.
+  // CORRECTION 2026-08-16 (frontend, Phase 2 console merge): repointed to the
+  // new in-console page /super-admin/support/tickets (full capability parity
+  // with SupportTab.tsx, same underlying /api/internal/admin/support API —
+  // see docs/superpowers/specs/2026-08-16-phase2-support-console-parity.md).
+  // The "opens legacy console" hint is gone — this no longer leaves the
+  // console. Same session boundary as before: proxy.ts Layer 2.1 still gates
+  // /api/internal/admin/* on a literal super_admin session (unchanged by this
+  // phase); the new page surfaces that distinctly (see its own header
+  // comment) rather than reusing AdminShell's generic session-expired banner.
+  // The legacy /internal/admin console stays live and unchanged until parity
+  // is confirmed across all 10 tabs, not just this one.
+  {
+    href: '/super-admin/support/tickets',
+    label: 'Support Tickets',
+    labelHi: 'सहायता टिकट',
+    icon: '🎫',
+  },
   // Foxy North-Star Phase 1 — safeguarding disclosure review queue.
   // P10 fold-in (2026-08-05): the queue lives as the Safeguarding tab of the
   // grandfathered /super-admin/foxy-quality page (the standalone route
