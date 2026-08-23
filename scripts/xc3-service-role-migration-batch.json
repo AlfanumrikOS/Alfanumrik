@@ -2,7 +2,7 @@
   "generated_at": "2026-08-03",
   "rcaItem": "RCA-01",
   "source": "XC-3 high-sensitivity service-role migration batch",
-  "totalAdminClientRoutesPinned": 270,
+  "_totalAdminClientRoutesPinned_removed": "Removed 2026-08-11. This field used to restate scripts/admin-client-allowlist.json's \"count\" as a second hand-maintained copy of one number, and xc3-service-role-migration-batch.test.ts asserted the two were equal. Nothing else ever read it. Two ledgers for one number can only ever drift (268 vs 267 inside a single branch, 2026-08-11) and each drift fails a test shard for a reason unrelated to code quality. The single source of truth is scripts/admin-client-allowlist.json's \"count\", which api-admin-client-allowlist.test.ts already pins THREE ways: count === routes.length === routes actually detected importing @alfanumrik/lib/supabase-admin in the live tree === EXPECTED_COUNT. Deriving beats duplicating. Do NOT re-add this key — the test now fails if it comes back.",
   "objective": "Prioritize high-sensitivity API routes that still use the service-role/admin client so RCA-01 moves from a flat allowlist toward an executable RLS defense-in-depth migration plan.",
   "entries": [
     {

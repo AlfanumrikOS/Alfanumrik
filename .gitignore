@@ -46,7 +46,7 @@ eval/openai-migration/reports/
 # stray build logs
 build-out.txt
 build-tmp.txt
-Alfanumrik/
+/Alfanumrik/
 
 # Claude Code per-agent worktrees — created on the fly under .claude/worktrees/.
 # Previously committed as orphan gitlinks (mode 160000) with no .gitmodules
@@ -91,3 +91,24 @@ Alfanumrik_PreSeed_Investor_Deck.pptx
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# Local operator tooling — NOT source, NOT for git.
+#
+# Why this entry exists (2026-08-13, architect): `tools/` was untracked but
+# unignored, which is indistinguishable from "staged for the next commit" to
+# `git add -A`. Two separate payloads were one careless command from entering
+# history:
+#   1. tools/pdf-content-ingestor/.env.staging.local — holds a Supabase
+#      SERVICE_ROLE key. (Line 70's `.env*` rule already matched this file, so
+#      it was covered; this entry is defence in depth, not the primary control.
+#      Key ROTATION is a Supabase-dashboard action and is handled separately —
+#      ignoring the file does not un-expose a key that already leaked.)
+#   2. tools/pdf-content-ingestor/data/assets/ — extracted page images for 49
+#      PDFs. Large binary payload, regenerable from source PDFs, never source.
+# The directory is deliberately NOT deleted: the operator may still want to
+# inspect/run it locally.
+tools/
+
+# Local Python virtualenv for BGE embedding experiments (regenerable)
+.venv-bge/
+graphify-out/

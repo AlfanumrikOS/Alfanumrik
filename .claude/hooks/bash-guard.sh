@@ -46,6 +46,15 @@ set -euo pipefail
 
 INPUT=$(cat)
 
+# This hook runs before every single Bash tool call, so a missing local
+# dependency must degrade gracefully with one clear message instead of
+# crashing every invocation under `set -e`. Fail open (exit 0, no stdout)
+# rather than emit hand-built JSON, since jq itself is what's unavailable.
+if ! command -v jq >/dev/null 2>&1; then
+  echo "bash-guard.sh: jq not found, skipping checks — install it: winget install jqlang.jq | choco install jq | scoop install jq | brew install jq | apt install jq" >&2
+  exit 0
+fi
+
 AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 

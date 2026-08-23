@@ -191,6 +191,15 @@ on:
 # previously used unrelated groups, so a main-push sync and a develop/staging
 # deploy could push migrations concurrently (racing schema_migrations
 # bookkeeping and DDL). One serial lane for all staging DB pushes fixes that.
+#
+# 2026-08-20: ci.yml's `Integration Tests (live DB)` job now also joins this
+# SAME group (previously its own job-local `integration-tests-live-staging-db`
+# lane). That job reads/writes the same staging DB this workflow pushes DDL
+# to; confirmed overlapping wall-clock execution against commit 0b05519 (run
+# 32337055976 here vs 32337056137 in ci.yml) coincided with the
+# `select_quiz_questions_rag` verification-gate integration pins failing with
+# "expected N rows, got 0". See ci.yml's own concurrency comment on that job
+# for the full evidence trail.
 concurrency:
   group: staging-db-push
   cancel-in-progress: false   # never cancel a migration push mid-flight
@@ -211,7 +220,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: supabase/setup-cli@v2
         with:
