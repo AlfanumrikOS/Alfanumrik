@@ -234,7 +234,7 @@
       "title": "Play Engine — mission framework (missions/mysteries/teach-Foxy-back/student-vs-Foxy) on the dive/challenge substrate; no new engine, no XP paths outside xp-config",
       "specSection": "§1.1",
       "phase": "5",
-      "status": "verified",
+      "status": "built",
       "layers": {
         "db": [],
         "backend": [
@@ -269,11 +269,17 @@
           "quality"
         ]
       },
-      "lastVerified": "2026-08-05",
+      "lastVerified": "2026-08-23",
       "evidence": [
         "packages/lib/src/play/",
-        "apps/host/src/app/(student)/missions/",
         "packages/ui/src/play/"
+      ],
+      "notes": [
+        "STATUS DOWNGRADED verified → built (2026-08-23). The student-facing surface apps/host/src/app/(student)/missions/page.tsx was deliberately REMOVED by commit 681b8b433 (\"fix(student): resolve risk register R4-R9\", item R6) because the page could not work — its endpoint does not exist. The missions evidence path was deleted from this record for the same reason; do not re-add it.",
+        "Non-existence is test-pinned, not incidental: apps/host/src/__tests__/student-surface-jargon-guard.test.ts, describe block \"R6 — /missions is not shipped while it cannot work\", asserts (a) the page file is absent, (b) apps/host/src/app/api/play does not exist, (c) nothing links to /missions. Restoring the page fails those tests.",
+        "The engine modules (packages/lib/src/play/, packages/ui/src/play/) are built and on disk but currently have ZERO importers and no student-reachable surface — hence built, not verified.",
+        "RE-MOUNT CONDITION: when backend ships /api/play/mission-progress, the guard test flips, the surface may be re-mounted, and this record can return to verified with the missions path re-added to evidence[].",
+        "Ownership note: this downgrade was applied by ops under an orchestrator decision to keep the alignment analyzer honest; backend (record owner) and assessment sign off as downstream reviewers and may revise the status in review. The evidence-path deletion is not in dispute either way."
       ]
     },
     {
@@ -2757,7 +2763,7 @@
       "title": "Engagement from curiosity + visible progress, not addictive mechanics — mission framework on existing substrate (S1.6); Close stage (L7) supplies visible progress",
       "specSection": "§1.5",
       "phase": "5",
-      "status": "verified",
+      "status": "built",
       "layers": {
         "db": [],
         "backend": [],
@@ -2785,10 +2791,16 @@
           "quality"
         ]
       },
-      "lastVerified": "2026-08-05",
+      "lastVerified": "2026-08-23",
       "evidence": [
-        "packages/lib/src/play/",
-        "apps/host/src/app/(student)/missions/"
+        "packages/lib/src/play/"
+      ],
+      "notes": [
+        "STATUS DOWNGRADED verified → built (2026-08-23), tracking S1.6. U7 claims engagement via the mission framework, but that framework has no student-reachable surface: apps/host/src/app/(student)/missions/page.tsx was deliberately REMOVED by commit 681b8b433 (\"fix(student): resolve risk register R4-R9\", item R6). The missions evidence path was deleted from this record for the same reason; do not re-add it.",
+        "Non-existence is test-pinned by apps/host/src/__tests__/student-surface-jargon-guard.test.ts, describe block \"R6 — /missions is not shipped while it cannot work\" (page absent, apps/host/src/app/api/play absent, nothing links to /missions).",
+        "The L7 Close-stage half of this requirement (visible progress) is unaffected by the /missions removal; only the mission-framework half lost its surface.",
+        "RE-MOUNT CONDITION: when backend ships /api/play/mission-progress and the surface is re-mounted, this record can return to verified alongside S1.6.",
+        "Ownership note: applied by ops under an orchestrator decision; assessment (record owner) signs off as downstream reviewer and may revise the status in review. The evidence-path deletion is not in dispute either way."
       ]
     },
     {
