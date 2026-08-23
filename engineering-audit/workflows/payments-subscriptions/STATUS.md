@@ -57,3 +57,13 @@ Status of each gate item for the Cycle-2 *landed* set (PAY-1/3/4/5/6/7/8):
 | Quality (independent) | quality | 2026-06-29 | **APPROVE** |
 | Testing | testing | 2026-06-29 | **GREEN** (sweep) |
 | Orchestrator (mark COMPLETE) | — | — | NOT YET — auto-fix-safe complete; PAY-2 gated + follow-ups above |
+
+---
+
+> **FORWARD POINTER (added subsequently — do not treat item 1 above as current).** This document is a
+> point-in-time record of the 2026-06-29 Cycle-2 status and is accurate to what was true then.
+> **PAY-2-canonical-price was subsequently resolved** via the dedicated `remediation/pay-2-pricing-source/`
+> cycle: PR #1167 landed the L1/L2 pricing-source-of-truth de-dup on 2026-06-29, and **PR #1179** (commit
+> `9d19cd7618`, 2026-06-30) then converged the canonical `unlimited` price to the DB-canonical
+> ₹1099/₹8799 (REG-196 tightened into REG-207). For current, authoritative status, read
+> `remediation/pay-2-pricing-source/STATUS.md`, not item 1 in this file.

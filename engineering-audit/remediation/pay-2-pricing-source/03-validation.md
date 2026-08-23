@@ -99,3 +99,21 @@ So a mobile buyer of "unlimited" pays **₹1499** while a web buyer of the same 
 
 **L1 + L2: LANDED + APPROVED. Gate 5 CLOSED.**
 **Canonical `unlimited` price: USER-GATED — the one true remaining pricing decision.**
+
+---
+
+## 6. UPDATE (2026-06-30) — canonical price RESOLVED
+
+The canonical `unlimited` price flagged above (§4) as USER-GATED was decided the **following day**:
+**PR #1179** (commit `9d19cd7618`, 2026-06-30) — `fix(payments): PAY-2 — converge unlimited price to
+DB-canonical Rs1099/8799 (P11)`. CEO-approved; per the commit message, the direction is "strictly
+downward — customer-favorable, never overcharges." Canonical `unlimited` price is now **₹1099/mo,
+₹8799/yr** (the DB value — matches what web already billed; the mobile code mirror converged down to
+meet it). **REG-196** (the DB-divergence pin described in §2 above) was tightened into **REG-207** — a
+`DB === code` convergence-pin (`toEqual`), asserting both sides equal `{monthly: 1099, yearly: 8799}` —
+in `apps/host/src/__tests__/payments/consumer-pricing-sot-drift.test.ts` (no changes needed to that file
+for this reconciliation; it was already updated correctly in the same commit).
+
+This validation record (2026-06-29, §§1-5 above) remains accurate for what it certified at the time —
+the L1/L2 landing described here was a separate, earlier, amount-preserving de-dup. Current status:
+`STATUS.md` in this same directory.

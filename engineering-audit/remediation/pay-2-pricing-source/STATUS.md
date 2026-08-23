@@ -1,13 +1,13 @@
 # STATUS: PAY-2 — Pricing source-of-truth (drift elimination)
 
-**PAY-2 LANDED — code-mirror drift eliminated + parity guard + DB-divergence pinned; canonical `unlimited` price USER-GATED.**
+**PAY-2 LANDED — code-mirror drift eliminated + parity guard + DB-divergence pinned; canonical `unlimited` price RESOLVED (PR #1179 / commit `9d19cd7618`, 2026-06-30) — converged to ₹1099/₹8799, REG-196 tightened to REG-207.**
 
 - **Item:** PAY-2 (post-program remediation backlog, Tier-1; surfaced Cycle 2 — payments-subscriptions)
 - **Invariant:** P11 (payment integrity) — read-source-only de-dup, **no amount moved**
 - **Owner squad:** backend (L1 de-dup) + testing (L2 parity/divergence) + architect (P11 review) + mobile (contract review) + quality
 - **CEO gate:** the recommended L1/L2 fix is **NOT** CEO-gated (no amount changes). The canonical `unlimited` price (DB ₹1099 vs code ₹1499) **IS** USER-GATED.
 - **Started / landed:** 2026-06-29
-- **Status:** **LANDED — APPROVE; Gate 5 CLOSED. Canonical `unlimited` price = NEW Tier-1 USER-GATED follow-up.**
+- **Status:** **LANDED — APPROVE; Gate 5 CLOSED. Canonical `unlimited` price = RESOLVED (PR #1179 / commit `9d19cd7618`, 2026-06-30, REG-207) — see "Deferred / residual" item 1 below.**
 
 ## Ledger
 | Step | Artifact | Done |
@@ -38,13 +38,18 @@
 - Catalog 161 → **163** (REG-195 / REG-196).
 
 ## Deferred / residual
-1. **Canonical `unlimited` price — NEW Tier-1 USER-GATED decision (P11).** Web checkout reads the DB
-   (`subscription_plans.unlimited` = ₹1099/₹8799); mobile checkout reads the code mirror (₹1499/₹11999) —
-   the SAME plan is billed differently by platform **today**. Full single-source consolidation is BLOCKED
-   until the CEO picks the canonical amount (collapsing either direction moves a real charge → CEO-gated).
-   On decision: reconcile DB↔code, tighten REG-196 into a `DB === code` assertion + enable the live-DB lane,
-   and (if ₹1099) reconcile mobile `payment_history.amount` + MRR. **Live billing-trust / consumer-law
-   exposure.** Recorded on the `STATE.md` RISK register + `PRIORITY-BACKLOG.md` Tier-1.
+1. **Canonical `unlimited` price — RESOLVED (P11).** Web checkout read the DB
+   (`subscription_plans.unlimited` = ₹1099/₹8799); mobile checkout read the code mirror (₹1499/₹11999) —
+   the SAME plan was billed differently by platform. **Resolved via PR #1179 (commit `9d19cd7618`,
+   2026-06-30):** CEO-approved convergence to the DB-canonical **₹1099/₹8799** (per the commit message,
+   "strictly downward — customer-favorable, never overcharges"). See
+   `apps/host/src/app/api/payments/create-order/route.ts` (~lines 116-136, citing migration
+   `20260505155126`) and `packages/lib/src/plans.ts` (`PRICING.unlimited` = `{monthly: 1099, yearly: 8799}`).
+   **REG-196** (the DB-divergence pin) was tightened into **REG-207** — a `DB === code` convergence-pin
+   (`toEqual`) in `apps/host/src/__tests__/payments/consumer-pricing-sot-drift.test.ts`, asserting both
+   sides equal `{monthly: 1099, yearly: 8799}`. The `payment_history.amount` reconciliation sweep for
+   mobile rows historically captured at ₹1499, and the MRR estimate correction, remain a separate,
+   financially-sensitive item tracked outside this doc.
 2. **`subscription_plans` seed into the migration chain — architect dependency (not a CEO gate).** The
    schema-only baseline carries no seed rows, so a fresh DB has an empty table; "DB as single canonical
    source" is fragile and the L2 live-DB parity lane stays `skipIf` until the seed is folded in
