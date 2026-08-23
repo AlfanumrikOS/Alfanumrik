@@ -619,3 +619,100 @@ to "a phrase, or one of exactly three enumerated silences". Do not merge the two
 entries: deleting REG-395's enumeration would silently re-widen REG-389.
 
 ---
+
+> **Restored + renumbered 2026-08-23 (launch-readiness catalog reconciliation).**
+> Filed as REG-380/381/382 on 2026-08-11; deleted wholesale by `b00b9c872`'s
+> stale-base merge resolution while the parallel Phase 4 lineage's own
+> REG-380/381/382 (`quiz_session_shuffles_answer_key_column_acl` /
+> `resume_payload_answer_key_non_disclosure` /
+> `p3_anticheat_survives_resume_both_directions`, `03-quiz-integrity.md`) was
+> kept — a direct 3-way id collision. Restored verbatim from `origin/main` and
+> renumbered to REG-400/401/402 (`+20`, same shift as the rest of this
+> collision range — see `00-header.md`). Re-verified 2026-08-23 — see the
+> per-entry note below the table for exact current pass counts (one
+> regression found: REG-400's file has 1 new failure out of 23). Do not
+> re-use REG-380/381/382.
+
+## Leaderboard SEV1 batch — envelope seam, band totality, no client-side cross-student reads — 2026-08-11
+
+Three defects took the whole `/leaderboard` page down or made it lie, and all three
+shipped because nothing tested the thing that broke.
+
+**The seam.** `GET /api/v1/leaderboard/me` returns the v1 envelope `{ success, data }`.
+The page's SWR fetcher did `return res.json()` and then read `bandData.band` — off the
+ENVELOPE, not off `data`. Always `undefined`. `PercentileBandCard` indexed that into a
+`Record<PercentileBand, …>` copy table, `COPY[undefined]` was `undefined`, and
+`undefined.emoji` threw during render. The card sits inside
+`<SectionErrorBoundary section="Leaderboard">`, which wraps **all seven tabs**, so one key
+of nesting blanked the entire page. Both sides had tests: the route's own suite asserted
+`body.data.band === 'top_10'`, the page's suite asserted a flat hand-written fixture (and
+mocked `PercentileBandCard` to `() => null`, so it could not have seen the crash). Each
+side was self-consistent; the PAIR was broken, and nothing tested the pair.
+
+**The union.** Three of the five labels `bandFromPercentile()` emits (`top_1`, `middle`,
+`bottom_25`) had no copy row at all, and a fourth (`top_50`) is emitted only by the SQL
+`CASE` in migration `20260813000006` — a SECOND producer nobody had reconciled against the
+card.
+
+**The impossible feature.** Four tabs read cross-student tables from the BROWSER with the
+anon key. `performance_scores` / `score_history` / `challenge_streaks` are own-row-only
+under RLS and `student_titles` is service-role-only, so each read returned at most ONE row
+and the page rendered it as a peer board: the caller was permanently rank #1 with a gold
+medal under a "Top 10 by Performance Score" header the server never produced, "My Titles"
+was permanently empty, and "My Class" keyed off `students.class_id` — a column that does
+not exist — so every enrolled student was told "You're not in a class yet." None of those
+reads ERRORED. They succeeded and returned almost nothing.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-400 | `leaderboard_me_envelope_seam` | The page and the route are tested TOGETHER, not each against a fixture: the page's `fetch` for `/api/v1/leaderboard/me` is answered by invoking the ROUTE's real exported `GET`, and `PercentileBandCard` is NOT mocked. Pins: (a) the real envelope renders a card carrying the route's OWN band, incl. the `bandFromPercentile()`-derived band when the RPC omits one; (b) the route emits exactly `{ success, data }` and `body.band` is `undefined` while `body.data.band` is not — the defect in one assertion; (c) fourteen degenerate payloads (`success:false`, `data:null`, `{}`, `null`, `[]`, string body, truncated envelope, `data` as a string, band as object/number/unknown-label, non-2xx, non-JSON, network rejection) each render NO card, NO boundary fallback and NO throw; (d) a FLAT un-enveloped body — the shape the page used to assume — produces no card, so reverting the fetcher to `res.json()` goes red; (e) blast radius: all six tab controls stay mounted in both the healthy and the degenerate case, i.e. the boundary never trips. Verified to FAIL (5 tests) against a working tree with the fetcher reverted. | `apps/host/src/__tests__/app/leaderboard-band-envelope-seam.test.tsx` (23 tests) | **22/23 as of 2026-08-23 — see note below** | P7, P13 |
+| REG-401 | `percentile_band_union_totality` | TOTALITY + PRODUCER DRIFT. All seven bands (top_1, top_10, top_25, top_50, middle, bottom_25, keep_going) each resolve to THEMSELVES (asserted via the rendered `data-band`, so a band with no copy row resolves to the `keep_going` fallback and fails), carry non-empty EN copy, carry Devanagari (`/[ऀ-ॿ]/`) HI copy in both heading and body, differ between EN and HI, produce seven DISTINCT headings, and expose no absolute rank (`/#\d+/`, U10). Totality on hostile input: `undefined`, `null`, empty string, unknown label, number, object, array and the three prototype keys (`toString`, `constructor`, `__proto__`) all render the fallback without throwing. DRIFT GUARD — the declared union is asserted a SUPERSET of BOTH producers, read from source because neither is importable: the TS `bandFromPercentile()` in the me route (thresholds re-derived from its own source, then swept across percentiles 0..100 plus each threshold ±0.1) and the SQL `CASE` in migration `20260813000006` (the only emitter of `top_50`). Both extractors carry explicit non-vacuity assertions, plus a negative control proving the guard can fail. Verified to FAIL (3 tests) with the `top_1` copy row deleted. | `apps/host/src/__tests__/ui/percentile-band-card-totality.test.tsx` (46 tests) | E | P7 |
+| REG-402 | `leaderboard_no_client_cross_student_reads` | The `/leaderboard` page never calls `supabase.from()` for any of the four cross-student tables — `performance_scores`, `score_history`, `challenge_streaks`, `student_titles` — asserted against a spy on the client that is left in place PRECISELY so the absence is observable. Rankings render the SERVER's rank (a 4-row board with the caller at #4 renders `#4`, not `#1`, and the caller holds no medal) and the board is labelled from the server's `ranked_by`, never "Performance Score". Own-scoped replacements pinned separately: `/titles` (session-derived `student_id`, `?student_id` ignored, 7-field whitelist, 500-not-empty-list on read failure), `/streaks` (peer whitelist EXACTLY rank / student_id / name / grade / current_streak / badges; a peer's `best_streak` never on the wire while the caller's own is; badges filtered to those already implied by the exposed streak, unknown ids dropped fail-closed; threshold applied server-side; grade coerced to STRING per P5; students read scoped `.in(ids)`, never a full-table scan), `/my-class` (membership from `class_students`, never `students.class_id`; flag-OFF 404 vs `enrolled:false` vs `enrolled:true,items:[]` vs 5xx are FOUR distinguishable outcomes). All three routes are `Cache-Control: private` only. | `apps/host/src/__tests__/app/leaderboard-data-load-error.test.tsx` (25 tests) + `apps/host/src/__tests__/api/v1/leaderboard/own-scoped-routes.test.ts` (33 tests) + `e2e/ui-error-states.spec.ts` (re-pointed at `/api/v1/leaderboard`) | E | P5, P8, P13 |
+
+### REG-400 — one test now fails (found during 2026-08-23 restoration)
+
+`leaderboard-band-envelope-seam.test.tsx` → `the caller own performance score
+crosses the seam too` now fails with `Unable to find an element with the
+text: 84` (was passing 23/23 when filed 2026-08-11). Not investigated further
+in this pass — this file is outside test-infrastructure/catalog scope — but
+noted here rather than silently claimed as fully green: this could be a
+genuine display-format drift (own score no longer rendered as a bare `84`)
+or an unrelated brittleness in the text matcher; either way it is a real,
+reproducible failure as of 2026-08-23 and should be triaged by
+frontend/assessment. The other 22 tests in the file, and both REG-401/402's
+backing files (`percentile-band-card-totality.test.tsx` 46/46,
+`leaderboard-data-load-error.test.tsx` 25/25,
+`own-scoped-routes.test.ts` 33/33), are fully green.
+
+### Invariants covered by this section
+
+- **P7 (bilingual UI)** — REG-401 reads the copy off the RENDERED DOM in both languages
+  rather than off the source table, so a band wired to the wrong language branch fails.
+- **P8 (RLS boundary)** — REG-402 pins the architectural correction: a peer board is
+  STRUCTURALLY IMPOSSIBLE from the browser under own-row-only RLS. The fix was never to
+  loosen a policy; it was to move the read server-side behind an explicit whitelist. No
+  policy was weakened in this batch.
+- **P13 (data privacy)** — the `/streaks` whitelist is the sharp edge: it is the one route
+  in the batch that legitimately returns PEER rows, and its exclusions (`best_streak`,
+  `avatar_url`, school/city, `last_challenge_date`, `mercy_days_used_week`) are asserted
+  field-by-field rather than by a "no email" smoke check.
+- **P5 (grade format)** — both peer-row routes are fed an INTEGER grade in the fixture and
+  asserted to emit the string `'8'`, so the coercion is pinned at the boundary where it matters.
+
+### The durable lesson
+
+REG-400 exists because **two green suites either side of a contract prove nothing about the
+contract**. A fixture is written from the same understanding as the code that consumes it,
+so when that understanding is wrong the fixture is wrong in the same direction and the test
+agrees with the bug. The seam test therefore uses NO fixture for `/me`: it drives the real
+route handler and the real card, and doubles only what is below the route and beside the
+page. Any new page-to-route contract on a surface wrapped in a shared error boundary should
+be pinned the same way.
+
+### Catalog total
+
+Pre-REG-400: 379 entries. This section adds REG-400, REG-401 and REG-402.
+**Total catalog: 382 entries (target: 35 — TARGET EXCEEDED). REG-403 is the next free id**
+(REG-371..REG-377 remain RESERVED).
+
+---

@@ -15,7 +15,111 @@ without saying which definition you used. The 346 figure was RE-MEASURED on
 same stated definition as the 345 measurement it supersedes (345 + 1 new = 346
 — the divergence against the declared totals is carried forward UNCHANGED at 58
 entries, not papered over).
-Latest REG id: **REG-399**. **REG-400 is the next free REG id.**
+Latest REG id: **REG-418** (a-d, filed as one entry in `01-subject-governance.md`
+during the same 2026-08-23 reconciliation pass — see below). **REG-419 is the
+next free REG id.** (The "REG-419 is the next free id" line inside the
+restored REG-418 section itself is stale leftover prose from its original
+2026-08-12 filing, superseded by this line — do not follow it.)
+
+**2026-08-23 reconciliation (launch-readiness catalog audit, testing agent).**
+Commit `b00b9c872` ("fix(quality): bilingual subject grid + mobile contract
+enum gap", 2026-08-22) resolved a merge conflict across all 7 regression-catalog
+shards against a stale base. For a subset of files this SILENTLY DELETED a
+whole parallel lineage of already-filed, already-tested entries (the
+2026-08-11/12 "E2E Batch" work: support-ticket P13, identity-routes Bearer
+transport, ownership-guard RPC family, leadership auth-before-flag-gate,
+bootstrap role-echo, quiz-serving truthy-`[]`, tiered verification, bearer
+quiz-submit, the P0001 collision, the rhythm-today cache sentinel, and the
+leaderboard SEV1 batch) while keeping a DIFFERENT parallel lineage (the
+2026-08-11 Phase 4 quiz-resume + `/today` work, REG-380..REG-399 as they
+stand today) that had independently claimed the SAME REG-id range for
+unrelated content. Every id from REG-380 through REG-398 was double-booked
+between the two lineages. This is a NEW instance of the same damage pattern
+already found and fixed in 12 production-code files by commit `9fa76616e` —
+a catalog entry describing a still-passing test was deleted, not merely
+renumbered.
+
+Resolution this pass: the deleted lineage's 18 entries were restored verbatim
+from `origin/main` (pre-`b00b9c872`) into their original shards and
+renumbered **REG-400 through REG-417** (a flat `+20` shift off each entry's
+original 2026-08-11/12 id, chosen because REG-400 was this header's own
+already-declared "next free id" before this pass) so they no longer collide
+with the kept Phase 4 lineage. The kept lineage's ids (REG-380..REG-399) were
+**NOT** renumbered or otherwise touched. Old→new map:
+
+| Old id | New id | Entry | Shard |
+|---|---|---|---|
+| REG-380 | REG-400 | `leaderboard_me_envelope_seam` | `15-cross-cutting.md` |
+| REG-381 | REG-401 | `percentile_band_union_totality` | `15-cross-cutting.md` |
+| REG-382 | REG-402 | `leaderboard_no_client_cross_student_reads` | `15-cross-cutting.md` |
+| REG-383 | REG-403 | `support_ticket_parent_thread_no_student_read` | `10-rbac-rls.md` |
+| REG-384 | REG-404 | `support_thread_and_operator_composer_honesty` | `10-rbac-rls.md` |
+| REG-385 | REG-405 | `quiz_serving_truthy_empty_rpc_falls_through` | `03-quiz-integrity.md` |
+| REG-386 | REG-406 | `quiz_fallback_tier0_never_serve_floor` | `03-quiz-integrity.md` |
+| REG-387 | REG-407 | `mock_test_sme_gate_all_three_rungs` | `03-quiz-integrity.md` |
+| REG-388 | REG-408 | `tier0_floor_serving_rung_totality` | `03-quiz-integrity.md` |
+| REG-389 | REG-409 | `chapter_badge_unknown_is_never_zero` | `03-quiz-integrity.md` |
+| REG-390 | REG-410 | `bearer_submit_reaches_rpc_as_authenticated` | `03-quiz-integrity.md` |
+| REG-391 | REG-411 | `rpc_permanent_vs_transient_retryable_contract` | `03-quiz-integrity.md` |
+| REG-392 | REG-412 | `identity_routes_bearer_resolves_own_student` | `10-rbac-rls.md` |
+| REG-393 | REG-413 | `rhythm_today_no_profile_is_not_pinned` | `11-infrastructure.md` |
+| REG-394 | REG-414 | `ownership_guard_denial_is_403_not_409` | `03-quiz-integrity.md` |
+| REG-395 | REG-415 | `ownership_guard_rpc_routes_use_bearer_client` | `10-rbac-rls.md` |
+| REG-396 | REG-416 | `bootstrap_role_echo_and_validate_before_dedup` | `06-auth-onboarding.md` |
+| REG-397 | REG-417 | `leadership_auth_before_flag_gate` | `10-rbac-rls.md` |
+| REG-398 | REG-418 (a-d) | subject-denial-contract batch | `01-subject-governance.md` |
+
+REG-398 was initially assessed differently from the other 18 during this same
+pass: its four underlying test files (`quiz-questions.test.ts`,
+`learn-curriculum.test.ts`, `learn-concept.test.ts`,
+`contract-conformance.test.ts`) were checked FIRST and found still reverted,
+so re-adding the catalog entry at that point would have OVER-claimed rather
+than corrected an under-claim, and it was deliberately left out. Those four
+files were then independently restored by a concurrent agent working the same
+b00b9c872 remediation elsewhere in this session (this branch had ~230 files
+under active parallel repair across architect/backend/frontend/mobile at the
+time of this reconciliation — see the individual shard notes for the specific
+concurrent fixes observed: `packages/lib/src/supabase.ts`,
+`.github/workflows/ci.yml`, `scripts/check-content-gaps.ts`,
+`apps/host/src/app/api/student/engagement/route.ts`). Re-checked at the end of
+this pass: all four files pass (82/82), so REG-398 was restored after all,
+renumbered REG-418(a-d), in `01-subject-governance.md`.
+
+**Still NOT restored, still outstanding as of the end of this pass:**
+`packages/ui/src/navigation/nav-config.ts` — reverted by `b00b9c872` from the
+FOUR-primary-slot contract (2026-08-19 Today consolidation, `/learn` demoted
+out of the primary bar) back to the FIVE-slot contract with `/learn` still
+primary. This is production UI code, not a test/catalog file, so it is
+outside this pass's scope to fix directly — but it is why the restored
+`e2e/ui-nav-contract.spec.ts`, `e2e/today-home.spec.ts` and
+`e2e/helpers/viewport-audit.ts` (all now correctly asserting FOUR slots) will
+FAIL against the live app until a frontend/architect pass restores
+`nav-config.ts` to match. Restoring the e2e assertions to the wrong (5-slot)
+contract to make them pass would have been exactly the kind of assertion-
+weakening this whole audit exists to catch, so they were left correct and
+red rather than falsely green. **Flagged as the one CONFIRMED-outstanding
+production regression this pass found and did not see get fixed
+concurrently.**
+
+All 18 restored entries were re-run against their cited test files on
+2026-08-23; 16 are unchanged from when originally filed. Two regressions
+were found DURING this restoration and are noted in-place rather than
+silently hidden: REG-409's two files now fail 10/12 tests (a real
+`practice_ready_count` passthrough regression in
+`packages/lib/src/supabase.ts`, outside this pass's scope — see the note in
+`03-quiz-integrity.md`), and REG-400's file has 1 new failure of 23 (see the
+note in `15-cross-cutting.md`). Both are flagged to assessment/backend for
+follow-up, not fixed in this pass.
+
+**This reconciliation is unrelated to, and does not resolve, the pre-existing
+404/399/346 three-way divergence recorded immediately above** — that
+divergence predates `b00b9c872` (first recorded 2026-08-11) and is a
+measurement-methodology disagreement, not a missing-entry problem. This
+pass's damage was a DIFFERENT, additive problem (entries deleted outright by
+a bad merge) layered on top of the pre-existing one; fixing it moves the
+"honest"/measured counts up by 18 (the restored entries) but does not
+reconcile the three definitions with each other.
+
 Prior: REG-399 (2026-08-11, migration version-collision tripwire — filed in
 `11-infrastructure.md`. `main` and `fix/ci-structural-defects` carried DIFFERENT
 files at the SAME versions `…0012`-`…0015`; `supabase db push` keys

@@ -200,6 +200,27 @@ describe('2. gate asserts needs.migrations.result == success', () => {
 });
 
 // ── 3. changed == 'false' still verifies database state, and can FAIL ───────
+//
+// P0-6 (2026-08-20) moved the parity comparison logic that this describe block
+// pins OUT of the workflow step's inline `run:` and into a standalone,
+// independently-testable script (`.github/scripts/verify-migration-ledger.sh`,
+// called as `if bash .../verify-migration-ledger.sh; then … else … fi`). It
+// also added a second unconditional post-parity step ("Assert live-database
+// security invariants", delegating to `assert-db-security-invariants.sh`)
+// that asserts OBSERVABLE EFFECT on the live DB, not ledger metadata.
+//
+// These assertions were rewritten (not just re-pointed) against the NEW
+// architecture: each of the six guarantees the old inline-awk test pinned was
+// re-verified by reading `verify-migration-ledger.sh`'s actual source, then
+// asserted against THAT file where the logic now lives, rather than
+// re-asserting stale literal strings from the step's `run:` block. See
+// PARITY_SCRIPT_REL below — every guarantee still holds; none was weakened or
+// dropped. (One guarantee changed MECHANISM, not strength: the old check read
+// the rendered `supabase migration list --linked` CLI table, which the
+// script's own header documents as the exact tautology bug being replaced —
+// the new check SELECTs `supabase_migrations.schema_migrations` directly via
+// psql, which is strictly more trustworthy since it reads the ledger table
+// itself instead of parsing CLI-rendered output.)
 describe("3. the no-SQL path runs a parity check that can fail (not a bare 'skipped' echo)", () => {
   const steps = () => stepsOf(MIGRATIONS_JOB);
   const parityStep = () => {
@@ -207,10 +228,25 @@ describe("3. the no-SQL path runs a parity check that can fail (not a bare 'skip
     if (!s) throw new Error("no step with id 'parity' in the migrations job");
     return s;
   };
+  const securityStep = () => {
+    const s = steps().find((x) => x.name === 'Assert live-database security invariants');
+    if (!s) throw new Error("no step named 'Assert live-database security invariants' in the migrations job");
+    return s;
+  };
+
+  const PARITY_SCRIPT_REL = '.github/scripts/verify-migration-ledger.sh';
+  const parityScript = readFile(PARITY_SCRIPT_REL);
 
   // Match the COMMAND at the start of a line, not the words "db push" —
   // several steps mention the phrase in prose/summary text.
   const PUSH_CMD = /^\s*supabase db push\b/m;
+
+  it('the parity delegate script is readable and non-trivial', () => {
+    // Non-vacuity guard for every assertion below that reads parityScript
+    // instead of the (now much thinner) workflow step body.
+    expect(resolveRepo(PARITY_SCRIPT_REL)).not.toBeNull();
+    expect(parityScript.length).toBeGreaterThan(1_000);
+  });
 
   it('the db push step is still gated on changed == true', () => {
     const push = steps().find((s) => PUSH_CMD.test(s.run ?? ''));
@@ -218,64 +254,103 @@ describe("3. the no-SQL path runs a parity check that can fail (not a bare 'skip
     expect(String(push?.if ?? '')).toMatch(/steps\.migration-diff\.outputs\.changed\s*==\s*'true'/);
   });
 
-  it('the LAST step of the migrations job is the parity check and is UNCONDITIONAL', () => {
-    // This is the structural statement that closes the hole: with no `if`, the
-    // parity check runs on the changed=='false' path too, so a frontend-only
-    // push can no longer terminate the job on a "skipped" echo.
+  it('the parity check AND the live-DB security-invariant check are both unconditional and are the LAST steps of the job — CI cannot silently no-op either database gate', () => {
+    // This is the structural statement that closes the hole: with no `if` on
+    // EITHER of the tail steps, both run on the changed=='false' path too, so
+    // a frontend-only push can no longer terminate the job's DB interaction on
+    // a "skipped" echo. We assert every step from 'parity' onward (not just
+    // whichever happens to be literally last) is unconditional — pinning only
+    // the final index would miss a regression that re-adds an `if:` to
+    // 'parity' while leaving a later step unconditional, which would silently
+    // reopen exactly the hole this file exists to keep closed.
     const all = steps();
+    const parityIdx = all.findIndex((s) => s.id === 'parity');
+    expect(parityIdx).toBeGreaterThan(-1);
+    const tail = all.slice(parityIdx);
+    // parity + at least the security-invariant step.
+    expect(tail.length).toBeGreaterThanOrEqual(2);
+    for (const step of tail) {
+      expect(step.if, `step "${step.name ?? step.id}" must be unconditional`).toBeUndefined();
+    }
+    // The job's actual last step is specifically the live-DB security assertion.
     const last = all[all.length - 1];
-    expect(last.id).toBe('parity');
-    expect(last.if).toBeUndefined();
-    // ...and it runs AFTER the push, so a green push must leave parity holding.
+    expect(last.name).toBe('Assert live-database security invariants');
+    expect(last.run ?? '').toMatch(/assert-db-security-invariants\.sh/);
+    // ...and both run AFTER the push, so a green push must leave both gates holding.
     const pushIdx = all.findIndex((s) => PUSH_CMD.test(s.run ?? ''));
     expect(pushIdx).toBeGreaterThan(-1);
-    expect(all.length - 1).toBeGreaterThan(pushIdx);
+    expect(parityIdx).toBeGreaterThan(pushIdx);
   });
 
-  it('the parity check actually reads the REMOTE migration ledger', () => {
+  it('the security-invariant step runs strictly after the parity step (drift is caught before behavioural assertion)', () => {
+    const all = steps();
+    const parityIdx = all.findIndex((s) => s.id === 'parity');
+    const securityIdx = all.findIndex((s) => s.name === 'Assert live-database security invariants');
+    expect(parityIdx).toBeGreaterThan(-1);
+    expect(securityIdx).toBeGreaterThan(parityIdx);
+  });
+
+  it('the parity step delegates to a script that performs a genuine SQL ledger read, not CLI-table parsing', () => {
     const run = parityStep().run ?? '';
-    expect(run).toMatch(/supabase migration list --linked/);
     expect(run).toMatch(/supabase link --project-ref/);
+    expect(run).toMatch(/if bash .*verify-migration-ledger\.sh; then/);
+    // Guard against regressing to the exact tautology this replaced: the step
+    // body itself must not re-implement `supabase migration list` parsing.
+    expect(run).not.toMatch(/supabase migration list/);
+    // The delegate script reads the ledger table directly.
+    expect(parityScript).toMatch(/SELECT version FROM supabase_migrations\.schema_migrations/);
+    expect(parityScript).toMatch(/psql/);
   });
 
-  it('scopes the committed set to top-level supabase/migrations (excludes _legacy/)', () => {
-    const run = parityStep().run ?? '';
-    expect(run).toMatch(/find supabase\/migrations -maxdepth 1/);
-    expect(run).toMatch(/\[0-9\]\{14\}/);
+  it('the delegate script scopes the committed set to top-level supabase/migrations (excludes _legacy/)', () => {
+    expect(parityScript).toMatch(/find "?\$MIGRATIONS_DIR"? -maxdepth 1/);
+    expect(parityScript).toMatch(/\[0-9\]\{14\}/);
   });
 
-  it('compares BOTH directions and names each failure mode', () => {
-    const run = parityStep().run ?? '';
+  it('the delegate script compares BOTH directions and names each failure mode', () => {
     // committed-but-not-remote and remote-but-not-committed.
-    expect(run).toMatch(/comm -23/);
-    expect(run).toMatch(/comm -13/);
-    expect(run).toMatch(/COMMITTED_NOT_REMOTE/);
-    expect(run).toMatch(/REMOTE_NOT_COMMITTED/);
+    expect(parityScript).toMatch(/comm -23/);
+    expect(parityScript).toMatch(/comm -13/);
+    expect(parityScript).toMatch(/COMMITTED_NOT_REMOTE/);
+    expect(parityScript).toMatch(/REMOTE_NOT_COMMITTED/);
   });
 
-  it('has a real failure path — it exits non-zero and reports drift', () => {
+  it('has a real, reachable failure path — the step reports drift and exits non-zero, and the delegate script itself has multiple independent failure call-sites', () => {
     const run = parityStep().run ?? '';
     expect(run).toMatch(/migration_parity=drift/);
-    // Drift, unreadable ledger, empty local scan, empty remote parse.
-    expect(count(run, /\bexit 1\b/)).toBeGreaterThanOrEqual(4);
-    // The drift branch itself must be the one that exits.
-    const driftBranch = run.slice(run.indexOf('if [ -n "$COMMITTED_NOT_REMOTE" ]'));
-    expect(driftBranch).toMatch(/migration_parity=drift/);
-    expect(driftBranch).toMatch(/exit 1/);
+    expect(run).toMatch(/exit 1/);
+    // The step's control flow must genuinely depend on the script's exit code
+    // (an `if cmd; then … else … fi` is not short-circuited by `set -e`, so
+    // this is what makes the drift branch reachable at all).
+    expect(run).toMatch(/if bash .*verify-migration-ledger\.sh; then/);
+    // The old inline-awk step had no shared helper, so its non-vacuity story
+    // was "count literal `exit 1`". The new script centralizes every failure
+    // through a single `fail()` helper (the same DRY pattern the gate step's
+    // `require_equal` helper already uses, per describe block 2 above) — so
+    // the equivalent guarantee is "the helper itself exits 1" (checked once)
+    // PLUS "there are multiple distinct, reachable call-sites" (checked by
+    // counting `fail` invocations, not `exit 1` occurrences).
+    expect(parityScript).toMatch(/^fail\(\)\s*\{[\s\S]*?\bexit 1\b/m);
+    expect(count(parityScript, /\bfail\(\)\s*\{/)).toBe(1);
+    // Distinct, reachable failure call-sites: drift, unreadable ledger, empty
+    // local scan, empty remote parse, missing required env, wrong linked ref.
+    expect(count(parityScript, /\bfail\s+"/)).toBeGreaterThanOrEqual(4);
+    // The drift branch itself must be the one that fails the script.
+    const driftBranch = parityScript.slice(parityScript.indexOf('if [ -n "$COMMITTED_NOT_REMOTE" ]'));
+    expect(driftBranch.length).toBeGreaterThan(0);
+    expect(driftBranch).toMatch(/fail "Migration history parity FAILED/);
   });
 
   it('cannot pass vacuously on an empty scan or an unparseable ledger', () => {
-    const run = parityStep().run ?? '';
-    expect(run).toMatch(/LOCAL_COUNT" -eq 0/);
-    expect(run).toMatch(/REMOTE_COUNT" -eq 0/);
+    expect(parityScript).toMatch(/LOCAL_COUNT" -gt 0/);
+    expect(parityScript).toMatch(/REMOTE_COUNT" -gt 0/);
   });
 
   it('surfaces the offending versions with a remediation pointer', () => {
-    const run = parityStep().run ?? '';
-    expect(run).toMatch(/GITHUB_STEP_SUMMARY/);
-    expect(run).toMatch(/20260808085345/);
-    expect(run).toMatch(/migration repair --status reverted/);
-    expect(run).toMatch(/production-release-gating\.md/);
+    expect(parityScript).toMatch(/GITHUB_STEP_SUMMARY/);
+    expect(parityScript).toMatch(/20260808085345/);
+    expect(parityScript).toMatch(/migration repair --status reverted/);
+    expect(parityScript).toMatch(/production-release-gating\.md/);
   });
 
   it('the detect step no longer advertises the old unconditional skip', () => {
@@ -285,6 +360,19 @@ describe("3. the no-SQL path runs a parity check that can fail (not a bare 'skip
     // following it. Whatever the wording, the no-SQL branch must point at the
     // parity check rather than terminate the job's DB interaction.
     expect(detect?.run ?? '').toMatch(/parity/i);
+  });
+
+  it('the live-DB security-invariant step fails closed and cannot pass vacuously if a listed RPC vanished', () => {
+    // Companion guarantee added by P0-6 alongside the parity check: this is
+    // the OTHER unconditional tail step, and it has its own non-vacuity story
+    // (a removed/renamed RPC must fail loudly, not silently assert nothing).
+    const run = securityStep().run ?? '';
+    expect(run).toMatch(/assert-db-security-invariants\.sh/);
+    const securityScriptRel = '.github/scripts/assert-db-security-invariants.sh';
+    const securityScript = readFile(securityScriptRel);
+    expect(securityScript.length).toBeGreaterThan(1_000);
+    expect(securityScript).toMatch(/has_function_privilege\('anon'/);
+    expect(securityScript).toMatch(/FAIL-CLOSED/);
   });
 });
 

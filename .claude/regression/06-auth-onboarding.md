@@ -589,3 +589,83 @@ Pre-REG-271: 237 entries (through the EU PostHog analytics turn-on, REG-270).
 B2C funnel completion adds REG-271: client↔server hash parity + `email_verified`
 first-time/fail-soft/PII boundary + `quiz_graded` auth.uid stitch + role person-prop.
 **Total catalog: 238 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Bootstrap role-echo integrity + validate-before-dedup (2026-08-12, E2E Batch 2 P1-4) — REG-416
+
+> **Renumbered 2026-08-23 (launch-readiness catalog reconciliation).** This
+> entry was originally filed as REG-396 on 2026-08-12. Commit `b00b9c872`
+> ("fix(quality): bilingual subject grid + mobile contract enum gap") deleted
+> it from this shard during a stale-base merge resolution while a PARALLEL
+> lineage (the Phase 4 quiz-resume work, `03-quiz-integrity.md`) independently
+> claimed REG-380..REG-398 for unrelated content and was the half b00b9c872
+> kept. The two lineages' counters were never reconciled before merging, so
+> REG-380 through REG-399 are each claimed TWICE by different entries across
+> the shards. This entry's test (`apps/host/src/__tests__/auth-bootstrap.test.ts`
+> → `describe('Role-echo integrity (P1-4)')` + `describe('Validation ordering
+> (P1-4)')`, 11 tests) was restored from `origin/main` (verified still passing,
+> 48/48 in the file) and renumbered to REG-416 — the next free id after the
+> kept Phase 4 lineage's own declared ceiling (`00-header.md`: "REG-400 is the
+> next free REG id") plus the other 17 entries reconciled in the same pass (see
+> `00-header.md` for the full old→new id map). Do not re-use REG-396 for
+> anything new; it is retired to avoid a second collision.
+
+Source: the 2026-08-12 production E2E report, finding P1-4. `POST /api/auth/bootstrap`
+had TWO dedup short-circuits (in-memory promise map, then a 30s Redis idempotency
+lock) that both ran BEFORE body validation, and both echoed routing state the DB
+did not back:
+
+- An **already-bootstrapped student posting `{"role":"institution_admin"}`** got
+  back `role:'institution_admin'` + `redirect:'/school-admin'` on the
+  `already_completed` path — the response `role`/`redirect` are the contract the
+  frontend routes on, so a client-supplied elevation was mirrored back as routing
+  truth. (Server RBAC never granted anything — but the echo is still wrong.)
+- The **Redis dedup branch returned `role:'unknown'`** — a value `getRoleDestination`
+  cannot map and no client vocabulary contains.
+- An **invalid role was 400 on a fresh profile but 200 on an existing one**
+  (the short-circuit answered before validation ran), and a garbage first call
+  **burned the 30s Redis TTL** so a subsequent good call was deduplicated against
+  a rejected one.
+
+The fix hoists body-parse + `isValidRole` above BOTH short-circuits, and makes
+every non-fresh path echo DB truth via `resolveIdentity` (the same
+institution_admin → teacher → parent → student ladder as
+`GET /api/auth/onboarding-status`), with the VALIDATED request role as the P15
+fail-soft fallback when no profile row is resolvable (mid-bootstrap race or read
+failure).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-416 | `bootstrap_role_echo_and_validate_before_dedup` | **Role-echo:** an already-bootstrapped STUDENT posting `institution_admin` gets `role:'student'` + `redirect:'/dashboard'` on the `already_completed` path AND on the `deduplicated` path (both explicitly assert `not.toBe('institution_admin')` / `not.toBe('/school-admin')`); `already_completed` echoes the DB role (teacher row → `teacher` + `/teacher`) regardless of the request role; `deduplicated` NEVER returns `'unknown'`. **Ordering:** invalid role → 400 `INVALID_ROLE` with `acquireIdempotencyLock` NEVER called (the 30s TTL is not burned) and the RPC never fired; invalid JSON → 400 `INVALID_BODY`, same no-lock guarantee; invalid role is 400 EVEN WHEN the Redis lock is already held (the pre-fix 200 `{deduplicated, role:'unknown'}` shape is dead). **P15 fail-soft totality:** when no profile row is resolvable, both paths fall back to the VALIDATED request role (never 500, never `'unknown'`); when the identity read THROWS outright (`Promise.reject` inside `resolveIdentity`'s `Promise.all`), both `already_completed` and `deduplicated` still answer 200 with the validated request role — a role-echo read hiccup can never break the funnel. **Hot-path neutrality:** the fresh `success` path is byte-identical — request role echoed (it IS the DB role by construction, the RPC just wrote it) and NO profile-table re-read occurs (asserted via the tables-queried list). | `apps/host/src/__tests__/auth-bootstrap.test.ts` → `describe('Role-echo integrity (P1-4)')` (5 tests) + `describe('Validation ordering (P1-4): validate before dedup short-circuits')` (6 tests) | E | P15, P9-adjacent |
+
+### Honest limits of this entry
+
+- **The mid-bootstrap dedup fallback can still echo a VALID but not-yet-DB-backed
+  role — including `institution_admin`.** When the lock is held and NO profile
+  row exists yet (the concurrent first call hasn't committed), the response falls
+  back to the validated request role, and `institution_admin` IS in
+  `VALID_ROLES`. This is deliberate and documented in-route: there is no DB truth
+  to echo yet, refusing would break the funnel (P15), and the echo only drives
+  client routing — a `/school-admin` redirect lands on server-side
+  `resolveCommandCenterContext` auth that refuses. Pinning this away would
+  require blocking on the concurrent write, defeating the dedup's purpose.
+- All doubles — no live Postgres or Redis this session. The lock seam is the
+  mocked `@alfanumrik/lib/redis` module boundary; TTL arithmetic is not executed.
+
+### Invariants covered by this section
+
+- P15 (onboarding integrity — validation cannot poison the idempotency lock; the
+  role-echo re-read is fail-soft on every failure shape)
+- P9-adjacent (a client-supplied role elevation is never mirrored back as routing
+  truth on any path that did not just create the profile)
+
+### Catalog total
+
+Historical (as filed 2026-08-12, pre-renumber): pre-REG-396: 395 entries
+(through REG-395, the ownership-guard RPC family). This batch (E2E Batch 2,
+branch `Alfanumrik/e2e-batch2-denial-contract`) added REG-396 here, REG-397 in
+`10-rbac-rls.md`, REG-398 in `01-subject-governance.md`, for a stated total of
+398. **That numbering was superseded by the 2026-08-23 reconciliation above —
+this entry is REG-416 now.** See `00-header.md` for the current reconciled
+total; this shard's own running counter is not re-derived here.
