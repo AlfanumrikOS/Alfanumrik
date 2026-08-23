@@ -45,7 +45,58 @@ CREATE POLICY "new_table_parent_select" ON new_table
   );
 
 CREATE INDEX IF NOT EXISTS idx_new_table_student ON new_table(student_id);
+
+-- Table privileges (see "Grants are not RLS" below). RLS decides WHICH ROWS a
+-- caller may touch; the GRANT decides whether the verb is available at all.
+-- Both are required — RLS policies alone produce `42501 permission denied`.
+-- Narrow this to the verbs the table actually needs.
+GRANT SELECT, INSERT, UPDATE, DELETE ON new_table TO authenticated;
+-- Add `anon` ONLY for genuinely public tables (e.g. a lead-capture form), and
+-- never grant TRUNCATE: no RLS policy form can gate it.
 ```
+
+### Grants are not RLS — state both, explicitly
+
+A new table needs **two** independent things to be writable from a browser client:
+
+1. **RLS policies** — decide which *rows* a caller may touch.
+2. **Table privileges (GRANT)** — decide whether the *verb* is available at all.
+
+They fail differently, and the second one fails confusingly. A table with perfect,
+complete RLS policies and no `INSERT` grant returns:
+
+```
+ERROR: permission denied for table new_table (SQLSTATE 42501)
+```
+
+That error names no policy and looks nothing like an RLS denial, so it sends
+people to debug the wrong layer.
+
+Historically this was invisible here: a baseline `ALTER DEFAULT PRIVILEGES` rule
+granted `anon`/`authenticated` INSERT/UPDATE/DELETE on every new table in
+`public` automatically, so no migration in this repo ever needed a GRANT — and
+none of the 618 of them emit one. **That implicit safety net is not something to
+rely on.** It was revoked by accident on 2026-08-23 (a design-only artifact
+parked in `supabase/migrations/` was auto-applied by
+`supabase db push --include-all`) and restored deliberately, minus TRUNCATE, by
+`20260824010000_restore_default_privileges_template.sql`.
+
+So the grant is currently inherited again and the explicit `GRANT` above is
+technically redundant *today*. Write it anyway:
+
+- It is **self-documenting** — the diff shows which roles can write the table,
+  instead of that fact living in an invisible cluster-wide default.
+- It is **reviewable** — an over-broad grant is visible to a reviewer.
+- It is **durable** — if the default-privileges hardening is ever landed
+  deliberately (it is still a legitimate goal), tables authored this way keep
+  working, and nothing has to be retrofitted.
+
+**TRUNCATE, specifically: never put it in a template.** `CREATE POLICY` has no
+`FOR TRUNCATE` form — the grammar is `FOR {ALL|SELECT|INSERT|UPDATE|DELETE}`
+only — so RLS offers exactly zero protection against it, even on a deny-all
+table. For INSERT/UPDATE/DELETE the grant is a second lock behind RLS; for
+TRUNCATE it is the only lock. Grant it per-table, with a written reason, or not
+at all.
 
 ## RPC Template
 ```sql
@@ -122,6 +173,9 @@ This is the checklist `release-gates` Gate 5b and `alfanumrik-release-audit` bot
 - [ ] File is idempotent (`IF NOT EXISTS`, `CREATE OR REPLACE`) and forward-only (never edits a prior applied migration)
 - [ ] New tables have RLS enabled, in the same migration
 - [ ] RLS policies cover: student own, parent linked, teacher assigned (as applicable)
+- [ ] New tables carry an explicit `GRANT` for the verbs clients actually use -- RLS alone yields `42501 permission denied`, which names no policy and misdirects debugging (see "Grants are not RLS" above)
+- [ ] No `TRUNCATE` granted to `anon`/`authenticated` -- RLS has no `FOR TRUNCATE` policy form, so nothing backstops it
+- [ ] **The file is genuinely meant to run.** `supabase/migrations/` is auto-applying: `supabase db push --include-all` executes everything there in version order, and a "do not apply this" comment does not stop it. Design notes, rollback drafts and `*.DOWN.sql` scripts belong in `docs/runbooks/`. (Enforced by `scripts/lint-migrations.js` + `apps/host/src/__tests__/no-design-artifacts-in-migrations.test.ts`, after a design artifact reached production on 2026-08-23.)
 - [ ] Indexes on FK columns and frequently queried columns
 - [ ] Grade columns are TEXT, not INTEGER
 - [ ] Any SECURITY DEFINER function has a pinned `search_path` and a documented reason for DEFINER over INVOKER

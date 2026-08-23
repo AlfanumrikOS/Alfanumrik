@@ -1,0 +1,155 @@
+-- Migration: 20260824010000_restore_default_privileges_template.sql
+-- Purpose: Restore anon/authenticated INSERT/UPDATE/DELETE in the schema-`public`
+--          default-privileges template, so that tables created by FUTURE migrations
+--          keep working without an explicit GRANT. Deliberately does NOT restore
+--          TRUNCATE. Partial, forward-only reversal of Section 2 of
+--          20260823154500_db12_narrow_default_grants_and_money_table_write_revoke_DESIGN_ONLY.sql.
+--
+-- ============================================================================
+-- WHY THIS EXISTS
+-- ============================================================================
+-- Incident, 2026-08-23 18:11 UTC: a design artifact was parked in
+-- `supabase/migrations/`. It carried a header stating in capitals that it had not been
+-- applied anywhere and must not be `supabase db push`-ed. That header was advisory text;
+-- the directory is not. The next `supabase db push --linked --include-all` swept the file
+-- up in version order and applied it to production without a human approving it.
+--
+-- Section 2 of that file ran:
+--     ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+--       REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM anon;      -- and authenticated
+--
+-- Consequence, which is latent rather than visible: nothing broke that day, because
+-- ALTER DEFAULT PRIVILEGES only affects tables created AFTER it runs, and no migration has
+-- created a table since (the newest CREATE TABLE is 20260818_01). But every table created in
+-- `public` by role `postgres` from 18:11 UTC onward silently lacks anon/authenticated
+-- INSERT/UPDATE/DELETE. The next feature migration that adds a client-written table produces
+--
+--     ERROR: permission denied for table <name> (SQLSTATE 42501)
+--
+-- at runtime, from PostgREST, on a table whose RLS policies are all present and correct. That
+-- failure looks nothing like an RLS failure and does not point back here. The
+-- `supabase-patterns` skill's migration template -- which is what authors in this repo copy,
+-- along with 617 existing migrations none of which emit a GRANT -- does not emit the explicit
+-- GRANT that the revoked template now requires.
+--
+-- This migration restores the authoring contract the repo actually documents and depends on.
+--
+-- Incident record: docs/runbooks/20260823154500_db12_narrow_default_grants_and_money_table_write_revoke.DOWN.sql
+-- (Section A of that DOWN file is the origin of this migration.)
+--
+-- ============================================================================
+-- WHAT THIS DELIBERATELY DOES **NOT** DO -- READ BEFORE "COMPLETING" IT
+-- ============================================================================
+-- This is a PARTIAL reversal, on purpose. It is not an unfinished one. Three things from the
+-- 2026-08-23 migration are being KEPT, and re-reversing any of them is a security regression:
+--
+--   1. TRUNCATE is NOT restored here. See the section below -- this is the substantive decision
+--      in this file, not an oversight or a typo.
+--   2. The money-table write revokes (payment_history, student_subscriptions,
+--      subscription_events, student_daily_usage) are KEPT. Those grants were dead privileges:
+--      every client-write RLS policy on those four tables was dropped on 2026-08-20 by
+--      20260820143726 and converged on 2026-08-21 by 20260821121232, so authenticated
+--      INSERT/UPDATE/DELETE there has been deny-all since three days BEFORE the accidental
+--      apply. Every real writer uses `service_role`, which was never revoked.
+--   3. The schema-wide TRUNCATE sweep over the ~420 EXISTING tables is KEPT.
+--
+-- ============================================================================
+-- THE TRUNCATE DECISION: RESTORE INSERT/UPDATE/DELETE, NOT TRUNCATE
+-- ============================================================================
+-- The original DOWN draft proposed restoring all four verbs, symmetrically with the REVOKE.
+-- That symmetry is wrong, for four reasons:
+--
+--   1. IN A TEMPLATE, A GRANT IS A ROLLING GRANT. The 2026-08-23 migration swept TRUNCATE off
+--      ~420 existing tables. Putting TRUNCATE back into the DEFAULT PRIVILEGES template does
+--      not restore the old state -- it makes every future table arrive pre-holed. Table 426,
+--      427, 428 each ship with anon/authenticated TRUNCATE, and the hardening silently decays
+--      as the schema grows, with no single migration to point at when someone asks why.
+--
+--   2. RLS BACKSTOPS I/U/D. IT CANNOT BACKSTOP TRUNCATE. `CREATE POLICY` has no TRUNCATE form:
+--      the grammar is FOR {ALL|SELECT|INSERT|UPDATE|DELETE} and nothing else. So for
+--      INSERT/UPDATE/DELETE the table privilege is a SECOND lock behind RLS's first, and
+--      restoring it is cheap -- all 425 tables in `public` have relrowsecurity = true, and a new
+--      table created from the template gets RLS enabled in the same migration, so a restored
+--      I/U/D grant still opens nothing that RLS has not been asked to gate. For TRUNCATE the
+--      table privilege is the ONLY lock. Restoring it is not cheap, and it is not symmetric.
+--
+--   3. TRUNCATE CONTRIBUTES NOTHING TO THE CONTRACT THIS FILE RESTORES. The 42501 this
+--      migration exists to prevent is a PostgREST write from a browser client. PostgREST has no
+--      HTTP verb that maps to SQL TRUNCATE, and a repo-wide search across apps/host, packages,
+--      supabase/functions and mobile finds zero SQL TRUNCATE call sites (every textual match is
+--      the Tailwind `truncate` utility class). Omitting TRUNCATE therefore cannot cause the
+--      failure mode this file was written to prevent.
+--
+--   4. THE RISKS ARE ASYMMETRIC. Cost of omitting TRUNCATE: zero known call sites, and a
+--      loud, greppable 42501 pointing at this file if that assessment is ever wrong. Cost of
+--      including it: a permanent, un-gateable ability to empty any future table in the schema
+--      for any holder of an `anon` or `authenticated` Postgres identity -- a leaked pooler
+--      connection string, a Studio SQL session opened as the wrong role, or a future
+--      SECURITY INVOKER RPC that builds a TRUNCATE from caller input.
+--
+-- If a genuine TRUNCATE need ever appears, grant it on that one table, in that table's own
+-- migration, with the reason written down. Do not put it back in the template.
+--
+-- ============================================================================
+-- SCOPE, AND WHAT IS NOT DECIDED HERE
+-- ============================================================================
+-- `anon` is restored alongside `authenticated` because that is the state being restored and the
+-- change that was approved. It is NOT an endorsement: `anon` is the pre-authentication role, and
+-- exactly one table in the schema legitimately accepts anon writes today
+-- (`demo_requests_public_insert` -- a public lead-capture form). Whether the default template
+-- should carry `anon` write grants at all is a real question, and it is deliberately NOT settled
+-- inside an incident rollback. That is the mistake this incident is made of. If the answer is
+-- "no", land it as its own reviewed change, together with the template update.
+--
+-- IDEMPOTENCY: ALTER DEFAULT PRIVILEGES ... GRANT is inherently idempotent -- granting a
+-- privilege that is already present in the default ACL is a no-op, not an error. Re-running this
+-- migration, or applying it to an environment that never received the 2026-08-23 revoke (staging
+-- was 4+ migrations behind and its ledger lacks 20260823154500 as of 2026-08-23), is safe and
+-- converges both environments on the same intended end state.
+--
+-- ROLE NOTE: `FOR ROLE postgres` matches the REVOKE being reversed. Default-privilege ACLs are
+-- keyed by (grantor role, schema, object type), so a GRANT issued for any other grantor would
+-- create a second, unrelated ACL entry and leave the postgres-owned one still revoked.
+
+BEGIN;
+
+-- Restores UP Section 2, minus TRUNCATE. See the TRUNCATE DECISION section above.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT INSERT, UPDATE, DELETE ON TABLES TO anon;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+
+COMMIT;
+
+-- ============================================================================
+-- POST-APPLY VERIFICATION
+-- ============================================================================
+-- 1. The default ACL for schema `public` should show a=INSERT, w=UPDATE, d=DELETE for both
+--    anon and authenticated, and must NOT show D=TRUNCATE:
+--
+--      SELECT defaclrole::regrole AS grantor, defaclobjtype, defaclacl
+--        FROM pg_default_acl d
+--        JOIN pg_namespace n ON n.oid = d.defaclnamespace
+--       WHERE n.nspname = 'public' AND d.defaclobjtype = 'r';
+--
+--    Expect `anon=awd/postgres` and `authenticated=awd/postgres` (order within the ACL string
+--    is not significant; the absence of `D` is).
+--
+-- 2. The four money tables must be UNCHANGED by this migration -- still no a/w/d/D for
+--    anon/authenticated. If any of them regained a write verb, this migration did more than
+--    intended and should be investigated before the next deploy:
+--
+--      SELECT relname, relacl FROM pg_class c
+--        JOIN pg_namespace n ON n.oid = c.relnamespace
+--       WHERE n.nspname = 'public'
+--         AND relname IN ('payment_history','student_subscriptions',
+--                         'subscription_events','student_daily_usage');
+--
+-- 3. Existing tables must NOT have regained TRUNCATE. This must return 0:
+--
+--      SELECT count(*) FROM pg_class c
+--        JOIN pg_namespace n ON n.oid = c.relnamespace
+--       WHERE n.nspname = 'public' AND c.relkind = 'r'
+--         AND (has_table_privilege('anon', c.oid, 'TRUNCATE')
+--           OR has_table_privilege('authenticated', c.oid, 'TRUNCATE'));

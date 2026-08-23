@@ -204,6 +204,106 @@ function hasUtf8Bom(buf) {
   return buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf;
 }
 
+// ── Design-artifact rule ───────────────────────────────────────────────────
+//
+// Incident (2026-08-23 18:11 UTC): a design-only artifact was committed to
+// `supabase/migrations/`. Its header said, in capitals, that it had not been
+// applied to any environment and must not be `supabase db push`-ed. The next
+// `supabase db push --linked --include-all` applied it to PRODUCTION in
+// version order anyway, silently narrowing schema-wide default privileges.
+//
+// THE ROOT CAUSE IS A CATEGORY ERROR, NOT A TYPO: a comment is advisory, but
+// `supabase/migrations/` is an auto-applying directory. A file that declares
+// "do not run me" while sitting somewhere everything is run is a contradiction
+// the tooling cannot see. This rule makes the contradiction fail at PR time.
+//
+// The remedy is never "delete the marker" — it is to MOVE the file out of this
+// directory. `docs/runbooks/` is where this repo keeps design artifacts and
+// DOWN/rollback scripts (8 `docs/runbooks/*.DOWN.sql` precedents).
+//
+// Two independent detectors, because they fail differently:
+//
+//   (a) FILENAME — an uppercase shout-segment. Verified discriminating: across
+//       all 617 top-level migrations, the 2026-08-23 offender is the ONLY file
+//       whose name contains any uppercase character at all. The corpus
+//       convention is lowercase snake_case, so an uppercase segment is always a
+//       deliberate shout. NO OPT-OUT: a file named *_DESIGN_ONLY.sql has no
+//       business in an auto-applying directory under any circumstance.
+//
+//   (b) CONTENT — narrow self-declaration phrases ("DO NOT ... db push",
+//       "THIS FILE HAS NOT BEEN APPLIED", "NOT A MIGRATION", ...). These are
+//       opt-out-able via `-- lint:allow-design-marker`, because an
+//       incident-remediation migration legitimately needs to QUOTE the phrases
+//       while explaining what happened. Quoting is not declaring.
+//
+// FALSE-POSITIVE CALIBRATION (measured against all 617 files before shipping):
+// bare "DO NOT" matches 151 files and is unusable. "DO NOT APPLY" matches 8 and
+// "DO NOT RUN" matches 9 — all ordinary prose ("...they do not apply to other
+// migrations", "do NOT run more often"). Worse, 20260821070000 says "DO NOT
+// APPLY IT WITH `apply_migration`", which means the OPPOSITE of this rule: that
+// file MUST be applied, just via db push rather than the MCP tool. So neither
+// phrase is in the set below. Every pattern here was confirmed to match the
+// 2026-08-23 offender and nothing else.
+const DESIGN_MARKER_ALLOW = /--\s*lint:allow-design-marker\b/i;
+
+// Uppercase shout-segment in the filename, e.g. `..._DESIGN_ONLY.sql`.
+// Case-SENSITIVE by design (see calibration note above).
+const DESIGN_FILENAME_RE =
+  /(?:^|_)(DESIGN_ONLY|DO_NOT_APPLY|DO_NOT_RUN|DO_NOT_DEPLOY|DO_NOT_MERGE|NOT_APPLIED|DRAFT|WIP|TODO|SCRATCH|TEMPLATE|EXAMPLE|SAMPLE)(?:_|\.)/;
+
+const DESIGN_CONTENT_RES = [
+  // "DO NOT `supabase db push` this". The imperative about the apply command
+  // itself — the single clearest statement that a file must not auto-apply.
+  {
+    name: 'DO NOT ... db push',
+    re: /\bDO\s+NOT\s+(?:EVER\s+)?[`'"]*(?:supabase\s+)?db[\s_-]?push\b/i,
+  },
+  // "DO NOT MOVE THIS FILE INTO supabase/migrations/" — said by DOWN scripts.
+  // If it is saying this from INSIDE supabase/migrations/, it already lost.
+  { name: 'DO NOT MOVE THIS FILE INTO', re: /\bDO\s+NOT\s+MOVE\s+THIS\s+FILE\s+INTO\b/i },
+  // Anchored on "THIS FILE" so it cannot fire on ordinary cross-references
+  // like "If M1 has not been applied, ..." (a real line in 20260814000019).
+  { name: 'THIS FILE HAS NOT BEEN APPLIED', re: /\bTHIS\s+FILE\s+(?:HAS\s+)?NOT\s+BEEN\s+APPLIED\b/i },
+  { name: 'NOT A MIGRATION', re: /\bNOT\s+A\s+MIGRATION\b/i },
+  { name: 'DO NOT MERGE / DO NOT DEPLOY', re: /\bDO\s+NOT\s+(?:MERGE|DEPLOY)\b/i },
+  // A DESIGN_ONLY / DESIGN ONLY body marker. The negative lookahead drops
+  // `..._DESIGN_ONLY.sql` FILENAME CITATIONS, which are legitimate: both the
+  // offender's own `-- Migration:` header line and every later file that
+  // references it by name contain that exact string.
+  { name: 'DESIGN ONLY body marker', re: /\bDESIGN[_\s-]ONLY\b(?!\.sql)/i },
+];
+
+/**
+ * Returns human-readable descriptions of every do-not-apply marker on this
+ * file, or [] if clean. `baseName` is the filename only, `raw` the decoded body.
+ */
+function findDesignArtifactMarkers(baseName, raw) {
+  const hits = [];
+  const fnMatch = DESIGN_FILENAME_RE.exec(baseName);
+  // Filename rule is NOT opt-out-able.
+  if (fnMatch) hits.push(`filename contains the marker segment "${fnMatch[1]}"`);
+  if (!DESIGN_MARKER_ALLOW.test(raw)) {
+    for (const { name, re } of DESIGN_CONTENT_RES) {
+      if (re.test(raw)) hits.push(`body declares "${name}"`);
+    }
+  }
+  return hits;
+}
+
+// Applied to production on 2026-08-23 18:11 UTC DESPITE its own do-not-apply
+// header — that is the incident this rule exists to prevent. It is grandfathered
+// because it now has a production ledger row: `supabase db push` and
+// .github/scripts/verify-migration-ledger.sh both key off that row, so renaming
+// or removing the file would make the ledger check report REMOTE_NOT_COMMITTED
+// and abort the next deploy. The file is frozen, not endorsed.
+//
+// THIS LIST MUST NOT GROW. A second entry means a second design artifact reached
+// production, which is the incident recurring, not a lint problem. A pinning
+// test asserts the list has exactly this one entry.
+const DESIGN_MARKER_GRANDFATHERED = [
+  '20260823154500_db12_narrow_default_grants_and_money_table_write_revoke_DESIGN_ONLY.sql',
+];
+
 function lintFile(filePath) {
   const buf = fs.readFileSync(filePath);
 
@@ -221,6 +321,35 @@ function lintFile(filePath) {
   }
 
   const raw = buf.toString('utf8');
+
+  // ── Design-artifact rule — runs before every body-content rule below. This
+  // is a "you are in the wrong directory" rule, not a "your SQL is wrong" rule,
+  // so it outranks them: there is no point reporting placeholder/quota findings
+  // on a file that should not be in supabase/migrations/ at all. ──
+  const baseName = path.basename(filePath);
+  if (!DESIGN_MARKER_GRANDFATHERED.includes(baseName)) {
+    const markers = findDesignArtifactMarkers(baseName, raw);
+    if (markers.length > 0) {
+      return {
+        status: 'fail',
+        reason:
+          'file declares that it must not be applied (' +
+          markers.join('; ') +
+          ') but lives in supabase/migrations/, which `supabase db push ' +
+          "--include-all` applies unconditionally in version order — this is the " +
+          '2026-08-23 production incident',
+        fix:
+          'MOVE the file out of supabase/migrations/ ' +
+          '(docs/runbooks/ is where this repo keeps design artifacts and *.DOWN.sql scripts). ' +
+          'Do not just delete the marker text: that silences the guard and leaves an ' +
+          'unreviewed artifact auto-applying, which is strictly worse. ' +
+          'If this is a real migration that merely QUOTES those phrases while documenting an ' +
+          'incident, annotate it with -- lint:allow-design-marker ' +
+          '(that opt-out covers the body rules only; a FILENAME marker is never allowed).',
+      };
+    }
+  }
+
   const stripped = stripComments(raw);
 
   // ── Quota-never-reset rule — runs even on allow-placeholder files (the two
@@ -361,6 +490,8 @@ if (require.main === module) {
 module.exports = {
   findDuplicateVersions,
   hasUtf8Bom,
+  findDesignArtifactMarkers,
+  DESIGN_MARKER_GRANDFATHERED,
   stripComments,
   normalizeBody,
   isPlaceholder,
