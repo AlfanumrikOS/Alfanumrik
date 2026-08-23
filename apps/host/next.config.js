@@ -168,6 +168,19 @@ const nextConfig = {
       { source: '/review',     destination: '/refresh?tab=flashcards', permanent: true },
       { source: '/revise',     destination: '/refresh?tab=chapters',   permanent: true },
       { source: '/study-plan', destination: '/exam-prep',              permanent: true },
+
+      // Legacy /mock-exam runtime retirement (Phase 5 track A, 2026-08-11).
+      // The old page ran a 3-hour CBSE paper entirely in React state and wrote
+      // nothing to the database (no attempt row, no responses, no XP, no
+      // mastery). The runtime and its results/layout files are deleted; the
+      // successor catalogue at /exams/mock persists real attempts via the
+      // start_mock_test_attempt RPC. These redirects exist purely so old
+      // bookmarks, notification deep links and the retired practice alias
+      // still resolve instead of 404ing. 301 permanent; preserves bookmarks.
+      // Pinned by apps/host/src/__tests__/app/mock-exam-retirement.test.ts.
+      { source: '/mock-exam',           destination: '/exams/mock', permanent: true },
+      { source: '/mock-exam/:path*',    destination: '/exams/mock', permanent: true },
+      { source: '/practice/exam/mock',  destination: '/exams/mock', permanent: true },
     ];
   },
   // PostHog reverse-proxy → EU project 159341 (eu.i.posthog.com). /ingest/static/*

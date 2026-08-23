@@ -209,7 +209,22 @@ const uncommented = (sql: string) =>
 describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
   // ── Lane A: the hole is still open, and shaped exactly as documented ──────
   describe('Lane A — the defect, asserted from the migration chain', () => {
-    it('the only SELECT policy on question_bank is TO authenticated USING (true)', () => {
+    it('the only SELECT policy on question_bank scoped TO authenticated is USING (true)', () => {
+      // Migration 20260814000015 (content-reporter read-only role) added a SECOND,
+      // later, SELECT policy on question_bank -- "question_bank_content_reporter_read"
+      // FOR SELECT TO content_reporter USING (true). That policy is scoped to a
+      // distinct, non-interactive DB role (content_reporter) whose column-level
+      // GRANTs withhold every answer-key column (see that migration's section 5.3) --
+      // RLS policies for different roles do not OR together across roles, so it adds
+      // ZERO visibility for `authenticated` and does not touch R2 at all. Taking the
+      // chronologically LAST `CREATE POLICY ... ON question_bank` regardless of role
+      // (the original mechanism here) picked up that unrelated addition and went red
+      // on a change that never touched the authenticated-role posture this test
+      // exists to pin. Filtering to policies scoped `TO authenticated` restores the
+      // original intent: still-open R2 is `question_bank_authenticated_read`
+      // (20260728090000:311-312), untouched by every migration since (verified by
+      // grep -- 20260814000000/20260814000020/20260814000023 only reference it in
+      // prose, never redefine it).
       const policies: { migration: string; text: string }[] = [];
       for (const { name, sql } of rootMigrations()) {
         const re = /CREATE POLICY\s+"?([\w]+)"?\s+ON\s+"?public"?\."?question_bank"?([\s\S]{0,240}?);/gi;
@@ -219,7 +234,11 @@ describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
         }
       }
       expect(policies.length).toBeGreaterThan(0);
-      const live = policies[policies.length - 1];
+      const authenticatedPolicies = policies.filter(p =>
+        /FOR SELECT\s+TO\s+"?authenticated"?/i.test(p.text),
+      );
+      expect(authenticatedPolicies.length).toBeGreaterThan(0);
+      const live = authenticatedPolicies[authenticatedPolicies.length - 1];
       expect(live.migration).toBe('20260728090000_lockdown_anon_readable_public_tables.sql');
       expect(live.text).toMatch(/FOR SELECT\s+TO\s+"?authenticated"?/i);
       expect(live.text).toMatch(/USING\s*\(\s*true\s*\)/i);
