@@ -32,7 +32,17 @@ import {
 import { collectSessionQuestionIds, computeElapsedSeconds } from '@alfanumrik/lib/quiz/session-contract';
 import { assembleQuiz } from '@alfanumrik/lib/quiz-assembler';
 import { XP_RULES } from '@alfanumrik/lib/xp-config';
-import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
+// P10 — DEEP import, not the `@alfanumrik/ui/ui` barrel. That barrel's
+// `index.ts` ends with `export * as primitives from './primitives'`, and
+// neither @alfanumrik/ui nor @alfanumrik/lib declares `sideEffects: false`
+// (nor are they in next.config.js `optimizePackageImports`), so webpack must
+// evaluate every re-exported module: importing these four Wonder Blocks off
+// the barrel dragged the ENTIRE canonical primitive library (Dialog, Drawer,
+// BottomSheet, Tooltip, Tabs, Table, Toast, Avatar, …) into /quiz's first
+// load as one 12.3 kB gz chunk that this page renders none of.
+// `wonder-blocks.tsx` imports nothing but React, so this is byte-identical
+// at runtime — same components, same props, no barrel.
+import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui/wonder-blocks';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import QuizSetup from '@alfanumrik/ui/quiz/QuizSetup';
@@ -53,7 +63,22 @@ import FeedbackOverlay from '@alfanumrik/ui/quiz/FeedbackOverlay';
 // prompt shown AFTER the answer is confirmed (P3 timing untouched).
 // Sampling is deterministic via shouldPromptConfidence (no Math.random).
 import ConfidencePrompt, { shouldPromptConfidence, type ConfidenceValue } from '@alfanumrik/ui/quiz/ConfidencePrompt';
-import WrittenAnswerInput from '@alfanumrik/ui/quiz/ncert/WrittenAnswerInput';
+// P10: dynamic-imported (ssr:false) for the same reason as HintLadder above —
+// this is the SA/MA/LA answer pad and mounts ONLY on the written-answer branch
+// (`question_type` is not MCQ). An MCQ-only session never renders it, so on the
+// overwhelmingly common path its CBSE hint tables, word-count and review-step
+// logic was being paid for nothing. `loading` renders LoadingFoxy rather than
+// null (unlike HintLadder) because this IS the primary input for a written
+// question — the student must see something occupying that slot.
+// Nothing about answer capture, timing (P3) or evaluation changes; only when
+// the module is fetched.
+// RESTORED 2026-08-23: b00b9c872 (in PR #1605) silently converted this back to
+// a static import, inlining the whole pad into the eager /quiz page chunk. That
+// was one of the three P10 ratchet breaches on main post-merge.
+const WrittenAnswerInput = dynamic(
+  () => import('@alfanumrik/ui/quiz/ncert/WrittenAnswerInput'),
+  { ssr: false, loading: () => <LoadingFoxy /> },
+);
 // Canonical math renderer (P6/P12 fail-safe; P10: KaTeX loads lazily and
 // only when the text actually contains math — plain questions cost nothing).
 import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
