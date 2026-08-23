@@ -20,6 +20,7 @@
 
 import useSWR, { SWRConfiguration } from 'swr';
 import { supabase } from './supabase';
+import { authedFetch } from './authed-fetch';
 import {
   getStudentProfiles,
   getSubjects,
@@ -130,20 +131,51 @@ export function useReviewCards(studentId: string | undefined, limit = 20) {
 }
 
 /* ── Leaderboard (via CDN-cached API route, not direct Supabase) ── */
+
+/** Peer-visible row from GET /api/v1/leaderboard. This IS the whole contract —
+ *  no school/city/board/accuracy/top_title (see the P13 whitelist note in
+ *  apps/host/src/app/api/v1/leaderboard/route.ts). P5: `grade` is a STRING. */
+export interface LeaderboardApiEntry {
+  rank: number;
+  student_id: string;
+  name: string | null;
+  grade: string | null;
+  total_xp: number;
+  sessions: number;
+  streak: number;
+}
+
+/** What the hook resolves to. `rankedBy` carries the server's declared ranking
+ *  basis so the UI can label the board honestly and can never claim a basis the
+ *  server did not produce. */
+export interface LeaderboardBoard {
+  entries: LeaderboardApiEntry[];
+  rankedBy: string;
+  period: string;
+}
+
 export function useLeaderboard(period = 'weekly', limit = 50) {
-  return useSWR(
+  return useSWR<LeaderboardBoard>(
     `leaderboard/${period}/${limit}`,
     async () => {
       // Use server API route with CDN caching (s-maxage=60) instead of direct
       // Supabase query. At 50K users this reduces DB load from 10K req/min to 1/min.
-      const res = await fetch(`/api/v1/leaderboard?period=${period}&limit=${limit}`);
+      // authedFetch forwards `Authorization: Bearer <token>` from the live
+      // Supabase session (session lives in localStorage, not a cookie) — the
+      // route's authorizeRequest('leaderboard.view') otherwise 401s every
+      // request. See @alfanumrik/lib/authed-fetch header comment.
+      const res = await authedFetch(`/api/v1/leaderboard?period=${period}&limit=${limit}`);
       if (!res.ok) {
         const error = new Error('Leaderboard fetch failed') as Error & { status: number };
         error.status = res.status;
         throw error;
       }
       const json = await res.json();
-      return json.data ?? [];
+      return {
+        entries: Array.isArray(json?.data) ? (json.data as LeaderboardApiEntry[]) : [],
+        rankedBy: typeof json?.ranked_by === 'string' ? json.ranked_by : 'xp',
+        period: typeof json?.period === 'string' ? json.period : period,
+      };
     },
     { ...DEFAULT_CONFIG, refreshInterval: 300000 } // 5 min client polling + 60s CDN cache
   );

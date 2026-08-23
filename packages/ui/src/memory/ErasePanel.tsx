@@ -131,10 +131,18 @@ export default function ErasePanel({ isHi, erasingLayer, onErase }: ErasePanelPr
                 ? 'जब तक मिटाना पूरा नहीं होता, फॉक्सी की पूरी याददाश्त खाली रहेगी।'
                 : "While the erase is in progress, all of Foxy's memory stays blank."}
             </p>
-            <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--text-2)' }}>
+            <p className="text-sm leading-relaxed mb-1" style={{ color: 'var(--text-2)' }}>
               {isHi
-                ? 'तुम्हारा डेटा 30 दिनों के भीतर हमारे सिस्टम से पूरी तरह हटा दिया जाएगा। इसे वापस नहीं लाया जा सकता।'
-                : 'Your data is fully purged from our systems within 30 days. This cannot be undone.'}
+                ? 'यह मेमोरी 30 दिनों के भीतर हमारे सिस्टम से पूरी तरह हटा दी जाएगी। इसे वापस नहीं लाया जा सकता।'
+                : 'This memory will be permanently removed from our systems within 30 days. This cannot be undone.'}
+            </p>
+            <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--text-2)' }}>
+              {/* Honest scope: a per-layer erase does NOT purge the raw chat
+                  transcript (foxy_chat_messages) — only full-account deletion
+                  does (execute_data_erasure_purge full-account cascade). */}
+              {isHi
+                ? 'फॉक्सी के साथ तुम्हारी पूरी बातचीत का इतिहास इसमें शामिल नहीं है — उसे मिटाने के लिए अकाउंट पूरी तरह हटाना होगा।'
+                : "Your full conversation history with Foxy isn't included — removing that requires deleting your account."}
             </p>
             <div className="flex gap-2">
               <button

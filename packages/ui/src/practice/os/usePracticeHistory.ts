@@ -26,6 +26,7 @@
  */
 
 import useSWR from 'swr';
+import { authedFetch } from '@alfanumrik/lib/authed-fetch';
 
 /** One completed quiz session row. Mirrors the route's session shape. */
 export interface PracticeSession {
@@ -77,7 +78,12 @@ const EMPTY_STATS: PracticeStats = {
 };
 
 async function fetchPracticeHistory(url: string): Promise<PracticeHistory> {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  // authedFetch forwards `Authorization: Bearer <token>` from the live
+  // Supabase session (session lives in localStorage, not a cookie), so the
+  // route's authorizeRequest() authenticates the student instead of 401ing.
+  // A bare fetch() here 401s for EVERY student — see
+  // @alfanumrik/lib/authed-fetch header comment for the established pattern.
+  const res = await authedFetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) {
     const err = new Error('Practice history fetch failed') as Error & { status: number };
     err.status = res.status;

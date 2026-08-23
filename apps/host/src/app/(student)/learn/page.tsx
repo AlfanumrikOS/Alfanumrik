@@ -88,7 +88,7 @@ function LegacyLearnPage() {
   const subjectsOsOn = useSubjectsOsFlag();
 
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
-  const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string; title_hi?: string | null; verified_question_count?: number }>>([]);
+  const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string; title_hi?: string | null; verified_question_count?: number; practice_ready_count?: number }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
   // Separates "this subject genuinely has no chapters yet" from "the chapter
   // read failed". Both used to render "No chapters available yet" — telling a
@@ -593,7 +593,23 @@ function LegacyLearnPage() {
                                 ? `अध्याय ${ch.chapter_number} · पढ़ो और समझो`
                                 : `Chapter ${ch.chapter_number} · Read & understand`}
                             </span>
-                            {(ch.verified_question_count ?? 0) > 0 && (
+                            {/* Question-count badge. Renders `practice_ready_count`
+                                — the number the practice path can actually
+                                serve — NOT `verified_question_count`, which is
+                                a readiness signal and was advertising questions
+                                the quiz could not deliver (SEV1 #12).
+
+                                Three states, and the third is the one that
+                                matters: `undefined` means the tiered-count
+                                migration isn't live on this database, i.e. the
+                                count is UNKNOWN. Unknown must never be coerced
+                                to 0 and rendered as "0 questions" — that is the
+                                same "failure shown as a reassuring empty state"
+                                defect class. The typeof guard (not `?? 0`) is
+                                load-bearing: unknown and zero both fall through
+                                to no badge, so the row makes no claim it can't
+                                keep, and the chapter stays fully tappable. */}
+                            {typeof ch.practice_ready_count === 'number' && ch.practice_ready_count > 0 && (
                               <span
                                 className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
                                 style={{
@@ -601,7 +617,7 @@ function LegacyLearnPage() {
                                   color: selectedMeta?.color || 'var(--orange)',
                                 }}
                               >
-                                📝 {ch.verified_question_count} {isHi ? 'प्रश्न' : 'questions'}
+                                📝 {ch.practice_ready_count} {isHi ? 'प्रश्न' : 'questions'}
                               </span>
                             )}
                           </div>

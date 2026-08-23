@@ -1395,7 +1395,17 @@ export interface AllowedChapterOption {
   chapter_number: number;
   title: string;
   title_hi?: string | null;
+  // BADGE GUIDANCE — mirrors useAllowedChapters.AllowedChapter. Readiness
+  // signal only ("an agent proved this against NCERT"); it is NOT a count of
+  // what the quiz can serve, and badging with it is what made the chapter
+  // picker advertise questions the platform could not deliver. Kept for
+  // back-compat; no surface renders it.
   verified_question_count?: number;
+  // What the practice / daily-quiz path can actually serve today. THIS is the
+  // student-facing chapter badge number.
+  practice_ready_count?: number;
+  // practice floor AND the human SME gate. Exam / mock surfaces only.
+  exam_ready_count?: number;
 }
 export async function getChaptersForSubject(subject: string, _grade: string): Promise<ServiceResult<AllowedChapterOption[]>> {
   void _grade;
@@ -1435,13 +1445,26 @@ export async function getChaptersForSubject(subject: string, _grade: string): Pr
         // Legacy shape kept for back-compat with older server revisions.
         title?: string;
         verified_question_count?: number;
+        practice_ready_count?: number;
+        exam_ready_count?: number;
       }>;
     };
     return ok((body.chapters ?? []).map((c) => ({
       chapter_number: c.chapter_number,
       title: c.chapter_title ?? c.title ?? `Chapter ${c.chapter_number}`,
       title_hi: c.chapter_title_hi ?? null,
+      // `?? 0` retained ONLY because this field is now back-compat surface
+      // area that nothing renders. Do not copy this coercion to the two
+      // fields below.
       verified_question_count: c.verified_question_count ?? 0,
+      // Passed through verbatim, deliberately WITHOUT `?? 0`. Against a
+      // database predating migration 20260814000014 the RPC omits these and
+      // they arrive `undefined`, which means "unknown" — not "zero". Coercing
+      // here would make the chapter picker render "0 questions" on chapters
+      // that are full of them, which is the same class of defect (a failure
+      // dressed up as a reassuring empty state) this split exists to fix.
+      practice_ready_count: c.practice_ready_count,
+      exam_ready_count: c.exam_ready_count,
     })));
   } catch (e) {
     return fail(
