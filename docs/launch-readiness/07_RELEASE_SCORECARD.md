@@ -15,7 +15,7 @@ findings below and the wave-2 discovery, and elevates the single most severe fin
 
 | Gate | Status | Basis |
 |---|---|---|
-| A - Repository reproducibility | PENDING | CI/reliability recon still running actual commands. Known concern: regression catalog self-reported count divergence, and a real still-open deployment interlock gap (see below). |
+| A - Repository reproducibility | **CONDITIONAL (was PENDING)** | Recon completed 2026-08-23. Core CI is green: a real 51-file vitest slice ran 989 passed / 7 skipped / 0 failed, main's latest push is green on CI + Deploy Production, the branch's only ci.yml diff vs origin/main is 5 benign lines, and the deployment interlock matches its documented state exactly. Two real gaps keep this off PASS: (1) ruleset `main-protection` has `required_approving_review_count: 0` and `strict_required_status_checks_policy: false` -- a plausible structural enabler of how the b00b9c872 stale-base merge landed undetected in the first place; (2) `E2E Nightly` has failed 10/10 consecutive runs over 25 days, 41/417 tests red, tracking issue #1418 unassigned and untriaged -- alerting fires, response process does not. The catalog count divergence is confirmed pre-existing churn, not a defect. Both gaps have bounded, non-architectural fixes. |
 | B - Database and migrations | FAIL (materially narrowed 2026-08-23) | The backup/restore drill HAS now been executed (restore/verify/teardown proven against staging); what remains is a data-population gap, not a mechanism gap. DB-12 was assessed against live production: 425/425 tables have RLS enabled and exactly ONE genuinely permissive write policy exists, so the INSERT/UPDATE/DELETE grants are largely redundant-but-inert rather than exploitable. The real unmitigated gap is TRUNCATE, which structurally cannot be governed by RLS and is still held by anon/authenticated on all 4 money tables. A forward-only remediation migration is DESIGNED but deliberately NOT APPLIED (needs its own review cycle). Still open: 30 SECURITY DEFINER functions plus 11 relations with zero migration provenance. |
 | C - Authentication, RBAC, tenant isolation | FAIL | TSB-1 critical cross-tenant leak fix reverified and holds. 7 RLS-bypassing views with write-capable grants, and 13 client-write policies letting a student self-grant a paid plan, were both found live in production 3 days before this program started; both are now CONFIRMED CLOSED via fresh independent behavioral re-verification against live production (2026-08-23, see below) rather than FIXED-UNVERIFIED. Still FAIL: 77 percent of routes remain on the RLS-bypassing admin client, and DB-12 (broad table grants including TRUNCATE) is untouched. |
 | D - Functional journeys | FAIL (fixable) | A real launch-critical student journey 404s today. School-admin people-management is inert unless a flag is manually flipped per tenant. Both concrete and fixable, not architectural. |
@@ -154,8 +154,12 @@ make, a scheduled drill, a second engineer session for independent verification.
    engineering item on this scorecard. Three of the five mandated metrics (recall@3, correctness,
    abstention) are not computed by the harness at all and need harness work before they can be gated on.
    The streaming-flag half is closed: it was never actually off.
-8. Once CI/reliability recon completes, fold its findings into this scorecard and re-issue the verdict if
-   warranted.
+8. DONE (2026-08-23) - CI/reliability recon completed and folded in; Gate A moved PENDING -> CONDITIONAL.
+   Two follow-ups it surfaced, both bounded: (a) tighten `main`'s ruleset (currently 0 required approving
+   reviews and non-strict status checks -- the likely structural reason a stale-base merge could land
+   silently); (b) triage `E2E Nightly`, red for 25 consecutive days with an unassigned tracking issue.
+   Neither blocks launch on its own, but (a) is cheap insurance against a repeat of exactly the incident
+   this program spent most of its effort cleaning up.
 
 This file will be revised as items close, following the same rule this whole program inherited: a fix is
 not verified until a session that did not author it confirms it independently.

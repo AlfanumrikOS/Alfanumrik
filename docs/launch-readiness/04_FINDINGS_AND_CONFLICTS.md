@@ -1204,3 +1204,152 @@ identical on both paths. The action items here are documentation fixes, not a fl
    instruction.
 3. Correct any other project documentation describing Foxy streaming as currently forced-off.
 No flag was flipped by this investigation. This entire section is measurement + recommendation only.
+
+## Gate A — CI/reliability recon: 5-check pass (testing, 2026-08-23)
+
+Read-only recon closing out Gate A's "repository reproducibility" line. All 5 checks below ran real
+commands against this branch, `origin/main`, and live GitHub API/Actions state — nothing here is
+carried over from memory. No file was changed by this pass except this entry.
+
+### 1. Regression catalog count divergence — confirmed real, and moving in real time
+`.claude/regression/00-header.md` already documents an unresolved 3-way divergence as of its last
+full reconciliation (2026-08-11/2026-08-23): 404 upper-bound / 399 "honest" declared totals vs 346
+independently-measured body-backed `REG-N` ids (58/53 gap, explicitly flagged as pre-existing and
+NOT resolved by the header's own 2026-08-23 restoration pass, which added 18 entries back after
+`b00b9c872`'s bad merge deleted them).
+Independently re-ran the header's own stated measurement command against the current tree:
+```
+$ cd .claude/regression && SHARDS=$(ls *.md | grep -v '^00-header.md$')
+$ { grep -rhoE '^#{2,4} +REG-[0-9]+' $SHARDS; grep -rhoE '^\|[[:space:]]*\*{0,2}REG-[0-9]+' $SHARDS; } \
+    | grep -oE '[0-9]+' | sort -n -u | wc -l
+367          # max id: 420
+```
+That is 21 MORE body-backed ids and 2 HIGHER a max id than the header's own last-declared state
+(346 measured / max 418, "REG-419 is the next free id"). Traced the delta: two brand-new entries —
+**REG-419** (`02-foxy-ai.md`, ncert-solver -> grounded-answer prompt-parity canary, backed by the
+untracked `apps/host/src/__tests__/edge-functions/ncert-solver-prompt-parity.test.ts` visible in
+today's `git status`) and **REG-420** (`02-foxy-ai.md`, Foxy dimension-feedback + AI-quality
+dashboard P13 aggregate-only contract, backed by the untracked
+`apps/host/src/__tests__/api/super-admin/ai-quality.route.test.ts`) — were filed by a concurrent
+ai-engineer/backend session THIS SAME DAY, after the header's 2026-08-23 reconciliation note was
+already written. Also spot-checked `01-subject-governance.md:209`, which independently declares its
+own running total ("398 entries") that agrees with neither the header's 404/399 nor my 367 measured
+count — a live, freshly-observed instance of exactly the divergence class the header already warns
+about, not a new problem. **Verdict: the divergence is real, structurally acknowledged, not
+resolved by this pass (not in scope to resolve — needs the header's own promised shard-by-shard
+audit), and the catalog is being actively extended in real time by other agents faster than the
+header's own count can keep up.** This is expected churn in an actively-worked catalog, not a fresh
+regression. Do not quote 404, 399, 346, 367, or 398 as "the" total without saying which definition
+you mean, per the header's own standing instruction.
+
+### 2. Test suite health slice — green on the slice run, but the ONE full-suite safety net is chronically red
+Ran real vitest slices from the correct CI-parity cwd (`apps/host`, matching
+`vitest.config.ts`'s own documented CWD contract — the repo-root form silently matches zero test
+files, which is exactly the REG-378-adjacent silent-no-op class this catalog already warns about):
+- `xp-rules.test.ts` + `exam-engine.test.ts` + `cognitive-engine.test.ts` +
+  `lib/cognitive-engine-coverage.test.ts`: **5 files, 290 tests, 0 failed.**
+- `src/__tests__/regressions/` + `src/__tests__/security/`: **46 files, 699 passed / 7 skipped
+  (706), 0 failed.**
+- Combined slice: **51 files, 989 tests passed, 7 skipped, 0 failed.** No `.skip` found without a
+  stated reason in anything this slice touched.
+- Cross-checked GitHub Actions directly: the last real push to `main` (`3b81df86c`, 2026-08-22
+  04:51 UTC) has a **green** `CI — Alfanumrik` run and a **green** `Deploy Production — Alfanumrik`
+  run — the merge-gated unit/build/lint pipeline is currently healthy on main.
+- **Real gap found, independent of my own slice:** `E2E Nightly — Alfanumrik` — the platform's
+  *only* scheduled full-suite (~417 test) E2E safety net (PR CI only runs E2E on an opt-in label) —
+  has failed **every single night for the last 10 consecutive runs measured** (2026-08-13 through
+  2026-08-22, `gh run list`). The most recent run (2026-08-22) shows **41 failed / 376 passed**
+  across a broad, non-single-root-cause spread (accessibility touch-targets, exam-schedule gating,
+  grounding/RAG specs, nav redirect guards, refresh-page, teacher-remediation-spine,
+  today-home v2, responsive/zoom a11y, welcome-v2). The workflow's own `pipeline-alert.yml` is
+  working exactly as designed — it opened issue **#1418** on 2026-07-29 and has added a same-day
+  comment on every one of the 25 consecutive red nights since (25 comments, `updatedAt` =
+  2026-08-22T22:14:57Z) — but the issue itself is **unassigned, unlabeled beyond
+  `pipeline-failure`, and carries zero human triage comments.** The alerting infrastructure is
+  sound; the response process around it is not. This is a real, currently-open reliability gap,
+  not a hypothetical one — flagged to ops/testing for triage ownership, not fixed in this pass.
+
+### 3. ci.yml diff vs origin/main — 5-line diff, verified benign and intentional
+`git diff origin/main -- .github/workflows/ci.yml` shows exactly one change class: `check-latest:
+true` removed from 5 `./.github/actions/setup-node-workspace` call sites. Traced to this branch's
+own commit `09ecd6262` ("fix(ci): resolve actionlint errors and pre-existing test drift blocking
+pre-push", same-day). Independently verified the commit's claim against the actual composite
+action rather than trusting the commit message: `grep -n "check-latest\|inputs:"
+.github/actions/setup-node-workspace/action.yml` confirms `check-latest` is **not** among the
+action's declared `inputs:` — it only appears hardcoded inline (`check-latest: true`) inside the
+action's own internal `setup-node` step (line 82). So the 5 removed lines were dead/unconsumed
+inputs that actionlint correctly flagged as unknown, and removing them changes no runtime behavior
+(the action already hardcodes `check-latest: true` internally regardless of caller input).
+**Verdict: benign, already correctly committed on this branch, not yet merged to `main` — this is
+exactly why it shows as a diff, nothing more.** No other divergence found between this branch's
+`ci.yml` and `origin/main`'s.
+
+### 4. Deployment interlock status — independently reconfirmed, matches what's already documented above
+Re-verified live (not re-read from the doc) rather than accepting commit `db56b0b23`'s claims at
+face value:
+- `gh variable list` → `USE_CLI_DEPLOY  true  2026-08-23T09:02:08Z` — confirmed live, matches the
+  documented timestamp exactly.
+- `gh secret list` → `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` both present, added
+  2026-08-23T08:38:0{1,2}Z — i.e. genuinely BEFORE the variable flip (correct order), not merely
+  asserted.
+- `git log origin/main -1` → last commit `3b81df86c`, pushed 2026-08-22T10:21:06+05:30 —
+  **before** the gating change (2026-08-23T09:02:08Z UTC). `gh run list --workflow "Deploy
+  Production — Alfanumrik"` confirms the last real deploy run was 2026-08-22T04:51:09Z, also before
+  the change. **No push to `main` has happened since the interlock was flipped**, so the runbook's
+  own §4 verification (watch the next real push deploy exactly once via the CLI job, not doubled by
+  Vercel's Git integration) has genuinely not yet had the chance to run — this is not a stall or an
+  oversight, it is an accurate "not yet observed" state. **Verdict: no discrepancy found between the
+  documented status and live reality.** Treat the next real production push as the still-outstanding
+  proof point, as already recorded above and in `07_RELEASE_SCORECARD.md`.
+
+### 5. Branch protection reality check — real, previously-uncatalogued governance gap found
+`gh api repos/AlfanumrikOS/Alfanumrik/branches/main/protection` returns `404 Branch protection has
+been disabled on this repository.` **This does NOT mean main is unprotected** — the repo uses the
+newer GitHub **rulesets** API instead of classic branch protection, and the classic endpoint
+correctly 404s when only rulesets are configured (a measurement-tool mismatch, not a real gap, so
+don't quote the 404 as "no protection" — confirmed by checking the other API):
+```
+$ gh api repos/AlfanumrikOS/Alfanumrik/rulesets
+[{"id":20528052,"name":"main-protection","target":"branch","enforcement":"active", ...}]
+$ gh api repos/AlfanumrikOS/Alfanumrik/rulesets/20528052
+```
+Ruleset `main-protection` (created 2026-08-07, active, `bypass_actors: []`,
+`current_user_can_bypass: "never"`) requires 4 status checks — Secret Scanning, Lint/Type-check &
+Test, Production Build, CodeQL Analysis — matching what commit `3288ccf20`'s message already
+documented. **Two real gaps found in the ruleset's own parameters, not previously called out in
+this findings doc:**
+- `required_approving_review_count: 0` — a pull request can be merged into `main` with **zero**
+  human approving reviews. `require_code_owner_review: false` too. The `pull_request` rule exists
+  (so a PR is structurally required — no direct push bypass), but nothing in it requires another
+  set of eyes before merge.
+- `strict_required_status_checks_policy: false` — merging does **not** require the PR branch to be
+  up to date with `main` first. A PR opened against an older `main` can pass its own status checks
+  and merge even if `main` has since moved — status checks are re-verified against the PR's own
+  head, not against a freshly-rebased/merged tree.
+Read together, these two settings are a plausible **structural** contributor to how the
+384-file stale-base merge (`b00b9c872`, documented at length elsewhere in this file and in
+`07_RELEASE_SCORECARD.md`) was able to land on `main` and silently revert ~190 previously-shipped
+fixes: a stale-base PR could pass its own (non-strict) status checks and merge with zero required
+reviewers to catch the regression by eye. This is not asserted as the confirmed root cause of that
+specific incident (not traced commit-by-commit here), only as a live, currently-active
+configuration gap that would allow the same failure mode to recur. Flagged to architect/ops — not
+fixed in this pass (ruleset changes are a repo-admin action outside this recon's scope).
+
+### Gate A recommendation: PENDING -> CONDITIONAL
+Not FAIL: the merge-gated CI pipeline (lint/type-check/unit/build) is currently green on `main`'s
+latest push, the `ci.yml` divergence on this branch is verified benign, and the deployment interlock
+is genuinely applied and matches its own documentation with no discrepancy found.
+Not PASS: two real, live, independently-verified gaps remain unresolved — (a) `main`'s merge
+ruleset permits a zero-review, non-strict-status-check merge, a plausible structural enabler of the
+exact stale-base-merge failure mode this program spent most of its wave-2 effort repairing; and (b)
+the platform's only scheduled full-E2E-suite safety net has been red for 25 consecutive days behind
+a working-but-untriaged alert (issue #1418), meaning "does the existing pipeline already cover this
++ is it green" (this program's own stated bar for Gate A) currently answers **covers it, not
+green**, for the E2E lane specifically. The regression-catalog divergence is carried forward as a
+known, already-documented, non-blocking methodological gap, not a new reason to fail. Recommend
+CONDITIONAL rather than FAIL because both open items have a clear, bounded, non-architectural fix
+(tighten the ruleset's two parameters; assign and triage issue #1418) rather than requiring new
+design work, and neither blocks the specific database/RLS/payment concerns driving Gates B/C/G to
+FAIL today. This is testing's recommendation for the orchestrator to apply to
+`07_RELEASE_SCORECARD.md`; the final Gate A status line and any resulting change to the overall
+verdict is the orchestrator's call, not made here.
