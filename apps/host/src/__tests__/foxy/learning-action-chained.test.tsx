@@ -260,6 +260,29 @@ vi.mock('@alfanumrik/lib/supabase', () => {
   };
 });
 
+// ── REG-421: the OTHER supabase specifier ───────────────────────────────────
+// `vi.mock` is keyed by SPECIFIER, and the mock above only covers
+// `@alfanumrik/lib/supabase`. `packages/lib/src/authed-fetch.ts:25` imports the
+// client from `@alfanumrik/lib/supabase-client` — a DIFFERENT specifier that the
+// mock above does not intercept — and this page's fetcher graph reaches it. Left
+// unmocked, `authedFetch()` builds the REAL lazy client Proxy and awaits a REAL
+// `auth.getSession()` (localStorage + potential token refresh) inside the render
+// window: exactly the non-determinism that made `parents-page-load-states.test.tsx`
+// flaky. Both specifiers must be stubbed for a component-render test to be hermetic.
+vi.mock('@alfanumrik/lib/supabase-client', () => ({
+  supabase: {
+    auth: {
+      getSession: async () => ({
+        data: { session: { access_token: 'test-token', user: { id: 'test-user' } } },
+        error: null,
+      }),
+    },
+  },
+  getSupabaseClient: () => ({ auth: { getSession: async () => ({ data: { session: null }, error: null }) } }),
+  supabaseUrl: 'https://test.supabase.co',
+  supabaseAnonKey: 'test-anon-key',
+}));
+
 vi.mock('@alfanumrik/lib/constants', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@alfanumrik/lib/constants');
   return { ...actual, SUPABASE_URL: 'https://test.supabase.co', SUPABASE_ANON_KEY: 'test-anon-key' };
