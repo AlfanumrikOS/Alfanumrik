@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shimmer/shimmer.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/subjects_provider.dart';
@@ -58,7 +57,7 @@ class DashboardScreen extends ConsumerWidget {
                 slivers: [
                   // ── 1. Compact header strip ────────────────────────────────────
                   SliverToBoxAdapter(
-                    child: _HeaderStrip(student: student, dash: dashAsync),
+                    child: _HeaderStrip(student: student, dashAsync: dashAsync),
                   ),
 
                   // ── 2. Foxy panel (embedded, main CTA) ────────────────────────
@@ -490,7 +489,7 @@ class _UpgradeCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.lock_open_rounded,
               size: 18,
               color: AppColors.primary,
@@ -520,7 +519,7 @@ class _UpgradeCard extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(
+            const Icon(
               Icons.arrow_forward_ios_rounded,
               size: 12,
               color: AppColors.primary,

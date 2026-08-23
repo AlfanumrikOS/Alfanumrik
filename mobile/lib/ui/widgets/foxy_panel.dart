@@ -5,6 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../data/models/chat_message.dart';
+import '../../data/models/student.dart';
 import '../../core/services/subjects_provider.dart';
 import 'error_widget.dart';
 
@@ -30,7 +31,7 @@ class FoxyPanel extends ConsumerStatefulWidget {
 }
 
 class _FoxyPanelState extends ConsumerState<FoxyPanel> {
-  bool get expanded => _expandedV;
+  bool get _expanded => _expandedV;
   bool _expandedV = false;
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
@@ -56,6 +57,19 @@ class _FoxyPanelState extends ConsumerState<FoxyPanel> {
   void _send() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+
+    // Foxy requires a subject. The inline picker strip only renders in the
+    // COLLAPSED body, so an expanded panel with no session has no other way to
+    // choose one — without this gate the send posts `subject: ''` and is a
+    // guaranteed 400 on the first message (same rationale as ChatScreen's
+    // `_promptForSubject`). Keep the typed text so it survives the picker.
+    final chat = ref.read(chatProvider);
+    if (chat.session == null &&
+        (chat.subject == null || chat.subject!.isEmpty)) {
+      _pickSubject();
+      return;
+    }
+
     _controller.clear();
     ref.read(chatProvider.notifier).sendMessage(text);
     Future.delayed(const Duration(milliseconds: 120), () {
@@ -188,7 +202,10 @@ class _FoxyPanelState extends ConsumerState<FoxyPanel> {
 
     if (!mounted) return;
     if (selected == null || selected.isEmpty) {
-      Navigator.of(context).pop();
+      // Dismissed without picking. Unlike ChatScreen — which pops its own
+      // full-screen route here — this panel is EMBEDDED in the dashboard, so
+      // popping would tear down the dashboard route itself. Just leave the
+      // panel as-is; the student keeps their typed text and can retry.
       return;
     }
     ref.read(chatProvider.notifier).startSession(subject: selected);
@@ -296,7 +313,7 @@ class _FoxyPanelState extends ConsumerState<FoxyPanel> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('🦊', style: const TextStyle(fontSize: 40)),
+              const Text('🦊', style: TextStyle(fontSize: 40)),
               const SizedBox(height: 12),
               Text(
                 topic ?? (isHi ? 'नमस्ते!' : 'Hi there!'),
@@ -352,8 +369,8 @@ class _FoxyPanelState extends ConsumerState<FoxyPanel> {
   }
 
   /// Message list for expanded state.
-  Widget _messageArea(ChatState chat, bool isHi) {
-    if (chat.messages.isEmpty) return _welcomeState(chat, null, isHi);
+  Widget _messageArea(ChatState chat, Student? student, bool isHi) {
+    if (chat.messages.isEmpty) return _welcomeState(chat, student, isHi);
     return Expanded(
       child: ListView.builder(
         controller: _scrollController,
@@ -367,7 +384,7 @@ class _FoxyPanelState extends ConsumerState<FoxyPanel> {
   }
 
   /// Build the expanded body.
-  Widget _expandedBody(ChatState chat, bool isHi) {
+  Widget _expandedBody(ChatState chat, Student? student, bool isHi) {
     return Column(
       children: [
         if (chat.error != null)
@@ -376,9 +393,9 @@ class _FoxyPanelState extends ConsumerState<FoxyPanel> {
             onRetry: () => ref.read(chatProvider.notifier).clearError(),
           ),
         if (chat.messages.isEmpty)
-          _welcomeState(chat, null, isHi)
+          _welcomeState(chat, student, isHi)
         else
-          _messageArea(chat, isHi),
+          _messageArea(chat, student, isHi),
         _inputBar(isHi, chat.isSending),
       ],
     );
@@ -510,7 +527,7 @@ class _FoxyPanelState extends ConsumerState<FoxyPanel> {
                 needsSubject
                     ? (isHi ? 'कोई विषय चुनो' : 'Pick a subject')
                     : (isHi ? 'टैप करो और बात करो' : 'Tap to chat'),
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.primary,
                   fontWeight: FontWeight.w600,
@@ -657,7 +674,7 @@ class _FoxyPanelState extends ConsumerState<FoxyPanel> {
           ),
           // Expanded or collapsed body.
           if (_expanded)
-            _expandedBody(chat, isHi)
+            _expandedBody(chat, student, isHi)
           else
             _collapsedBody(chat, isHi, subject),
         ],
