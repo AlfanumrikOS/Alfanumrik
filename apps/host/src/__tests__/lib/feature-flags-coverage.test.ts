@@ -21,7 +21,7 @@
  * main suite).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock fetch BEFORE importing the module under test. The module reads
 // process.env at function-call time, not module-load time, so env stubs
@@ -35,6 +35,8 @@ vi.stubEnv('NODE_ENV', 'development');
 
 import {
   isFeatureEnabled,
+  readFeatureFlagStrict,
+  hashForRollout,
   getFeatureFlagsSimple,
   isAtlasEnabled,
   invalidateFlagCache,
@@ -336,5 +338,355 @@ describe('isAtlasEnabled (lines 364-377)', () => {
     expect(
       isAtlasEnabled('school', { [EDITORIAL_ATLAS_FLAGS.SCHOOL]: true }),
     ).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Coverage closure, installment 2 (2026-08-23).
+//
+// Commit b00b9c872 added `loadFlagsWithStatus`, `evaluateFlagRow` and the
+// interlock-grade reader `readFeatureFlagStrict` to feature-flags.ts. Every
+// consumer of `readFeatureFlagStrict` on disk (packages/lib/src/quiz/
+// resume-gate.ts and the two quiz API suites) injects or vi.mock()s it, so the
+// REAL implementation shipped with zero direct execution: lines 210-221 were
+// wholly uncovered and the file fell below its 95/85/95/95 floor on the merged
+// coverage report.
+//
+// The blocks below execute the real function against the same mocked-fetch
+// discipline used above, and pin the ONE property that justifies its existence:
+// it keeps "we know it is off" and "we could not find out" APART, where
+// isFeatureEnabled collapses both to `false`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('readFeatureFlagStrict — undetermined: flags_unavailable', () => {
+  beforeEach(() => resetMocks());
+
+  it('reports flags_unavailable (not "off") when Supabase env is missing', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '');
+    const strict = await readFeatureFlagStrict('ff_interlock');
+    expect(strict).toEqual({ determined: false, reason: 'flags_unavailable' });
+    expect(mockFetch).not.toHaveBeenCalled();
+    // The whole point: isFeatureEnabled cannot tell this apart from "off".
+    expect(await isFeatureEnabled('ff_interlock')).toBe(false);
+  });
+
+  it('reports flags_unavailable when both service-role and anon keys are missing', async () => {
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', '');
+    const strict = await readFeatureFlagStrict('ff_interlock');
+    expect(strict).toEqual({ determined: false, reason: 'flags_unavailable' });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('reports flags_unavailable when the flag table responds non-OK and no cache exists', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'server error' }),
+    });
+    const strict = await readFeatureFlagStrict('ff_interlock');
+    expect(strict).toEqual({ determined: false, reason: 'flags_unavailable' });
+  });
+
+  it('reports flags_unavailable when the fetch throws and no cache exists', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('TLS handshake failed'));
+    const strict = await readFeatureFlagStrict('ff_interlock');
+    expect(strict).toEqual({ determined: false, reason: 'flags_unavailable' });
+  });
+
+  it('reports flags_unavailable when the flag table returns a malformed (non-array) body', async () => {
+    // Line 92: a non-array payload is coerced to [] so it can never make
+    // _flagCache non-iterable — and `ok` goes false so an interlock can tell.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ error: 'not an array' }),
+    });
+    const strict = await readFeatureFlagStrict('ff_interlock');
+    expect(strict).toEqual({ determined: false, reason: 'flags_unavailable' });
+  });
+
+  it('degrades a malformed body to the flag DEFAULT (off) for isFeatureEnabled, without throwing', async () => {
+    // Same malformed payload as above, read through the ramp-grade reader.
+    // The `.find()` / `for...of` consumers must not throw on a non-array body.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ message: 'unexpected object' }),
+    });
+    await expect(isFeatureEnabled('ff_interlock')).resolves.toBe(false);
+  });
+
+  it('degrades a malformed body to an empty map for getFeatureFlagsSimple', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => 'a bare string, not a flag array',
+    });
+    await expect(getFeatureFlagsSimple()).resolves.toEqual({});
+  });
+});
+
+describe('readFeatureFlagStrict — undetermined: flag_not_found', () => {
+  beforeEach(() => resetMocks());
+
+  it('distinguishes a MISSING row from a row that is off', async () => {
+    mockFlagsResponse([{ flag_name: 'ff_present', is_enabled: false }]);
+    // Row exists and is off → DETERMINED.
+    await expect(readFeatureFlagStrict('ff_present')).resolves.toEqual({
+      determined: true,
+      enabled: false,
+    });
+    // Same (cached) table read, row absent → UNDETERMINED, different reason.
+    await expect(readFeatureFlagStrict('ff_never_seeded')).resolves.toEqual({
+      determined: false,
+      reason: 'flag_not_found',
+    });
+    // isFeatureEnabled collapses both of those to the same `false`.
+    expect(await isFeatureEnabled('ff_present')).toBe(false);
+    expect(await isFeatureEnabled('ff_never_seeded')).toBe(false);
+    // One network read for all four calls — the 5-minute cache held.
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports flag_not_found when the table reads fine but is empty', async () => {
+    mockFlagsResponse([]);
+    await expect(readFeatureFlagStrict('ff_never_seeded')).resolves.toEqual({
+      determined: false,
+      reason: 'flag_not_found',
+    });
+  });
+
+  it('matches on exact flag_name, not on prefix or substring', async () => {
+    mockFlagsResponse([{ flag_name: 'ff_resume_gate_v2', is_enabled: true }]);
+    await expect(readFeatureFlagStrict('ff_resume_gate')).resolves.toEqual({
+      determined: false,
+      reason: 'flag_not_found',
+    });
+  });
+});
+
+describe('readFeatureFlagStrict — determined reads and scoping parity', () => {
+  beforeEach(() => resetMocks());
+
+  const SCHOOL_A = '00000000-0000-0000-0000-000000000001';
+
+  it('returns determined/enabled=true for a globally enabled, unscoped flag', async () => {
+    mockFlagsResponse([{ flag_name: 'ff_on', is_enabled: true }]);
+    await expect(readFeatureFlagStrict('ff_on', {})).resolves.toEqual({
+      determined: true,
+      enabled: true,
+    });
+  });
+
+  it('defaults the context argument to {} when called with only a flag name', async () => {
+    // Exercises the `context: FlagContext = {}` default parameter (line 207):
+    // an unscoped enabled flag must read the same with no context supplied.
+    mockFlagsResponse([{ flag_name: 'ff_on', is_enabled: true }]);
+    await expect(readFeatureFlagStrict('ff_on')).resolves.toEqual({
+      determined: true,
+      enabled: true,
+    });
+  });
+
+  it('treats SCOPED OUT as determined-and-disabled, never as undetermined', async () => {
+    // This is the property an interlock depends on: a role/institution scope
+    // miss is knowledge, not ignorance. If this ever returned `determined:
+    // false` a fail-closed caller would refuse for every out-of-scope user.
+    mockFlagsResponse([
+      {
+        flag_name: 'ff_teacher_only',
+        is_enabled: true,
+        target_roles: ['teacher'],
+        target_institutions: [SCHOOL_A],
+      },
+    ]);
+    await expect(
+      readFeatureFlagStrict('ff_teacher_only', {
+        role: 'student',
+        institutionId: SCHOOL_A,
+      }),
+    ).resolves.toEqual({ determined: true, enabled: false });
+  });
+
+  it('agrees with isFeatureEnabled on every scoping axis (shared evaluateFlagRow)', async () => {
+    mockFlagsResponse([
+      {
+        flag_name: 'ff_scoped',
+        is_enabled: true,
+        target_roles: ['teacher'],
+        target_environments: ['development'],
+        target_institutions: [SCHOOL_A],
+      },
+    ]);
+    const cases: Array<{
+      ctx: { role?: string; environment?: string; institutionId?: string };
+      expected: boolean;
+    }> = [
+      {
+        ctx: { role: 'teacher', environment: 'development', institutionId: SCHOOL_A },
+        expected: true,
+      },
+      {
+        ctx: { role: 'student', environment: 'development', institutionId: SCHOOL_A },
+        expected: false,
+      },
+      {
+        ctx: { role: 'teacher', environment: 'production', institutionId: SCHOOL_A },
+        expected: false,
+      },
+      {
+        ctx: { role: 'teacher', environment: 'development', institutionId: 'other-school' },
+        expected: false,
+      },
+    ];
+    for (const { ctx, expected } of cases) {
+      const strict = await readFeatureFlagStrict('ff_scoped', ctx);
+      expect(strict).toEqual({ determined: true, enabled: expected });
+      // The two readers share evaluateFlagRow — they must never disagree.
+      expect(await isFeatureEnabled('ff_scoped', ctx)).toBe(expected);
+    }
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies deterministic per-user rollout the same way isFeatureEnabled does', async () => {
+    const USER = 'user-rollout-parity-fixture';
+    const bucket = hashForRollout(USER, 'ff_ramp');
+    // Pick a percentage strictly above this user's bucket → included.
+    mockFlagsResponse([
+      { flag_name: 'ff_ramp', is_enabled: true, rollout_percentage: bucket + 1 },
+    ]);
+    await expect(
+      readFeatureFlagStrict('ff_ramp', { userId: USER }),
+    ).resolves.toEqual({ determined: true, enabled: true });
+    expect(await isFeatureEnabled('ff_ramp', { userId: USER })).toBe(true);
+
+    // And exactly at the bucket → excluded (strict `<`), but still DETERMINED.
+    resetMocks();
+    mockFlagsResponse([
+      { flag_name: 'ff_ramp', is_enabled: true, rollout_percentage: bucket },
+    ]);
+    await expect(
+      readFeatureFlagStrict('ff_ramp', { userId: USER }),
+    ).resolves.toEqual({ determined: true, enabled: false });
+  });
+
+  it('treats a 0% rollout as determined-and-disabled even with a userId', async () => {
+    mockFlagsResponse([
+      { flag_name: 'ff_ramp', is_enabled: true, rollout_percentage: 0 },
+    ]);
+    await expect(
+      readFeatureFlagStrict('ff_ramp', { userId: 'anyone' }),
+    ).resolves.toEqual({ determined: true, enabled: false });
+  });
+
+  it('serves a STALE cache as a determined read (a warm snapshot is a successful read)', async () => {
+    // Documented contract on loadFlagsWithStatus: `ok: true` for a served
+    // cache. Refusing to act on a five-minute-old snapshot would take the
+    // product down on one slow response, which is not what fail-closed means.
+    mockFlagsResponse([{ flag_name: 'ff_cached', is_enabled: true }]);
+    await expect(readFeatureFlagStrict('ff_cached')).resolves.toEqual({
+      determined: true,
+      enabled: true,
+    });
+
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    vi.setSystemTime(new Date(Date.now() + 10 * 60 * 1000));
+    mockFetch.mockRejectedValueOnce(new Error('flag service unreachable'));
+    await expect(readFeatureFlagStrict('ff_cached')).resolves.toEqual({
+      determined: true,
+      enabled: true,
+    });
+    vi.useRealTimers();
+  });
+
+  it('goes undetermined again after invalidateFlagCache drops the stale snapshot', async () => {
+    mockFlagsResponse([{ flag_name: 'ff_cached', is_enabled: true }]);
+    await expect(readFeatureFlagStrict('ff_cached')).resolves.toEqual({
+      determined: true,
+      enabled: true,
+    });
+
+    invalidateFlagCache();
+    mockFetch.mockRejectedValueOnce(new Error('flag service unreachable'));
+    await expect(readFeatureFlagStrict('ff_cached')).resolves.toEqual({
+      determined: false,
+      reason: 'flags_unavailable',
+    });
+  });
+});
+
+describe('evaluateFlagRow — environment resolution fallback chain', () => {
+  // `context.environment || VERCEL_ENV || NODE_ENV || 'production'`. Each rung
+  // of that chain decides whether an environment-scoped flag applies, so each
+  // is asserted with a matching/non-matching pair rather than inferred.
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    resetMocks();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  /**
+   * Remove an env var ENTIRELY (not set it to the string "undefined").
+   * stubEnv first so vitest records the original and unstubAllEnvs restores it.
+   */
+  function unsetEnv(name: string): void {
+    vi.stubEnv(name, 'sentinel-to-register-original');
+    delete process.env[name];
+  }
+
+  it('falls back to VERCEL_ENV when the context supplies no environment', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('NODE_ENV', 'development');
+    mockFlagsResponse([
+      { flag_name: 'ff_preview_only', is_enabled: true, target_environments: ['preview'] },
+      { flag_name: 'ff_dev_only', is_enabled: true, target_environments: ['development'] },
+    ]);
+    // VERCEL_ENV outranks NODE_ENV, so the preview-scoped flag is on and the
+    // development-scoped flag is off — proving VERCEL_ENV was the rung used.
+    expect(await isFeatureEnabled('ff_preview_only')).toBe(true);
+    expect(await isFeatureEnabled('ff_dev_only')).toBe(false);
+  });
+
+  it('prefers an explicit context.environment over VERCEL_ENV', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    mockFlagsResponse([
+      { flag_name: 'ff_preview_only', is_enabled: true, target_environments: ['preview'] },
+    ]);
+    expect(
+      await isFeatureEnabled('ff_preview_only', { environment: 'production' }),
+    ).toBe(false);
+  });
+
+  it('falls back to NODE_ENV when VERCEL_ENV is absent', async () => {
+    unsetEnv('VERCEL_ENV');
+    vi.stubEnv('NODE_ENV', 'development');
+    mockFlagsResponse([
+      { flag_name: 'ff_dev_only', is_enabled: true, target_environments: ['development'] },
+      { flag_name: 'ff_prod_only', is_enabled: true, target_environments: ['production'] },
+    ]);
+    expect(await isFeatureEnabled('ff_dev_only')).toBe(true);
+    expect(await isFeatureEnabled('ff_prod_only')).toBe(false);
+  });
+
+  it('falls back to the production literal when context, VERCEL_ENV and NODE_ENV are all absent', async () => {
+    unsetEnv('VERCEL_ENV');
+    unsetEnv('NODE_ENV');
+    mockFlagsResponse([
+      { flag_name: 'ff_prod_only', is_enabled: true, target_environments: ['production'] },
+      { flag_name: 'ff_dev_only', is_enabled: true, target_environments: ['development'] },
+    ]);
+    // The final literal rung: an unidentifiable environment is treated as
+    // production, the most conservative choice for an env-scoped ramp.
+    expect(await isFeatureEnabled('ff_prod_only')).toBe(true);
+    expect(await isFeatureEnabled('ff_dev_only')).toBe(false);
+  });
+
+  it('ignores environment scoping entirely when target_environments is empty', async () => {
+    unsetEnv('VERCEL_ENV');
+    unsetEnv('NODE_ENV');
+    mockFlagsResponse([
+      { flag_name: 'ff_everywhere', is_enabled: true, target_environments: [] },
+    ]);
+    expect(await isFeatureEnabled('ff_everywhere')).toBe(true);
   });
 });
