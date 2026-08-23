@@ -1118,6 +1118,111 @@ CI environment guard in setup.ts — P12 test-suite AI safety).
 
 **Total: 136 entries.**
 
+## Hermetic Supabase-client seam — per-call-site enforcement contract (2026-08-23) — REG-421
+
+**Filed adjacent to REG-168 above, because it is the same defect class in a
+different module.** REG-168 is the LLM half ("a `vi.mock` in `setup.ts` cannot
+be the guarantee, so the guarantee is per-call-site"); this is the
+Supabase-client half. Anyone reading one should read the other.
+
+Source: root cause of the
+`apps/host/src/__tests__/school-admin/parents-page-load-states.test.tsx`
+merge-time flake, measured 2026-08-23 on `release/launch-readiness`.
+
+**The defect — `vi.mock` is keyed by SPECIFIER STRING, not by module identity.**
+
+The test mocked `@alfanumrik/lib/supabase`. The component's fetcher reached
+`packages/lib/src/authed-fetch.ts:25`, which imports the client from a
+**different specifier**:
+
+```ts
+import { supabase } from '@alfanumrik/lib/supabase-client';
+```
+
+`supabase.ts` merely re-exports `supabase-client.ts`, so the two specifiers name
+the same runtime value in production — but to Vitest's module registry they are
+two unrelated keys. The mock was live and simply never consulted. `authedFetch()`
+therefore got the REAL lazy client Proxy and awaited a REAL
+`supabase.auth.getSession()` (localStorage read plus a possible token refresh)
+*inside the render window*.
+
+Diagnostic that settled it: `mockedGetSessionCallCount: 0` while
+`realClientCtor: "bound SupabaseClient"`.
+
+**Why it is a merge-gate problem, not a nuisance.** `Unit Tests (shard N/4)` is
+REQUIRED at merge time and runs four vitest processes on one box. An unmocked
+real-client round trip inside a render is a coin flip under that starvation.
+Branch protection on `main` is currently disabled
+(`gh api …/branches/main/protection` → 404), so `ci-gate` is advisory and there
+is no safety net behind the flake.
+
+**Why the fix cannot live in `setup.ts`** — identical reasoning to REG-168: a
+global `vi.mock('@alfanumrik/lib/supabase-client')` in the setup file is not
+overrideable by a test file's own import, so it would break the files that
+legitimately exercise the real client. The guarantee is therefore enforced PER
+CALL SITE, and this entry is the standing gate that keeps it enforced.
+
+**The contract.** A component-render test (any `*.test.tsx` / `*.spec.tsx` that
+calls `render(`) whose import graph reaches `packages/lib/src/authed-fetch.ts` —
+*after* deleting every module the test itself `vi.mock`s — MUST also mock
+`@alfanumrik/lib/supabase-client` or an `…/authed-fetch` specifier:
+
+```ts
+vi.mock('@alfanumrik/lib/supabase-client', () => ({
+  supabase: { auth: { getSession: async () => ({ data: { session: null }, error: null }) } },
+}));
+```
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-421 | `hermetic_supabase_client_seam_per_call_site` | Three layers, because a static gate that can go vacuous is worse than none. **(1) ANCHOR** — the seam still has the shape the gate assumes: `packages/lib/src/authed-fetch.ts` exists, still calls `supabase.auth.getSession()`, still imports the client from `@alfanumrik/lib/supabase-client` and NOT from `@alfanumrik/lib/supabase`, and `supabase.ts` still merely re-exports `./supabase-client` (the specifier trap itself). If any of that changes the gate must be re-derived rather than trusted. **(2) NON-VACUITY** — the analyzer resolves the monorepo aliases (`@/`, `@alfanumrik/lib`, `@alfanumrik/ui`) and builds a >1000-edge first-party graph; it classifies the known-FIXED call site (`parents-page-load-states.test.tsx`) as GUARDED; it resolves Next.js route-group pages (`@/app/learn/[subject]/[chapter]/page` → `app/(student)/…`); and a synthetic control proves the violation branch can fire. **The route-group assertion is load-bearing:** `setup.ts` monkey-patches `fs.existsSync` with a monorepo shim that reports the pre-route-group path as existing, so an `existsSync`-based resolver yields a phantom edgeless node and the whole subgraph behind it goes invisible — measured, it silently dropped one real offender. Resolution is therefore answered from a directory walk, which the shim cannot spoof. **(3) RATCHET** — the 25 pre-existing unguarded call sites are frozen in `KNOWN_UNGUARDED`; a NEWLY-added unguarded render test fails the gate by name with the exact mock to paste, and a baseline entry that has been fixed (or renamed/deleted) must be removed, so the baseline can only shrink. | `apps/host/src/__tests__/regressions/reg-421-hermetic-supabase-client-seam.test.ts` (12 tests) | E | P13, P8 |
+
+### Negative controls run at filing (2026-08-23)
+
+The gate was proven non-vacuous before filing, not assumed:
+
+| Control | Expected | Observed |
+|---|---|---|
+| Synthetic new render test importing `@alfanumrik/ui/dashboard/ReviewsDueCard`, mocking only `@alfanumrik/lib/supabase` | FAIL, naming the file | FAIL — 2 tests red, offender named |
+| Same file, `@alfanumrik/lib/supabase-client` mock added | PASS | PASS — 12/12 |
+| One entry deleted from `KNOWN_UNGUARDED` while still violating | FAIL | FAIL — 2 tests red |
+
+### Baseline as measured 2026-08-23
+
+204 component-render tests scanned. 27 reach `authed-fetch` after their own
+mocks are cut: **2 guarded** (`parents-page-load-states.test.tsx`,
+`foxy/learning-action-chained.test.tsx` — both fixed in this pass) and **25
+unguarded**, frozen in `KNOWN_UNGUARDED`. Every one of those 25 is a live
+candidate for the same flake; two of the original 27 had *already* manifested as
+real merge-blocking flakes before the scan existed, which is the argument for
+draining the list rather than admiring it.
+
+### Invariants covered by this section
+
+- P13 (data privacy) / P8 (RLS boundary) — a unit-lane test must never construct
+  a real Supabase client or perform a real session read. Beyond determinism,
+  that is the same hermeticity boundary the 2026-08-08 incident (see the
+  hermetic-environment block at the top of `setup.ts`) was written to hold.
+
+### Notes on test strategy
+
+Like REG-168, this is a process/infrastructure contract rather than a product
+assertion — but unlike REG-168 it is **mechanically enforced**: the analyzer
+recomputes the violation set from the source tree on every run, so the contract
+cannot drift away from the code by documentation rot alone. Nothing here may be
+relaxed to make an application test pass. The remedy for a red REG-421 is always
+to add the missing `vi.mock`, never to widen the gate.
+
+### Catalog total
+
+Pre-REG-421: latest filed id was REG-420 (`02-foxy-ai.md`, 2026-08-23), with the
+header's "REG-421 is the next free REG id" line confirming availability at filing
+time. This section adds REG-421. **REG-422 is the next free id**
+(REG-371..REG-377 remain RESERVED). The header file
+(`.claude/regression/00-header.md`) remains the authoritative total — the
+three-way count divergence documented there is carried forward unchanged by this
+entry, not resolved by it.
+
 ## White-label flag registration + module-gating activation (Phase 3C Wave A) — REG-169
 
 Source: Phase 3C Wave A "white-label activation" (autonomous, additive,

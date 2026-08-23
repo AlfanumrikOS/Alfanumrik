@@ -6,9 +6,11 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 406 entries upper bound / 401 honest (target: 35 — TARGET
-EXCEEDED). Independently measured body-backed `REG-N` ids: 367 (max 420) as of
-the 2026-08-23 REG-419/420 filing — see the new addendum below.**
+**Total catalog: 407 entries upper bound / 402 honest (target: 35 — TARGET
+EXCEEDED). Independently measured body-backed `REG-N` ids: 368 (max 421) as of
+the 2026-08-23 REG-421 filing — see addendum #2 below. (The immediately
+preceding state, 406/401 and 367/max-420, was the REG-419/420 filing; both
+addenda are kept so the delta is auditable rather than overwritten.)**
 See the 2026-08-11 addenda below — that three-way divergence is PRE-EXISTING
 and still unresolved; do not quote any one of the three numbers as "the" total
 without saying which definition you used. The 346 figure was RE-MEASURED on
@@ -41,11 +43,28 @@ dimension-feedback + AI-quality dashboard aggregate-only contract, both in
 flagged to architect, both blocking Gate 3) and the untested-route gap
 (`POST /api/foxy/feedback/dimension`) found during the same pass — neither
 is a new REG entry, both are noted in-place in REG-420's writeup.)
-**REG-421 is the next free REG id.** REG-418 was filed as one entry (a-d) in
-`01-subject-governance.md` during the same 2026-08-23 reconciliation pass —
-see below. (The "REG-419 is the next free id" line inside the restored
-REG-418 section itself is stale leftover prose from its original 2026-08-12
-filing, superseded by this line — do not follow it.)
+REG-418 was filed as one entry (a-d) in `01-subject-governance.md` during the
+same 2026-08-23 reconciliation pass — see below. (The "REG-419 is the next free
+id" line inside the restored REG-418 section itself is stale leftover prose from
+its original 2026-08-12 filing, superseded by this line — do not follow it.)
+
+**2026-08-23 addendum #2 (testing agent, CI merge-gate flake root-cause pass).**
+Filed **REG-421** `hermetic_supabase_client_seam_per_call_site` in
+`11-infrastructure.md`, deliberately placed ADJACENT to its precedent REG-168
+(hermetic LLM mock layer) because it is the same defect class — `vi.mock` is
+keyed by SPECIFIER STRING, so mocking `@alfanumrik/lib/supabase` does not
+intercept `packages/lib/src/authed-fetch.ts:25`'s import of
+`@alfanumrik/lib/supabase-client`, and the render then performs a REAL
+`auth.getSession()`. That is the measured root cause of the
+`parents-page-load-states.test.tsx` merge-time flake. Unlike REG-168 the new
+entry is MECHANICALLY enforced: a 12-test static analyzer recomputes the
+violation set from the source tree and ratchets a frozen 25-file baseline
+downward only. Measured count moves 367 → 368 (+1, exactly the entry filed);
+declared totals move 406/401 → 407/402. The pre-existing three-way divergence is
+carried forward unchanged, not resolved.
+**REG-422 is the next free REG id.**
+Latest REG id: **REG-421** (filed 2026-08-23, testing agent, in
+`11-infrastructure.md`).
 
 **2026-08-23 reconciliation (launch-readiness catalog audit, testing agent).**
 Commit `b00b9c872` ("fix(quality): bilingual subject grid + mobile contract
