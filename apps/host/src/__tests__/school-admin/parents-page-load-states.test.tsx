@@ -12,10 +12,11 @@
  *     (c) record OK + parents list EMPTY → the friendly empty state renders; an
  *         empty list is NOT treated as an error.
  *
- *   Seams: AuthContext (authed), supabase (school_admins + auth.getSession),
- *   next/navigation (router.replace spy), global fetch (parents API). The real
- *   @alfanumrik/ui/ui primitives render (they are dependency-light), so the
- *   page's own copy is assertable on screen.
+ *   Seams: AuthContext (authed), supabase (school_admins), supabase-client (the
+ *   token read behind authedFetch — see the mock's comment; it is load-bearing,
+ *   not redundant), next/navigation (router.replace spy), global fetch (parents
+ *   API). The real @alfanumrik/ui/ui primitives render (they are
+ *   dependency-light), so the page's own copy is assertable on screen.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -58,12 +59,50 @@ vi.mock('@alfanumrik/lib/supabase', () => {
   return {
     supabase: {
       from: vi.fn(() => builder),
+      // NOTE: this `auth.getSession` is NOT the one the parent-links request
+      // uses — see the supabase-client mock immediately below for why. It is
+      // kept only so this mock stays a faithful shape-match for the real module.
       auth: {
         getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'tok-123' } } }),
       },
     },
   };
 });
+
+// ── Supabase CLIENT: the seam authedFetch actually uses ───────────────────────
+//
+// ⚠️  DO NOT DELETE THIS MOCK. It looks redundant next to the mock above. It is
+// not: it is the difference between a deterministic test and an intermittent CI
+// failure, and the reason is genuinely non-obvious.
+//
+// The page imports `supabase` from '@alfanumrik/lib/supabase' (mocked above) for
+// its school_admins read. But it loads parent links through authedFetch(), and
+// authedFetch → getAccessToken() imports `supabase` from a DIFFERENT specifier:
+// '@alfanumrik/lib/supabase-client' (packages/lib/src/authed-fetch.ts:25).
+// vi.mock is keyed by specifier, and supabase.ts merely RE-EXPORTS from
+// supabase-client.ts — so mocking supabase.ts does NOT mock supabase-client.ts.
+//
+// Without this mock, authedFetch awaited a REAL @supabase/supabase-js client.
+// Measured, not assumed: the mocked getSession above recorded 0 calls while
+// '@alfanumrik/lib/supabase-client' resolved to a live `SupabaseClient`. Every
+// parent-links load therefore ran the real GoTrue state machine — process lock,
+// initializePromise, storage recovery — against the placeholder URL. That path
+// does resolve, but in a NON-DETERMINISTIC number of async ticks, and that tick
+// count is exactly what decides whether the settled empty state has repainted by
+// the time the assertions in (c) run. It was the engine of a flake that was
+// green 20/20 in isolation and intermittently red only under a loaded 4-way
+// sharded CI run (PR #1605).
+//
+// Mocking the real seam also restores the hermeticity contract that
+// `src/__tests__/setup.ts` exists to enforce: the unit lane builds no live
+// backend clients.
+vi.mock('@alfanumrik/lib/supabase-client', () => ({
+  supabase: {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'tok-123' } } }),
+    },
+  },
+}));
 
 import SchoolAdminParentsPage from '@/app/school-admin/parents/page';
 
@@ -123,9 +162,36 @@ describe('parents page — (c) empty parents list is NOT an error', () => {
     // adminResult + fetch defaults: valid admin, empty links.
     render(React.createElement(SchoolAdminParentsPage));
 
-    await waitFor(() => expect(screen.getByText('No parents linked yet')).toBeDefined());
-    // The empty state's guidance copy is present…
-    expect(screen.getByText(/Parents can join via your school invite code/)).toBeDefined();
+    // ⚠️  ASSERT THE SETTLED STATE, IN ONE SNAPSHOT. Do not split these back into
+    // `await waitFor(heading)` followed by a bare synchronous `getByText(...)`.
+    //
+    // The page renders this empty state TWICE, and only the second one is real:
+    //
+    //   1. TRANSIENTLY — in the single commit where `schoolId` has landed
+    //      (loadingAdmin false) but the `[schoolId]` effect that calls
+    //      fetchParentLinks has not run yet. At that instant `loadingLinks` is
+    //      still false and `parentLinks` is still [], so the
+    //      `!loadingLinks && !linksError && parentLinks.length === 0` guard is
+    //      TRUE and the empty state paints — before the request even fires.
+    //   2. FOR REAL — after the request resolves with zero links.
+    //
+    //   Between the two, `setLoadingLinks(true)` swaps the empty state out for
+    //   five ParentRowSkeletons. A `waitFor` on the heading alone can latch onto
+    //   render (1); a synchronous assertion on the next line then executes inside
+    //   the skeleton window and fails with a DOM full of `animate-pulse`. That is
+    //   the observed CI failure, reproduced deterministically by delaying the
+    //   links request by one macrotask.
+    //
+    //   Requiring the request to have been ISSUED before accepting the empty
+    //   state excludes render (1) by construction, so what is pinned here is the
+    //   post-request state — strictly more than the original assertion proved.
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/school-admin/parents', expect.anything());
+      expect(screen.getByText('No parents linked yet')).toBeDefined();
+      // The empty state's guidance copy is present…
+      expect(screen.getByText(/Parents can join via your school invite code/)).toBeDefined();
+    });
+
     // …and the admin-record error card is NOT shown for an empty (successful) list.
     expect(
       screen.queryByText('We couldn’t load your school admin account. Please try again.'),
