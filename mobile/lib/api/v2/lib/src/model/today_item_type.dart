@@ -15,6 +15,8 @@ class TodayItemType extends EnumClass {
   static const TodayItemType resumeInProgress = _$resumeInProgress;
   @BuiltValueEnumConst(wireName: r'cold_start_diagnostic')
   static const TodayItemType coldStartDiagnostic = _$coldStartDiagnostic;
+  @BuiltValueEnumConst(wireName: r'teacher_remediation')
+  static const TodayItemType teacherRemediation = _$teacherRemediation;
   @BuiltValueEnumConst(wireName: r'srs_due')
   static const TodayItemType srsDue = _$srsDue;
   @BuiltValueEnumConst(wireName: r'revise_decayed_topic')
@@ -23,6 +25,8 @@ class TodayItemType extends EnumClass {
   static const TodayItemType weakTopicZpd = _$weakTopicZpd;
   @BuiltValueEnumConst(wireName: r'continue_lesson')
   static const TodayItemType continueLesson = _$continueLesson;
+  @BuiltValueEnumConst(wireName: r'new_topic')
+  static const TodayItemType newTopic = _$newTopic;
   @BuiltValueEnumConst(wireName: r'weekly_dive_due')
   static const TodayItemType weeklyDiveDue = _$weeklyDiveDue;
   @BuiltValueEnumConst(wireName: r'monthly_synthesis_due')

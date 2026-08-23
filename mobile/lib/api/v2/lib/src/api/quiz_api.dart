@@ -25,10 +25,10 @@ class QuizApi {
   const QuizApi(this._dio, this._serializers);
 
   /// Fetch quiz questions in academic scope
-  /// Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than &#x60;count&#x60; in-scope questions exist. Requires quiz.attempt.
+  /// Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. Subject governance FAILS CLOSED: if the governance RPC is unavailable the route returns 503 SUBJECT_GOVERNANCE_UNAVAILABLE (retryable: true) rather than serving ungated questions. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than &#x60;count&#x60; in-scope questions exist. Requires quiz.attempt.
   ///
   /// Parameters:
-  /// * [subject] 
+  /// * [subject] - Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A code the student is not allowed returns 403 `subject_not_allowed` with `details: SubjectNotAllowedDetails` naming the rejected value and listing the allowed codes.
   /// * [grade] 
   /// * [count] 
   /// * [chapter] 
@@ -240,6 +240,7 @@ class QuizApi {
   /// Thin pass-through to the submit_quiz_results_v2 RPC, which owns P1 scoring, P2 XP + 200/day cap, all 3 P3 anti-cheat checks, and P4 atomicity. The route does NO score / XP / anti-cheat math — it forwards inputs and returns the RPC result verbatim. Requires an Idempotency-Key (UUID) header and quiz.attempt. studentId is cross-checked against the JWT (403 on mismatch). When attemptMode &#x3D;&#x3D;&#x3D; offline_replay the route runs offline gates BEFORE the RPC: capturedAt required (400 OFFLINE_CAPTURED_AT_REQUIRED), clock-skew (422 REPLAY_CLOCK_INVALID), staleness &gt;168h (422 REPLAY_TOO_STALE), clientCapturedTotalSeconds mismatch (400 OFFLINE_TIME_INCONSISTENT), and shuffle-map verification against the server snapshot (422 SHUFFLE_MAP_MISMATCH). Online submissions are byte-identical to today — no offline gate fires.
   ///
   /// Parameters:
+  /// * [idempotencyKey] - REQUIRED grading idempotency key (UUID). The raw header value IS the idempotency key forwarded to the scoring RPC as p_idempotency_key — there is no session-id rebinding. Missing or non-UUID → 400 IDEMPOTENCY_KEY_REQUIRED. Retries of the same submission (including offline-drain retries after RPC_FAILED/503) MUST reuse the same key; a new key makes the RPC treat the request as a new submission.
   /// * [quizSubmitRequest] 
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
@@ -251,6 +252,7 @@ class QuizApi {
   /// Returns a [Future] containing a [Response] with a [QuizSubmitResult] as data
   /// Throws [DioException] if API call or serialization fails
   Future<Response<QuizSubmitResult>> postQuizSubmit({ 
+    required String idempotencyKey,
     QuizSubmitRequest? quizSubmitRequest,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
@@ -263,6 +265,7 @@ class QuizApi {
     final _options = Options(
       method: r'POST',
       headers: <String, dynamic>{
+        r'Idempotency-Key': idempotencyKey,
         ...?headers,
       },
       extra: <String, dynamic>{

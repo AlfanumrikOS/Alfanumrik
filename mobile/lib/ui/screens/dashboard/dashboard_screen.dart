@@ -3,15 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 
-import '../../core/constants/app_colors.dart';
-import '../../core/services/subjects_provider.dart';
-import '../../providers/chat_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/dashboard_provider.dart';
-import '../../ui/widgets/foxy_panel.dart';
-import '../../ui/widgets/loading_widget.dart';
-import '../../ui/widgets/error_widget.dart';
-import '../data/models/student.dart';
+import '../../../core/constants/app_colors.dart';
+import '../../../core/services/subjects_provider.dart';
+import '../../../providers/chat_provider.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../providers/dashboard_provider.dart';
+import '../../widgets/foxy_panel.dart';
+import '../../widgets/loading_widget.dart';
+import '../../widgets/error_widget.dart';
+import '../../../data/models/student.dart';
 
 /// Student dashboard — mobile-first layout with Foxy embedded as the main action.
 ///

@@ -28,6 +28,7 @@ import 'package:alfanumrik_api_v2/src/model/exam_schedule_entry_topic.dart';
 import 'package:alfanumrik_api_v2/src/model/exam_schedule_response.dart';
 import 'package:alfanumrik_api_v2/src/model/leaderboard_entry.dart';
 import 'package:alfanumrik_api_v2/src/model/leaderboard_response.dart';
+import 'package:alfanumrik_api_v2/src/model/leaderboard_self.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_child.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_children_response.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_glance_child.dart';
@@ -50,6 +51,7 @@ import 'package:alfanumrik_api_v2/src/model/quiz_submit_response_item.dart';
 import 'package:alfanumrik_api_v2/src/model/quiz_submit_result.dart';
 import 'package:alfanumrik_api_v2/src/model/student_profile_response.dart';
 import 'package:alfanumrik_api_v2/src/model/student_progress_response.dart';
+import 'package:alfanumrik_api_v2/src/model/subject_not_allowed_details.dart';
 import 'package:alfanumrik_api_v2/src/model/success_ack.dart';
 import 'package:alfanumrik_api_v2/src/model/today_deep_link.dart';
 import 'package:alfanumrik_api_v2/src/model/today_deep_link_params_value.dart';
@@ -75,6 +77,7 @@ part 'serializers.g.dart';
   ExamScheduleResponse,
   LeaderboardEntry,
   LeaderboardResponse,
+  LeaderboardSelf,
   ParentChild,
   ParentChildrenResponse,
   ParentGlanceChild,
@@ -97,6 +100,7 @@ part 'serializers.g.dart';
   QuizSubmitResult,
   StudentProfileResponse,
   StudentProgressResponse,
+  SubjectNotAllowedDetails,
   SuccessAck,
   TodayDeepLink,
   TodayDeepLinkParamsValue,

@@ -19,7 +19,7 @@ Method | HTTP request | Description
 
 XP leaderboard
 
-Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own.
+Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own. `scope` accepts only `global`; `scope=school` returns 400 SCOPE_UNSUPPORTED because the underlying RPC has no school scoping (it previously returned global rows labelled \"school\"). `school`/`city`/`avatar_url` on each entry are always null.
 
 ### Example
 ```dart

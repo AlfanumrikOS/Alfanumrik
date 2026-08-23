@@ -5,6 +5,7 @@
 // ignore_for_file: unused_element
 import 'package:alfanumrik_api_v2/src/model/leaderboard_entry.dart';
 import 'package:built_collection/built_collection.dart';
+import 'package:alfanumrik_api_v2/src/model/leaderboard_self.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -14,6 +15,7 @@ part 'leaderboard_response.g.dart';
 ///
 /// Properties:
 /// * [entries] 
+/// * [me] 
 /// * [period] 
 /// * [schemaVersion] 
 /// * [scope] 
@@ -21,6 +23,9 @@ part 'leaderboard_response.g.dart';
 abstract class LeaderboardResponse implements Built<LeaderboardResponse, LeaderboardResponseBuilder> {
   @BuiltValueField(wireName: r'entries')
   BuiltList<LeaderboardEntry> get entries;
+
+  @BuiltValueField(wireName: r'me')
+  LeaderboardSelf? get me;
 
   @BuiltValueField(wireName: r'period')
   LeaderboardResponsePeriodEnum get period;
@@ -62,6 +67,13 @@ class _$LeaderboardResponseSerializer implements PrimitiveSerializer<Leaderboard
       object.entries,
       specifiedType: const FullType(BuiltList, [FullType(LeaderboardEntry)]),
     );
+    if (object.me != null) {
+      yield r'me';
+      yield serializers.serialize(
+        object.me,
+        specifiedType: const FullType(LeaderboardSelf),
+      );
+    }
     yield r'period';
     yield serializers.serialize(
       object.period,
@@ -106,6 +118,13 @@ class _$LeaderboardResponseSerializer implements PrimitiveSerializer<Leaderboard
             specifiedType: const FullType(BuiltList, [FullType(LeaderboardEntry)]),
           ) as BuiltList<LeaderboardEntry>;
           result.entries.replace(valueDes);
+          break;
+        case r'me':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(LeaderboardSelf),
+          ) as LeaderboardSelf;
+          result.me.replace(valueDes);
           break;
         case r'period':
           final valueDes = serializers.deserialize(

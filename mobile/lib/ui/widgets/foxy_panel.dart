@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/constants/app_colors.dart';
-import '../../../providers/chat_provider.dart';
-import '../../../providers/auth_provider.dart';
-import '../../../data/models/chat_message.dart';
-import '../../../core/services/subjects_provider.dart';
-import '../../widgets/error_widget.dart';
+import '../../core/constants/app_colors.dart';
+import '../../providers/chat_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../data/models/chat_message.dart';
+import '../../core/services/subjects_provider.dart';
+import 'error_widget.dart';
 
 /// Embedded Foxy panel for the student dashboard.
 ///

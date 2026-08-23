@@ -40,18 +40,28 @@ class V2OfflineQuizSubmitter implements OfflineQuizSubmitter {
       _repo.submitOfflineReplay(attempt);
 }
 
-/// The most-recent offline-sync notice to surface to the student (bilingual
-/// rendering happens at the widget; this carries only the data). Null when
-/// there's nothing to show. Cleared by the UI after display.
+/// The most-recent offline-sync notice INTENDED for the student (bilingual
+/// rendering would happen at the widget; this carries only the data). Null when
+/// there's nothing to show.
+///
+/// ⚠️ No widget reads [offlineSyncNoticeProvider] yet, so nothing is displayed
+/// today — the drain publishes here and the value is simply overwritten by the
+/// next outcome. Kept because it is the data contract a future surface renders
+/// against, but it must not be cited as evidence that failures are "surfaced".
 class OfflineSyncNotice {
+  /// [DrainOutcomeKind.success] → "synced — X%".
+  /// [DrainOutcomeKind.discard] → "couldn't sync" (session refused; dropped).
+  /// [DrainOutcomeKind.failedPermanent] → "couldn't sync — needs attention".
+  /// The attempt is KEPT on-device (see [offlineFailedCountProvider]); this is
+  /// the terminal-but-not-lost case and should read differently from a discard.
   final DrainOutcomeKind kind;
 
   /// Server score percent on a successful sync (for "your offline quiz synced
-  /// — X%"). Null for discard.
+  /// — X%"). Null for discard / failedPermanent.
   final int? scorePercent;
 
-  /// Short reason code (e.g. `REPLAY_TOO_STALE`) for discard messaging /
-  /// telemetry. Never PII.
+  /// Short reason code (e.g. `REPLAY_TOO_STALE`, `MAX_DRAIN_ATTEMPTS`) for
+  /// messaging / telemetry. Never PII.
   final String reasonCode;
 
   const OfflineSyncNotice({
@@ -75,11 +85,28 @@ class OfflineSyncNoticeNotifier extends Notifier<OfflineSyncNotice?> {
   void clear() => state = null;
 }
 
-/// Number of attempts currently queued (for a "N quizzes waiting to sync"
-/// badge). 0 when `useV2` is OFF or the store isn't open yet.
+/// Number of attempts currently queued and still drainable (for a "N quizzes
+/// waiting to sync" badge). Terminal records are EXCLUDED — they are not
+/// waiting for anything. 0 when `useV2` is OFF or the store isn't open yet.
 final offlineQueueCountProvider = Provider<int>((ref) {
   final store = ref.watch(offlineQuizStoreProvider).valueOrNull;
   return store?.queueLength ?? 0;
+});
+
+/// Number of attempts in the terminal "needs attention" state — permanently
+/// failed server-side, or out of retry budget. They are STILL ON THE DEVICE
+/// (never deleted) and are recoverable via
+/// [OfflineQuizCoordinator.requeueFailed]. 0 when `useV2` is OFF or the store
+/// isn't open.
+///
+/// ⚠️ NOT YET RENDERED. This provider — like [offlineQueueCountProvider] and
+/// [offlineSyncNoticeProvider] — currently has ZERO widget consumers. The
+/// quarantined attempt is kept, listable and requeueable; it is NOT yet shown
+/// to the student. Building that surface is a separate product/frontend
+/// decision. Until it lands, do not describe quarantined work as "surfaced".
+final offlineFailedCountProvider = Provider<int>((ref) {
+  final store = ref.watch(offlineQuizStoreProvider).valueOrNull;
+  return store?.failedLength ?? 0;
 });
 
 /// The drain coordinator. Owns the [OfflineDrainService], installs the
@@ -149,6 +176,19 @@ class OfflineQuizCoordinator {
                       ),
                     );
                 break;
+              case DrainOutcomeKind.failedPermanent:
+                // Terminal but NOT lost — the attempt is quarantined on-device,
+                // counted by offlineFailedCountProvider and recoverable via
+                // requeueFailed(). The notice is PUBLISHED here; note that no
+                // widget currently listens to offlineSyncNoticeProvider, so it
+                // is not yet visible to the student (see that provider's doc).
+                ref.read(offlineSyncNoticeProvider.notifier).set(
+                      OfflineSyncNotice(
+                        kind: DrainOutcomeKind.failedPermanent,
+                        reasonCode: outcome.reasonCode,
+                      ),
+                    );
+                break;
               case DrainOutcomeKind.retain:
                 // Stays queued; no user-facing notice (it'll retry silently).
                 break;
@@ -172,4 +212,23 @@ class OfflineQuizCoordinator {
   Future<void> enqueueCompletedAttempt(QueuedQuizAttempt attempt) async {
     await _store.enqueue(attempt);
   }
+
+  /// Terminal ("needs attention") attempts still held on-device. Listable so a
+  /// future surface — or a support/debug path — can enumerate what failed
+  /// without touching the store directly. Ids + reason codes only, no PII.
+  List<QueuedQuizAttempt> failedAttempts() => _store.failed();
+
+  /// Return ONE quarantined attempt to the drainable queue. The idempotency
+  /// key, answers and `capturedAt` are preserved verbatim, so the re-send is an
+  /// idempotent replay server-side and can never double-score (P2). Returns
+  /// false for an unknown id or one that is not terminal.
+  ///
+  /// MUST be invoked deliberately (user/operator action). Never auto-call this
+  /// from the drain or a foreground hook — that re-creates the unbounded retry
+  /// loop the retry budget bounds.
+  Future<bool> requeueFailed(String localId) => _store.requeue(localId);
+
+  /// Bulk form of [requeueFailed]; returns how many were re-queued. Same
+  /// deliberate-action rule applies.
+  Future<int> requeueAllFailed() => _store.requeueAllFailed();
 }

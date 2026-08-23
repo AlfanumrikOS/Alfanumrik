@@ -15,6 +15,7 @@ doc/ExamScheduleEntryTopic.md
 doc/ExamScheduleResponse.md
 doc/LeaderboardEntry.md
 doc/LeaderboardResponse.md
+doc/LeaderboardSelf.md
 doc/LearnApi.md
 doc/ParentApi.md
 doc/ParentChild.md
@@ -41,6 +42,7 @@ doc/QuizSubmitResult.md
 doc/StudentApi.md
 doc/StudentProfileResponse.md
 doc/StudentProgressResponse.md
+doc/SubjectNotAllowedDetails.md
 doc/SuccessAck.md
 doc/TodayApi.md
 doc/TodayDeepLink.md
@@ -79,6 +81,7 @@ lib/src/model/exam_schedule_entry_topic.dart
 lib/src/model/exam_schedule_response.dart
 lib/src/model/leaderboard_entry.dart
 lib/src/model/leaderboard_response.dart
+lib/src/model/leaderboard_self.dart
 lib/src/model/parent_child.dart
 lib/src/model/parent_children_response.dart
 lib/src/model/parent_glance_child.dart
@@ -101,6 +104,7 @@ lib/src/model/quiz_submit_response_item.dart
 lib/src/model/quiz_submit_result.dart
 lib/src/model/student_profile_response.dart
 lib/src/model/student_progress_response.dart
+lib/src/model/subject_not_allowed_details.dart
 lib/src/model/success_ack.dart
 lib/src/model/today_deep_link.dart
 lib/src/model/today_deep_link_params_value.dart
