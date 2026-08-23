@@ -383,7 +383,22 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // (byte-identical to origin/main) to the RLS-scoped implementation, so no
 // service-role client remains in it, and the ledger entry has been pruned in
 // the same change (275 -> 274). See scripts/admin-client-allowlist.json.
-const EXPECTED_COUNT = 274;
+// Phase A.3 AI quality dashboard (2026-08-23, architect-reviewed): 274 -> 275
+// for NEW route src/app/api/super-admin/ai-quality/route.ts. Service-role is
+// justified by the same super-admin-by-design pattern as the already-ledgered
+// siblings foxy-quality/route.ts and foxy-report/[studentId]/route.ts: a
+// read-only, cross-student aggregate over 5 tables (foxy_quality_scores,
+// ops_events filtered to category='ai', foxy_message_feedback,
+// foxy_message_dimension_feedback, foxy_chat_messages) over the trailing 30
+// days, feeding the AiQualityData contract consumed by
+// super-admin/ai-quality/page.tsx. No RLS-scoped client can serve this: the
+// read spans ALL students, not the caller's own row. Gated by
+// authorizeRequest(request, 'super_admin.access') — the SAME existing
+// permission the sibling routes use; no new RBAC. Read-only, no writes/RPCs;
+// response is counts/averages/enum-like keys only, never message text,
+// `reason` free text, or student identifiers (P13). See
+// scripts/admin-client-allowlist.json for the full note.
+const EXPECTED_COUNT = 275;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

@@ -6,8 +6,9 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 404 entries upper bound / 399 honest (target: 35 — TARGET
-EXCEEDED). Independently measured body-backed `REG-N` ids: 346 (max 399).**
+**Total catalog: 406 entries upper bound / 401 honest (target: 35 — TARGET
+EXCEEDED). Independently measured body-backed `REG-N` ids: 367 (max 420) as of
+the 2026-08-23 REG-419/420 filing — see the new addendum below.**
 See the 2026-08-11 addenda below — that three-way divergence is PRE-EXISTING
 and still unresolved; do not quote any one of the three numbers as "the" total
 without saying which definition you used. The 346 figure was RE-MEASURED on
@@ -15,11 +16,36 @@ without saying which definition you used. The 346 figure was RE-MEASURED on
 same stated definition as the 345 measurement it supersedes (345 + 1 new = 346
 — the divergence against the declared totals is carried forward UNCHANGED at 58
 entries, not papered over).
-Latest REG id: **REG-418** (a-d, filed as one entry in `01-subject-governance.md`
-during the same 2026-08-23 reconciliation pass — see below). **REG-419 is the
-next free REG id.** (The "REG-419 is the next free id" line inside the
-restored REG-418 section itself is stale leftover prose from its original
-2026-08-12 filing, superseded by this line — do not follow it.)
+
+**2026-08-23 addendum (testing agent, release-readiness gate pass, filed
+immediately after the same day's REG-400..418 restoration below).**
+Re-ran the identical measurement command/definition before filing anything:
+365 body-backed ids, max 418 (up from the 346/399 pair above purely because
+that pair predates the REG-400..418 restoration and was never re-measured
+after it — a stale baseline, not a re-derivation). Filed REG-419 (ncert-solver
+prompt-parity canary) and REG-420 (Foxy dimension-feedback + AI-quality
+dashboard contract), both in `02-foxy-ai.md`. Measured count moves 365 → 367
+(+2, exactly the two entries filed); declared totals move 404/399 → 406/401.
+The pre-existing three-way divergence is neither resolved nor investigated by
+this addendum — it is carried forward unchanged in kind, just recomputed
+against the post-REG-400..418 baseline instead of the stale pre-restoration
+one. Full writeups, including two governance-ledger test failures found (and
+NOT fixed, per this agent's file-ownership boundary) while verifying REG-420,
+are in `02-foxy-ai.md`.
+Latest REG id: **REG-420** (filed 2026-08-23, testing agent, release-readiness
+gate pass over two in-flight threads on `release/launch-readiness` —
+REG-419 ncert-solver→grounded-answer prompt-parity canary and REG-420 Foxy
+dimension-feedback + AI-quality dashboard aggregate-only contract, both in
+`02-foxy-ai.md`. See that shard for the two governance-ledger regressions
+(REG-213 admin-client-allowlist + RCA-02 route-access-manifest, both
+flagged to architect, both blocking Gate 3) and the untested-route gap
+(`POST /api/foxy/feedback/dimension`) found during the same pass — neither
+is a new REG entry, both are noted in-place in REG-420's writeup.)
+**REG-421 is the next free REG id.** REG-418 was filed as one entry (a-d) in
+`01-subject-governance.md` during the same 2026-08-23 reconciliation pass —
+see below. (The "REG-419 is the next free id" line inside the restored
+REG-418 section itself is stale leftover prose from its original 2026-08-12
+filing, superseded by this line — do not follow it.)
 
 **2026-08-23 reconciliation (launch-readiness catalog audit, testing agent).**
 Commit `b00b9c872` ("fix(quality): bilingual subject grid + mobile contract

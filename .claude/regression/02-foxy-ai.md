@@ -2691,3 +2691,141 @@ independently. See the honesty note in `00-header.md` about REG-361..REG-365.
 
 ---
 
+## REG-419 — ncert-solver → grounded-answer migration: prompt-parity canary (2026-08-23)
+
+Added 2026-08-23 (testing agent, release-readiness gate pass on
+`release/launch-readiness` before the two-thread quality handoff). Source
+change: `supabase/functions/ncert-solver/index.ts` (RAG retrieval extracted
+to a new local `supabase/functions/ncert-solver/retrieval.ts`, plus a
+`marks` template-variable default-fallback fix), `supabase/functions/
+grounded-answer/prompts/inline.ts` (new subject-safety + answer-depth prompt
+blocks added to `NCERT_SOLVER_V1`), `supabase/functions/grounded-answer/
+pipeline.ts` (defense-in-depth `{{marks}}` default), `supabase/functions/
+_shared/rag/retrieve.ts` (migration-status comment update only).
+
+ncert-solver has two retrieval paths gated by `ff_grounded_ai_ncert_solver`:
+the LEGACY path (flag OFF) builds its own solver prompt with subject-specific
+safety rules (math: no L'Hopital/integration-by-parts for below-grade
+methods; science: only NCERT-sourced numerical values/experimental results,
+no invented constants; social science: only NCERT-sourced dates/events/
+names) and its own marks-depth answer-length guidance. The SERVICE path
+(flag ON) routes through the shared `grounded-answer` pipeline using the
+`ncert_solver_v1` prompt template. Migrating the routing without also
+migrating the solver's own prompt engineering into the shared template would
+silently regress AI-safety guardrails (P12) the moment the flag flips ON —
+the service path would still retrieve and cite correctly, but a fabricated
+higher-grade math method, an invented experimental value, or a wrong marks-
+depth answer would no longer be blocked by prompt instruction. This canary
+pins that the template DOES carry the parity-closing content and pins the
+service-path request shape so a regression is caught statically, before any
+flag flip.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-419a | `ncert-solver imports retrieveSolverContext from local retrieval module` | `ncert-solver/index.ts` imports `retrieveSolverContext` from `./retrieval.ts` (not the deprecated `_shared/rag-retrieval.ts` shim), still references `callGroundedAnswer` and gates on `ff_grounded_ai_ncert_solver` | `apps/host/src/__tests__/edge-functions/ncert-solver-prompt-parity.test.ts` | E | P12 |
+| REG-419b | `ncert_solver_v1 template lives in grounded-answer/prompts/inline.ts` | `NCERT_SOLVER_V1` is exported from `inline.ts` and registered under the `ncert_solver_v1` template key | same file | E | P12 |
+| REG-419c | `GAP-1 CLOSED: subject-specific safety rules` | Template text matches the math (`L'Hopital`, `integration by parts`), science (`specific numerical values`, `experimental results`), and social-science (`specific dates, events, names`, `historical claims`) exclusion rules carried over from the legacy solver prompt | same file | E | P12 |
+| REG-419d | `GAP-2 CLOSED: marks-depth channel` | Template carries `{{marks}}` plus the three depth bands (`1-2 sentences`, `3-5 sentences`, `detailed with definition, explanation, and example`) | same file | E | P12, P6 (answer-depth quality) |
+| REG-419e | `GAP-3 unchanged: no solver-type routing in the template` | Template text contains no solver-type-routing vocabulary (`route to solver`, `solver type`, `deterministic solver`, `rule_based solver`) — routing is deliberately kept in `index.ts`, not the prompt | same file | E | P12 (scope discipline — routing concerns stay out of the prompt) |
+| REG-419f | `flag-ON request carries the service-expected shape` | The flag-ON code path's request builder pins `mode: 'strict'`, `cache_scope: 'shared'`, `system_prompt_template: 'ncert_solver_v1'`, a numeric `match_count`, and `caller: 'ncert-solver'` | same file | E | P12 |
+
+All 6 assertions are static source-text canaries (no live retrieval, no live
+Claude call) — they pin that the template text and the request-builder text
+exist as required, not that the deployed service actually produces a
+safety-compliant answer at runtime. Re-run 2026-08-23 as part of this
+release-readiness gate together with the 3 sibling ncert-solver suites
+(`ncert-solver.test.ts`, `ncert-solver-security.test.ts`,
+`ncert-solver-grounded-gate.test.ts`): **4 files / 43 tests, all passing.**
+The CI-scoped Deno test target list for `grounded-answer/__tests__/` (21 of
+26 files — the other 5 need `--allow-net` for `Deno.serve` and are
+deliberately excluded, see `00-header.md`/ci.yml note) was independently
+re-run the same session: **259 passed, 0 failed.**
+
+**Known non-blocking debt found during this pass (not part of REG-419's own
+scope, flagged to ai-engineer):** `deno check --no-lock
+supabase/functions/ncert-solver/index.ts` reports 26 diagnostics on the
+post-change file vs. 16 on the pre-change baseline (+10), all the same
+pre-existing `SupabaseClient<any,"public",...>` vs. `SupabaseClientLike`
+mismatch against `_shared/security/ai-admission.ts:130`'s `finalizeAiRoute`/
+`refundQuota` signatures — the retrieval refactor added call sites that hit
+an already-broken type, it did not introduce a new type error class.
+`deno check` is explicitly advisory-only in CI (`.github/workflows/ci.yml` —
+"this step measures, it does not gate"), so this does not block Gate 1, but
+the debt grew and should be cleaned up by whoever next touches
+`ai-admission.ts`'s `SupabaseClientLike` interface.
+
+---
+
+## REG-420 — Foxy dimension-level feedback + AI-quality dashboard: aggregate-only P13 contract (2026-08-23)
+
+Added 2026-08-23 (testing agent, release-readiness gate pass). New surface:
+migration `20260818_01_create_foxy_message_dimension_feedback.sql`
+(`foxy_message_dimension_feedback` table + `record_message_dimension_feedback`
+RPC), `apps/host/src/app/api/foxy/feedback/dimension/route.ts` (POST, student-
+facing), `apps/host/src/app/api/super-admin/ai-quality/route.ts` (GET,
+super-admin aggregate dashboard data source), `apps/host/src/app/super-admin/
+ai-quality/page.tsx`, plus two new pure modules `packages/lib/src/foxy/
+dimension-feedback-schema.ts` and `packages/lib/src/foxy/preference-filter.ts`
+(Phase B design-ahead, unwired).
+
+This entry pins the super-admin AI-quality dashboard's read contract: the
+route reads 5 tables (`foxy_quality_scores`, `ops_events`,
+`foxy_message_feedback`, `foxy_message_dimension_feedback`,
+`foxy_chat_messages`) over a trailing-30-day window and returns COUNTS,
+AVERAGES, and enum-like keys (dimension names, coach modes, judge model /
+rubric version strings) only — never message text, `reason` free text, or
+student identifiers (P13) — behind the existing `super_admin.access`
+permission (no new RBAC surface, P9).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-420a | `denies non-super-admin callers with 403` | Auth denial short-circuits BEFORE any DB read; route returns the authorizer's `errorResponse` verbatim | `apps/host/src/__tests__/api/super-admin/ai-quality.route.test.ts` | E | P9 |
+| REG-420b | `checks the existing super_admin.access permission` | `authorizeRequest` is called with `'super_admin.access'` — no new permission introduced | same file | E | P9 |
+| REG-420c | `returns 200 with zero-filled data from empty tables` + per-table aggregation tests (judge scores, feedback thumbs, dimension feedback by dimension, coach-mode counts, ops AI-event sources) | Response shape is `{ success, data: { judge, ops, feedback, messages } }` with correct aggregate math (means, counts, group-bys) and never leaks a row-level field beyond the documented aggregate shape | same file | E | P13 |
+| REG-420d | `returns the authorizer errorResponse verbatim when unauthorized (401)` / `...forbidden (403)` | Auth denial (`progress.view_own` + `requireStudentId`) short-circuits BEFORE the ownership lookup/RPC; route returns `auth.errorResponse` verbatim | `apps/host/src/__tests__/api/foxy/feedback-dimension.route.test.ts` | E | P9 |
+| REG-420e | `returns 400 for missing/malformed messageId`, `...invalid/missing dimension`, `...non-boolean isUp`, `...non-JSON body`, `...non-string reason` | Manual body validation rejects each invalid shape with 400/`BAD_REQUEST` before any DB call | same file | E | P6 |
+| REG-420f | `returns 404 when the message does not exist` / `...with the IDENTICAL shape when the message belongs to a different student` / `...but is not an assistant turn` | The ownership trust-boundary collapses "not found", "wrong owner", and "wrong role" into byte-identical 404 `NOT_FOUND` responses — the cross-tenant probing property this route exists to prevent — and the RPC is never invoked on any of the three | same file | E | P13 |
+| REG-420g | `happy path: calls the RPC with the correct args and returns 200...`, `accepts each of the 4 allowed dimension values`, `returns 404 when the RPC itself returns an empty row set` | `record_message_dimension_feedback` is called with `{p_message_id, p_dimension, p_is_up, p_reason}`; 200 response shape is `{success:true, data:{feedbackId, coachModeUsed}}` sourced from the RPC result, not recomputed | same file | E | P1-adjacent (server-response-is-truth pattern) |
+| REG-420h | `truncates a reason longer than 500 chars...`, `coerces an empty-string/whitespace-only/missing reason to null...` | `reason` is trimmed, capped at exactly 500 chars, and empty/whitespace/absent all normalize to `null` before reaching the RPC | same file | E | P6 |
+| REG-420i | `returns 500 when the RPC errors, and never logs the reason text (P13)` / `...when the ownership lookup itself errors...` | RPC/DB failures return 500 `RPC_ERROR`; `logger.error` call args are asserted (via `JSON.stringify` on every call) to never contain the caller-supplied `reason` string | same file | E | P13 |
+
+**Coverage gap CLOSED 2026-08-23 (testing agent, this pass):** `POST
+/api/foxy/feedback/dimension` previously had **zero test coverage** despite
+being a live, deployed, RBAC-gated, service-role-using route with its own
+documented ownership trust-boundary check. REG-420d-i above (22 tests total
+in `apps/host/src/__tests__/api/foxy/feedback-dimension.route.test.ts`,
+run and confirmed green) now exercise the 401/403 auth gate, all 400
+body-validation branches, the cross-student/wrong-role ownership rejection
+(asserted byte-identical across both failure modes — the specific security
+property the route's header comment calls out), the happy-path RPC
+call/args/response shape, `reason` truncation + null-coercion, and a P13
+spot-check that `logger.error` never receives the `reason` text on either
+failure path. `packages/lib/src/foxy/dimension-feedback-schema.ts` (the
+unused Zod schema) remains untested and unwired — that is a separate,
+lower-severity gap (dead code, not a live trust boundary) and is not closed
+by this pass. **Status upgraded P → E** for the route's own test coverage;
+the dashboard's READ contract (REG-420a-c) was already E.
+
+**Two governance-ledger regressions found during this pass, NOT part of
+REG-420's own scope but discovered while verifying it — flagged to architect,
+blocking Gate 3 until resolved:**
+1. `apps/host/src/__tests__/api-admin-client-allowlist.test.ts` (REG-213,
+   P8/P9 — "frozen blast radius" guard, owner: architect for the ledger,
+   testing for the guard) FAILS: `apps/host/src/app/api/super-admin/
+   ai-quality/route.ts` imports the service-role `supabaseAdmin` client but
+   was never added to `scripts/admin-client-allowlist.json`. Detected count
+   275 vs. expected 274. (The sibling `feedback/dimension/route.ts` WAS
+   correctly added to this ledger — only `ai-quality/route.ts` was missed.)
+2. `apps/host/src/__tests__/api/route-access-manifest.test.ts` (RCA-02,
+   structural manifest-completeness guard) FAILS: `/api/super-admin/
+   ai-quality` has no entry in `scripts/route-access-manifest.json` at all
+   (the diff shows the path missing outright, not just misconfigured).
+
+Both are static, deterministic, pre-existing guards doing exactly their
+documented job — a new service-role-using super-admin route shipped without
+the two required governance-ledger updates. Not a REG-420 test defect; the
+route itself needs the two ledger entries added (architect owns both
+ledgers) before this can pass Gate 3.
+
+---
+

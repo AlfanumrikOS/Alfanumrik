@@ -27,7 +27,7 @@ function logDeprecatedEdgeFunctionHit() {
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, errorResponse, jsonResponse } from '../_shared/cors.ts'
-import { fetchRAGContext } from '../_shared/rag-retrieval.ts'
+import { retrieveSolverContext } from './retrieval.ts'
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
 import {
@@ -462,6 +462,20 @@ Deno.serve(async (req) => {
             grade,
             subject,
             chapter: chapter || 'all',
+            // NCERT_SOLVER_V1's "Answer Depth" block references {{marks}}
+            // directly (grounded-answer/prompts/inline.ts) and pipeline.ts
+            // has no built-in default for it (unlike pending_expectation /
+            // next_topic), so an unset value would ship the literal string
+            // "{{marks}}" into the live Claude system prompt. On this
+            // grounded-service path parseQuestion()/detectType() (below,
+            // legacy-branch only) haven't run yet, so the type-based
+            // effectiveMarks inference (1 mcq / 2 short_answer / 5 other)
+            // used by the legacy prompt builder isn't available here.
+            // Default to 2 — the short-answer band — as a reasonable
+            // mid-tier depth when the caller omits marks; this is a
+            // simpler heuristic than the legacy path's and callers that
+            // care about precise depth should pass marks explicitly.
+            marks: String(marks ?? 2),
           },
         },
         retrieval: { match_count: 6 },
@@ -591,7 +605,10 @@ Deno.serve(async (req) => {
     const parsed = parseQuestion(question, subject, grade, options, marks)
 
     // ── Step 2: Retrieve NCERT context ──
-    const rawRagContext = await fetchRAGContext(supabase, question, subject, grade, chapter)
+    const { contextText: rawRagContext, error: retrievalError } = await retrieveSolverContext({ supabase, query: question, grade, subject, chapter })
+    if (retrievalError) {
+      console.warn(`ncert-solver: RAG retrieval degraded — ${retrievalError}`)
+    }
     // MEDIUM-4 (P12): sanitize retrieved chunks before they reach the system
     // prompt — mirrors grounded-answer/pipeline.ts's per-chunk
     // sanitizeChunkForPrompt call, which this legacy solver path never had.

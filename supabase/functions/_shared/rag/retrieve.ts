@@ -38,7 +38,11 @@
 //                      claimed a Phase 1 migration that had NOT happened —
 //                      quiz-generator was still importing the deprecated
 //                      _shared/retrieval.ts until 2026-07-15.)
-//   ncert-solver     — Phase 1 deferred (uses _shared/retrieval.ts shim)
+//   ncert-solver     — migrated 2026-08-22 via local adapter
+//                      ncert-solver/retrieval.ts (retrieveSolverContext),
+//                      replacing the deprecated _shared/rag-retrieval.ts →
+//                      _shared/retrieval.ts shim (mirrors the quiz-generator
+//                      migration above).
 //   generate-answers — Phase 1 deferred (uses _shared/retrieval.ts shim)
 //   foxy-tutor       — frozen (deprecated; F7 will delete)
 
