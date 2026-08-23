@@ -54,7 +54,7 @@ import {
 import type {
   TenantConfigResponse,
   ModuleEnablementMap,
-} from '@/app/api/tenant/config/route';
+} from '@alfanumrik/lib/tenant-domain/types';
 import type { ModuleKey } from '@alfanumrik/lib/modules/registry';
 import type { ConfigKey, ConfigValue } from '@alfanumrik/lib/tenant-config';
 import type { TenantType } from '@alfanumrik/lib/tenant-domain';

@@ -270,46 +270,120 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // src/app/api/health/route.ts is now a PURE liveness endpoint (no downstream
 // probes, no service-role reads); its ledger entry is pruned in the same change
 // so the guard ratchets DOWN, not drifts.
-// Phase 4 quiz session resume (2026-08-11, architect-reviewed): 268 -> 269 for
-// src/app/api/quiz/session/[sessionId]/progress/route.ts. RECORDED LATE — the
-// route landed in commit 6a67ca8ed WITHOUT its ledger entry, so this guard
-// failed 269-detected vs 268-pinned exactly as designed. The omission was the
-// author's, not the test's; the fix is the ledger entry, never a relaxed pin.
-// Service-role is REQUIRED, not convenience: quiz_session_shuffles carries
-// three RLS policies and ALL THREE are FOR SELECT (student/parent/teacher) —
-// there is no INSERT/UPDATE/DELETE policy at all, and migration 20260814000020
-// made that denial explicit at the privilege layer (post-condition 4d asserts
-// `authenticated` holds no write verb). The POST's first-write-wins UPDATE
-// would be SILENTLY zero-rowed on an RLS-scoped client, indistinguishable from
-// the route's legitimate `saved:false` no-op. Bounded to one UPDATE of four
-// durability columns (student_selected_displayed_index / _time_spent_seconds /
-// _answered_at / session_mode) behind authorizeRequest('quiz.attempt') plus an
-// explicit owner-vs-session studentId check (404 unknown, 403 mismatch); both
-// read whitelists exclude correct_answer_index_snapshot and integrity_hash.
-// Full justification + RATCHET-DOWN PATH (an auth.uid()-anchored SECURITY
-// DEFINER persist_quiz_answer_progress RPC, after which BOTH verbs move to the
-// RLS-scoped client and this entry is pruned) in
-// scripts/admin-client-allowlist.json.
-// 269 -> 270 (2026-08-11): src/app/api/teacher/worksheets/answer-key/route.ts.
-// Created expressly to UNBLOCK the question_bank answer-key column ACL: the
-// teacher worksheet page previously read question_bank.correct_answer_index IN
-// THE BROWSER under the caller's own role, and because students, parents and
-// teachers all authenticate as the same `authenticated` Postgres role, that one
-// call site made the column un-ACL-able for all ~12.8k questions. Service-role
-// is structurally required, not convenient — the pending ACL revokes
-// SELECT (correct_answer_index) from `authenticated` (mirroring 20260814000020
-// on quiz_session_shuffles), so an RLS-scoped client is denied the column by
-// construction. Read-only: one table, SELECT only, six columns, no write verb
-// and no RPC anywhere in the route. Gated by authorizeRequest('worksheet.create')
-// — an EXISTING permission already granted to the teacher role by
-// 20260612123200, so no new permission code — plus a second, content-side
-// tenancy gate (resolveTeacherContentScope) that restricts the read to
-// (subject, grade) pairs the caller actually teaches and fails closed on an
-// empty scope. Full justification + RATCHET-DOWN PATH (an auth.uid()-anchored
-// SECURITY DEFINER get_worksheet_answer_key RPC, after which the route moves to
-// the RLS-scoped client and this entry is pruned) in
-// scripts/admin-client-allowlist.json.
-const EXPECTED_COUNT = 270;
+// learners repository module (2026-08-10): 268 -> 267.
+// src/app/api/v2/student/profile/route.ts now reads the caller's OWN students
+// row through the RLS-scoped request client (createSupabaseRouteClient) behind
+// the new learners repository port; the read is served by the
+// students_select_merged policy (auth_user_id = auth.uid()), so service-role is
+// no longer required. Ledger entry pruned in the same change so the guard
+// ratchets DOWN, not drifts.
+// leaderboard SEV1 Pattern-B repair (2026-08-11): 267 -> 269.
+// Two NEW routes legitimately require service-role:
+//   src/app/api/v1/leaderboard/titles/route.ts — student_titles has RLS enabled
+//     with exactly ONE policy (service_role only, baseline :20003) and no
+//     student SELECT policy, so an RLS-scoped read returns 0 rows for everyone;
+//     the route scopes the SELECT to the SESSION-derived auth.studentId.
+//   src/app/api/v1/leaderboard/streaks/route.ts — a peer streak board is
+//     structurally impossible under own-row-only RLS on challenge_streaks; the
+//     route reads via service-role and projects an explicit P13 whitelist.
+// The sibling src/app/api/v1/leaderboard/my-class/route.ts added in the same
+// change is deliberately NOT ledgered: it uses the RLS-scoped
+// createSupabaseRouteClient (class_students own-enrollment policy + the
+// already-SECURITY-DEFINER get_class_leaderboard RPC granted to authenticated).
+// support first-response SLA (2026-08-11): 269 -> 270.
+// ONE new route legitimately requires service-role:
+//   src/app/api/internal/admin/support/metrics/route.ts — the FRT metric behind
+//     the newly-published 2-business-day support SLA. NEITHER table it reads has
+//     an operator SELECT policy: support_tickets' only two SELECT policies are
+//     requester-anchored ('Users can read own tickets' :20262,
+//     support_tickets_self_select :22378) and support_ticket_replies
+//     (20260814000012) has only _owner_select/_owner_insert/_service_role_all —
+//     that migration states outright that the operator surface is service-role
+//     with authorization enforced in the route. Under an RLS-scoped client an
+//     operator would see only tickets they personally filed, so the metric would
+//     report breach_count 0 / meeting_promise true over a near-empty set — it
+//     would certify the SLA is met BECAUSE it cannot see the breaches. Failing
+//     toward "all clear" is the one failure mode this route exists to prevent,
+//     so RLS here is a silent-zero, not defense-in-depth. The sibling operator
+//     console src/app/api/internal/admin/support/route.ts is already ledgered,
+//     reads the same two tables and carries the same
+//     authorizeRequest('support.view_tickets') gate.
+//     Read-only and PII-free by construction: the ticket projection is pinned to
+//     'id, category, status, created_at, resolved_at' and the reply projection to
+//     'ticket_id, created_at, author_role' — email, user_name, subject, message,
+//     device_info and admin_notes are never selected. Ratchet-down path: a
+//     SECURITY DEFINER get_support_first_response_metrics() gated on the existing
+//     baseline helper check_permission(auth.uid(), 'support.view_tickets')
+//     (:1973), granted to authenticated; then move to the RLS-scoped client.
+// Learning-sources signed-URL route (2026-08-15, architect-reviewed): 270 -> 271
+// for the new route src/app/api/learning-sources/route.ts. Service-role is
+// REQUIRED, not convenience: the private `learning-sources` storage bucket
+// (migration 20260816000001) is service-role-only by design — it carries NO
+// per-user storage RLS policies, so an RLS-scoped client cannot mint the
+// signed URLs this route exists to serve. The route is authenticated
+// (authorizeRequest) BEFORE any minting; signed URLs carry a 300s TTL; the
+// object path shape is validated; no PII is logged. Ledger entry added in the
+// same change in scripts/admin-client-allowlist.json.
+// Phase 4 quiz session resume (2026-08-11, architect-reviewed, recorded
+// 2026-08-23 during b00b9c872 reconciliation): 271 -> 272 for NEW route
+// src/app/api/quiz/session/[sessionId]/progress/route.ts. Service-role is
+// REQUIRED, not convenience: quiz_session_shuffles has RLS ENABLED with
+// exactly THREE policies and ALL THREE are FOR SELECT (student/parent/
+// teacher) — there is NO INSERT/UPDATE/DELETE policy at all, and migration
+// 20260814000020 made that denial explicit at the privilege layer too
+// (post-condition 4d asserts `authenticated` retains no write privilege). An
+// RLS-scoped client issuing this route's UPDATE would be silently zero-rowed
+// — indistinguishable from the route's own legitimate first-write-wins
+// 'saved:false' no-op, i.e. a silent durability failure, not a security win.
+// Bounded surface: ONE table, ONE write verb (UPDATE) touching only
+// student_selected_displayed_index / student_time_spent_seconds /
+// student_answered_at / session_mode — NEVER shuffle_map, options_snapshot,
+// correct_answer_index_snapshot, integrity_hash or options_version_at_serve.
+// Auth gate: requireOwnedSession() runs authorizeRequest('quiz.attempt')
+// FIRST, then an owner-vs-session studentId probe (404 unknown, 403
+// mismatch). RATCHET-DOWN PATH: an auth.uid()-anchored SECURITY DEFINER
+// persist_quiz_answer_progress RPC, after which the route moves to the
+// RLS-scoped client and this entry is pruned. Pinned by REG-213 (P8/P9).
+// Teacher worksheet answer key (2026-08-11, architect-reviewed, recorded
+// 2026-08-23 during b00b9c872 reconciliation): 272 -> 273 for NEW route
+// src/app/api/teacher/worksheets/answer-key/route.ts, created expressly to
+// UNBLOCK the question_bank answer-key column ACL. Service-role is
+// REQUIRED, not convenient: question_bank.correct_answer_index is today
+// SELECTable by every signed-in user (students, parents and teachers all
+// authenticate as the SAME `authenticated` Postgres role), so neither RLS
+// nor a column ACL can distinguish "teacher printing an answer key" from
+// "student reading the key mid-quiz". Bounded surface: ONE table, ONE verb
+// (SELECT), READ-ONLY, over exactly six columns. Gated by
+// authorizeRequest('worksheet.create') — an EXISTING permission already
+// granted to the teacher role by 20260612123200 — plus a second,
+// content-side tenancy gate (resolveTeacherContentScope) that restricts the
+// read to (subject, grade) pairs the caller actually teaches. RATCHET-DOWN
+// PATH: an auth.uid()-anchored SECURITY DEFINER get_worksheet_answer_key
+// RPC, after which the route moves to the RLS-scoped client and this entry
+// is pruned. Pinned by REG-213 (P8/P9).
+// Foxy dimension feedback (recorded 2026-08-23, architect-reviewed during
+// b00b9c872 reconciliation — NOT yet independently reviewed by
+// ai-engineer/backend, flagged for follow-up): 273 -> 274 for NEW route
+// src/app/api/foxy/feedback/dimension/route.ts (Phase A.2 dimension-level
+// Foxy feedback). POST-only, gated by authorizeRequest('progress.view_own',
+// { requireStudentId: true }) BEFORE any DB access; performs an explicit
+// ownership check on foxy_chat_messages BEFORE invoking the
+// record_message_dimension_feedback RPC — the route's own header comment
+// states the RPC's auth.uid() guard does not fire under a service-role JWT,
+// so this ownership check is the actual trust boundary. Recorded
+// provisionally; see scripts/admin-client-allowlist.json for the full note.
+// student/profile regression-and-fix (recorded 2026-08-23, backend, during
+// b00b9c872 reconciliation): net no-op at 274. Commit b00b9c872 silently
+// reverted src/app/api/v2/student/profile/route.ts from the 2026-08-10
+// RLS-scoped implementation (createSupabaseRouteClient + the learners
+// repository composition root) back to a getSupabaseAdmin()-based one, as an
+// unrelated side effect of a stale-base merge — briefly recorded in the JSON
+// ledger as a flagged, non-approved 274 -> 275 entry so the guard would not
+// fail opaquely. That regression is now fixed: the route has been restored
+// (byte-identical to origin/main) to the RLS-scoped implementation, so no
+// service-role client remains in it, and the ledger entry has been pruned in
+// the same change (275 -> 274). See scripts/admin-client-allowlist.json.
+const EXPECTED_COUNT = 274;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

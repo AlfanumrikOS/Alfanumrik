@@ -90,6 +90,7 @@ export const FoxyBlockTypeEnum = z.enum([
   'mermaid',
   'vertical_math',
   'map',
+  'formula_sheet',
 ]);
 
 /** Block types that require a non-empty `text` field (i.e. not math, not mcq, not diagram). */
@@ -102,6 +103,7 @@ const TEXT_BEARING_TYPES = new Set([
   'example',
   'question',
   'code',
+  'formula_sheet',
 ]);
 
 /** Bloom's taxonomy levels accepted on MCQ blocks. */
@@ -262,7 +264,19 @@ const FoxyBlockBase = z.object({
   carry_row: z.array(z.string().max(10)).optional(),
   remainder: z.string().max(50).optional(),
   intermediate_steps: z.array(z.string().max(100)).max(20).optional(),
-  // ── Map-only fields ──────────────────────────────────────────────────────────
+  // ── Formula-sheet-only field ────────────────────────────────────────────────
+  // Present iff `type === 'formula_sheet'`. A curated table of formulae with
+  // optional label, LaTeX/PMCF formula, and when-to-use guidance.
+  formulae: z
+    .array(
+      z.object({
+        label: z.string().max(FOXY_MAX_TEXT_LEN).optional(),
+        formula: z.string().max(FOXY_MAX_LATEX_LEN).optional(),
+        use: z.string().max(FOXY_MAX_TEXT_LEN).optional(),
+      })
+    )
+    .max(50)
+    .optional(),
   // Present iff `type === 'map'`. Renders geographic/political/thematic maps.
   map_type: z
     .enum(['political', 'physical', 'thematic', 'historical'])
@@ -730,6 +744,23 @@ export function isFoxyVerticalMathBlock(block: FoxyBlock): block is FoxyVertical
     Array.isArray((block as { operands?: unknown }).operands) &&
     typeof (block as { result?: unknown }).result === 'string'
   );
+}
+
+/** Narrowed type for a formula sheet block. */
+export type FoxyFormulaSheetBlock = {
+  type: 'formula_sheet';
+  formulae?: Array<{
+    label?: string;
+    formula?: string;
+    use?: string;
+  }>;
+  label?: string;
+  text?: string;
+};
+
+/** Type guard: narrows a FoxyBlock to FoxyFormulaSheetBlock. */
+export function isFoxyFormulaSheetBlock(block: FoxyBlock): block is FoxyFormulaSheetBlock {
+  return block.type === 'formula_sheet';
 }
 
 /** Narrowed type for a map block. */
