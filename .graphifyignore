@@ -1,0 +1,23 @@
+# graphify scan excludes - knowledge-graph corpus only.
+# This file has NO effect on git; it only shapes what /graphify reads.
+# Added 2026-08-22 after a full-repo scan timed out at >10 min.
+#
+# node_modules/, .next/, dist/, build/, out/, graphify-out/, __pycache__/ are
+# already skipped by graphify's own defaults - do not re-list them here.
+
+# Vendored upstream Flutter SDK checkout (flutter/flutter: AUTHORS, DEPS,
+# PATENT_GRANT). ~17,900 files - 7,234 .dart, 3,500 .cc/.h, 963 .png.
+# This is NOT Alfanumrik source. The app's own Flutter code is mobile/lib/
+# (318 .dart files); including it swamps the Dart layer 23:1 and buries
+# mobile/ entirely.
+flutter/
+
+# Extracted PDF page images from NCERT ingestion tooling - 4,893 binary scans
+# (2,979 .jpeg + 1,914 .png), zero source files. graphify gives every image its
+# own vision chunk, so these alone would be ~4,900 extraction dispatches for no
+# graph value. The pipeline's actual source lives in scripts/ncert-ingestion/.
+tools/pdf-content-ingestor/
+
+# Agent/test run artifacts, not source
+.hermes/
+.vitest-reports/

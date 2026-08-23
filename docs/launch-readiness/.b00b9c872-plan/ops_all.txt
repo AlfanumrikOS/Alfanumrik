@@ -1,0 +1,8 @@
+apps/host/src/app/super-admin/_components/AdminShell.tsx
+apps/host/src/app/super-admin/support/page.tsx
+apps/host/src/app/super-admin/users/page.tsx
+docs/ADMIN_OPERATIONS.md
+docs/alfabot/knowledge-base.md
+docs/runbooks/2026-08-11-unapplied-migrations-20260814-apply.md
+docs/runbooks/branch-protection-required-checks.md
+docs/runbooks/staging-schema-drift-resolution.md
