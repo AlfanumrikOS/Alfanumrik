@@ -798,6 +798,129 @@ Preview, staging, agent-mesh-break-glass, etc.). This is cosmetic/hygiene, not a
 "environment" with no secrets scoped to it does nothing), but it makes the real environment list harder to
 audit at a glance and is worth a cleanup pass. Not actioned here - flagged for ops.
 
+## DB-12 assessment: how urgent is the anon/authenticated grant exposure, really? (architect, 2026-08-23)
+
+Assessment-and-design-only task, per explicit instruction. Nothing below was applied to production.
+Method: direct read-only Postgres connection to production (`shktyoxqhundlvkiwguu`), using
+`SUPABASE_DB_PASSWORD` from the local env file (never printed, never sourced in bash) plus
+`psycopg2` with `set_session(readonly=True)` — `information_schema`/`pg_catalog` are not exposed
+through PostgREST (`supabase/config.toml` only exposes `public`/`graphql_public`), so this is the
+only way to query RLS/grant catalog state directly rather than through the app's own REST surface.
+
+### Is RLS actually solid on the ~420 affected tables? Yes, almost universally.
+Live measurement (2026-08-23), not carried over from the ledger:
+- **425 of 425 tables in `public` have RLS ENABLED. Zero tables have RLS disabled.** This is the
+  single most important number for judging DB-12's urgency: there is no table today where the
+  inherited INSERT/UPDATE/DELETE grants are the only thing standing between an unauthorized caller
+  and a write.
+- 43 tables have RLS enabled with **zero policies** — deny-all for every role except
+  BYPASSRLS `service_role`/`postgres`. This is the safe case, not the risky one (includes `coupons`,
+  the DB-2 fix's own intended end-state, plus mostly internal/ops tables: `security_*`,
+  `textbooks`, `textbook_chunks`, `users`, `invite_codes`, `model_pricing`, etc.).
+- A naive "does a write policy have a NULL/`true` qual" sweep first returned 365 false-positive
+  hits — because INSERT policies structurally have a NULL `qual` (not applicable) and DELETE
+  policies structurally have a NULL `with_check` (also not applicable), and UPDATE/ALL policies
+  with an unspecified `with_check` inherit `qual` rather than defaulting open. Correcting for real
+  Postgres semantics (INSERT gated by `with_check` only; DELETE/UPDATE/ALL gated by `qual`) drops
+  this to **exactly 1 genuinely permissive write policy across all 425 tables**:
+  `demo_requests_public_insert` (INSERT, `{anon,authenticated}`, `with_check = true`) — a public
+  lead-capture form, not student/PII/money data, plausibly intentional. Nothing else in the entire
+  schema has an open write gate.
+- **Net effect: the ledger's own framing holds up under independent verification.** For
+  INSERT/UPDATE/DELETE specifically, the grant-level exposure is real but redundant-but-inert
+  almost everywhere — RLS is doing its job. This materially lowers how urgent a full schema-wide
+  INSERT/UPDATE/DELETE revoke is, versus how it reads in the ledger's raw table-count framing
+  (`anon` 419/`authenticated` 427 tables, now measured at 412/420 — moved by 7 each in 3 days, not
+  investigated further, re-run the query before quoting either number again).
+
+### TRUNCATE is the part that is NOT redundant-but-inert — independently re-verified, not just repeated
+Two structural checks, not a repeat of the ledger's claim: (1) `SELECT DISTINCT cmd FROM pg_policies`
+across the whole database returns only `{SELECT, INSERT, UPDATE, DELETE, ALL}` — TRUNCATE has never
+existed as a policy command, because `CREATE POLICY ... FOR {...}` has no `FOR TRUNCATE` clause;
+(2) this matches PostgreSQL's documented behavior that TRUNCATE authorization is controlled purely
+by the table-level TRUNCATE privilege, never consulting row-security policies. Consequence: the 43
+deny-all tables' RLS posture provides **zero** protection against TRUNCATE — a full-table wipe is
+gated only by the grant, on every one of the ~412-420 tables that hold it, regardless of how tight
+that table's policies are. Confirmed live: all 4 money tables (`payment_history`,
+`student_subscriptions`, `subscription_events`, `student_daily_usage`) still carry the exact
+`{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,
+service_role=arwdDxtm/postgres}` ACL — all 8 privileges including TRUNCATE — unchanged by DB-40
+(which dropped policies, never grants), matching the ledger's "Known gaps" warning exactly. Money
+tables also confirmed at exactly 8 live policies today (4 `*_own_select` + 4 `service_role` ALL),
+consistent with the ledger's documented DB-40 after-state.
+
+One honesty check on severity: PostgREST (the only channel this app's `anon`/`authenticated`
+Postgres roles are normally reached through — browser, mobile) has **no HTTP verb that maps to SQL
+TRUNCATE**. There is no known *direct* external exploitation path via the product's normal REST
+surface today. The exposure is real as a latent capability — reachable via any future SECURITY
+INVOKER RPC or Edge Function that issues a TRUNCATE, a direct Postgres connection opened as
+`anon`/`authenticated` (e.g. a leaked pooler connection string), or a Studio SQL editor session run
+under the wrong identity — not as a proven live incident. Treat it as "close this because nothing
+should ever have this capability," not "this is being actively exploited today."
+
+### The 3 SECURITY INVOKER RPCs the ledger flags — full call chain traced, not assumed
+Live `pg_get_functiondef` + `prosecdef` confirm all three are genuinely `SECURITY INVOKER`
+(`prosecdef = false`) with a pinned `search_path = public, pg_temp`:
+- `record_learning_event()` → INSERT `adaptive_interactions`; calls `update_mastery_bkt()` (itself
+  SECURITY INVOKER — traced one level deeper, not assumed safe) → SELECT/INSERT/UPDATE
+  `concept_mastery`; SELECT `curriculum_topics`/`subjects`; calls `award_xp()` (SECURITY DEFINER,
+  unaffected by any grant change).
+- `mark_notification_read()` → UPDATE `notifications`. The function performs **no ownership check**
+  on the notification id — the entire authorization boundary is the `notif_own` RLS policy
+  (independently confirmed non-permissive in the sweep above). The UPDATE grant is a prerequisite
+  for that policy to even be evaluated, not a substitute for it.
+- `teacher_create_class()` → SELECT `teachers`; INSERT `classes`; INSERT `class_teachers`. Same
+  structural note: the function does not itself verify `auth.uid()` against `p_teacher_id` — the
+  real ownership boundary must be the `WITH CHECK` on the `classes`/`class_teachers` INSERT
+  policies, which this pass did **not** re-verify (flagged as a dependency to check before any
+  future grant narrowing touches these three tables).
+
+### Migration DESIGN produced (NOT applied, NOT run against any environment)
+`supabase/migrations/20260823154500_db12_narrow_default_grants_and_money_table_write_revoke_DESIGN_ONLY.sql`
+— a forward-only design artifact, loudly marked in its own header as unapplied and requiring a
+separate review/approval cycle before `supabase db push`. No `db push` or migration-apply command
+was run. Shape:
+1. **Explicit carve-out grants** (not revoke-then-regrant) for the 3 RPCs' full traced dependency
+   tables (`adaptive_interactions`, `concept_mastery`, `curriculum_topics`, `subjects`,
+   `notifications`, `teachers`, `classes`, `class_teachers`) — self-sufficient re-assertions of
+   privileges that are already true today, so they survive even if a later migration narrows the
+   default further without re-reading this file.
+2. **Default-privileges narrowing, going forward only** — `ALTER DEFAULT PRIVILEGES ... REVOKE
+   INSERT, UPDATE, DELETE, TRUNCATE ... FROM anon/authenticated`, affecting only tables created
+   after this migration. Zero behavior change for the 425 existing tables. SELECT is deliberately
+   left alone in the template.
+3. **TRUNCATE, schema-wide, on existing tables** — a `DO $$` loop scoped to `pg_class.relkind = 'r'`
+   (ordinary base tables only), so the 7 DB-1 views are excluded **by construction**, not by a
+   naming list that could drift. Chosen schema-wide (unlike INSERT/UPDATE/DELETE) specifically
+   because TRUNCATE is never mitigated by RLS anywhere and no legitimate application call site
+   issues it as `anon`/`authenticated` (grepped across `apps/host`, `packages`,
+   `supabase/functions`, `mobile` — none found).
+4. **Targeted INSERT/UPDATE/DELETE revoke on the 4 named money tables only** — SELECT explicitly
+   preserved (the `*_own_select` policies need it to function; revoking it would turn "read your
+   own rows" into "read nothing," a regression). A schema-wide INSERT/UPDATE/DELETE narrowing
+   across all ~420 tables is explicitly **not** attempted — it needs the "complete write-path map"
+   that `20260821121232_converge_money_table_client_write_policies.sql`'s own header already
+   identified as a blocking prerequisite, especially now that at least one genuinely-permissive,
+   plausibly-intentional write policy (`demo_requests`) is confirmed to exist in this schema.
+
+Explicitly does **not** touch: the 7 views handled by `20260821082059` (re-confirmed live today
+still showing `{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}`, no anon/authenticated
+entry), `demo_requests`' intentional public INSERT policy, any RLS policy anywhere, any SELECT
+grant anywhere, or `coupons` (flagged as a candidate for the next batch, left out to keep this
+migration's diff small).
+
+**Required follow-up flagged in the file itself:** once Section 2 lands, every future migration
+that creates a table needing `authenticated` writes must include an explicit
+`GRANT INSERT/UPDATE/DELETE ON <table> TO authenticated` in the same migration — the implicit
+default grant that silently provided this today will stop existing for new tables. The
+`supabase-patterns` skill's migration template does not currently show this step and should be
+updated in the same change that ever applies this design.
+
+**Not done, and flagged as needing a human/separate cycle before this can move**: `supabase db
+push` was not run. This file sitting in `supabase/migrations/` means the next `db push` against any
+linked project will pick it up in version order unless a human reviews it first — treat that as a
+blocking item on this branch, not a passive footnote.
+
 ## Vercel/GitHub deployment-gating - both settings now live (2026-08-23)
 CEO ran the final command directly (`gh variable set USE_CLI_DEPLOY --repo AlfanumrikOS/Alfanumrik --body
 "true"`), confirmed via gh variable list: USE_CLI_DEPLOY = true as of 2026-08-23T09:02:08Z. Both halves of
@@ -808,3 +931,276 @@ deployment - the runbook's own verification procedure (confirm the next real pus
 once via the CLI job, not doubled by Vercel's Git integration) still needs to happen on the next actual
 merge to main. Recommend treating the FIRST real production push after this change as a closely-watched
 event per docs/runbooks/production-release-gating.md Section 4, rather than manufacturing an artificial one.
+
+## GitHub Environments audit — investigation and finding (architect, 2026-08-23)
+
+Investigation only, per explicit instruction. **Nothing was deleted** — no environment, no secret,
+no variable. This follows up the earlier "Notable side-finding" entry above with the actual
+per-environment secret/variable contents and a full workflow cross-reference, not just the
+observation that the 21-environment list looks odd.
+
+### Method
+`gh api repos/AlfanumrikOS/Alfanumrik/environments/<name>/secrets` and `/variables` for each of the
+12 confusing-looking environments, then a full, case-insensitive grep of every `.github/workflows/
+*.yml` for a job-level `environment:` key (static AND a check for any dynamic
+`environment: ${{ ... }}` expression — none exist anywhere in this repo's workflows, so a static
+grep is a complete answer here, not a sampled one). Cross-referenced every hit against
+`gh api .../actions/variables` (repo-level variables) and `gh secret list` (repo-level secrets) to
+determine whether an environment's contents are the only copy of something real or an unreachable
+duplicate. Also resolved one ambiguity directly: GitHub environment name matching is
+**case-insensitive** — confirmed by querying both `production` and `Production` and getting
+byte-identical secret lists back, so workflows' lowercase `environment: production` correctly
+targets the `Production` environment shown in the environments list.
+
+### Per-environment findings
+
+| Environment | Holds | Referenced by any workflow's `environment:` key? | Real copy exists elsewhere? | Verdict |
+|---|---|---|---|---|
+| **supabase** | Secret `SUPABASE_SERVICE_ROLE_KEY` | **Yes** — `rag-cosine-replay.yml:100`, the job's own comment explains it was deliberately scoped here (not repo level) specifically to keep an RLS-bypassing credential out of every other workflow's reach, after two earlier runs aborted when the job first declared no environment, then the wrong one | N/A — this *is* the real, intentional, sole copy | **Actually in use — leave alone.** The one environment of the 12 that is genuinely load-bearing. |
+| **ANTHROPIC_API_KEY** | Secret `ANTHROPIC_API_KEY` | No. `mesh-cron.yml`'s `tick` job has its own code comment (lines 52-56) stating this environment is *exactly* what makes `secrets.ANTHROPIC_API_KEY` resolve — but the job actually declares `environment: agent-mesh-break-glass`, not `environment: ANTHROPIC_API_KEY`. Real bug: the two purposes (secret scoping vs. break-glass approval gating) need the same single `environment:` slot and only one was picked | No repo-level `ANTHROPIC_API_KEY` secret exists at all, and `agent-mesh-break-glass` holds zero secrets of its own | **Needs owner decision — do not delete.** This is the deliberately-provisioned, *intended* secret store for a real feature with a real wiring bug. Currently inert only because the entire workflow is Phase-0 hard-suspended (`gate` job always outputs `enabled=false` and exits 1; `tick`'s `if: needs.gate.outputs.enabled == 'true'` never fires) — but the bug must be fixed before mesh-cron is ever un-suspended, or the very first live run fails at its own "Required-env check" step. |
+| **CRON_SECRET** | Secret `CRON_SECRET` | No | Yes — repo-level secret `CRON_SECRET` (used by `ci.yml`, `deploy-production.yml`, `production-cron-runner.yml`, `staging-adaptive-drill.yml`), plus a separately-scoped copy inside the real `Production` environment | **Orphaned duplicate — delete-safe.** |
+| **SUPABASE_ACCESS_TOKEN** | Secret `SUPABASE_ACCESS_TOKEN` | No | Yes — repo-level secret of the same name, used directly by 10 workflows | **Orphaned duplicate — delete-safe.** |
+| **SUPABASE_DB_PASSWORD** | Secret `SUPABASE_DB_PASSWORD` | No | Yes — confirmed live inside the real `Production` environment (which also holds `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, Android signing secrets, GCP secrets), the actual copy `deploy-production.yml` and `schema-reproducibility-fix.yml`'s `environment: production` jobs read. No plain repo-level copy of this exact name exists (only `SUPABASE_STAGING_DB_PASSWORD` does) | **Orphaned duplicate — delete-safe.** |
+| **voyage** | Secret `VOYAGE_API_KEY` | No | Yes — repo-level secret of the same name, used by `ci.yml` and `rag-cosine-replay.yml` (whose one job scopes `environment: supabase`, not `voyage`) | **Orphaned duplicate — delete-safe.** |
+| **supabase anon key** | Secret `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Yes — repo-level secret of the same name. Also: this key is not sensitive in the way a service-role key is (it ships in the browser bundle and mobile app by design, per this repo's own architecture) | **Orphaned duplicate — delete-safe.** |
+| **supabase url** | Secret `NEXT_PUBLIC_SUPABASE_URL` | No | Yes — repo-level secret of the same name; also just a public URL, not sensitive | **Orphaned duplicate — delete-safe.** |
+| **USE_CLI_DEPLOY** | Secret `VERCEL_PROJECT_ID` (name mismatch vs. environment name) | No | Yes, and this resolves the "genuinely alarming mismatch" cleanly: the REAL `VERCEL_PROJECT_ID` is a repo-level secret (added THIS session, 2026-08-23, alongside `VERCEL_ORG_ID`, for the CLI deploy path). The REAL `USE_CLI_DEPLOY` gate is an entirely separate thing — a repo-level **variable** (not this environment), confirmed flipped to `"true"` by the CEO this session at `2026-08-23T09:02:08Z`, matching the "both settings now live" entry above | **Orphaned duplicate — delete-safe.** Looks alarming by name, has zero operational reach: no job anywhere declares `environment: USE_CLI_DEPLOY`. |
+| **supabase staging db password** | **Variable** (not secret) `SUPABASE_STAGING_DB_PASSWORD`, value plainly readable via the API | No | Yes — a real, correctly-stored `SUPABASE_STAGING_DB_PASSWORD` **secret** exists at repo level (created 2026-08-21, itself possibly superseded by the CEO's later in-session password reset — not re-checked here) | **Needs owner decision — the standout hygiene issue of the 12.** Unlike every other entry, the defect here is not "confusingly named and inert" — it is a real database credential stored in a GitHub Environment **variable**, which (unlike a Secret) is returned in plaintext by the API to anyone with Actions-settings read access. Recommend converting/removing this specific variable promptly regardless of whether the value is still current — storing any password as a variable is the defect, independent of freshness. |
+| **SUPABASE_STAGING_ACCESS_TOKEN** | Nothing — confirmed via API: zero secrets, zero variables | No | N/A | **Delete-safe — genuinely empty, holds and does nothing.** |
+| **ENABLE_PYTHON_AI_PRODUCTION_DEPLOY** | **Variable** (not secret), value `"true"` | No | Yes, and again a name mismatch worth flagging: the REAL, load-bearing gate is the repo-level variable of the identical name, currently `"false"` — `python-ai-deploy.yml`'s three jobs read `vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY` while declaring `environment: Production`, so they resolve against `Production`'s own copy if one exists there, else the repo-level fallback (`"false"`). Confirmed: Python-AI production deploys are correctly OFF at the real location | **Needs owner decision.** Not a security exposure (a `"true"`/`"false"` boolean isn't sensitive), but a live footgun: anyone who inspects the Environments list to determine whether Python-AI prod deploys are enabled would see `"true"` here and reach the wrong conclusion. Recommend deleting to remove the misleading duplicate. |
+
+### Recommendation summary
+- **Delete-safe** (orphaned, zero workflow reach, real copy already exists elsewhere or not
+  sensitive): `CRON_SECRET`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `voyage`,
+  `supabase anon key`, `supabase url`, `USE_CLI_DEPLOY`, `SUPABASE_STAGING_ACCESS_TOKEN` — 8
+  environments.
+- **Needs owner decision** (not simply cosmetic — each has a real, distinct issue behind the
+  confusing name): `ANTHROPIC_API_KEY` (fix `mesh-cron.yml`'s `environment:` key before ever
+  un-suspending Phase 0, don't delete the environment itself), `supabase staging db password`
+  (highest-priority of the three — a real credential sitting in a plaintext-readable variable,
+  not a secret), `ENABLE_PYTHON_AI_PRODUCTION_DEPLOY` (misleading duplicate value, delete
+  recommended but flagging for a decision rather than doing it here since it touches deploy
+  gating).
+- **Actually in use, leave alone**: `supabase` — the one environment of the 12 that is genuinely
+  load-bearing today.
+
+None of the 12 were deleted, and no secret value beyond what `gh api` already legitimately returns
+for an authorized investigation was persisted anywhere in this repo.
+
+## RAG eval-harness re-run — current groundedness/retrieval numbers (ai-engineer, 2026-08-23)
+
+Re-ran the B1 retrieval-quality eval harness for real (no fabricated numbers) to replace the
+10-week-stale baseline number cited in the earlier ai-engineer recon and in Gate E.
+
+### Command actually run
+```
+cd <repo root>
+npx tsx eval/rag/harness/cli.ts
+```
+Run twice back-to-back to sanity-check judge noise. Both runs were genuinely full-path
+(`full_path: true, degraded: false`) — `VOYAGE_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and
+`NEXT_PUBLIC_SUPABASE_URL` were all present via `.env.local` (read by the CLI's own `loadDotenv`),
+so Voyage rerank-2 and the Claude-Haiku groundedness judge both actually executed - this is not a
+degraded FTS-only run and not a fabricated/skipped measurement.
+
+### Side finding: the documented npm-script path bug is already fixed, not still open
+Root `CLAUDE.md` describes `apps/host/package.json`'s `eval:rag:harness` script body as
+`npx tsx eval/rag/harness/cli.ts`, which would indeed fail from `apps/host`'s cwd. That is stale -
+the script body on this branch is actually `npx tsx ../../eval/rag/harness/cli.ts`
+(`apps/host/package.json:36`), fixed by commit `34fd721cf` ("fix(build): repair 22 dead npm script
+paths, add a canary, unbreak the PII guard") well before this session. Verified two ways: (1) Node's
+own `path.resolve()` against `apps/host` as cwd resolves to the real repo-root
+`eval/rag/harness/cli.ts`; (2) `npm run eval:rag:harness` run for real from `apps/host` completed
+successfully end-to-end (same verdict/metrics as invoking the CLI directly from repo root, given
+retrieval is deterministic). This is a small, separate doc-drift item (root CLAUDE.md's "unresolved
+discrepancy" text should be corrected) - not chased further, per scope.
+
+### Actual current metrics vs the 2026-06-14 baseline
+| Metric | Baseline (2026-06-14) | Current (run 1) | Current (run 2) | A7 band | Verdict |
+|---|---|---|---|---|---|
+| nDCG@10 | 0.6617 | 0.5124 | 0.5124 | 2% relative | REGRESS (-0.1494, band max -0.0132) |
+| recall@10 | 0.8222 | 0.6611 | 0.6611 | 2% relative | REGRESS (-0.1611, band max -0.0164) |
+| MRR | 0.7286 | 0.5749 | 0.5749 | 3% relative | REGRESS (-0.1537, band max -0.0219) |
+| hit-rate@10 | 0.9667 | 0.8667 | 0.8667 | 2pp absolute | REGRESS (-0.10, band max -0.02) |
+| groundedness-rate (= faithfulness) | 0.3667 | 0.4000 | 0.4667 | 3pp absolute | not regressed either run (improved or flat) |
+| multi_hop@10 (reported, not gated) | n/a | 0.6000 | - | - | informational only |
+
+Machine verdict both runs: **REGRESS** (harness's own three-state gate: PASS / REGRESS /
+INCONCLUSIVE - see `eval/rag/harness/verdict.ts`). The four retrieval-ranking metrics regressed
+past their assessment-set A7 bands; only groundedness (the LLM-judge faithfulness metric) did not
+regress, and it did not improve to anywhere near a launch-credible level either - it moved from
+36.7% to 40.0%/46.7% between two back-to-back runs of the *same* settings, which is itself useful
+context: the judge is noisy (LLM-graded, non-deterministic) enough to swing ~7pp run-to-run, so
+treat "~40-47%" as the honest current range, not a single precise number.
+
+Full report artifacts (gitignored, not committed - `eval/rag/reports/` is in `.gitignore`):
+`eval/rag/reports/rag-eval-2026-08-23T09-20-07-177Z.json` (run 1, groundedness 0.400),
+`eval/rag/reports/rag-eval-2026-08-23T09-30-25-045Z.json` (run 2, via the npm script, groundedness
+0.467).
+
+### Mapping onto the launch mandate's named thresholds - 2 of 5 are not measured by this harness at all
+The launch mandate cites Recall@10 >= 95%, Recall@3 >= 90%, faithfulness >= 95%, correctness >= 90%,
+abstention >= 99%. This harness (`eval/rag/harness/`, per `verdict.ts`'s `PRIMARY_METRICS`) only
+computes 5 gate metrics: nDCG@10, recall@10, MRR, hit-rate@10, groundedness-rate - plus an
+informational multi-hop@10. Concretely:
+- **Recall@10** - measured directly: **66.1%**, against a 95% mandate bar. Fails by a wide margin,
+  and also fails the harness's own tighter regression band against baseline (82.2%).
+- **Faithfulness** - this harness's `groundedness-rate` is the same concept (an LLM-judge pass/fail
+  per turn on "is the answer supported by the retrieved chunks"), measured at **~40-47%** against a
+  95% mandate bar. Also fails by a wide margin.
+- **Recall@3, correctness, abstention** - **not computed by this harness at all.** There is no
+  recall@3 surfaced as a primary/reported metric (only @10 is gated; `K_VALUES = [5,10,20]` exists in
+  `metrics.ts` but only @10 is a gate metric in this run), no separate "answer correctness vs. ground
+  truth" judge distinct from groundedness, and no abstention-rate metric (how often Foxy/ncert-solver
+  correctly declines rather than hallucinating) anywhere in this eval harness's design. Do not
+  report a number for these three - there isn't one. Closing this gap (adding recall@3, a
+  correctness judge, and an abstention-rate metric) is new scope for the harness itself, not
+  something this re-run could produce.
+
+### Root-cause note (flagged, not fully resolved - out of this task's scope)
+Checked whether the retrieval regression is a settings change: it is not. Current retrieve()
+settings (RRF k=60, MMR lambda=0.7, fetch-N=40, Voyage voyage-3 embeddings + rerank-2) and the
+groundedness judge model (`claude-haiku-4-5-20251001`, `grounding-check.ts:24`) both match what the
+baseline file's own `settings_note` documents - no provider/model/parameter drift found. Checked
+whether the golden set's pinned chunk IDs went stale (e.g. superseded by re-ingestion): live REST
+query against `rag_content_chunks` for all 47 unique chunk IDs referenced by the golden set's 30
+items found 46 of 47 still present, `is_active=true`, `version=1` (i.e., not superseded) - only one
+ID is genuinely gone. That alone cannot explain a 16-point recall drop. The much more likely
+explanation: the corpus has grown substantially since the 2026-06-14 baseline was measured - the
+current live `ncert_2025`/`is_active=true` chunk count is **27,228**, consistent with the
+CLAUDE.md-documented 27,778-chunk total measured 2026-08-11 (up from the ~16,006 figure that was
+itself later found to be a 73%-low undercount from the 2026-07 audits) - meaning a materially larger
+haystack is now competing for the same fixed top-10 slots on the same 30 fixed golden queries, which
+would suppress recall/nDCG/MRR/hit-rate exactly as observed without any settings regression.
+**This is a plausible, evidence-supported hypothesis, not a confirmed root cause** - characterizing
+it properly (e.g., per-chapter dilution analysis) is follow-up work, not something to resolve inside
+this measurement task.
+
+### Recommendation: Gate E should NOT keep describing this as "a 10-week-stale baseline"
+That framing implied an unmeasured, possibly-fine risk. It is now a **freshly measured, confirmed
+sub-threshold result on both axes the mandate cares about**: recall@10 measured at 66% against a 95%
+bar, and faithfulness measured at 40-47% against a 95% bar, plus a harness-gated REGRESS verdict on
+4 of 5 retrieval metrics versus the last reviewed baseline. Recommend Gate E's RAG/Foxy line be
+tightened from "a 10-week-stale RAG groundedness baseline" (implying an open question) to something
+like "RAG groundedness and retrieval quality freshly measured and confirmed below the launch mandate
+on both faithfulness (~40-47% vs. 95% required) and recall@10 (66% vs. 95% required); Recall@3,
+correctness, and abstention-rate are not measured by the current harness at all." Whether that moves
+Gate E's overall status from CONDITIONALLY READY to FAIL is the orchestrator's call, not mine to
+make unilaterally, but the underlying evidence is now real and unfavorable, not merely stale.
+Did not touch `docs/launch-readiness/07_RELEASE_SCORECARD.md` - reserved for the orchestrator per
+instruction.
+
+## ff_foxy_streaming - the flag is NOT forced off; it is live at 100% (ai-engineer, 2026-08-23)
+
+The prior recon (this same file, "Adaptive intelligence and Foxy/RAG findings" section above) stated
+"real-time token streaming (ff_foxy_streaming) is forced OFF in production" but explicitly caveated
+that a live DB read was blocked and recommended one before sign-off. This is that live read, and it
+reverses the earlier claim.
+
+### Live production state (read via REST, service-role key parsed from `.env.local` in a Python
+script, never sourced in bash, never printed)
+```
+flag_name: ff_foxy_streaming
+is_enabled: true
+rollout_percentage: 100
+target_roles: []          (unscoped -> applies to everyone)
+target_environments: []   (unscoped)
+updated_at: 2026-08-02T11:41:16Z
+```
+`packages/lib/src/flags/defaults.ts` does not declare this flag at all (grepped, zero matches) - the
+flag's behavior is governed entirely by the live DB row above via `isFeatureEnabled()`
+(`packages/lib/src/feature-flags.ts`), which defensively defaults to `false` only when the row is
+missing or unreadable. The row exists and is readable, so that default never applies here.
+
+### Full history reconstructed from migrations + commit history (not just the current row)
+1. **2026-04-29** (`supabase/migrations/_legacy/timestamped/20260429000000_p1_foxy_streaming_flag.sql`):
+   flag created, seeded OFF, described as an operator-toggleable Phase 1.1 feature ("Operators can
+   flip this flag in the super-admin console in under 30s if streaming misbehaves").
+2. **2026-07-20 10:15 UTC** (`20260720110000_feature_flags_data_repair_ceo_approved.sql`, block ii):
+   CEO-approved posture explicitly buckets `ff_foxy_streaming` into the 52-flag forced-OFF list,
+   generically reasoned "feature not built, not launched, or retired" - no streaming-specific
+   incident or concern found in this migration's text.
+3. **2026-07-20 10:30-10:44 UTC**: an operator console bulk-enable accidentally re-enabled 49 of
+   those 52 forced-OFF flags (including this one) to 100%.
+4. **2026-07-20 13:00 UTC** (`20260720130000_restore_approved_flag_posture.sql`): emergency restore
+   returns it (and the other 48) to OFF/0.
+5. **Between 2026-07-20 and 2026-08-02**: drifts back to ON via an unaudited direct-DB write - the
+   same signature the 2026-08-02 rollback migration documents for several other flags in this window
+   (e.g. `ff_model_gateway_v1`, `ff_unified_memory_v1` - zero `admin_audit_log` rows for the change).
+6. **2026-08-02** (`20260802160000_rollback_confirmed_flag_drift_incident.sql`): reviews 11 similarly
+   drifted flags; rolls 8 back to OFF; explicitly and by name **excludes** `ff_foxy_streaming` (plus
+   `ff_goal_aware_rag`, `ff_grounded_ai_concept_engine`) - "held for a separate CEO decision. Do not
+   add these without a distinct CEO-authorized change."
+7. **2026-08-03 05:01 IST / 2026-08-02 23:31 UTC** (commit `9c0c4aae0`, "fix(flags): approve 3
+   remaining flags as intentionally-live in governance"): that separate decision lands - commit
+   message: "Removes ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine from
+   EXPECTED_OFF_FLAGS since they are confirmed real, tested, functioning features already live in
+   production with no incident history, completing the flag-drift cleanup started in PR #1439."
+   `packages/lib/src/flags/protected-flags.ts:521` carries the same rationale inline. This is the
+   one substantive, reasoned decision on record, and it is pro-streaming, not anti-streaming.
+8. **Current** (verified live, 2026-08-23): unchanged since 2026-08-02T11:41:16Z - ON at 100%,
+   matching the 2026-08-03 approval, roughly 3 weeks of unincident production operation.
+
+### (a) Is this deliberate/documented/still-valid, or a forgotten override?
+**Deliberate and currently valid - the opposite of a forgotten override.** There is a clear,
+CEO-authorized decision trail (step 7 above) that was made after an incident review specifically
+considered rolling it back and chose not to. The "forced OFF" framing - both in this task's premise
+and in the prior recon entry above - is stale relative to the live state; nothing found suggests
+the 2026-08-03 approval has since been reversed.
+
+One real doc-hygiene gap found in the course of this: the DB's own `protected_feature_flags.reason`
+column for this flag (migration `20260722090000`, still live today, re-checked via REST) still
+reads "CEO-approved forced-OFF posture (migration 20260720110000 block ii): feature not built, not
+launched, or retired. Do not re-enable without an approved rollout plan." - directly contradicting
+its actual approved-live status since 2026-08-03. Only the TS-side `EXPECTED_OFF_FLAGS` list/comment
+was updated by commit `9c0c4aae0`; the DB companion table's reason text was never corrected. This is
+a real, if low-severity, self-contradiction in the governance registry - recommend a small
+architect-owned migration to correct the stored reason text (not a behavior change, a text fix).
+
+### (b) User-facing behavior difference between streamed and non-streamed today
+Read `apps/host/src/app/api/foxy/route.ts` (streaming branch ~line 2308-2358) and
+`packages/ui/src/foxy-panel/useFoxyChat.ts` (the actual client hook `apps/host/src/app/foxy/page.tsx`
+consumes, via the `apps/host/src/app/foxy/_hooks/useFoxyChat.ts` re-export stub):
+- **Streaming ON (current reality for most turns):** client requests `stream: true` by default -
+  `shouldUseStreaming()` returns `true` unless the student has explicitly opted out via
+  `localStorage.alfanumrik_foxy_stream = '0'`. Server responds via SSE
+  (`handleStreamingFoxyTurn`, `_lib/streaming.ts`), rendering text token-by-token as it arrives -
+  materially better perceived latency for a chat UI, with a visible "typing" effect, versus waiting
+  for the full response.
+- **Forced blocking regardless of the flag** for two turn types, both for safety/gating reasons
+  unrelated to the flag itself: `coachDirective === 'quiz_me'` and real-practice turns (the inline
+  MCQ must be oracle-gated - P6/REG-54 - on the FULL structured payload before display; a streaming
+  text delta can't carry a gate checkpoint), and any turn with an image upload
+  (`payload.imageBase64`).
+- **P12 no-unfiltered-output backstop applies identically on both paths** (already confirmed in the
+  prior recon's trace: "wired on the blocking, streaming, and legacy-fallback exits - no fourth exit
+  path found that skips it"); this re-check did not find anything to contradict that.
+- Net effect: with the flag ON (as it live is today), ordinary Learn/Explain/Practice(non-MCQ)/
+  Revise/Doubt text turns in production **are already streaming** for students who have not opted
+  out - this is not a hypothetical choice being deferred, it is today's actual behavior.
+
+### (c) Why was it off, and is there a documented reason?
+No streaming-specific incident, bug, or cost-control rationale was found anywhere in the migration
+chain or commit history for the original forced-OFF classification - it reads as a conservative
+default inherited from the flag's dormant Phase-1.1 history (grouped generically with "not built,
+not launched, or retired" flags in the 2026-07-20 posture, alongside genuinely-unbuilt features like
+`wave2_video_lessons`), not a deliberate anti-streaming call. The only substantive, reasoned decision
+on record is the pro-streaming one (step 7 above). The "always stream" mandate language the task
+refers to traces to this agent's own rejection-condition list (`.claude/agents/ai-engineer.md`:
+"Streaming disabled for real-time tutoring... unacceptable without streaming") plus the prior
+recon's framing - no separate product spec/runbook establishing an "always stream" requirement was
+found beyond that.
+
+### Recommendation
+**Leave it as currently configured (ON, 100%) - no flag flip needed or recommended.** It already
+matches the one deliberate, CEO-reviewed decision on record, it has roughly 3 weeks of production
+history with "no incident history" per that review, and the safety backstop (P12) is confirmed
+identical on both paths. The action items here are documentation fixes, not a flag decision:
+1. Correct the stale `protected_feature_flags.reason` text for this flag (architect-owned migration;
+   text-only, no behavior change) so the governance registry stops self-contradicting.
+2. Correct Gate E's scorecard line ("a forced-OFF streaming flag needing an explicit product
+   decision") - that decision was already made on 2026-08-03 and the live state matches it; this is
+   the orchestrator's call to make in `07_RELEASE_SCORECARD.md`, not mine to edit directly per
+   instruction.
+3. Correct any other project documentation describing Foxy streaming as currently forced-off.
+No flag was flipped by this investigation. This entire section is measurement + recommendation only.

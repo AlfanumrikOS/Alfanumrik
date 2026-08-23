@@ -46,7 +46,7 @@ eval/openai-migration/reports/
 # stray build logs
 build-out.txt
 build-tmp.txt
-Alfanumrik/
+/Alfanumrik/
 
 # Claude Code per-agent worktrees — created on the fly under .claude/worktrees/.
 # Previously committed as orphan gitlinks (mode 160000) with no .gitmodules
@@ -112,3 +112,14 @@ tools/
 # Local Python virtualenv for BGE embedding experiments (regenerable)
 .venv-bge/
 graphify-out/
+
+# Local `npm run build` output captured to a file for debugging — not source.
+# Found untracked at apps/host/build.log during the 2026-08-23 uncommitted-work
+# triage; add a repo-wide pattern so it can't recur silently in any workspace.
+build.log
+
+# Root-level Vitest report blobs (large per-run JSON artifacts, e.g.
+# blob-2-4.json was 15 MB). The existing apps/host/.vitest-reports/ entry above
+# only covers that app-scoped path — this repo-root variant was found
+# untracked separately during the same triage and needs its own entry.
+.vitest-reports/
