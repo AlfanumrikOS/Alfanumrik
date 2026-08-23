@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, Button } from '@alfanumrik/ui/ui';
+// P10 — DEEP import, not the `@alfanumrik/ui/ui` barrel. See the matching note
+// in apps/host/src/app/(student)/quiz/page.tsx: the barrel re-exports the whole
+// canonical primitive library under a `primitives` namespace and the package
+// declares no `sideEffects: false`, so a barrel import pulls ~12 kB gz of
+// Dialog/Drawer/Tooltip/Tabs/Table/Toast/Avatar code this component never
+// renders. `wonder-blocks.tsx` imports nothing but React — same Card/Button,
+// identical runtime behaviour.
+import { Card, Button } from '@alfanumrik/ui/ui/wonder-blocks';
 import { getChaptersForSubject } from '@alfanumrik/lib/supabase';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { SubjectsUnavailable } from '../learn/SubjectsUnavailable';

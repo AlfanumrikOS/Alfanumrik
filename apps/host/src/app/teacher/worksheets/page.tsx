@@ -6,7 +6,17 @@ import { useRouter } from 'next/navigation';
 import { useTeacherAllowedSubjects } from '@alfanumrik/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@alfanumrik/lib/identity';
 import { posthogCapture } from '@alfanumrik/lib/posthog-client';
-import { EmptyState, Skeleton } from '@alfanumrik/ui/ui/primitives';
+// P10 — DEEP imports, not the `@alfanumrik/ui/ui/primitives` barrel.
+// `packages/ui` declares no `sideEffects: false` and is not in next.config.js
+// `optimizePackageImports`, so webpack must evaluate every module the barrel
+// re-exports. Pulling just these two off the barrel dragged the ENTIRE
+// primitive library (Dialog, Drawer, BottomSheet, Tooltip, Tabs, Table, Toast,
+// Avatar, Radio, Switch, …) into this route's first load as one 12.3 kB gz
+// chunk — the whole of this route's P10 ratchet breach on main after #1605.
+// EmptyState.tsx and Skeleton.tsx each import only React + `cn`, so these
+// deep specifiers are byte-identical at runtime.
+import { EmptyState } from '@alfanumrik/ui/ui/primitives/EmptyState';
+import { Skeleton } from '@alfanumrik/ui/ui/primitives/Skeleton';
 import { TeacherDataError } from '../_components/TeacherDataError';
 
 // ============================================================
