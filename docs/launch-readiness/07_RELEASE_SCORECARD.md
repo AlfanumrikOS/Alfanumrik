@@ -16,10 +16,10 @@ findings below and the wave-2 discovery, and elevates the single most severe fin
 | Gate | Status | Basis |
 |---|---|---|
 | A - Repository reproducibility | PENDING | CI/reliability recon still running actual commands. Known concern: regression catalog self-reported count divergence, and a real still-open deployment interlock gap (see below). |
-| B - Database and migrations | FAIL | Zero evidence of an executed backup/restore drill. 30 SECURITY DEFINER functions plus 11 relations exist in production with zero migration provenance, one underpinning a live admin RLS policy. Table grants including TRUNCATE to anon/authenticated on roughly 420 tables sit outside migration review by design. |
+| B - Database and migrations | FAIL (materially narrowed 2026-08-23) | The backup/restore drill HAS now been executed (restore/verify/teardown proven against staging); what remains is a data-population gap, not a mechanism gap. DB-12 was assessed against live production: 425/425 tables have RLS enabled and exactly ONE genuinely permissive write policy exists, so the INSERT/UPDATE/DELETE grants are largely redundant-but-inert rather than exploitable. The real unmitigated gap is TRUNCATE, which structurally cannot be governed by RLS and is still held by anon/authenticated on all 4 money tables. A forward-only remediation migration is DESIGNED but deliberately NOT APPLIED (needs its own review cycle). Still open: 30 SECURITY DEFINER functions plus 11 relations with zero migration provenance. |
 | C - Authentication, RBAC, tenant isolation | FAIL | TSB-1 critical cross-tenant leak fix reverified and holds. 7 RLS-bypassing views with write-capable grants, and 13 client-write policies letting a student self-grant a paid plan, were both found live in production 3 days before this program started; both are now CONFIRMED CLOSED via fresh independent behavioral re-verification against live production (2026-08-23, see below) rather than FIXED-UNVERIFIED. Still FAIL: 77 percent of routes remain on the RLS-bypassing admin client, and DB-12 (broad table grants including TRUNCATE) is untouched. |
 | D - Functional journeys | FAIL (fixable) | A real launch-critical student journey 404s today. School-admin people-management is inert unless a flag is manually flipped per tenant. Both concrete and fixable, not architectural. |
-| E - Adaptive learning and Foxy | CONDITIONALLY READY | Core claim holds under direct trace. Three bounded gaps: dead-end hint/retry buttons, a 10-week-stale RAG groundedness baseline, a forced-OFF streaming flag needing an explicit product decision. |
+| E - Adaptive learning and Foxy | **FAIL (measured, was CONDITIONALLY READY)** | Core adaptive claim still holds under direct trace. But the RAG eval harness was re-run for real on 2026-08-23 (full path, Voyage rerank-2 + Claude judge both executing) and returned a machine verdict of REGRESS vs the 2026-06-14 baseline: recall@10 0.822 -> 0.661, nDCG@10 0.662 -> 0.512, MRR 0.729 -> 0.575, faithfulness ~0.40-0.47. Against the launch mandate's bars (recall@10 >= 95%, faithfulness >= 95%) BOTH fail by a wide margin. Recall@3, correctness and abstention are not computed by this harness at all -- no number exists for three of the five mandated metrics. The 'forced-OFF streaming flag' gap is CLOSED as a false alarm (live read: enabled, 100% rollout, a deliberate 2026-08-03 CEO-approved decision). Dead-end hint/retry buttons remain open. |
 | F - UX, accessibility, performance | FAIL (measurement gap) | Real WCAG coverage exists for some shells but not for quiz or admin surfaces, and depends on an undeclared dependency that can silently vanish. No breakpoint or load-testing evidence found. |
 | G - Reliability and operations | FAIL | Same backup gap as Gate B. Production code deploys are not yet actually gated on migration-parity success, because a documented two-step dashboard change has not been applied - this requires owner action outside this program authority. |
 
@@ -78,9 +78,32 @@ actions were re-attempted, not just re-asserted as blocked: both are confirmed t
 action only a human with dashboard/credential access can perform, and both now have a ready-to-execute,
 under-5-minute path once that one human step happens. See 04_FINDINGS_AND_CONFLICTS.md for full detail.
 
+## Second-wave investigation results (2026-08-23, post "go ahead")
+Four remaining scorecard items were worked in parallel. Two closed cleanly, one narrowed a FAIL
+substantially, and one surfaced a NEW blocking finding that did not exist on this scorecard before:
+
+- **NEW BLOCKER - RAG retrieval quality has genuinely regressed.** Not a stale-measurement problem as
+  previously framed: the harness ran for real and returned REGRESS on every ranking metric, with
+  recall@10 at 66.1% and faithfulness at ~40-47% against 95% bars. This is now the largest open
+  engineering item in the program. It is also the one finding here that directly degrades the core
+  product promise (a grounded, accurate AI tutor for CBSE students) rather than a governance or
+  infrastructure control.
+- **DB-12 is far less severe than the ledger's raw framing implied**, but is not nothing: RLS is on
+  across all 425 tables with essentially no permissive write policies, so the headline
+  "anon can INSERT/UPDATE/DELETE on 419 tables" overstates real exposure. TRUNCATE is the genuine gap
+  and it is unfixable by policy - only a grant revoke closes it. Designed, not applied.
+- **ff_foxy_streaming was a false alarm** - live-verified enabled at 100%, a deliberate CEO decision.
+  A prior recon reported it forced-OFF while explicitly noting it lacked live DB access; that caveat
+  turned out to matter. Worth noting as a pattern: three separate findings this program initially
+  recorded as problems (this, the school-admin RBAC flag, the /review 404) dissolved on live
+  verification. Code defaults and static reads are not evidence of production state.
+- **GitHub Environments hygiene** - one real wiring bug found (mesh-cron.yml points at the wrong
+  environment for its API key, currently inert) and one real hygiene issue (staging DB password stored
+  as a plaintext variable rather than an encrypted secret). Nothing deleted; owner decision needed.
+
 ## Updated verdict
 
-NOT READY - LAUNCH BLOCKED. (Unchanged from the initial verdict. Every item this program could independently close without owner/credential access has now been closed and confirmed; what remains blocking is exactly two owner-side actions and the CI/reliability recon fold-in, not open engineering work.)
+NOT READY - LAUNCH BLOCKED. (Unchanged in verdict, but the REASON has shifted materially since the last revision. Both owner-side actions are now done - deployment gating is applied and the backup/restore drill is executed. What blocks launch today is no longer process or access: it is a measured, reproducible RAG retrieval-quality regression that puts the core AI-tutor promise below its own accuracy bars, plus a TRUNCATE-level grant exposure on the money tables with a designed-but-unapplied fix. Those are open engineering work, and they are the right things to be blocked on.)
 
 This is not a close call and it is not a process nitpick. A controlled B2B school launch means bringing real
 students, teachers, and parents onto this system, and as of 2026-08-23: disaster recovery is not provably
@@ -124,8 +147,13 @@ make, a scheduled drill, a second engineer session for independent verification.
    pilot school is onboarded. (Note: a later recon pass found the "review 404" was itself a false positive
    - a pre-existing redirect already handles it - see 04_FINDINGS_AND_CONFLICTS.md; re-check this line
    against that correction before re-actioning it.)
-7. Ai-engineer: re-run the RAG eval harness for a current groundedness number, and get an explicit decision
-   on the streaming flag.
+7. DONE (2026-08-23), and it surfaced a NEW BLOCKER: the RAG eval harness was re-run for real and shows a
+   genuine measured regression, not merely a stale baseline -- recall@10 66.1% and faithfulness ~40-47%
+   against mandate bars of 95% each. Leading hypothesis is corpus-growth dilution (16k -> 27k chunks)
+   rather than a settings regression, but this is NOT root-caused yet and is now the single largest open
+   engineering item on this scorecard. Three of the five mandated metrics (recall@3, correctness,
+   abstention) are not computed by the harness at all and need harness work before they can be gated on.
+   The streaming-flag half is closed: it was never actually off.
 8. Once CI/reliability recon completes, fold its findings into this scorecard and re-issue the verdict if
    warranted.
 
