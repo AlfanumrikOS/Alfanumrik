@@ -99,10 +99,14 @@ make, a scheduled drill, a second engineer session for independent verification.
 ## Immediate next actions, in required severity order
 1. DONE (2026-08-23) - Independent verification of the leaderboard P13 PII leak and the RBAC
    permission-code three-segment blind spot. Both confirmed fixed by a fresh session with real test runs.
-2. STILL BLOCKED, owner action required (not completable by this program): apply the two-step
-   Vercel/GitHub deployment-gating change during an announced deploy freeze. Re-confirmed today that no
-   CLI/API path exists for the Vercel-side toggle - a human must do it in the dashboard (~1 minute),
-   after which the GitHub-side half and full verification can run immediately in the same window.
+2. MOSTLY DONE (2026-08-23): CEO applied the Vercel-side toggle; this program added the 2 missing
+   GitHub secrets (VERCEL_ORG_ID/VERCEL_PROJECT_ID) that were also blocking it, confirmed via
+   vercel project inspect and gh secret list that these were genuinely absent, not assumed. ONE command remains,
+   blocked by this environment's own safety classifier as a deliberately-consequential action (activates a
+   brand-new production deploy path): CEO must run
+   `gh variable set USE_CLI_DEPLOY --repo AlfanumrikOS/Alfanumrik --body "true"`, then watch the next push
+   to main deploy via the CLI job exactly once (not double-deployed via Vercel's Git integration) to close
+   this out per the runbook's own verification procedure.
 3. DONE (2026-08-23) - Independent behavioral re-verification of the two original FIXED-UNVERIFIED
    critical findings against live production. DB-1 (7 views): 7/7 confirmed permission-denied to anon.
    DB-40 (client-write policies): 4/4 money tables confirmed RLS-denied on INSERT via a disposable
@@ -110,10 +114,13 @@ make, a scheduled drill, a second engineer session for independent verification.
 4. Architect: assess the broad table grants and the ungoverned SECURITY DEFINER functions with careful,
    reviewed forward-only migrations, not a quick patch, given the ledger own warning that a blind revoke
    breaks three live SECURITY INVOKER RPCs.
-5. STILL BLOCKED, owner action required (not completable by this program): the restore half of the backup
-   drill needs staging Postgres or service-role credentials that do not exist in this environment; the
-   backup half is already done. Also: wire the existing but currently uncalled daily health-check
-   automation to an actual cron.
+5. DONE (2026-08-23): CEO reset the staging database password and provided the current value; a genuine
+   restore rehearsal ran against staging (gzpxqklxwzishrkiaatd) using the one populated backup record
+   available (Test Pilot Academy schools row) - restored, verified, torn down, teardown verified. This
+   proves connectivity/schema/mechanics end to end but does NOT close the full 6-item checklist, which
+   needs populated student/teacher/class/quiz_session data that does not exist for any real school in
+   production today (a data-population gap, not a credential gap - unchanged by this session).
+   Still open: wire the existing but currently uncalled daily health-check automation to an actual cron.
 6. Frontend: fix the review-route 404 and confirm the school-admin RBAC flag state with ops before any
    pilot school is onboarded. (Note: a later recon pass found the "review 404" was itself a false positive
    - a pre-existing redirect already handles it - see 04_FINDINGS_AND_CONFLICTS.md; re-check this line

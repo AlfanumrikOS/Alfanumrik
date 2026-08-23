@@ -751,3 +751,49 @@ not have, re-confirmed fresh rather than assumed stale:
   service-role key exists anywhere in this environment's .env.local, and no supabase/psql CLI session is
   authenticated against staging. The backup half (already executed and documented) stands; the restore half
   cannot proceed without the CEO or ops provisioning those credentials into this environment.
+
+## Backup/restore drill - restore half completed (2026-08-23, after CEO provisioned staging credentials)
+The credential blocker on the restore rehearsal is closed. After several rounds of Vercel/GitHub/env-file
+updates that did not match what the live staging Postgres server actually accepted (four consecutive
+password-mismatch failures across different stored copies - a genuine, reproducible signal, not a
+propagation-lag artifact), the CEO reset the staging database password directly and provided the current
+value via the local env file (not pasted into chat). Read-only connectivity confirmed immediately
+(SELECT current_database(), current_user, now() succeeded against gzpxqklxwzishrkiaatd).
+
+Ran the runbook's Section 4 staging rehearsal using the one populated record available from the earlier
+backup half (Test Pilot Academy, docs/launch-readiness/evidence/2026-08-23-backup-drill/schools.json - the
+only school with non-empty roster data; all others are 0 rows, as already documented). Confirmed the
+staging schools table schema matches the backup exactly (41 columns). Confirmed no ID collision (school
+absent from staging beforehand, 53 pre-existing unrelated rows). Restored (INSERT) the row, verified it
+landed with correct values including the features_enabled array, confirmed the count moved 53->54, then
+tore it down (DELETE) per the runbook's "staging should never accumulate test schools" rule, and verified
+the teardown (0 rows remaining with that id, count back to 53).
+
+This proves connectivity, schema compatibility, and the restore/verify/teardown mechanics end to end. It
+does NOT close the full 6-item rehearsal checklist in docs/runbooks/per-school-backup-restore.md Section 4
+(row-count-per-student/teacher/class parity, quiz_session linkage spot-check, school_admin dashboard render,
+Foxy chat history load) - those require populated student/teacher/class/quiz_session/foxy_chat_messages
+rows, and none exist for any real school in production today (the same content gap already documented in
+the backup-drill README: all 9 production schools are demo/test entities with no real B2B pilot roster
+data). That is a data-population gap, not a credential or mechanism gap, and is unchanged by this session's
+work.
+
+## Vercel/GitHub deployment-gating - GitHub secrets closed, one command remains
+Added the two missing GitHub repo secrets (VERCEL_ORG_ID, VERCEL_PROJECT_ID - non-sensitive Vercel project
+identifiers, not credentials, sourced from the already-linked local .vercel/project.json) that were blocking
+the deploy job even after the CEO's Vercel-dashboard toggle. Confirmed no in-flight Vercel deployment before
+and after. The final step, flipping the GitHub repo variable USE_CLI_DEPLOY to true, was blocked by this
+environment's own safety classifier (a genuinely consequential action - it activates a brand-new, never-
+yet-exercised production deploy path) rather than by any ambiguity in the CEO's approval. Handed to the CEO
+to run directly: `gh variable set USE_CLI_DEPLOY --repo AlfanumrikOS/Alfanumrik --body "true"`. Once run,
+the runbook's Section 4 verification (watch the next push to main deploy via the CLI job, not Vercel's Git
+integration, exactly once) still needs to happen before this item can be marked closed.
+
+## Notable side-finding: 21 GitHub Environments, several apparently created by mistake
+While checking secret scoping for the above, found this repo carries 21 GitHub "Environments"
+(Settings -> Environments), several of which appear to be created accidentally in place of a secret or
+variable - e.g. environments literally named "USE_CLI_DEPLOY", "SUPABASE_DB_PASSWORD", "CRON_SECRET",
+"supabase staging db password", "ANTHROPIC_API_KEY" - alongside the real, intentional ones (Production,
+Preview, staging, agent-mesh-break-glass, etc.). This is cosmetic/hygiene, not a security exposure (an
+"environment" with no secrets scoped to it does nothing), but it makes the real environment list harder to
+audit at a glance and is worth a cleanup pass. Not actioned here - flagged for ops.
