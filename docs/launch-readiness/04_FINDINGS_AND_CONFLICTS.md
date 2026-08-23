@@ -797,3 +797,14 @@ variable - e.g. environments literally named "USE_CLI_DEPLOY", "SUPABASE_DB_PASS
 Preview, staging, agent-mesh-break-glass, etc.). This is cosmetic/hygiene, not a security exposure (an
 "environment" with no secrets scoped to it does nothing), but it makes the real environment list harder to
 audit at a glance and is worth a cleanup pass. Not actioned here - flagged for ops.
+
+## Vercel/GitHub deployment-gating - both settings now live (2026-08-23)
+CEO ran the final command directly (`gh variable set USE_CLI_DEPLOY --repo AlfanumrikOS/Alfanumrik --body
+"true"`), confirmed via gh variable list: USE_CLI_DEPLOY = true as of 2026-08-23T09:02:08Z. Both halves of
+the runbook's Section 3 change are now in place, in the correct order (Vercel-side auto-deploy disabled by
+the CEO first, GitHub-side variable flipped after), with no in-flight Vercel deployment spanning the gap
+(confirmed via vercel ls immediately before and after). This program did not push to main to force a test
+deployment - the runbook's own verification procedure (confirm the next real push to main deploys exactly
+once via the CLI job, not doubled by Vercel's Git integration) still needs to happen on the next actual
+merge to main. Recommend treating the FIRST real production push after this change as a closely-watched
+event per docs/runbooks/production-release-gating.md Section 4, rather than manufacturing an artificial one.

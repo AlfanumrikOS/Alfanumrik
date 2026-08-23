@@ -99,14 +99,13 @@ make, a scheduled drill, a second engineer session for independent verification.
 ## Immediate next actions, in required severity order
 1. DONE (2026-08-23) - Independent verification of the leaderboard P13 PII leak and the RBAC
    permission-code three-segment blind spot. Both confirmed fixed by a fresh session with real test runs.
-2. MOSTLY DONE (2026-08-23): CEO applied the Vercel-side toggle; this program added the 2 missing
-   GitHub secrets (VERCEL_ORG_ID/VERCEL_PROJECT_ID) that were also blocking it, confirmed via
-   vercel project inspect and gh secret list that these were genuinely absent, not assumed. ONE command remains,
-   blocked by this environment's own safety classifier as a deliberately-consequential action (activates a
-   brand-new production deploy path): CEO must run
-   `gh variable set USE_CLI_DEPLOY --repo AlfanumrikOS/Alfanumrik --body "true"`, then watch the next push
-   to main deploy via the CLI job exactly once (not double-deployed via Vercel's Git integration) to close
-   this out per the runbook's own verification procedure.
+2. DONE, pending real-world verification (2026-08-23): CEO applied the Vercel-side toggle and ran the
+   final GitHub-side command directly (USE_CLI_DEPLOY confirmed true as of 09:02:08Z); this program added
+   the 2 missing GitHub secrets (VERCEL_ORG_ID/VERCEL_PROJECT_ID) that were also blocking it. Both settings
+   are live, in the correct order, no in-flight deployment spanning the gap. What remains is not an action
+   but an observation: the runbook's own verification procedure requires watching the next REAL push to
+   main deploy exactly once via the CLI job (not doubled by Vercel's Git integration) - deliberately not
+   manufactured by this program. Treat the first production push after this change as a watched event.
 3. DONE (2026-08-23) - Independent behavioral re-verification of the two original FIXED-UNVERIFIED
    critical findings against live production. DB-1 (7 views): 7/7 confirmed permission-denied to anon.
    DB-40 (client-write policies): 4/4 money tables confirmed RLS-denied on INSERT via a disposable
