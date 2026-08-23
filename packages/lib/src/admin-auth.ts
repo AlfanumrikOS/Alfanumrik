@@ -4,15 +4,17 @@
  * Security model:
  *  - Server routes: check `x-admin-secret` request header ONLY (never URL params).
  *  - Client: stores the secret in sessionStorage (cleared on tab close), never in the URL.
- *  - All admin actions are logged to admin_audit_log via logAdminAction().
+ *  - All admin actions are logged via logAdminAction(), which (2026-08-16, Phase
+ *    G.5) dual-writes to BOTH admin_audit_log (legacy) AND the canonical
+ *    audit_logs table (actor_type='admin') — see logAdminAction()'s own JSDoc.
  *
  * Also exports original session-based admin auth (authorizeAdmin) used by /api/super-admin/* routes.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@alfanumrik/lib/logger';
-import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { secureEqual } from '@alfanumrik/lib/secure-compare';
+import { getUserPermissions, type UserPermissions } from '@alfanumrik/lib/rbac';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -86,6 +88,35 @@ function getSupabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   return { url: url || null, key: key || null };
+}
+
+/**
+ * Fire-and-forget POST used by the audit writers below. Never throws — a
+ * failure (network-level rejection OR a non-2xx response, e.g. an FK
+ * violation on `admin_audit_log.admin_id`) is logged via `logger.error` and
+ * swallowed so it can never block the calling route.
+ *
+ * P0-2 fix (2026-08-20): previously these writes were `.catch()`-only, which
+ * only observes network-level rejections — `fetch` RESOLVES (doesn't throw)
+ * on a 4xx/5xx response, so a rejected insert (e.g. FK violation) silently
+ * dropped the audit row with no log. This helper checks `res.ok` explicitly.
+ */
+async function auditPost(
+  endpoint: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown>,
+  failureLogKey: string,
+  meta: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      logger.error(failureLogKey, { ...meta, status: res.status, body: bodyText.slice(0, 500) });
+    }
+  } catch (e) {
+    logger.error(failureLogKey, { ...meta, error: e instanceof Error ? e : new Error(String(e)) });
+  }
 }
 
 // ─── Session-based admin auth (used by /api/super-admin/* routes) ─────────────
@@ -364,6 +395,230 @@ export async function authorizeAdmin(
   }
 }
 
+// ─── RBAC-backed operator auth (authorizeOperator) ─────────────
+//
+// Phase 1 of the CEO-authorized super-admin Mission Control overhaul
+// (2026-08-16). Architectural mandate: RBAC becomes the single authorization
+// SOURCE OF TRUTH. `admin_users.admin_level` is no longer read directly for
+// authorization here — it feeds RBAC via the `sync_admin_level_to_rbac_role()`
+// Postgres trigger (migration 20260816000008), and this function checks only
+// `user_roles` / `roles` (via getUserPermissions()).
+//
+// Call-site shape matches authorizeAdmin() exactly —
+// `authorizeOperator(request, requiredLevel)` — so migrating a route off
+// authorizeAdmin() is a mechanical one-line change (import + function
+// rename), enabling a mechanical follow-up pass across the remaining ~100
+// /api/super-admin/* routes. authorizeAdmin() itself is UNTOUCHED in this
+// pass — every route not yet migrated keeps enforcing purely off
+// admin_users.admin_level exactly as before (fail-closed: this pass can only
+// ever ADD an alternate, equally-strict gate to specific routes, never
+// weaken any route's existing floor).
+
+/**
+ * Fixed AdminLevel -> RBAC role-name ladder (mirrors ADMIN_LEVELS above).
+ * Deliberately NOT the DB `roles.hierarchy_level` column — that column is
+ * shared by all 11 RBAC roles, including non-operator roles whose values
+ * interleave with the operator-tier ladder by coincidence (e.g. reviewer=58,
+ * institution_admin=70 both fall inside the support(55)..super_admin(100)
+ * band). Comparing raw hierarchy_level would let a `reviewer` or
+ * `institution_admin` role — never meant to reach an operator floor at all —
+ * pass an authorizeOperator() check it was never granted. This map scopes
+ * the rank comparison to EXACTLY the 6 reserved tier role names.
+ */
+const OPERATOR_TIER_ROLE_NAMES: Record<AdminLevel, string> = {
+  support: 'support',
+  analyst: 'analyst',
+  content_manager: 'content_manager',
+  finance: 'finance',
+  admin: 'admin',
+  super_admin: 'super_admin',
+};
+
+/**
+ * From a caller's active RBAC role-name set, resolve the highest-ranking
+ * operator tier they hold (or null if they hold none of the 6 reserved tier
+ * roles). Highest first so a super_admin who also happens to hold e.g.
+ * 'teacher' resolves to 'super_admin', never falls through to a lower tier.
+ */
+function resolveOperatorTier(roleNames: Set<string>): AdminLevel | null {
+  for (let i = ADMIN_LEVELS.length - 1; i >= 0; i--) {
+    const level = ADMIN_LEVELS[i];
+    if (roleNames.has(OPERATOR_TIER_ROLE_NAMES[level])) return level;
+  }
+  return null;
+}
+
+/**
+ * Resolve the caller's Supabase auth identity from the SAME two candidate
+ * sources authorizeAdmin() accepts — Bearer header, then the httpOnly sb-*
+ * session cookie — verified against GoTrue in the same priority order.
+ *
+ * Deliberately DUPLICATED rather than factored out of authorizeAdmin():
+ * Phase 1 constraint is that authorizeAdmin() must not be modified in this
+ * pass (the ~100 not-yet-migrated routes must keep working byte-for-byte,
+ * zero risk). Denial codes are OPERATOR_-prefixed so operator-path denials
+ * are distinguishable in logs/monitoring from authorizeAdmin's ADMIN_-
+ * prefixed codes, even though the underlying failure modes are identical.
+ */
+async function resolveOperatorIdentity(
+  request: NextRequest,
+  url: string,
+  key: string,
+): Promise<{ userId: string; email: string } | AdminAuthFailure> {
+  const candidates: string[] = [];
+  const authHeader = request.headers.get('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    candidates.push(authHeader.slice(7));
+  }
+  const cookieToken = extractCookieAccessToken(request.headers.get('Cookie'));
+  if (cookieToken && !candidates.includes(cookieToken)) {
+    candidates.push(cookieToken);
+  }
+
+  if (candidates.length === 0) {
+    return { authorized: false, response: NextResponse.json({ error: 'Please log in.', code: 'OPERATOR_NO_TOKEN' }, { status: 401 }) };
+  }
+
+  let userData: { id?: string; email?: string } | null = null;
+  let denial: AdminAuthFailure | null = null;
+  for (const candidate of candidates) {
+    const userRes = await fetch(`${url}/auth/v1/user`, {
+      headers: { 'apikey': key, 'Authorization': `Bearer ${candidate}` },
+    });
+
+    if (!userRes.ok) {
+      denial = { authorized: false, response: NextResponse.json({ error: 'Session expired. Please log in again.', code: 'OPERATOR_SESSION_EXPIRED' }, { status: 401 }) };
+      continue;
+    }
+
+    const parsed = await userRes.json();
+    if (!parsed?.id) {
+      denial = { authorized: false, response: NextResponse.json({ error: 'Invalid session.', code: 'OPERATOR_INVALID_SESSION' }, { status: 401 }) };
+      continue;
+    }
+
+    userData = parsed;
+    break;
+  }
+
+  if (!userData) return denial as AdminAuthFailure;
+  return { userId: userData.id as string, email: userData.email || '' };
+}
+
+/**
+ * RBAC-backed operator authorization — the eventual replacement for
+ * authorizeAdmin(). See the section header above for the full architectural
+ * rationale. Returns an AdminAuthResult so call sites (including
+ * logAdminAudit()) work unchanged when a route migrates.
+ */
+export async function authorizeOperator(
+  request: NextRequest,
+  requiredLevel: AdminLevel,
+): Promise<AdminAuthResult> {
+  const { url, key } = getSupabaseConfig();
+
+  if (!url) {
+    logger.error('operator_auth_config_missing', { detail: 'SUPABASE_URL not configured' });
+    return { authorized: false, response: NextResponse.json({ error: 'Server configuration error' }, { status: 500 }) };
+  }
+  if (!key) {
+    logger.error('operator_auth_config_missing', { detail: 'SERVICE_ROLE_KEY not configured' });
+    return { authorized: false, response: NextResponse.json({ error: 'Server configuration error' }, { status: 500 }) };
+  }
+
+  try {
+    const identity = await resolveOperatorIdentity(request, url, key);
+    if ('authorized' in identity) return identity; // denial
+
+    const { userId, email: gotrueEmail } = identity;
+
+    // RBAC lookup — the ACTUAL authorization decision. getUserPermissions()
+    // (packages/lib/src/rbac.ts) already filters to active, non-expired
+    // user_roles rows via the get_user_permissions RPC.
+    let perms: UserPermissions;
+    try {
+      perms = await getUserPermissions(userId);
+    } catch (permErr) {
+      logger.error('operator_auth_rbac_lookup_failed', {
+        error: permErr instanceof Error ? permErr : new Error(String(permErr)),
+      });
+      return { authorized: false, response: NextResponse.json({ error: 'Authorization check failed.', code: 'OPERATOR_LOOKUP_FAILED' }, { status: 500 }) };
+    }
+
+    const roleNames = new Set(perms.roles.map((r) => r.name as string));
+    const operatorTier = resolveOperatorTier(roleNames);
+
+    if (!operatorTier) {
+      return {
+        authorized: false,
+        response: NextResponse.json({ error: 'You are not an authorized operator.', code: 'OPERATOR_NOT_FOUND' }, { status: 403 }),
+      };
+    }
+
+    // Same rank comparison authorizeAdmin() performs (hasMinimumLevel /
+    // LEVEL_RANK) — reused verbatim so a route's effective floor is
+    // unchanged by migrating from authorizeAdmin() to authorizeOperator().
+    if (!hasMinimumLevel(operatorTier, requiredLevel)) {
+      logger.warn('operator_auth_level_denied', {
+        userId,
+        haveLevel: operatorTier,
+        needLevel: requiredLevel,
+        route: new URL(request.url).pathname,
+      });
+      return {
+        authorized: false,
+        response: NextResponse.json(
+          {
+            error: `This action requires operator level "${requiredLevel}" or higher.`,
+            code: 'OPERATOR_INSUFFICIENT_LEVEL',
+            required_level: requiredLevel,
+          },
+          { status: 403 },
+        ),
+      };
+    }
+
+    // Best-effort admin_users enrichment for adminId/name — kept for
+    // backward-compat with logAdminAudit()'s AdminAuth shape and existing
+    // /super-admin/logs reads. NON-authoritative: absence of a matching
+    // admin_users row never denies. A purely RBAC-granted operator (tier
+    // role assigned directly in user_roles with no admin_users row at all)
+    // is a supported, intended case under the "RBAC is the sole authority"
+    // mandate — it just falls back to userId/GoTrue email for display.
+    let adminId = userId;
+    let name = '';
+    let email = gotrueEmail;
+    try {
+      const adminQuery = `${url}/rest/v1/admin_users?select=id,name,email&auth_user_id=eq.${userId}&is_active=eq.true&limit=1`;
+      const adminRes = await fetch(adminQuery, {
+        headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      });
+      if (adminRes.ok) {
+        const rows = await adminRes.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          adminId = rows[0].id || userId;
+          name = rows[0].name || '';
+          email = rows[0].email || email;
+        }
+      }
+    } catch {
+      // Best-effort only — enrichment failure never affects authorization.
+    }
+
+    return {
+      authorized: true,
+      userId,
+      adminId,
+      email,
+      name,
+      adminLevel: operatorTier,
+    };
+  } catch (err) {
+    logger.error('operator_auth_exception', { error: err instanceof Error ? err : new Error(String(err)) });
+    return { authorized: false, response: NextResponse.json({ error: 'Authorization failed.', code: 'OPERATOR_AUTH_EXCEPTION' }, { status: 500 }) };
+  }
+}
+
 /**
  * Record an admin action to the audit trail.
  *
@@ -392,11 +647,13 @@ export async function logAdminAudit(
   const headers = { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
   const enrichedDetails = { ...details, admin_name: admin.name, admin_email: admin.email };
 
-  // 1. Canonical write: audit_logs with actor_type='admin'
-  const canonicalWrite = fetch(`${url}/rest/v1/audit_logs`, {
-    method: 'POST',
+  // 1. Canonical write: audit_logs with actor_type='admin'. auth_user_id has
+  // no FK (verified against baseline schema) — the raw auth.users id is the
+  // correct value here.
+  const canonicalWrite = auditPost(
+    `${url}/rest/v1/audit_logs`,
     headers,
-    body: JSON.stringify({
+    {
       auth_user_id: admin.userId,
       actor_type: 'admin',
       admin_level: admin.adminLevel,
@@ -410,31 +667,27 @@ export async function logAdminAudit(
       user_agent: opts?.userAgent || null,
       school_id: opts?.schoolId ?? null,
       status: 'success',
-    }),
-  }).catch((e) => {
-    logger.error('audit_logs_admin_write_failed', {
-      error: e instanceof Error ? e : new Error(String(e)),
-      action, entityType, entityId, adminId: admin.userId,
-    });
-    return null;
-  });
+    },
+    'audit_logs_admin_write_failed',
+    { action, entityType, entityId, adminId: admin.userId },
+  );
 
-  // 2. Legacy back-compat write: admin_audit_log
-  const legacyWrite = fetch(`${url}/rest/v1/admin_audit_log`, {
-    method: 'POST',
+  // 2. Legacy back-compat write: admin_audit_log. `admin_audit_log.admin_id`
+  // has an FK to `admin_users(id)` — a DIFFERENT uuid from `admin.userId`
+  // (the auth.users id). `admin.adminId` (set by authorizeAdmin() from the
+  // resolved admin_users row) is the correct value here; using `userId`
+  // FK-violates and silently drops the row (P0-2, 2026-08-20).
+  const legacyWrite = auditPost(
+    `${url}/rest/v1/admin_audit_log`,
     headers,
-    body: JSON.stringify({
-      admin_id: admin.userId, action, entity_type: entityType, entity_id: entityId,
+    {
+      admin_id: admin.adminId, action, entity_type: entityType, entity_id: entityId,
       details: { ...enrichedDetails, admin_level: admin.adminLevel },
       ip_address: ipAddress || null,
-    }),
-  }).catch((e) => {
-    logger.error('admin_audit_log_failed', {
-      error: e instanceof Error ? e : new Error(String(e)),
-      route: 'admin-auth', action, entityType, entityId, adminId: admin.userId,
-    });
-    return null;
-  });
+    },
+    'admin_audit_log_failed',
+    { route: 'admin-auth', action, entityType, entityId, adminId: admin.adminId },
+  );
 
   // Don't await — audit is fire-and-forget. But also don't drop the
   // microtask if Node hasn't scheduled it (the function awaits a promise
@@ -454,7 +707,7 @@ export async function logAdminAuditByUserId(
   userId: string | null,
   action: string,
   entityType: string,
-  entityId: string,
+  entityId: string | null,
   details?: Record<string, unknown>,
   ipAddress?: string,
   opts?: { before?: Record<string, unknown>; after?: Record<string, unknown>; userAgent?: string; schoolId?: string | null; adminLevel?: string | null },
@@ -464,17 +717,18 @@ export async function logAdminAuditByUserId(
 
   const headers = { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
 
-  // 1. Canonical: audit_logs
-  const canonicalWrite = fetch(`${url}/rest/v1/audit_logs`, {
-    method: 'POST',
+  // 1. Canonical: audit_logs. auth_user_id has no FK — the raw auth.users id
+  // (all this caller has) is the correct value here.
+  const canonicalWrite = auditPost(
+    `${url}/rest/v1/audit_logs`,
     headers,
-    body: JSON.stringify({
+    {
       auth_user_id: userId,
       actor_type: 'admin',
       admin_level: opts?.adminLevel ?? null,
       action,
       resource_type: entityType,
-      resource_id: entityId,
+      resource_id: entityId ?? null,
       details: details ?? {},
       before_state: opts?.before ?? null,
       after_state: opts?.after ?? null,
@@ -482,34 +736,67 @@ export async function logAdminAuditByUserId(
       user_agent: opts?.userAgent || null,
       school_id: opts?.schoolId ?? null,
       status: 'success',
-    }),
-  }).catch((e) => {
-    logger.error('audit_logs_admin_write_failed', {
-      error: e instanceof Error ? e : new Error(String(e)),
-      action, entityType, entityId, adminId: userId,
-    });
-    return null;
-  });
+    },
+    'audit_logs_admin_write_failed',
+    { action, entityType, entityId, adminId: userId },
+  );
 
-  // 2. Legacy back-compat: admin_audit_log
-  const legacyWrite = fetch(`${url}/rest/v1/admin_audit_log`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      admin_id: userId,
-      action,
-      entity_type: entityType,
-      entity_id: entityId,
-      details: details ?? {},
-      ip_address: ipAddress || null,
-    }),
-  }).catch((e) => {
-    logger.error('admin_audit_log_failed', {
-      error: e instanceof Error ? e : new Error(String(e)),
-      route: 'admin-auth', action, entityType, entityId, adminId: userId,
-    });
-    return null;
-  });
+  // 2. Legacy back-compat: admin_audit_log. `admin_audit_log.admin_id` has an
+  // FK to `admin_users(id)` — this function only ever receives the raw
+  // auth.users id (its own JSDoc above), a DIFFERENT uuid, so it must be
+  // resolved first (P0-2, 2026-08-20). A caller authorized via
+  // authorizeRequest() may be a purely RBAC-granted operator with NO
+  // admin_users row at all (a supported case — see authorizeOperator()'s
+  // enrichment comment) — when no row resolves, skip the legacy write
+  // entirely rather than insert a row that will FK-violate and be silently
+  // dropped. The canonical audit_logs write above proceeds regardless.
+  const legacyWrite = (async () => {
+    if (!userId) {
+      logger.debug('admin_audit_log_skipped', { reason: 'no_user_id', action, entityType, entityId });
+      return;
+    }
+
+    let adminUsersId: string | null = null;
+    try {
+      const lookupRes = await fetch(
+        `${url}/rest/v1/admin_users?select=id&auth_user_id=eq.${userId}&limit=1`,
+        { headers: { 'apikey': key, 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' } },
+      );
+      if (lookupRes.ok) {
+        const rows = await lookupRes.json();
+        if (Array.isArray(rows) && rows.length > 0 && rows[0]?.id) {
+          adminUsersId = rows[0].id as string;
+        }
+      } else {
+        logger.error('admin_audit_log_lookup_failed', { status: lookupRes.status, action, entityType, entityId, userId });
+      }
+    } catch (e) {
+      logger.error('admin_audit_log_lookup_failed', {
+        error: e instanceof Error ? e : new Error(String(e)),
+        action, entityType, entityId, userId,
+      });
+    }
+
+    if (!adminUsersId) {
+      logger.debug('admin_audit_log_skipped', { reason: 'no_admin_users_row', action, entityType, entityId, userId });
+      return;
+    }
+
+    await auditPost(
+      `${url}/rest/v1/admin_audit_log`,
+      headers,
+      {
+        admin_id: adminUsersId,
+        action,
+        entity_type: entityType,
+        entity_id: entityId ?? null,
+        details: details ?? {},
+        ip_address: ipAddress || null,
+      },
+      'admin_audit_log_failed',
+      { route: 'admin-auth', action, entityType, entityId, adminId: adminUsersId },
+    );
+  })();
 
   await Promise.allSettled([canonicalWrite, legacyWrite]);
 }
@@ -551,8 +838,46 @@ export function requireAdminSecret(request: NextRequest): NextResponse | null {
 }
 
 /**
- * Log an admin action to admin_audit_log (fire-and-forget).
+ * Log an admin action performed via the x-admin-secret gate (fire-and-forget).
  * Used by /api/internal/admin/* routes.
+ *
+ * Phase G.5 (2026-08-16, canonical audit-path fix — CEO-mandated Phase 0
+ * super-admin overhaul). Previously this function single-wrote to the
+ * LEGACY `admin_audit_log` table with `admin_id` hardcoded to `null` — no
+ * actor attribution, and events never reached the canonical `audit_logs`
+ * table at all. It now delegates to `logAdminAuditByUserId()`, which
+ * dual-writes to BOTH `admin_audit_log` (legacy, kept for `/super-admin/logs`
+ * back-compat) AND `audit_logs` (canonical, `actor_type: 'admin'`) — the
+ * same machinery `logAdminAudit()` already uses.
+ *
+ * Back-compat: the original 5 fields (`action`, `entity_type`, `entity_id`,
+ * `details`, `ip`) are unchanged, so every existing
+ * `/api/internal/admin/*​/route.ts` call site — currently 20 call sites
+ * across 9 files, all passing a plain object literal — keeps compiling
+ * with no changes required. Two NEW optional fields carry actor
+ * attribution when the caller has it:
+ *
+ *   - `actorUserId?: string | null` — the caller's Supabase auth user id
+ *     (e.g. `authorizeAdmin()`'s `AdminAuth.userId`, or the `userId`
+ *     returned by `authorizeRequest()`). Written as `admin_id` in the
+ *     legacy row and `auth_user_id` in the canonical row. Omitted (or
+ *     `null`/`undefined`) preserves today's unattributed behavior for rows
+ *     that use it — but even then, the write now ALSO reaches `audit_logs`,
+ *     which closes the "canonical table never written" half of the defect
+ *     ahead of callers being updated to pass real actor identity.
+ *   - `adminLevel?: AdminLevel | string | null` — the caller's
+ *     `admin_level` at the time of the action (e.g. `AdminAuth.adminLevel`
+ *     from a prior `authorizeAdmin()` call), stamped onto
+ *     `audit_logs.admin_level`. Omit when unknown or not applicable (e.g.
+ *     RBAC-only callers with no `admin_users` row) — never guess a level.
+ *
+ * P13: `details` must be metadata only — never email/phone/name or other
+ * PII. This function does not sanitize `details`; callers own that.
+ *
+ * Never throws: a failed audit write is caught and logged as a warning so
+ * it can never break the calling route (matches the existing
+ * fire-and-forget contract, and the per-destination `.catch()` handling
+ * already inside `logAdminAuditByUserId()`).
  */
 export async function logAdminAction(opts: {
   action: string;
@@ -560,19 +885,26 @@ export async function logAdminAction(opts: {
   entity_id?: string;
   details?: Record<string, unknown>;
   ip?: string;
+  actorUserId?: string | null;
+  adminLevel?: AdminLevel | string | null;
 }): Promise<void> {
   try {
-    const supabase = getSupabaseAdmin();
-    await supabase.from('admin_audit_log').insert({
-      admin_id: null, // set to admin_users.id when proper admin accounts are used
+    await logAdminAuditByUserId(
+      opts.actorUserId ?? null,
+      opts.action,
+      opts.entity_type,
+      opts.entity_id ?? null,
+      opts.details ?? {},
+      opts.ip,
+      { adminLevel: opts.adminLevel ?? null },
+    );
+  } catch (err) {
+    // Never let audit log failures break the main flow.
+    logger.warn('admin_audit_action_failed', {
+      error: err instanceof Error ? err : new Error(String(err)),
       action: opts.action,
-      entity_type: opts.entity_type,
-      entity_id: opts.entity_id ?? null,
-      details: opts.details ?? {},
-      ip_address: opts.ip ?? null,
+      entityType: opts.entity_type,
     });
-  } catch {
-    // Never let audit log failures break the main flow
   }
 }
 

@@ -36,6 +36,64 @@ export const SUPPORT_TICKET_CATEGORIES = [
 export type SupportTicketCategory = (typeof SUPPORT_TICKET_CATEGORIES)[number];
 
 /**
+ * Legacy category values that predate SUPPORT_TICKET_CATEGORIES, mapped to
+ * their canonical replacement.
+ *
+ * WHY: the unauthenticated intake route
+ * (apps/host/src/app/api/support/ticket/route.ts) shipped its own inline enum
+ * ['bug','content','payment','account','feature','other'] before this module
+ * existed. Two of those values ('payment', 'feature') are ABSENT from the
+ * canonical list, and three canonical values ('billing',
+ * 'automated_escalation_dispute', 'synthesis_content_concern') were REJECTED by
+ * that route — so the two intake paths were writing mutually-incompatible
+ * strings into the same free-TEXT `support_tickets.category` column, and any
+ * operator filter or report keyed on category under-counted.
+ *
+ * The canonical list above is UNCHANGED. This map exists purely so the legacy
+ * route can keep accepting its old wire values (old clients, cached marketing
+ * pages, the mobile app) while persisting the canonical one.
+ *
+ * NOTE: rows already written with 'payment' / 'feature' are NOT rewritten by
+ * this map — normalisation applies at write time only. A backfill of historical
+ * rows is a migration and is architect-owned.
+ */
+export const SUPPORT_TICKET_CATEGORY_ALIASES = {
+  /** Legacy intake value for billing/payment problems. */
+  payment: 'billing',
+  /** Legacy intake value; canonical 'other' is labelled "Feature request / Other". */
+  feature: 'other',
+} as const satisfies Record<string, SupportTicketCategory>;
+
+export type SupportTicketCategoryAlias = keyof typeof SUPPORT_TICKET_CATEGORY_ALIASES;
+
+/**
+ * Every wire value an intake route may accept: canonical + legacy aliases.
+ * Spelled as a literal tuple (not derived via Object.keys) so it stays a tuple
+ * type and can be handed straight to `z.enum`. The alias members MUST match the
+ * keys of SUPPORT_TICKET_CATEGORY_ALIASES above — the `satisfies` below pins it.
+ */
+export const SUPPORT_TICKET_CATEGORY_INPUTS = [
+  ...SUPPORT_TICKET_CATEGORIES,
+  'payment',
+  'feature',
+] as const satisfies readonly (SupportTicketCategory | SupportTicketCategoryAlias)[];
+
+/**
+ * Normalise an accepted wire value to the canonical category that gets
+ * persisted. Unknown values fall back to 'other' rather than throwing — the
+ * caller is expected to have validated against SUPPORT_TICKET_CATEGORY_INPUTS
+ * first, and a mis-categorised ticket is strictly better than a dropped one.
+ */
+export function normalizeTicketCategory(category: string): SupportTicketCategory {
+  if ((SUPPORT_TICKET_CATEGORIES as readonly string[]).includes(category)) {
+    return category as SupportTicketCategory;
+  }
+  const alias =
+    SUPPORT_TICKET_CATEGORY_ALIASES[category as SupportTicketCategoryAlias];
+  return alias ?? 'other';
+}
+
+/**
  * Structured related-record types a ticket can point at. Mirrors the
  * `support_tickets.related_entity_type` CHECK constraint in migration
  * 20260722103000_support_tickets_related_entity.sql.

@@ -246,9 +246,26 @@
             "example": "VALIDATION_ERROR",
             "type": "string"
           },
+          "details": {
+            "additionalProperties": {},
+            "description": "OPTIONAL machine-readable, code-specific detail payload. For code `subject_not_allowed` (403) and `UNKNOWN_SUBJECT` (400) the shape is `SubjectNotAllowedDetails` ({ subject, reason, allowed }). Absent on every other error response.",
+            "example": {
+              "allowed": [
+                "math",
+                "science"
+              ],
+              "reason": "grade",
+              "subject": "Mathematics"
+            },
+            "type": "object"
+          },
           "error": {
             "example": "Validation failed",
             "type": "string"
+          },
+          "retryable": {
+            "example": false,
+            "type": "boolean"
           },
           "success": {
             "enum": [
@@ -368,12 +385,14 @@
       "LeaderboardEntry": {
         "properties": {
           "avatar_url": {
+            "description": "Always null (not emitted by get_leaderboard).",
             "type": [
               "string",
               "null"
             ]
           },
           "city": {
+            "description": "Always null (P13 — not exposed for peers).",
             "type": [
               "string",
               "null"
@@ -398,6 +417,7 @@
             "type": "integer"
           },
           "school": {
+            "description": "Always null (P13 — not exposed for peers).",
             "type": [
               "string",
               "null"
@@ -437,6 +457,9 @@
             },
             "type": "array"
           },
+          "me": {
+            "$ref": "#/components/schemas/LeaderboardSelf"
+          },
           "period": {
             "enum": [
               "weekly",
@@ -466,6 +489,42 @@
           "period",
           "scope",
           "entries"
+        ],
+        "type": "object"
+      },
+      "LeaderboardSelf": {
+        "properties": {
+          "on_board": {
+            "example": false,
+            "type": "boolean"
+          },
+          "rank": {
+            "example": null,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "student_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total_xp": {
+            "example": null,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "student_id",
+          "on_board",
+          "rank",
+          "total_xp"
         ],
         "type": "object"
       },
@@ -1442,6 +1501,37 @@
         ],
         "type": "object"
       },
+      "SubjectNotAllowedDetails": {
+        "properties": {
+          "allowed": {
+            "description": "The subject CODES valid for this student on the rejecting route. For the 403 governance rejection: unlocked codes only. For the learn routes: every subject in the student tree (locked included — locked subjects are still valid read params).",
+            "example": [
+              "math",
+              "science"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "description": "Cause discriminator. Governance rejections (403 subject_not_allowed) emit 'grade' (not in this student's grade subject list) or 'plan' (plan-locked); other SubjectWriteError reasons ('stream', 'inactive', 'unknown', 'max_subjects') are reserved. The learn routes' 400 UNKNOWN_SUBJECT emits 'unknown_subject'. Kept a string (not an enum) so adding a reason is non-breaking for generated clients.",
+            "example": "grade",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The rejected subject value, verbatim as the client sent it.",
+            "example": "Mathematics",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject",
+          "reason",
+          "allowed"
+        ],
+        "type": "object"
+      },
       "SuccessAck": {
         "properties": {
           "success": {
@@ -1485,10 +1575,12 @@
         "enum": [
           "resume_in_progress",
           "cold_start_diagnostic",
+          "teacher_remediation",
           "srs_due",
           "revise_decayed_topic",
           "weak_topic_zpd",
           "continue_lesson",
+          "new_topic",
           "weekly_dive_due",
           "monthly_synthesis_due",
           "practice_weakest",
@@ -1680,14 +1772,16 @@
     },
     "/v2/learn/concept": {
       "get": {
-        "description": "Returns the ordered NCERT chapter prose (markdown + source attribution) for a subject + chapter. Reuses fetchChapterContent (rag_content_chunks read used by /learn). Requires study_plan.view.",
+        "description": "Returns the ordered NCERT chapter prose (markdown + source attribution) for a subject + chapter. Reuses fetchChapterContent (rag_content_chunks read used by /learn). An unknown `subject` is a 400 UNKNOWN_SUBJECT — the 404 NO_CONTENT response is reserved for a KNOWN subject whose chapter genuinely has no content. Requires study_plan.view.",
         "operationId": "getLearnConcept",
         "parameters": [
           {
+            "description": "Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes.",
             "in": "query",
             "name": "subject",
             "required": true,
             "schema": {
+              "description": "Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes.",
               "example": "science",
               "type": "string"
             }
@@ -1731,7 +1825,7 @@
                 }
               }
             },
-            "description": "Invalid query params."
+            "description": "Invalid query params, or unknown subject (UNKNOWN_SUBJECT — body carries details: SubjectNotAllowedDetails with the rejected value and the student's valid subject codes)."
           },
           "404": {
             "content": {
@@ -1741,7 +1835,7 @@
                 }
               }
             },
-            "description": "No content for this chapter."
+            "description": "No content for this chapter (subject is known — a genuine content gap, not an input error)."
           },
           "500": {
             "content": {
@@ -1752,6 +1846,16 @@
               }
             },
             "description": "Unexpected server error."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Subject validation temporarily unavailable (SUBJECT_GOVERNANCE_UNAVAILABLE) — body carries retryable: true; retry the same request."
           }
         },
         "security": [
@@ -1770,14 +1874,17 @@
     },
     "/v2/learn/curriculum": {
       "get": {
-        "description": "Returns the plan-gated curriculum tree the mobile Learn screen needs. Reuses get_available_subjects (plan/grade/stream gating) + curriculum_topics. Requires study_plan.view.",
+        "description": "Returns the plan-gated curriculum tree the mobile Learn screen needs. Reuses get_available_subjects (plan/grade/stream gating) + curriculum_topics. An unknown `subject` filter is a 400 UNKNOWN_SUBJECT (never an empty-success 200 — that shape is reserved for a student who genuinely has zero subjects and sent no filter). Requires study_plan.view.",
         "operationId": "getLearnCurriculum",
         "parameters": [
           {
+            "description": "Optional filter. Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes (locked subjects included — they are valid filter values and render with is_locked).",
             "in": "query",
             "name": "subject",
             "required": false,
             "schema": {
+              "description": "Optional filter. Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A value matching none of the student's subjects returns 400 UNKNOWN_SUBJECT with details: SubjectNotAllowedDetails listing the valid codes (locked subjects included — they are valid filter values and render with is_locked).",
+              "example": "math",
               "type": "string"
             }
           }
@@ -1792,6 +1899,16 @@
               }
             },
             "description": "Curriculum tree."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown subject filter (UNKNOWN_SUBJECT) — the value matched none of the student's subjects. Body carries details: SubjectNotAllowedDetails with the rejected value and the valid subject codes."
           },
           "404": {
             "content": {
@@ -2061,14 +2178,16 @@
     },
     "/v2/quiz/questions": {
       "get": {
-        "description": "Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than `count` in-scope questions exist. Requires quiz.attempt.",
+        "description": "Returns in-scope quiz questions for the authenticated student. Reuses the select_quiz_questions_rag path with subject-governance + academic-scope checks. Subject governance FAILS CLOSED: if the governance RPC is unavailable the route returns 503 SUBJECT_GOVERNANCE_UNAVAILABLE (retryable: true) rather than serving ungated questions. correct_answer_index is NEVER returned (P6). 422 with { available, requested, scope } when a chapter is set and fewer than `count` in-scope questions exist. Requires quiz.attempt.",
         "operationId": "getQuizQuestions",
         "parameters": [
           {
+            "description": "Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A code the student is not allowed returns 403 `subject_not_allowed` with `details: SubjectNotAllowedDetails` naming the rejected value and listing the allowed codes.",
             "in": "query",
             "name": "subject",
             "required": true,
             "schema": {
+              "description": "Subject CODE (e.g. `math`, `science`) — NOT the display name (\"Mathematics\"). A code the student is not allowed returns 403 `subject_not_allowed` with `details: SubjectNotAllowedDetails` naming the rejected value and listing the allowed codes.",
               "example": "math",
               "type": "string"
             }
@@ -2160,7 +2279,7 @@
                 }
               }
             },
-            "description": "Missing quiz.attempt, grade mismatch, or subject not allowed."
+            "description": "Missing quiz.attempt, grade mismatch (GRADE_MISMATCH), or subject not allowed (subject_not_allowed — body carries details: SubjectNotAllowedDetails with the rejected subject, the reason (grade | plan), and the allowed subject codes)."
           },
           "422": {
             "content": {
@@ -2181,6 +2300,16 @@
               }
             },
             "description": "Unexpected server error."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Subject governance temporarily unavailable (SUBJECT_GOVERNANCE_UNAVAILABLE) — the route fails CLOSED instead of serving ungated questions. Body carries retryable: true; retry the same request."
           }
         },
         "security": [
@@ -2270,6 +2399,20 @@
       "post": {
         "description": "Thin pass-through to the submit_quiz_results_v2 RPC, which owns P1 scoring, P2 XP + 200/day cap, all 3 P3 anti-cheat checks, and P4 atomicity. The route does NO score / XP / anti-cheat math — it forwards inputs and returns the RPC result verbatim. Requires an Idempotency-Key (UUID) header and quiz.attempt. studentId is cross-checked against the JWT (403 on mismatch). When attemptMode === offline_replay the route runs offline gates BEFORE the RPC: capturedAt required (400 OFFLINE_CAPTURED_AT_REQUIRED), clock-skew (422 REPLAY_CLOCK_INVALID), staleness >168h (422 REPLAY_TOO_STALE), clientCapturedTotalSeconds mismatch (400 OFFLINE_TIME_INCONSISTENT), and shuffle-map verification against the server snapshot (422 SHUFFLE_MAP_MISMATCH). Online submissions are byte-identical to today — no offline gate fires.",
         "operationId": "postQuizSubmit",
+        "parameters": [
+          {
+            "description": "REQUIRED grading idempotency key (UUID). The raw header value IS the idempotency key forwarded to the scoring RPC as p_idempotency_key — there is no session-id rebinding. Missing or non-UUID → 400 IDEMPOTENCY_KEY_REQUIRED. Retries of the same submission (including offline-drain retries after RPC_FAILED/503) MUST reuse the same key; a new key makes the RPC treat the request as a new submission.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "description": "REQUIRED grading idempotency key (UUID). The raw header value IS the idempotency key forwarded to the scoring RPC as p_idempotency_key — there is no session-id rebinding. Missing or non-UUID → 400 IDEMPOTENCY_KEY_REQUIRED. Retries of the same submission (including offline-drain retries after RPC_FAILED/503) MUST reuse the same key; a new key makes the RPC treat the request as a new submission.",
+              "example": "550e8400-e29b-41d4-a716-446655440000",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2308,7 +2451,7 @@
                 }
               }
             },
-            "description": "Missing quiz.attempt or studentId mismatch."
+            "description": "Missing quiz.attempt (403), studentId mismatch (STUDENT_ID_MISMATCH), or the scoring RPC's SECURITY DEFINER ownership guard denied the caller (STUDENT_OWNERSHIP_DENIED). The guard raises SQLSTATE P0001 — the SAME code as session_not_started — so it is discriminated by message and answered 403, never 409. No retryable field: a 403 is already unambiguous (the client must not resend, and the mobile drain discards)."
           },
           "409": {
             "content": {
@@ -2330,6 +2473,16 @@
             },
             "description": "Offline replay rejected: REPLAY_CLOCK_INVALID, REPLAY_TOO_STALE, or SHUFFLE_MAP_MISMATCH."
           },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "PERMANENT scoring failure (RPC_PERMANENT) — SQLSTATE 42501 / 42883 / 23514. Body carries retryable: false. Retrying with the same Idempotency-Key can never succeed, so the client must STOP retrying; it must NOT discard the attempt (the captured data is still valid)."
+          },
           "503": {
             "content": {
               "application/json": {
@@ -2338,7 +2491,7 @@
                 }
               }
             },
-            "description": "Transient scoring failure — retry with same Idempotency-Key."
+            "description": "Transient scoring failure (RPC_FAILED) — body carries retryable: true. Retry with the same Idempotency-Key."
           }
         },
         "security": [
@@ -2357,7 +2510,7 @@
     },
     "/v2/student/leaderboard": {
       "get": {
-        "description": "Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own.",
+        "description": "Returns ranked leaderboard entries via the get_leaderboard RPC the web /leaderboard page uses. No PII beyond what the existing leaderboard exposes (P13). Requires progress.view_own. `scope` accepts only `global`; `scope=school` returns 400 SCOPE_UNSUPPORTED because the underlying RPC has no school scoping (it previously returned global rows labelled \"school\"). `school`/`city`/`avatar_url` on each entry are always null.",
         "operationId": "getStudentLeaderboard",
         "parameters": [
           {
@@ -2379,7 +2532,6 @@
             "required": false,
             "schema": {
               "enum": [
-                "school",
                 "global"
               ],
               "type": "string"
@@ -2396,6 +2548,16 @@
               }
             },
             "description": "Ranked leaderboard."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported scope (SCOPE_UNSUPPORTED)."
           },
           "500": {
             "content": {

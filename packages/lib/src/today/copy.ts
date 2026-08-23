@@ -183,6 +183,18 @@ const COPY: Record<string, CopyEntry> = {
     hi: '{subject} शुरू करो · अध्याय {chapter}',
   },
 
+  // ── Item: completed_lesson_check ───────────────────────────────
+  // A chapter the student read once but hasn't mastered yet — quick
+  // comprehension check so chapter-read completion feeds the loop.
+  'today.item.completed_lesson_check.label': {
+    en: 'Check what you learned',
+    hi: 'जो तुमने सीखा उसे जाँचें',
+  },
+  'today.item.completed_lesson_check.subtitle': {
+    en: '{subject} · {progress}% covered',
+    hi: '{subject} · {progress}% कवर किया',
+  },
+
   // ── Phase 4: recommendation reasons ────────────────────────────
   // The SIX approved learner-facing phrases. Every one of the resolver's 12
   // machine reasons maps into exactly one of these (see REASON_TO_COPY_KEY).
@@ -335,6 +347,14 @@ const REASON_TO_COPY_KEY: Record<string, string> = {
   reviews_stacking:            'today.reason.review',
   reviews_due_today:           'today.reason.review',
   decay_above_threshold:       'today.reason.review',
+  // completed_but_unchecked (CompletedLessonCheckAction, Step 4 bridge): the
+  // student read this chapter once but the mastery engine hasn't confirmed it
+  // yet — closest existing approved phrase is "Review due" (checking recall
+  // of previously-covered material). Restored during the b00b9c872 forensic
+  // recovery; ARCHITECT NOTE — this specific mapping choice is a judgment call
+  // (not a re-derivation of prior behaviour, since this reason/copy table is
+  // itself new work) and should be confirmed by assessment/frontend.
+  completed_but_unchecked:     'today.reason.review',
   teacher_assigned:            'today.reason.teacher',
   todays_zpd:                  'today.reason.prerequisite',
   weakest_topic_practice:      'today.reason.prerequisite',

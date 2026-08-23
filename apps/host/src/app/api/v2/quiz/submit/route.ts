@@ -22,21 +22,37 @@
  *   body.sessionId                     → p_idempotency_key   (R9 — NOT the
  *     client's Idempotency-Key header. The header is still REQUIRED and
  *     UUID-validated as a client retry token, but the GRADING key is bound to
- *     the session so one session can only ever be graded once. Full rationale,
- *     incl. why we ignore the header rather than reject a mismatch that every
- *     live mobile client would trip, in packages/lib/src/quiz/idempotency.ts.)
+ *     the session so that one session can only ever be graded once. Full
+ *     rationale, incl. why we ignore the header rather than reject a mismatch
+ *     that every live mobile client would trip, in
+ *     packages/lib/src/quiz/idempotency.ts.)
  *
  * Error translation (IDENTICAL to /api/quiz/submit):
+ *   P0001 ownership-guard denial       → 403 { code: 'STUDENT_OWNERSHIP_DENIED' }
+ *     ('Access denied: caller does        Shares SQLSTATE P0001 with
+ *      not own student %')                session_not_started, so it is
+ *                                         discriminated by MESSAGE and checked
+ *                                         FIRST. Logged to ops_events at
+ *                                         severity `error`.
  *   P0001 session_not_started          → 409
  *   unique-violation replay race       → cached row, idempotent_replay: true
- *   any other RPC failure              → 503 (retry with same Idempotency-Key)
+ *   PERMANENT RPC failure              → 500 { code: 'RPC_PERMANENT',
+ *     (SQLSTATE 42501/42883/23514)          retryable: false } — do NOT retry,
+ *                                          do NOT discard the attempt
+ *   any other RPC failure              → 503 { code: 'RPC_FAILED',
+ *                                          retryable: true } (retry same key)
+ *
+ * Transport (both supported): the RPC runs on `createSupabaseRouteClient(request)`,
+ * which forwards `Authorization: Bearer <jwt>` (the ONLY transport the Flutter app
+ * uses) to PostgREST under the anon key and falls back to the cookie session client
+ * for web. RLS enforced on both paths; service-role is never used for the RPC.
  *
  * Auth boundary (P9): authorizeRequest('quiz.attempt') + JWT/body studentId
  * cross-check (403 on mismatch). Idempotency-Key (UUID) is REQUIRED (400).
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
@@ -52,6 +68,19 @@ import {
   prepareQuizTelemetry,
   type QuizTelemetryPre,
 } from '@alfanumrik/lib/quiz/post-submit-telemetry';
+import {
+  authTransportLabel,
+  isPermanentRpcFailure,
+  isOwnershipGuardDenial,
+  OWNERSHIP_DENIED_CODE,
+  OWNERSHIP_DENIED_MESSAGE,
+  OWNERSHIP_DENIED_OPS_CATEGORY,
+  OWNERSHIP_DENIED_OPS_MESSAGE,
+  RPC_PERMANENT_CODE,
+  RPC_PERMANENT_MESSAGE,
+  RPC_TRANSIENT_CODE,
+  RPC_TRANSIENT_MESSAGE,
+} from '@alfanumrik/lib/quiz/rpc-error-classification';
 import { resolveGradingIdempotencyKey } from '@alfanumrik/lib/quiz/idempotency';
 
 /**
@@ -314,7 +343,18 @@ export const POST = withRoute(async (request: NextRequest) => {
 
   // JWT-bound client so the RPC's SECURITY DEFINER auth.uid() guard sees the
   // calling student (same as /api/quiz/submit).
-  const supabaseUser = await createSupabaseServerClient();
+  //
+  // BOTH transports are handled: `createSupabaseRouteClient` forwards an
+  // `Authorization: Bearer <jwt>` to PostgREST under the anon key, and falls
+  // back to the cookie session client (`createSupabaseServerClient()`) for web
+  // callers. RLS is enforced on both paths; the service-role key is never used.
+  // This comment used to sit above the COOKIE-ONLY client — the intent was
+  // always right, the code never matched it. The entire Flutter app is
+  // Bearer-only and posts here, so every mobile caller reached PostgREST as
+  // role `anon`; `submit_quiz_results_v2` is granted only to `authenticated,
+  // service_role`, so every mobile submission raised SQLSTATE 42501 and was
+  // mis-reported as a transient 503 (P0, 2026-08-12).
+  const supabaseUser = await createSupabaseRouteClient(request);
 
   // 6. Call submit_quiz_results_v2 with the SAME args as /api/quiz/submit.
   let rpcData: QuizV2Result | null = null;
@@ -344,7 +384,60 @@ export const POST = withRoute(async (request: NextRequest) => {
   if (rpcErr) {
     const msg = rpcErr.message || '';
 
-    // P0001 — session_not_started → 409.
+    // P0001 (a) — the SECURITY DEFINER OWNERSHIP-GUARD denial. MUST be tested
+    // BEFORE the session_not_started branch: a bare `RAISE EXCEPTION` in
+    // PL/pgSQL is SQLSTATE P0001, so the guard's
+    // 'Access denied: caller does not own student %' and the routine
+    // 'session_not_started' arrive with the SAME code. Ordering is the only
+    // thing separating them; the message test is exact, so a legitimate
+    // session_not_started can never fall in here.
+    //
+    // Previously this collapsed into the 409 below — a genuine cross-student
+    // submission got "session not started, please restart" and ops got nothing.
+    if (isOwnershipGuardDenial(rpcErr)) {
+      logger.error('v2.quiz.submit: RPC ownership guard denied', {
+        error: new Error('ownership_guard_denied'),
+        sessionId: body.sessionId,
+        studentId: body.studentId,
+        authUserId: auth.userId,
+      });
+      // AWAITED, unlike the sibling RPC-failure event below which is `void`ed.
+      // A serverless invocation can be torn down as soon as the response is
+      // returned, so a fire-and-forget write is a write that may never land —
+      // acceptable for a scoring-failure metric, not for the only record that a
+      // cross-student attempt happened. This path is by definition rare and
+      // abnormal, so the added latency costs nothing real. logOpsEvent never
+      // throws (DB failures degrade to console.warn), so awaiting cannot turn a
+      // 403 into a 500.
+      await logOpsEvent({
+        category: OWNERSHIP_DENIED_OPS_CATEGORY,
+        severity: 'error',
+        source: 'api/v2/quiz/submit/route.ts',
+        message: OWNERSHIP_DENIED_OPS_MESSAGE,
+        subjectType: 'student',
+        subjectId: body.studentId,
+        context: {
+          // Server-side forensic correlation only. The raw RPC message is NOT
+          // logged: it interpolates the same student id already carried in
+          // `student_id`, so it would add nothing but a second copy.
+          rpc_code: rpcErr.code ?? null,
+          guard: 'student_ownership',
+          session_id: body.sessionId,
+          student_id: body.studentId,
+          auth_user_id: auth.userId,
+          // Same Bearer test the route client applies — a `Basic` header is NOT
+          // a Bearer caller, and mislabelling it would send a forensic
+          // investigation after the wrong client.
+          transport: authTransportLabel(request),
+        },
+      });
+      // 403, no `retryable`. The mobile drain classifies 4xx → discard, which
+      // is the correct disposition for an attempt the caller is not entitled to
+      // make. P13: no identifier and no SQL text in the body.
+      return v2Error(OWNERSHIP_DENIED_MESSAGE, 403, OWNERSHIP_DENIED_CODE);
+    }
+
+    // P0001 (b) — session_not_started → 409. Unchanged byte-for-byte.
     if (msg.startsWith('session_not_started') || rpcErr.code === 'P0001') {
       return v2Error('session_not_started', 409, 'SESSION_NOT_STARTED');
     }
@@ -406,33 +499,51 @@ export const POST = withRoute(async (request: NextRequest) => {
       // else fall through to 503 — the cached row is on its way.
     }
 
-    // Any other failure → 503 so the client retries with the same key.
+    // PERMANENT vs TRANSIENT. A missing grant (42501), a missing/undeployed RPC
+    // (42883 / PGRST202) or a CHECK violation (23514) can NEVER be resolved by
+    // replaying the same request with the same Idempotency-Key — reporting them
+    // as a transient 503 made the Flutter drain queue (`5xx → retain`) retry
+    // forever. See src/lib/quiz/rpc-error-classification.ts for the rationale.
+    const permanent = isPermanentRpcFailure(rpcErr);
+
+    // Ops is paged for BOTH classes at severity `error` — a permanent failure is
+    // strictly more urgent, so it keeps (and flags) the same page.
     logger.error('v2.quiz.submit: RPC failed', {
       error: new Error(rpcErr.message),
       sessionId: body.sessionId,
       studentId: body.studentId,
+      permanent,
     });
     void logOpsEvent({
       category: 'quiz',
       severity: 'error',
       source: 'api/v2/quiz/submit/route.ts',
-      message: 'submit_quiz_results_v2_failed',
+      message: permanent
+        ? 'submit_quiz_results_v2_failed_permanent'
+        : 'submit_quiz_results_v2_failed',
       context: {
         rpc_error: rpcErr.message,
         rpc_code: rpcErr.code ?? null,
+        failure_class: permanent ? 'permanent' : 'transient',
         session_id: body.sessionId,
         student_id: body.studentId,
       },
     });
-    return v2Error(
-      'Temporary scoring failure — retry with same Idempotency-Key',
-      503,
-      'RPC_FAILED',
-    );
+
+    if (permanent) {
+      // 500 (NOT 4xx): the drain classifies `4xx → discard`, and discarding
+      // would throw away the student's captured offline attempt. `retryable:
+      // false` is the machine-readable signal that lets the client stop retrying
+      // WITHOUT losing the data. The message never says "retry".
+      return v2Error(RPC_PERMANENT_MESSAGE, 500, RPC_PERMANENT_CODE, false);
+    }
+
+    // Genuine transient → 503 so the client retries with the same key.
+    return v2Error(RPC_TRANSIENT_MESSAGE, 503, RPC_TRANSIENT_CODE, true);
   }
 
   if (!rpcData) {
-    return v2Error('Empty response from scoring engine', 503, 'EMPTY_RESPONSE');
+    return v2Error('Empty response from scoring engine', 503, 'EMPTY_RESPONSE', true);
   }
 
   // 8. Post-RPC side-effects — FULL PARITY with /api/quiz/submit. The SAME

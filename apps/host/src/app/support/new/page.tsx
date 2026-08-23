@@ -21,6 +21,7 @@ import {
   LoadingFoxy,
   FormField,
 } from '@alfanumrik/ui/ui';
+import { supportSlaLine } from '@alfanumrik/lib/support/response-sla';
 
 type TicketCategory = 'bug' | 'billing' | 'content' | 'account' | 'other';
 type TicketPriority = 'low' | 'normal' | 'high';
@@ -236,8 +237,12 @@ export default function SupportNewPage() {
             <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
               {isHi ? 'नया टिकट' : 'New ticket'}
             </h1>
+            {/* SLA copy is CEO-set and lives ONLY in
+                @alfanumrik/lib/support/response-sla. This line previously
+                promised "within 24 hours", which contradicted the published
+                promise everywhere else. Never inline a number here. */}
             <p className="text-xs" style={{ color: 'var(--text-3)' }}>
-              {isHi ? 'हम 24 घंटे में जवाब देंगे' : "We'll respond within 24 hours"}
+              {supportSlaLine(isHi)}
             </p>
           </div>
         </div>

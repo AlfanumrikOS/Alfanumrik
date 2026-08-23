@@ -14,9 +14,10 @@
  *   3. Publishes `learner.lesson_completed` exactly once per first
  *      completion — never on subsequent activity touches.
  *
- * Auth: cookie-based session client (matches /api/learner/next), so
- * auth.uid() inside the SECURITY DEFINER RPC sees the actual learner.
- * The route refuses if the learner has no `students` row.
+ * Auth: Bearer-aware, RLS-scoped session client (`createSupabaseRouteClient`),
+ * so auth.uid() inside the SECURITY DEFINER RPC sees the actual learner on BOTH
+ * the cookie (web) and `Authorization: Bearer` (mobile) transports. The route
+ * refuses if the learner has no `students` row.
  *
  * Idempotency: key is `lesson_completed:{progressId}` (the
  * chapter_progress row id). The bus's UNIQUE constraint dedupes if a
@@ -37,7 +38,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
@@ -58,7 +59,22 @@ const RequestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const supabase = await createSupabaseServerClient();
+  // Bearer-aware, still RLS-scoped. `createSupabaseRouteClient` forwards an
+  // `Authorization: Bearer <jwt>` to PostgREST under the anon key and delegates
+  // verbatim to the cookie client (`createSupabaseServerClient()`) when there is
+  // no Bearer header — so today's only caller (`updateChapterProgress()` in
+  // packages/lib/src/supabase.ts, a browser fetch on the session cookie) is
+  // byte-identical.
+  //
+  // The swap matters for the same reason it did on quiz submit:
+  // `update_chapter_progress` is SECURITY DEFINER with the same
+  // `auth.uid() IS NOT NULL AND NOT EXISTS (...)` ownership guard, which is
+  // SKIPPED when auth.uid() is NULL — so a Bearer caller would have arrived as
+  // `anon` with the DB-level guard disarmed, and would have depended on a
+  // residual PUBLIC EXECUTE grant (the `REVOKE EXECUTE ... FROM anon` in
+  // migration 20260515000002 is a no-op while PUBLIC still grants it) that the
+  // anon-revocation campaign is removing.
+  const supabase = await createSupabaseRouteClient(request);
 
     const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
     if (!auth.authorized || !auth.userId) {
@@ -164,7 +180,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function readProgressRow(
-  sb: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  sb: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
   studentId: string,
   subject: string,
   grade: string,

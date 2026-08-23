@@ -60,6 +60,12 @@ function makeSyntheticAction(kind: typeof ALL_ACTION_KINDS[number]): LearnerActi
         kind, url: '/learn/x/2?mode=read&from=new_topic',
         subjectCode: 'x', chapterNumber: 2, reason: 'unstarted_chapter_available',
       };
+    case 'check_what_you_learned':
+      return {
+        kind, url: '/quiz?subject=x&chapter=1&mode=comprehension',
+        subjectCode: 'x', chapterNumber: 1, progressPct: 0.3,
+        reason: 'completed_but_unchecked',
+      };
     case 'resume_in_progress':
       return {
         kind, url: '/learn/x/1', liveKind: 'in_lesson',

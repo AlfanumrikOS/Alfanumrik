@@ -29,7 +29,7 @@
  * ADR: docs/architecture/ADR-001-learner-loop-unification.md
  */
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { createSupabaseRouteClient } from '@alfanumrik/lib/supabase-route';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
@@ -52,10 +52,19 @@ export const dynamic = 'force-dynamic';
 const FLAG_NAME = 'ff_learner_loop_v1';
 const SCHEDULED_FLAG_NAME = 'ff_scheduled_actions_v1';
 
-export async function GET(_request: Request) {
-  const supabase = await createSupabaseServerClient();
+export async function GET(request: Request) {
+  // Bearer-AWARE, RLS-respecting client. The cookie-only
+  // createSupabaseServerClient() NULLed auth.uid() for `Authorization: Bearer`
+  // callers (the entire Flutter app), so createStudentStateBuilder's RLS reads
+  // denied and this route answered a spurious 404 no_student_profile.
+  // createSupabaseRouteClient forwards the caller's JWT under the anon key on
+  // the Bearer path and delegates to the cookie client for web. Never
+  // service-role; RLS enforced on both paths. (The scheduled_actions
+  // write-through below deliberately keeps its own service-role client — the
+  // bus/projection tables are RLS-locked to service_role.)
+  const supabase = await createSupabaseRouteClient(request);
 
-  const auth = await authorizeRequest(_request, 'study_plan.view', { requireStudentId: true });
+  const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
   if (!auth.authorized || !auth.userId) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
@@ -99,6 +108,7 @@ export async function GET(_request: Request) {
       dueReviewCount: 0,
       attemptedQuizToday: false,
       inProgressLessons: [],
+      completedLessons: [],
     };
   }
 

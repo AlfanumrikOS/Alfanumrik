@@ -51,7 +51,8 @@ export type TodayItemType =
   | 'new_topic'
   | 'weekly_dive_due'
   | 'monthly_synthesis_due'
-  | 'practice_weakest';
+  | 'practice_weakest'
+  | 'completed_lesson_check';
 
 /** A parsed, navigable deep link derived from a `LearnerAction.url`. */
 export interface TodayDeepLink {

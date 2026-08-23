@@ -688,7 +688,8 @@ export interface LearnerNextResolvedPayload {
     | 'continue_lesson'
     | 'introduce_new_topic'
     | 'weekly_dive'
-    | 'monthly_synthesis';
+    | 'monthly_synthesis'
+    | 'check_what_you_learned'; // Step 4 — chapter-read completion review
   /** Closed-set reason key the branch emitted. Stable for facet analysis. */
   reason: string;
   /** Resolver inputs at decision time — small ints, useful for funnel slicing. */

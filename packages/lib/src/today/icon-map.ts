@@ -19,6 +19,8 @@ const ICON_BY_HINT: Record<string, string> = {
   'book-open':    '📖',
   'telescope':    '🔭',
   'scroll':       '📜',
+  // Step 4 bridge: completed-lesson comprehension check.
+  'refresh-quiz': '📝',
   // Phase 3A Wave A — teacher-assigned remediation ("from your teacher").
   'teacher-badge': '👩‍🏫',
 };
