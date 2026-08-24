@@ -80,6 +80,12 @@ export {
   type BottomSheetProps,
 } from './BottomSheet';
 export { Tooltip, type TooltipProps, type TooltipSide } from './Tooltip';
+export {
+  Menu,
+  type MenuProps,
+  type MenuItem,
+  type MenuPlacement,
+} from './Menu';
 
 /* ── Feedback / Navigation / Data primitives (Batch B3) ── */
 export {
@@ -124,10 +130,15 @@ export {
   useFocusTrap,
   useEscapeKey,
   usePresence,
+  usePopoverPosition,
   type PortalProps,
   type ScrimProps,
   type UseFocusTrapOptions,
   type UsePresenceResult,
+  type PopoverPlacement,
+  type PopoverCoords,
+  type UsePopoverPositionOptions,
+  type UsePopoverPositionResult,
 } from './overlay';
 
 export { type Tone, type ActionVariant, type ControlSize } from './tokens';

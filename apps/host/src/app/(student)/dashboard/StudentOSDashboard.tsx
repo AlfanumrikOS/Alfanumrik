@@ -317,15 +317,15 @@ export default function StudentOSDashboard() {
       rail={
         // Tablet+ left rail: the mastery snapshot lives here so "where am I?"
         // sits alongside "what now?".
-        <div className="p-2">
-          <MasterySnapshot isHi={isHi} studentId={student.id} />
-        </div>
+        // No wrapper padding — .app-shell-rail already applies var(--space-fluid-5)
+        // in globals.css; the extra p-2 only ate horizontal budget in a rail that
+        // hard-clips its overflow.
+        <MasterySnapshot isHi={isHi} studentId={student.id} />
       }
       aside={
         // Desktop-only right aside: the secondary revision surface.
-        <div className="p-2">
-          <RevisionRail isHi={isHi} studentId={student.id} />
-        </div>
+        // Same as the rail — .app-shell-aside supplies its own padding.
+        <RevisionRail isHi={isHi} studentId={student.id} />
       }
     >
       <div className="flex flex-col gap-5 px-4 pt-2 pb-6">

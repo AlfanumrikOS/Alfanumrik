@@ -44,7 +44,9 @@
 
   /* Brand */
   --orange: #E8581C;
-  --orange-rgb: 232, 88, 28;        /* use as rgb(var(--orange-rgb) / <alpha>) for opacity stacks */
+  --orange-rgb: 232 88 28;          /* use as rgb(var(--orange-rgb) / <alpha>) for opacity stacks.
+                                       Space-separated is REQUIRED — the comma form silently
+                                       invalidates every rgb(var(--x-rgb) / <alpha>) consumer. */
   --orange-light: #FF7A3D;
   /* STABLE WARM CHANNEL (Alfa Momentum, Wave 2).
      --orange-rgb is REMAPPED to violet (139,126,255) under the cosmic-LIGHT
@@ -53,8 +55,10 @@
      stays burnt-orange (232,88,28) on EVERY surface, giving a stable channel for
      warm-orange alpha tints on the dashboard. Use rgb(var(--accent-warm-rgb)/α)
      wherever a warm-orange tint must remain warm regardless of design scope.
-     Re-declared identically inside the cosmic-light block so it is NOT remapped. */
-  --accent-warm-rgb: 232, 88, 28;
+     Re-declared identically inside the cosmic-light block so it is NOT remapped.
+     Space-separated is REQUIRED — the comma form silently invalidates every
+     rgb(var(--x-rgb) / <alpha>) consumer. */
+  --accent-warm-rgb: 232 88 28;
   /* Solid warm-channel stops (Alfa Momentum, Wave 3 — Foxy). These were
      previously only declared inside the cosmic-LIGHT block; declaring them
      here in :root too means `var(--accent-warm)` / `var(--accent-warm-strong)`
@@ -66,7 +70,7 @@
   --gold: #F5A623;
   --teal: #0891B2;
   --green: #16A34A;
-  --green-rgb: 22, 163, 74;         /* for rgb(var(--green-rgb) / <alpha>) — added
+  --green-rgb: 22 163 74;           /* for rgb(var(--green-rgb) / <alpha>) — added
                                        Wave B (2026-08-02): OfflineState.tsx and
                                        ExamSchedule.tsx read this via a hardcoded
                                        CSS fallback (rgb(var(--green-rgb, 22 163 74) / …)),
@@ -78,13 +82,19 @@
                                        Scoped to :root only — the cosmic-light surface
                                        below declares its OWN --green/--green-rgb pair
                                        (#15803D / 21,128,61) for its own darker green;
-                                       that block is untouched. */
+                                       that block is untouched.
+                                       Space-separated is REQUIRED — the comma form silently
+                                       invalidates every rgb(var(--x-rgb) / <alpha>) consumer. */
   --purple: #7C3AED;
-  --purple-rgb: 124, 58, 237;       /* for rgb(var(--purple-rgb) / <alpha>) */
+  --purple-rgb: 124 58 237;         /* for rgb(var(--purple-rgb) / <alpha>).
+                                       Space-separated is REQUIRED — the comma form silently
+                                       invalidates every rgb(var(--x-rgb) / <alpha>) consumer. */
   --purple-light: #9333EA;
   --pink: #DB2777;
   --red: #DC2626;
-  --marigold-rgb: 245, 166, 35;     /* channel for the --gold/marigold; rgb(var(--marigold-rgb) / <alpha>) */
+  --marigold-rgb: 245 166 35;       /* channel for the --gold/marigold; rgb(var(--marigold-rgb) / <alpha>).
+                                       Space-separated is REQUIRED — the comma form silently
+                                       invalidates every rgb(var(--x-rgb) / <alpha>) consumer. */
 
   /* ─── Base semantic / status tokens (Alfa Momentum, Wave 6) ──────────────
      These semantic aliases were previously declared ONLY inside the cosmic
@@ -1826,6 +1836,14 @@ body.foxy-body-lock {
   background:
     radial-gradient(120% 140% at 0% 0%, rgb(var(--accent-warm-rgb) / 0.20) 0%, transparent 46%),
     linear-gradient(135deg, #241a2e 0%, #16263f 100%);
+  /* Opaque floor, declared AFTER the shorthand above (which resets background-color
+     to transparent). If any layer of that multi-layer shorthand ever becomes invalid
+     at computed-value time — e.g. a --accent-warm-rgb regression back to the
+     comma-separated form, which makes rgb(232, 88, 28 / 0.20) invalid and drops the
+     WHOLE shorthand — this keeps the band dark instead of rendering the hardcoded
+     white header text on the cream page background. Matches the gradient's opaque
+     end stop, so there is no visual change when the shorthand parses correctly. */
+  background-color: #16263f;
   border-bottom: 1px solid rgb(var(--accent-warm-rgb) / 0.18);
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
 }
@@ -2149,6 +2167,21 @@ body.foxy-body-lock {
 .app-shell-v2 .prose-cap {
   max-width: var(--reading-max);
   margin-inline: auto;
+}
+
+/* ── Wider rail for the student dashboard shell ───────────────────
+   Scoped to the student dashboard via the `student-os-shell` class that
+   StudentOSDashboard already passes to the AppShell root — the global
+   `--layout-max-rail: 220px` default stays untouched for every other
+   surface. 220px is too narrow for the MASTERY card's bucket labels
+   ("Needs Revision" / "दोहराना जरूरी" ≈ 100px), and .app-shell-rail sets
+   `overflow-y: auto`, which makes it a scroll container on BOTH axes and
+   hard-clips the overflow rather than letting it spill. Declaring the
+   custom property here (outside any media query) lets it inherit into
+   both the >=768px and >=1024px `grid-template-columns` rules below
+   without duplicating or editing those rules. */
+.app-shell-v2.student-os-shell {
+  --layout-max-rail: clamp(220px, 22vw, 300px);
 }
 
 /* ── Tablet: 768px+ ──────────────────────────────────────────── */
@@ -3674,7 +3707,7 @@ html[data-design="cosmic"] {
   /* brand */
   --orange: var(--violet);
   --orange-light: var(--violet-2);
-  --orange-rgb: 139, 126, 255;
+  --orange-rgb: 139 126 255;
   /* .btn-primary reads these; on cosmic they track the violet brand so the
      cosmic primary button renders exactly as before Phase 1 (was
      var(--orange)→var(--orange-light), which is violet under this scope). */
@@ -3682,7 +3715,7 @@ html[data-design="cosmic"] {
   --btn-primary-to: var(--orange-light);
   --purple: var(--violet);
   --purple-light: var(--violet-2);
-  --purple-rgb: 139, 126, 255;
+  --purple-rgb: 139 126 255;
   --gold: var(--saffron);
   --teal: var(--cyan);
   --green: var(--mint);
@@ -3819,7 +3852,7 @@ html[data-design="cosmic"][data-theme="light"] {
      violet (--purple / --orange-rgb) stays the deliberate AI/cosmic accent. */
 
   /* Stable warm channel — NOT remapped to violet here (cf. base cosmic block). */
-  --accent-warm-rgb: 232, 88, 28;
+  --accent-warm-rgb: 232 88 28;
   --accent-warm: #E8581C;
   --accent-warm-strong: #C2440F;   /* darker warm stop for CTA gradients */
 
@@ -3837,11 +3870,11 @@ html[data-design="cosmic"][data-theme="light"] {
   /* Semantic mastery/status palette — saturated for the cream light surface
      (the inherited mint/coral/saffron pastels wash out on #F4F1EA). */
   --green: #15803D;        /* mastered / strong */
-  --green-rgb: 21, 128, 61;
+  --green-rgb: 21 128 61;
   --red: #DC2626;          /* critical / danger */
   --danger: #DC2626;
   --purple: #7C3AED;       /* needs-revision / weak — deliberate violet accent */
-  --purple-rgb: 124, 58, 237;
+  --purple-rgb: 124 58 237;
   --mastery-low: #DC2626;
   --mastery-mid: #E8581C;
   --mastery-high: #15803D;
@@ -4411,7 +4444,7 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
    touching PremiumCard or the global cosmic remap. */
 .os-mission {
   --orange: var(--accent-warm, #E8581C);
-  --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232, 88, 28) / 0.22);
+  --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232 88 28) / 0.22);
 }
 
 /* Wave 4a (Alfa Momentum — Learn/Exams): scope-override --orange + its glow to
@@ -4423,7 +4456,7 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
 .warm-cta {
   --orange: var(--accent-warm, #E8581C);
   --orange-light: var(--accent-warm-strong, #C2440F);
-  --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232, 88, 28) / 0.22);
+  --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232 88 28) / 0.22);
 }
 
 /* Wave 2 (Alfa Momentum): tasteful staggered reveal for the secondary dashboard
