@@ -18,6 +18,7 @@ import {
   REVISION_OS_FLAGS,
   PRACTICE_OS_FLAGS,
   TEST_OS_FLAGS,
+  NAV_GROUPS_FLAGS,
 } from './registries/consumer';
 import {
   TEACHER_COMMAND_CENTER_FLAGS,
@@ -101,6 +102,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [REVISION_OS_FLAGS.V1]: false,
   [PRACTICE_OS_FLAGS.V1]: false,
   [TEST_OS_FLAGS.V1]: false,
+  [NAV_GROUPS_FLAGS.V1]: false, // seeded OFF by 20260824120000_seed_ff_nav_groups_v1.sql
   [EDUCATION_INTELLIGENCE_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql
   [PRINCIPAL_AI_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql (ENABLEMENT gated on ai-engineer P12 + 20260616010000 apply)
   [FOXY_OS_FLAGS.V1]: false,

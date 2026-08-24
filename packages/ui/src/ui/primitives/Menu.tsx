@@ -189,11 +189,28 @@ export function Menu({
   const { mounted, visible } = usePresence(isOpen, 140);
   const panelReady = mounted && panelNode !== null;
 
-  const { coords } = usePopoverPosition(triggerRef, panelRef, {
-    placement,
-    gap,
-    enabled: panelReady,
-  });
+  // `resolvedPlacement` is the placement AFTER flipping — the hook's whole
+  // reason for returning it. It was previously discarded and `data-placement`
+  // rendered the raw PROP, so a menu that flipped (bottom → top because the
+  // trigger sits near the viewport floor) still advertised its unflipped
+  // preference. Anything keying off that attribute — enter-animation origin,
+  // arrow direction, a visual-regression assertion — was reading a value the
+  // panel had already stopped honouring.
+  //
+  // The prop is the fallback for the render BEFORE the first measurement,
+  // where the hook has not resolved anything yet. It is NOT gated on
+  // `measured`: usePopoverPosition's JSDOM contract is explicit that callers
+  // must never gate on a non-zero measurement, and the flip decision is real
+  // arithmetic on real (if zero) rects either way.
+  const { coords, placement: resolvedPlacement } = usePopoverPosition(
+    triggerRef,
+    panelRef,
+    {
+      placement,
+      gap,
+      enabled: panelReady,
+    },
+  );
 
   // Registered on the shared stack so Escape / Tab act on the FRONTMOST
   // overlay only (a Menu opened inside a Dialog must not close both).
@@ -430,7 +447,7 @@ export function Menu({
               aria-orientation="vertical"
               aria-label={label}
               tabIndex={-1}
-              data-placement={placement}
+              data-placement={resolvedPlacement ?? placement}
               onKeyDown={onPanelKeyDown}
               className={cn(
                 'absolute flex max-h-[min(70dvh,28rem)] min-w-[12rem] max-w-[18rem] flex-col overflow-y-auto',

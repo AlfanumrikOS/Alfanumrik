@@ -1,7 +1,7 @@
 {
   "source": "packages/lib/src/flags/defaults.ts",
   "registryRoot": "packages/lib/src/flags/registries",
-  "flagCount": 139,
+  "flagCount": 140,
   "flags": [
     {
       "name": "ff_adaptive_live_selection_v1",
@@ -683,6 +683,15 @@
       "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=0.",
       "source": "scripts/feature-flag-matrix.overrides.json",
       "rolloutPercentage": 0
+    },
+    {
+      "name": "ff_nav_groups_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "consumer-experience",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it (seeded OFF by 20260824120000_seed_ff_nav_groups_v1.sql).",
+      "source": "packages/lib/src/flags/registries/consumer.ts"
     },
     {
       "name": "ff_offline_payment_reconciliation_v1",

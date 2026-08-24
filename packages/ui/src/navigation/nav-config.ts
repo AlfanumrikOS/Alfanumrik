@@ -87,6 +87,40 @@ export const CORE_TABS = [
   { id: 'progress', href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति', altHrefs: [] },
 ] as const;
 
+/**
+ * The single launch flag for the grouped secondary navigation (2026-08-24,
+ * CEO-directed). Declared ABOVE MORE_ITEMS on purpose — `const` is in the TDZ
+ * until its initialiser runs, and MORE_ITEMS references it at module-eval
+ * time, so declaring it lower down would throw on import.
+ *
+ * ONE flag for the whole feature. Every added row in MORE_ITEMS and every
+ * added section in SIDEBAR_SECTIONS carries it, so a single OFF value makes
+ * the entire change invisible at all three breakpoints (empty groups are
+ * skipped by NavMoreSheet and empty sections by DesktopSidebar) rather than
+ * leaving half a projection behind.
+ *
+ * The flag ROW is architect-owned — registry entry `NAV_GROUPS_FLAGS.V1` in
+ * packages/lib/src/flags/registries/consumer.ts, default OFF in
+ * flags/defaults.ts, seeded OFF/0% by
+ * 20260824120000_seed_ff_nav_groups_v1.sql. This module only names it, as a
+ * string literal, matching how every other nav row states its flag
+ * (`flagName: 'ff_me_v2'`) and what nav-config's own tests assert against. If
+ * the registry ever renames the flag, this literal must move with it.
+ */
+export const NAV_GROUPS_FLAG = 'ff_nav_groups_v1';
+
+/**
+ * Group keys the TABLET rail projects as anchored `Menu` flyouts instead of
+ * rows inside the More sheet. Same membership, same labels, same order — only
+ * the control differs (IA law 2 constrains the ITEMS, not the chrome). The
+ * rail is ~72px wide, so a dropdown beats a full-width sheet section there.
+ *
+ * TabletNavRail also EXCLUDES these keys from the sheet it opens, because a
+ * row that is reachable from both the flyout and the sheet at the same
+ * breakpoint is the one-destination-two-places violation (IA law 1).
+ */
+export const NAV_GROUP_FLYOUT_KEYS: readonly string[] = ['practice', 'explore'];
+
 // ─── PHASE 3 IA TRIM (2026-08-10) ──────────────────────────────────────────
 //
 // MORE_ITEMS carried 18 rows and SIDEBAR_SECTIONS 22 links. The primary
@@ -128,6 +162,61 @@ export const MORE_ITEMS = [
   { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब', group: 'study' },
   // /practice is NOT listed here — it is primary slot 2. See the PRACTICE FLAG
   // CONTRACT note on resolveStudentPrimaryNav().
+
+  // ─── GROUPED SECONDARY NAV (ff_nav_groups_v1, 2026-08-24) ───────────────
+  //
+  // CEO-directed. The Phase 3 IA trim above records nine live student routes
+  // that were deliberately left with ZERO navigation affordance — reachable
+  // only from notifications, teacher links and Foxy deep links. Re-surfaced
+  // here as two GROUPS rather than nine loose rows, so the overflow does not
+  // go back to being the flat, unranked second product surface the trim
+  // removed. Every row below carries `flagName: NAV_GROUPS_FLAG`, so with the
+  // flag OFF isItemVisibleForFlags() drops all of them, both groups go empty,
+  // and NavMoreSheet's empty-group skip means not even a header renders — the
+  // whole feature self-hides and the Phase 3 IA is byte-for-byte intact.
+  //
+  // WHAT IS DELIBERATELY ABSENT, and why (IA law: one destination = one name
+  // = one icon, one place per breakpoint):
+  //   /quiz        — the Practice primary slot's altHref (PRACTICE FLAG
+  //                  CONTRACT). A row here as well would be the exact
+  //                  two-places-one-route violation this file keeps recording.
+  //   /simulations — NOT a destination. It is a legacy alias that does
+  //                  `router.replace('/stem-centre')`
+  //                  (apps/host/src/app/(student)/simulations/page.tsx), and
+  //                  /stem-centre is already the row named "STEM Lab" 🔬 in
+  //                  the Study group directly above. Listing both would put
+  //                  one destination under two names at one breakpoint — the
+  //                  same defect as the old "Home"/"Dashboard" pair.
+  //   /mock-exam   — does not exist. Mock exams live at
+  //                  /exams/mock/[paperId], which is why the group links
+  //                  /exams (the "My Exams" hub) instead.
+  //   /exam-briefing, /exam-prep, /refresh — still un-surfaced. Out of scope
+  //                  for this change; they remain deep-link-only.
+  //
+  // Labels are each screen's OWN name, not an invented one, so the nav and
+  // the page agree (e.g. /pyq's own h1 is "PYQ Practice" / "पिछले साल के
+  // प्रश्न", /revision's is "Revision Center" / "दोहराव केंद्र").
+
+  // Practice & Tests — the practice surfaces that own no primary slot.
+  { href: '/pyq', icon: '📄', label: 'PYQ Practice', labelHi: 'पिछले साल के प्रश्न', flagName: NAV_GROUPS_FLAG, group: 'practice' },
+  // /revision 404s (notFound()) when ff_revision_os_v1 is OFF. That flag has
+  // been enabled globally at 100% since migration 20260722104300 and was
+  // explicitly left ON by 20260802110000, so this row leads somewhere for
+  // every student today. If ff_revision_os_v1 is ever rolled back, ROLL THIS
+  // ROW BACK WITH IT — a nav row that 404s is worse than no row.
+  { href: '/revision', icon: '🔁', label: 'Revision Center', labelHi: 'दोहराव केंद्र', flagName: NAV_GROUPS_FLAG, group: 'practice' },
+  { href: '/assignments', icon: '📝', label: 'Assignments', labelHi: 'असाइनमेंट', flagName: NAV_GROUPS_FLAG, group: 'practice' },
+  { href: '/exams', icon: '🗓️', label: 'My Exams', labelHi: 'मेरी परीक्षाएँ', flagName: NAV_GROUPS_FLAG, group: 'practice' },
+
+  // Explore — the browse/discovery surfaces. /dive and /synthesis are
+  // Pedagogy v2 surfaces that render an explanatory "not available yet" panel
+  // WITH a way back when their own flags are off (they never 404), so they are
+  // safe nav rows in every flag state.
+  { href: '/learn', icon: '📚', label: 'Subjects', labelHi: 'विषय', flagName: NAV_GROUPS_FLAG, group: 'explore' },
+  { href: '/dive', icon: '🌊', label: 'Curiosity Dive', labelHi: 'जिज्ञासा डाइव', flagName: NAV_GROUPS_FLAG, group: 'explore' },
+  { href: '/synthesis', icon: '🧩', label: 'Monthly Synthesis', labelHi: 'मासिक सारांश', flagName: NAV_GROUPS_FLAG, group: 'explore' },
+  { href: '/library', icon: '📖', label: 'NCERT Library', labelHi: 'NCERT पुस्तकालय', flagName: NAV_GROUPS_FLAG, group: 'explore' },
+
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल', group: 'account' },
   // Wave B gap screen 16 "Me" — flag-gated (ff_me_v2). Additive presentation
   // layer over /profile (apps/host/src/app/me/page.tsx); only appears once
@@ -145,21 +234,50 @@ export const MORE_ITEMS = [
  *  MORE_ITEMS entry references these. Ungrouped items render at the top, then
  *  groups in this order. Mirrors SIDEBAR_SECTIONS' Utilities/Study/Account
  *  sections so both projections share the same mental model (IA law). */
-export const MORE_SHEET_GROUPS: { key: string; en: string; hi: string }[] = [
+export const MORE_SHEET_GROUPS: {
+  key: string;
+  en: string;
+  hi: string;
+  /** Rail-flyout glyph. Rendered only by the tablet projection; the More
+   *  sheet's headers stay text-only, exactly as they were. */
+  icon?: string;
+}[] = [
   // Utilities first — reminders and the memory screen are the things a
   // student reaches for mid-session. Foxy itself left this group on
   // 2026-08-24 (CEO-directed IA reversal) and is now primary slot 3; the
   // group still has two members, so the header still renders.
   { key: 'utilities', en: 'Utilities', hi: 'उपयोगिताएँ' },
   { key: 'study', en: 'Study', hi: 'पढ़ाई' },
-  { key: 'account', en: 'Account', hi: 'खाता' },
-  // The "Practice" group is GONE (Phase 3 trim). It held the practice surfaces
+  // ─── "practice" RESTORED WITH MEMBERS (2026-08-24, CEO-directed) ───────
+  //
+  // SUPERSEDES the note that stood here from the 2026-08-10 Phase 3 trim,
+  // which read: "The 'Practice' group is GONE. It held the practice surfaces
   // that did not get a primary slot — /assignments, /pyq, /mock-exam,
   // /exam-briefing, /exam-prep — all of which left the nav, so the key had no
   // member left and NavMoreSheet (which skips empty groups) would never have
   // rendered the header again. Leaving a key that can match nothing is
-  // indistinguishable from one that has nothing to match YET, so it is removed
-  // rather than kept as dead config.
+  // indistinguishable from one that has nothing to match YET, so it is
+  // removed rather than kept as dead config."
+  //
+  // That reasoning was right and is why the key was removed rather than left
+  // dead. It is re-added now for the opposite reason: it HAS members again —
+  // /pyq, /revision, /assignments, /exams, all four flag-gated on
+  // NAV_GROUPS_FLAG in MORE_ITEMS above. The empty-group skip still holds, so
+  // with the flag OFF this key matches nothing and no header renders, exactly
+  // as if it were still absent.
+  //
+  // The DISPLAY name is "Practice & Tests", not "Practice", deliberately:
+  // "Practice" ⚡ is primary slot 2 (/practice). A group header wearing the
+  // same word as a primary slot is two things called Practice at one
+  // breakpoint — a name collision of the same family as the "Me"/"My
+  // Progress" and "Home"/"Dashboard" ones this file records. The KEY stays
+  // 'practice' because it is the group's identity, not its label.
+  { key: 'practice', en: 'Practice & Tests', hi: 'अभ्यास और परीक्षा', icon: '🎯' },
+  // Explore — the browse/discovery surfaces (/learn, /dive, /synthesis,
+  // /library). Net-new key, net-new members; same NAV_GROUPS_FLAG gate.
+  { key: 'explore', en: 'Explore', hi: 'खोजें', icon: '🧭' },
+  // Account stays last in BOTH projections.
+  { key: 'account', en: 'Account', hi: 'खाता' },
 ];
 
 // The desktop projection of the SAME trimmed set as MORE_ITEMS: the primary
@@ -214,6 +332,37 @@ export const SIDEBAR_SECTIONS = [
     items: [
       { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
       { href: '/stem-centre', icon: '🔬', label: 'STEM Lab',    labelHi: 'STEM लैब' },
+    ],
+  },
+  {
+    // ─── MIRROR of the More sheet's "practice" group (2026-08-24) ────────
+    //
+    // Item-for-item, label-for-label, icon-for-icon, in the same order. That
+    // mirroring IS the point: a student who resizes from 360px to 1440px must
+    // not discover a different product (IA law 2). Every item carries the same
+    // NAV_GROUPS_FLAG as its More-sheet twin, so this section empties out
+    // wholesale with the flag OFF; DesktopSidebar drops zero-item sections so
+    // no orphan header renders.
+    //
+    // Title matches the group's display name, NOT the key — see the collision
+    // note on MORE_SHEET_GROUPS ("Practice" is primary slot 2).
+    title: 'Practice & Tests', titleHi: 'अभ्यास और परीक्षा',
+    items: [
+      { href: '/pyq', icon: '📄', label: 'PYQ Practice', labelHi: 'पिछले साल के प्रश्न', flagName: NAV_GROUPS_FLAG },
+      { href: '/revision', icon: '🔁', label: 'Revision Center', labelHi: 'दोहराव केंद्र', flagName: NAV_GROUPS_FLAG },
+      { href: '/assignments', icon: '📝', label: 'Assignments', labelHi: 'असाइनमेंट', flagName: NAV_GROUPS_FLAG },
+      { href: '/exams', icon: '🗓️', label: 'My Exams', labelHi: 'मेरी परीक्षाएँ', flagName: NAV_GROUPS_FLAG },
+    ],
+  },
+  {
+    // Mirror of the More sheet's "explore" group — same four destinations,
+    // same names, same icons, same order.
+    title: 'Explore', titleHi: 'खोजें',
+    items: [
+      { href: '/learn', icon: '📚', label: 'Subjects', labelHi: 'विषय', flagName: NAV_GROUPS_FLAG },
+      { href: '/dive', icon: '🌊', label: 'Curiosity Dive', labelHi: 'जिज्ञासा डाइव', flagName: NAV_GROUPS_FLAG },
+      { href: '/synthesis', icon: '🧩', label: 'Monthly Synthesis', labelHi: 'मासिक सारांश', flagName: NAV_GROUPS_FLAG },
+      { href: '/library', icon: '📖', label: 'NCERT Library', labelHi: 'NCERT पुस्तकालय', flagName: NAV_GROUPS_FLAG },
     ],
   },
   {

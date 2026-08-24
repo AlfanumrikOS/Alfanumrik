@@ -38,6 +38,17 @@ export interface NavMoreSheetProps {
   onClose: () => void;
   /** Current pathname, used only for the active dot. */
   pathname: string;
+  /**
+   * Group keys this projection must NOT render, because the surface that
+   * opened the sheet already surfaces them some other way. Only the TABLET
+   * rail passes this (it renders the grouped rows as anchored `Menu`
+   * flyouts): a row reachable from BOTH the flyout and the sheet at the same
+   * breakpoint is one destination in two places, which the IA law forbids.
+   *
+   * Default `[]` — the mobile projection renders every group inline, exactly
+   * as it did before, so this prop is a no-op for MobileBottomNav.
+   */
+  excludeGroupKeys?: readonly string[];
 }
 
 export function useMoreSheetItems() {
@@ -55,7 +66,12 @@ export function useMoreSheetItems() {
     .filter(passesExamGate);
 }
 
-export function NavMoreSheet({ open, onClose, pathname }: NavMoreSheetProps) {
+export function NavMoreSheet({
+  open,
+  onClose,
+  pathname,
+  excludeGroupKeys = [],
+}: NavMoreSheetProps) {
   const router = useRouter();
   const auth = useAuth();
   const isHi = auth?.isHi ?? false;
@@ -92,7 +108,16 @@ export function NavMoreSheet({ open, onClose, pathname }: NavMoreSheetProps) {
   const ungrouped = moreItems.filter((item) => !groupOf(item));
   if (ungrouped.length) groupedMoreItems.push({ items: ungrouped });
   for (const group of MORE_SHEET_GROUPS) {
+    // Surfaces that project a group some other way (the tablet rail's anchored
+    // flyouts) opt it out here so the same route is never reachable twice at
+    // one breakpoint.
+    if (excludeGroupKeys.includes(group.key)) continue;
     const items = moreItems.filter((item) => groupOf(item) === group.key);
+    // EMPTY-GROUP SKIP — load-bearing for the ff_nav_groups_v1 rollout. With
+    // the flag OFF every row in the "practice"/"explore" groups is filtered
+    // out upstream by isItemVisibleForFlags(), so `items` is empty and the
+    // header never renders. A flag-gated group therefore costs the sheet
+    // nothing until it ramps.
     if (items.length) groupedMoreItems.push({ header: { en: group.en, hi: group.hi }, items });
   }
 

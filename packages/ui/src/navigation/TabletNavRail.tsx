@@ -39,11 +39,17 @@ import {
   resolveActiveNavHref,
   resolvePrimaryActiveId,
   resolveStudentPrimaryNav,
+  MORE_SHEET_GROUPS,
+  NAV_GROUP_FLYOUT_KEYS,
   STUDENT_MORE_SLOT,
   type ResolvedNavSlot,
 } from './nav-config';
 import { NavMoreSheet, useMoreSheetItems } from './NavMoreSheet';
 import { useHasUpcomingExam } from './use-has-upcoming-exam';
+// Imported from the MODULE, not the '../ui/primitives' barrel, so the
+// always-mounted rail does not pull the whole primitive library into the
+// shared first-load chunk (P10).
+import { Menu, type MenuItem } from '../ui/primitives/Menu';
 
 export function TabletNavRail() {
   const pathname = usePathname();
@@ -93,19 +99,88 @@ export function TabletNavRail() {
   const moreItems = useMoreSheetItems();
   const getItemLock = (item: any) => getItemLockForGrade(item, studentGrade);
 
+  /* ── Grouped secondary nav (ff_nav_groups_v1) ─────────────────────────────
+   *
+   * TIER 2 PROJECTION. The mobile sheet renders these groups as inline
+   * sections; the 1024+ sidebar renders them as disclosure sections. The rail
+   * is ~72px wide, so neither fits — here they are anchored `Menu` flyouts
+   * opening to the right of their trigger.
+   *
+   * MEMBERSHIP, LABELS AND ORDER ARE IDENTICAL to the other two tiers (IA law
+   * 2 constrains the items, not the chrome) — they are read from the same
+   * MORE_ITEMS rows, already flag- and exam-filtered by useMoreSheetItems().
+   *
+   * The flyout groups are then EXCLUDED from the More sheet this rail opens
+   * (see `excludeGroupKeys` below). Without that, /pyq would be reachable from
+   * both the flyout and the sheet at 800px — one destination in two places,
+   * the IA-law-1 violation nav-config keeps recording.
+   *
+   * With the flag OFF every one of those rows is already gone, so
+   * `flyoutGroups` is empty, nothing renders, and the exclusion is a no-op:
+   * the rail is byte-for-byte what it was.
+   */
+  const groupKeyOf = (item: unknown): string | undefined =>
+    (item as { group?: string } | undefined)?.group;
+
+  const flyoutGroups = MORE_SHEET_GROUPS.filter((g) =>
+    NAV_GROUP_FLYOUT_KEYS.includes(g.key),
+  )
+    .map((group) => ({
+      key: group.key,
+      icon: group.icon ?? '▸',
+      label: isHi ? group.hi : group.en,
+      items: moreItems
+        .filter((item) => groupKeyOf(item) === group.key)
+        .map(
+          (item): MenuItem => ({
+            id: item.href,
+            href: item.href,
+            icon: item.icon,
+            label: item.label,
+            labelHi: item.labelHi,
+            // Grade-locked rows stay PRESENT but inert, so the tablet
+            // membership still matches the sheet's. Their label is not
+            // rewritten — one destination, one name, at every breakpoint.
+            disabled: getItemLock(item).locked || undefined,
+          }),
+        ),
+      hrefs: moreItems
+        .filter((item) => groupKeyOf(item) === group.key && !getItemLock(item).locked)
+        .map((item) => item.href),
+    }))
+    // Empty-group skip, same rule the sheet and the sidebar apply.
+    .filter((group) => group.items.length > 0);
+
+  /** Rows the OVERFLOW SHEET still owns at this tier (everything not in a flyout). */
+  const sheetItems = moreItems.filter(
+    (item) => !NAV_GROUP_FLYOUT_KEYS.includes(groupKeyOf(item) ?? ''),
+  );
+
   const activeSlotId = resolvePrimaryActiveId(pathname ?? '', slots);
   const isMoreActive =
     activeSlotId === null &&
     resolveActiveNavHref(
       pathname ?? '',
-      moreItems.filter((m) => !getItemLock(m).locked).map((m) => m.href),
+      sheetItems.filter((m) => !getItemLock(m).locked).map((m) => m.href),
     ) !== null;
+  /** A flyout trigger reads "active" only when no primary slot owns the route. */
+  const activeGroupKey =
+    activeSlotId === null
+      ? (flyoutGroups.find(
+          (group) => resolveActiveNavHref(pathname ?? '', group.hrefs) !== null,
+        )?.key ?? null)
+      : null;
 
   if (isFocusedFoxy) return null;
 
   return (
     <>
-      <NavMoreSheet open={showMore} onClose={() => setShowMore(false)} pathname={pathname ?? ''} />
+      <NavMoreSheet
+        open={showMore}
+        onClose={() => setShowMore(false)}
+        pathname={pathname ?? ''}
+        excludeGroupKeys={NAV_GROUP_FLYOUT_KEYS}
+      />
 
       <nav className="nav-rail-tablet" aria-label="Main navigation">
         <button
@@ -157,6 +232,50 @@ export function TabletNavRail() {
             );
           })}
         </div>
+
+        {/* Grouped secondary nav — a SEPARATE band below the primary slots.
+            Deliberately not spliced into `.nav-rail-tablet__slots` above: the
+            primary five carry `data-slot` and their order is a product
+            contract asserted at this exact breakpoint (e2e/ui-nav-contract),
+            so these triggers carry `data-nav-group` instead and cannot be
+            mistaken for a sixth and seventh slot. They are menu buttons, not
+            destinations, so — exactly like "More" — they never take
+            `aria-current="page"`; `aria-expanded` is supplied by <Menu>. */}
+        {flyoutGroups.length > 0 && (
+          <div
+            className="nav-rail-tablet__slots"
+            style={{
+              marginTop: 'var(--space-1)',
+              paddingTop: 'var(--space-2)',
+              borderTop: '1px solid var(--line)',
+            }}
+          >
+            {flyoutGroups.map((group) => (
+              <Menu
+                key={group.key}
+                items={group.items}
+                isHi={isHi}
+                label={group.label}
+                // The rail hugs the leading edge, so the panel opens INTO the
+                // page. usePopoverPosition flips it left if there is no room.
+                placement="right-start"
+                onNavigate={(href) => router.push(href)}
+              >
+                <button
+                  type="button"
+                  data-nav-group={group.key}
+                  data-active={activeGroupKey === group.key ? 'true' : 'false'}
+                  className="nav-rail-tablet__slot"
+                >
+                  <span className="nav-rail-tablet__icon" aria-hidden="true">
+                    {group.icon}
+                  </span>
+                  <span className="nav-rail-tablet__label">{group.label}</span>
+                </button>
+              </Menu>
+            ))}
+          </div>
+        )}
       </nav>
     </>
   );
