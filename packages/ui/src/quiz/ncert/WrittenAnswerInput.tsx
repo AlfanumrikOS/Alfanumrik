@@ -231,7 +231,7 @@ export default function WrittenAnswerInput({
             <button
               onClick={() => answer.trim().length > 0 ? setReviewing(true) : handleSubmit()}
               className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
-              style={{ background: answer.trim() ? 'var(--btn-primary)' : '#767676' }}
+              style={{ background: answer.trim() ? 'var(--surface-accent)' : '#767676' }}
               disabled={isEvaluating}
               aria-label={answer.trim() ? (isHi ? 'सबमिट करने से पहले अपना उत्तर देखें' : 'Review your answer before submitting') : (isHi ? 'खाली उत्तर सबमिट करें' : 'Submit empty answer')}
             >
@@ -258,7 +258,7 @@ export default function WrittenAnswerInput({
             </button>
             <button onClick={handleSubmit}
               className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
-              style={{ background: 'var(--btn-primary-gradient)' }}
+              style={{ background: 'var(--surface-accent)' }}
               disabled={isEvaluating}
               aria-busy={isEvaluating}
             >

@@ -313,7 +313,11 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
               return (
                 <div
                   key={b.key}
-                  className={`flex items-center gap-3 rounded-xl px-3 transition-colors ${
+                  // min-w-0: this row is itself a flex item, which defaults to
+                  // min-width:auto and therefore refuses to shrink below its
+                  // content — a latent overflow source in the fixed-width,
+                  // horizontally-clipping app-shell rail.
+                  className={`flex min-w-0 items-center gap-3 rounded-xl px-3 transition-colors ${
                     hasCta ? 'pt-2 pb-1' : 'py-2.5'
                   }`}
                   style={{
