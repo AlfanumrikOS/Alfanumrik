@@ -27,18 +27,79 @@ export const maxDuration = 60;
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Resolve the `students.grade` for a given student_id.
- * We need the grade to tell the Edge Function which CBSE weight table to use.
+ * Resolve the `students.grade` (+ elected subjects) for a given student_id.
+ * We need the grade to tell the Edge Function which CBSE weight table to use,
+ * and `selected_subjects` to explain an EMPTY prediction list honestly (see
+ * `resolveEligibility` below).
  */
-async function resolveStudentGrade(studentId: string): Promise<string | null> {
+async function resolveStudentProfile(
+  studentId: string,
+): Promise<{ grade: string; selectedSubjects: string[] } | null> {
   const { data, error } = await supabaseAdmin
     .from('students')
-    .select('grade')
+    .select('grade, selected_subjects')
     .eq('id', studentId)
     .is('deleted_at', null)
     .single();
   if (error || !data) return null;
-  return (data as { grade: string }).grade;
+  const row = data as { grade: string; selected_subjects: string[] | null };
+  return { grade: row.grade, selectedSubjects: row.selected_subjects ?? [] };
+}
+
+/**
+ * Why an empty BoardScore is empty.
+ *
+ * Production reality (measured 2026-08-24): `board_score_predictions` has zero
+ * rows, and three DIFFERENT gates produce that same empty array —
+ *   1. the grade has no `cbse_chapter_weights` at all (grades 6-9 and 11 have
+ *      none; only 10 and 12 are populated),
+ *   2. the student's `students.selected_subjects` is empty (37 of 38 active
+ *      board-grade students), so `getStudentBoardSubjects()` returns [],
+ *   3. everything is eligible but the nightly compute has not produced a row.
+ *
+ * The widget previously rendered ONE "No Data Yet" card for all three, which
+ * blames the student for a platform gap in cases 1 and 2. This block tells the
+ * client which of the three it is so it can say the true thing. Counts only —
+ * no subject list, no identifiers (P13).
+ */
+interface BoardScoreEligibility {
+  grade: string;
+  /** False only for grades with no active CBSE mark-allocation data at all. */
+  grade_has_board_weights: boolean;
+  selected_subject_count: number;
+  eligible_subject_count: number;
+}
+
+async function gradeHasBoardWeights(grade: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('cbse_chapter_weights')
+    .select('subject_code')
+    .eq('board', 'CBSE')
+    .eq('grade', grade)
+    .eq('is_active', true)
+    .limit(1);
+  // Fail OPEN. A transient read failure must never tell a Class 10 student
+  // that their class is unsupported — that would be a new lie replacing the
+  // old one. On error we claim support and fall through to the softer states.
+  if (error) return true;
+  return (data?.length ?? 0) > 0;
+}
+
+async function resolveEligibility(
+  studentId: string,
+  grade: string,
+  selectedSubjects: string[],
+): Promise<BoardScoreEligibility> {
+  const hasWeights = await gradeHasBoardWeights(grade);
+  // Skip the 3-query intersection when the grade has no weights at all — the
+  // answer is necessarily zero and the client shows the grade state anyway.
+  const eligible = hasWeights ? await getStudentBoardSubjects(studentId, grade) : [];
+  return {
+    grade,
+    grade_has_board_weights: hasWeights,
+    selected_subject_count: selectedSubjects.length,
+    eligible_subject_count: eligible.length,
+  };
 }
 
 /**
@@ -81,13 +142,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'server_misconfigured' }, { status: 503 });
   }
 
-  const grade = await resolveStudentGrade(studentId);
-  if (!grade) {
+  const profile = await resolveStudentProfile(studentId);
+  if (!profile) {
     return NextResponse.json(
       { error: 'student_not_found', message: 'Student record not found or inactive.' },
       { status: 404 },
     );
   }
+  const { grade, selectedSubjects } = profile;
 
   // Forward the student's JWT so Edge Function RLS works correctly.
   let authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
@@ -124,6 +186,19 @@ export async function GET(request: NextRequest) {
       student_id: studentId,
       status: res.status,
     });
+
+    // Only pay for the eligibility reads when the answer is actually empty —
+    // the happy path (predictions exist) stays a single edge round-trip.
+    const isPlainObject = payload !== null && typeof payload === 'object' && !Array.isArray(payload);
+    const predictionCount = isPlainObject && Array.isArray((payload as { data?: unknown }).data)
+      ? ((payload as { data: unknown[] }).data).length
+      : 0;
+
+    if (res.ok && isPlainObject && predictionCount === 0
+        && (payload as { code?: unknown }).code !== 'disabled') {
+      const eligibility = await resolveEligibility(studentId, grade, selectedSubjects);
+      return NextResponse.json({ ...(payload as Record<string, unknown>), eligibility }, { status: 200 });
+    }
 
     return NextResponse.json(payload, { status: res.ok ? 200 : res.status });
   } catch (err) {
@@ -188,13 +263,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'server_misconfigured' }, { status: 503 });
   }
 
-  const grade = await resolveStudentGrade(studentId);
-  if (!grade) {
+  const profile = await resolveStudentProfile(studentId);
+  if (!profile) {
     return NextResponse.json(
       { error: 'student_not_found', message: 'Student record not found or inactive.' },
       { status: 404 },
     );
   }
+  const { grade } = profile;
 
   // Validate subject eligibility BEFORE forwarding to the Edge Function —
   // reuses the same rule the nightly cron applies (spec §4/§7.1). A student

@@ -4,7 +4,14 @@ export interface ConversationSummary {
   subject: string;
   chapter?: string;
   chapterNumber?: number;
-  lastMessage: string;
+  /**
+   * OPTIONAL since 2026-08-24. `GET /api/foxy/sessions` deliberately does not
+   * return a message preview: the list endpoint carries titles + subjects +
+   * counts only, never message bodies (P13 — the same reason the single-session
+   * GET excludes `sources`). The row renders without a preview line when this
+   * is absent; it is NOT replaced with filler copy.
+   */
+  lastMessage?: string;
   messageCount: number;
   updatedAt: string;
   isActive: boolean;
@@ -34,17 +41,44 @@ export const FALLBACK_SUBJECT_NAMES_HI: Record<string, string> = {
   coding: 'कोडिंग',
 };
 
-export function generateTitle(messages: Array<{ role: string; content: string }>, subject: string, isHi = false): string {
-  const firstUserMsg = messages.find(m => m.role === 'student' || m.role === 'user');
-  const subjectLabel = (isHi ? FALLBACK_SUBJECT_NAMES_HI : FALLBACK_SUBJECT_NAMES)[subject] || subject || (isHi ? 'नई चैट' : 'New Chat');
-  if (!firstUserMsg) return subjectLabel;
-  // Extract meaningful title: strip common prefixes, truncate
-  let title = firstUserMsg.content
+/**
+ * The language-free half of `generateTitle`: the student's OWN first prompt,
+ * normalized and truncated to a 50-char thread title. Returns `null` when the
+ * thread has no usable user turn — the CALLER supplies the bilingual
+ * subject-name fallback via `subjectTitleFallback()`.
+ *
+ * Split out on 2026-08-24 so `GET /api/foxy/sessions` can derive the SAME
+ * title server-side without duplicating this logic and without the server
+ * having to know the student's language (P7: language is a client decision).
+ * P13: the input is the student's own message and the output is returned only
+ * to that same authenticated student. It is never logged.
+ */
+export function deriveConversationTitle(
+  firstUserContent: string | null | undefined,
+): string | null {
+  if (!firstUserContent) return null;
+  let title = firstUserContent
     .replace(/^(teach me about|explain|help me with|mujhe sikhao|samjhao):\s*/i, '')
     .replace(/\(Chapter \d+\)/i, '')
     .trim();
   if (title.length > 50) title = title.substring(0, 47) + '...';
-  return title || subjectLabel;
+  return title || null;
+}
+
+/** The bilingual "this thread has no prompt yet" title (P7). */
+export function subjectTitleFallback(subject: string, isHi = false): string {
+  return (
+    (isHi ? FALLBACK_SUBJECT_NAMES_HI : FALLBACK_SUBJECT_NAMES)[subject] ||
+    subject ||
+    (isHi ? 'नई चैट' : 'New Chat')
+  );
+}
+
+export function generateTitle(messages: Array<{ role: string; content: string }>, subject: string, isHi = false): string {
+  const firstUserMsg = messages.find(m => m.role === 'student' || m.role === 'user');
+  return (
+    deriveConversationTitle(firstUserMsg?.content) ?? subjectTitleFallback(subject, isHi)
+  );
 }
 
 export interface SimplifiedMode {

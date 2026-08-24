@@ -30,6 +30,8 @@ import ScoreHero from '@alfanumrik/ui/score/ScoreHero';
 import ScoreCard from '@alfanumrik/ui/score/ScoreCard';
 import CoinBalance from '@alfanumrik/ui/coins/CoinBalance';
 import { usePermissions } from '@alfanumrik/lib/usePermissions';
+import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
+import { filterRowsToAllowedSubjects } from '@alfanumrik/lib/dashboard/mastery-buckets';
 import { useMyPulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { StudentPulse } from '@alfanumrik/ui/pulse';
 import { calculateLevel } from '@alfanumrik/lib/xp-config';
@@ -55,11 +57,25 @@ interface ScoreHistoryRow {
   recorded_at: string;
 }
 
+/**
+ * One row of the "Lowest mastery" list.
+ *
+ * Sourced from `public.topic_mastery_rollup` (security_invoker view over
+ * concept_mastery ⋈ curriculum_topics ⋈ subjects), NOT from a bare
+ * concept_mastery read. The bare read had no join, so `topic` was a UUID
+ * prefix like "a3f2b1c0…" and `subject` was the empty string — and the
+ * "Revise Now" button deep-linked that UUID prefix into Foxy as a topic name.
+ *
+ * The view has no surrogate key, so `id` is synthesized deterministically
+ * (same convention as packages/lib/src/domains/assessment.ts) and is used only
+ * as a React key.
+ */
 interface DecayTopic {
   id: string;
-  topic_id: string;
   topic: string;
+  /** Canonical subject CODE from `subjects.code` (never a display name). */
   subject: string;
+  chapter_number: number | null;
   mastery_probability: number;
   next_review_at: string | null;
 }
@@ -465,6 +481,10 @@ function DataStaleNotice({ isHi, onRetry }: { isHi: boolean; onRetry: () => void
 function LegacyProgressPage() {
   const { can, loading: permsLoading } = usePermissions();
   const { student, snapshot, isLoggedIn, isLoading, isHi, refreshSnapshot } = useAuth();
+  // The authoritative reachable-subject set (grade_subject_map ⋈ active
+  // subjects). Used ONLY to scope the Subject Mastery list — see the comment
+  // at that block for why the lifetime aggregates above it are NOT filtered.
+  const { subjects: allowedSubjects } = useAllowedSubjects();
   const router = useRouter();
 
   const [profiles, setProfiles] = useState<StudentLearningProfile[]>([]);
@@ -638,10 +658,21 @@ function LegacyProgressPage() {
           .select('balance')
           .eq('student_id', studentId)
           .single(),
-        // Fetch decaying topics (concept_mastery with low mastery_probability and overdue review)
+        // Fetch the student's LOWEST-MASTERY topics.
+        //
+        // Reads `public.topic_mastery_rollup` — the security_invoker view that
+        // already joins concept_mastery → curriculum_topics → subjects — so the
+        // rows arrive with a real topic title and a real subject CODE. The
+        // previous bare `concept_mastery` read had no join at all, which is why
+        // this list rendered UUID prefixes.
+        //
+        // NOTE the filter: `mastery_probability < 0.5` and NO next_review_at
+        // bound. This is a LOW-MASTERY list, not a DUE list — the heading says
+        // so. "Due" is owned by /revision (and /api/revision/overview), which is
+        // the only surface that reads the SM-2 schedule. One concept, one owner.
         supabase
-          .from('concept_mastery')
-          .select('id, topic_id, mastery_probability, next_review_at')
+          .from('topic_mastery_rollup')
+          .select('subject, topic_tag, chapter_number, mastery_probability, next_review_at')
           .eq('student_id', studentId)
           .lt('mastery_probability', 0.5)
           .order('mastery_probability', { ascending: true })
@@ -662,24 +693,23 @@ function LegacyProgressPage() {
       setPerfScores((perfRes.data as PerformanceScoreRow[]) ?? []);
       setScoreHistory((histRes.data as ScoreHistoryRow[]) ?? []);
       setCoinBalance(coinRes.data?.balance ?? 0);
-      // Map decay data — concept_mastery rows have topic_id but no topic name.
-      // The display label is a human-readable "Topic N" fallback; the actual Foxy
-      // route always uses topic_id when available so it carries a real identifier.
-      // TODO(data-gap): add topic_name to concept_mastery or join via a lookup RPC
-      // so the displayed label can show the real concept name.
+      // The rollup view carries the real title + subject code, so no fallback
+      // label is manufactured here. Rows with no title are dropped rather than
+      // rendered as a placeholder: an unnamed row cannot produce an honest
+      // "revise this" destination, and a chip the student can't act on is worse
+      // than one fewer row.
       const decayRaw = decayRes.data ?? [];
-      const decayData = decayRaw.map((d: any) => {
-        // topic_id is a UUID — show first 8 chars as a readable chip.
-        const shortId = d.topic_id ? `${String(d.topic_id).substring(0, 8)}…` : '—';
-        return {
-          id: d.id,
-          topic_id: d.topic_id,
-          topic: shortId,
-          subject: '',
+      const decayData: DecayTopic[] = decayRaw
+        .map((d: any) => ({
+          // Synthetic, deterministic React key — the view has no surrogate id.
+          id: `${d.subject ?? ''}:${d.chapter_number ?? ''}:${d.topic_tag ?? ''}`,
+          topic: typeof d.topic_tag === 'string' ? d.topic_tag.trim() : '',
+          subject: typeof d.subject === 'string' ? d.subject : '',
+          chapter_number: typeof d.chapter_number === 'number' ? d.chapter_number : null,
           mastery_probability: d.mastery_probability ?? 0,
-          next_review_at: d.next_review_at,
-        };
-      });
+          next_review_at: d.next_review_at ?? null,
+        }))
+        .filter((d: DecayTopic) => d.topic.length > 0);
       setDecayTopics(decayData);
       settleSource('perf');
       setPerfLoadedOnce(true);
@@ -708,6 +738,18 @@ function LegacyProgressPage() {
   const totalCorrect = profiles.reduce((a, p) => a + (p.total_questions_answered_correctly ?? 0), 0);
   const totalAsked = profiles.reduce((a, p) => a + (p.total_questions_asked ?? 0), 0);
   const accuracy = calculateScorePercent(totalCorrect, totalAsked);
+
+  /* ── Subject Mastery scope (defect #11) ──
+   * student_learning_profiles carries a row for EVERY subject the student ever
+   * touched, including ones their grade no longer maps to. The dashboard's
+   * mastery widgets are scoped to the reachable set, so this list disagreed
+   * with them. Scope it the same way, keyed on subject CODE
+   * (`StudentLearningProfile.subject` is already a code).
+   *
+   * Deliberately NOT applied to totalXp / totalMinutes / accuracy above: those
+   * are lifetime totals the student has already earned, and silently shrinking
+   * them because a subject left their grade map would be a different lie. */
+  const masteryProfiles = filterRowsToAllowedSubjects(profiles, allowedSubjects);
 
   /* ── Performance Score aggregates ── */
   const overallPerfScore = perfScores.length > 0
@@ -1079,13 +1121,25 @@ function LegacyProgressPage() {
                 )}
 
                 {/* ===========================================================
-                    DECAY ALERTS -- Topics needing revision
+                    LOWEST MASTERY -- the 8 weakest topics
+                    Honesty fix (2026-08, defect #10): this block was titled
+                    "Topics that need revision" while the query filters on
+                    `mastery_probability < 0.5` with NO next_review_at bound —
+                    a LOW-MASTERY list presented as a DUE list. "Due" belongs to
+                    /revision, which reads the SM-2 schedule. Retitled instead of
+                    adding a due filter, so the two surfaces answer two
+                    different, non-overlapping questions.
                     =========================================================== */}
                 {decayTopics.length > 0 && (
                   <div>
-                    <SectionHeader icon="🔄">
-                      {isHi ? 'जिन विषयों को revision की ज़रूरत है' : 'Topics that need revision'}
+                    <SectionHeader icon="📉">
+                      {isHi ? 'सबसे कम महारत वाले विषय' : 'Lowest mastery'}
                     </SectionHeader>
+                    <p className="text-xs text-[var(--text-3)] mb-2">
+                      {isHi
+                        ? `${decayTopics.length} विषय की महारत 100% में से 50% से कम है। यह “आज दोहराना है” वाली सूची नहीं है — वह दोहराव पेज पर है।`
+                        : `${decayTopics.length} topic${decayTopics.length === 1 ? '' : 's'} under 50 out of 100% mastery. This is not your due-today list — that lives on the Revision page.`}
+                    </p>
                     <div className="space-y-2">
                       {decayTopics.map((dt) => {
                         /* `concept_mastery.mastery_probability` is a BKT mastery
@@ -1124,14 +1178,25 @@ function LegacyProgressPage() {
                                 size="sm"
                                 color="var(--accent-warm)"
                                 onClick={() => {
-                                  // Prefer named topic; fall back to topic_id so Foxy gets a real identifier.
-                                  const isFallbackLabel = /^Topic \d+$/.test(dt.topic);
-                                  const foxyUrl = (!isFallbackLabel)
-                                    ? `/foxy?topic=${encodeURIComponent(dt.topic)}`
-                                    : dt.topic_id
-                                      ? `/foxy?topic_id=${encodeURIComponent(dt.topic_id)}`
-                                      : `/foxy`;
-                                  router.push(foxyUrl);
+                                  // Params Foxy actually reads: `topic`, `subject`
+                                  // (canonical CODE), `chapter`, `mode`.
+                                  //
+                                  // The old branch tested `/^Topic \d+$/` against a
+                                  // label that was always a UUID prefix, so the
+                                  // regex never matched, the topic_id branch was
+                                  // unreachable, and the button pushed
+                                  // `/foxy?topic=a3f2b1c0%E2%80%A6` — a param Foxy
+                                  // stashes verbatim with no lookup and no
+                                  // switchSubject. It read as "nothing happened".
+                                  const params = new URLSearchParams();
+                                  params.set('topic', dt.topic);
+                                  if (dt.subject) params.set('subject', dt.subject);
+                                  if (dt.chapter_number != null) {
+                                    params.set('chapter', String(dt.chapter_number));
+                                  }
+                                  params.set('mode', 'revise');
+                                  params.set('source', 'progress');
+                                  router.push(`/foxy?${params.toString()}`);
                                 }}
                                 className="shrink-0"
                               >
@@ -1150,7 +1215,7 @@ function LegacyProgressPage() {
                     =========================================================== */}
                 <div>
                   <SectionHeader icon="📚">{isHi ? 'विषयवार महारत' : 'Subject Mastery'}</SectionHeader>
-                  {profiles.length === 0 ? (
+                  {masteryProfiles.length === 0 ? (
                     <Card className="!p-4 text-center">
                       <div className="text-2xl mb-1">📚</div>
                       <div className="text-sm text-[var(--text-3)]">
@@ -1159,7 +1224,7 @@ function LegacyProgressPage() {
                     </Card>
                   ) : (
                     <div className="space-y-2">
-                      {profiles.map((p) => {
+                      {masteryProfiles.map((p) => {
                         const meta = subjects.find((s: { code: string }) => s.code === p.subject);
                         const correctPct = calculateScorePercent(p.total_questions_answered_correctly, p.total_questions_asked);
 

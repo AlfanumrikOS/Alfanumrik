@@ -171,6 +171,64 @@ export const DIAGNOSTIC_COPY = {
     hi: 'चलो मिलकर बेसिक्स मजबूत करते हैं।',
   },
 
+  // ── Phase 5 — per-question answer review (CEO defect #4) ────────
+  // "Student shall also know why was the answer incorrect." Until 2026-08-24
+  // the diagnostic never told the student that an answer was even wrong, let
+  // alone why — `explanation` / `explanation_hi` were on the wire from
+  // /api/diagnostic/start and simply never rendered.
+  reviewHeading: {
+    en: 'Review your answers',
+    hi: 'अपने जवाब देखें',
+  },
+  reviewSubheadingWrong: {
+    en: 'Here is why each answer was marked the way it was.',
+    hi: 'यहाँ देखो हर जवाब ऐसा क्यों माना गया।',
+  },
+  reviewAllCorrect: {
+    en: 'You got every question right. Read the explanations to lock it in.',
+    hi: 'तुमने हर सवाल सही किया। व्याख्या पढ़कर इसे पक्का करो।',
+  },
+  reviewYourAnswer: {
+    en: 'Your answer',
+    hi: 'तुम्हारा जवाब',
+  },
+  reviewCorrectAnswer: {
+    en: 'Correct answer',
+    hi: 'सही जवाब',
+  },
+  reviewNotAnswered: {
+    en: 'Not answered',
+    hi: 'जवाब नहीं दिया',
+  },
+  reviewCorrectBadge: {
+    en: 'Correct',
+    hi: 'सही',
+  },
+  reviewIncorrectBadge: {
+    en: 'Incorrect',
+    hi: 'गलत',
+  },
+  reviewWhyLabel: {
+    en: 'Why',
+    hi: 'क्यों',
+  },
+  /** Honest fallback — a question_bank row with no explanation (P6 gap). */
+  reviewNoExplanation: {
+    en: 'No explanation is available for this question yet.',
+    hi: 'इस सवाल की व्याख्या अभी उपलब्ध नहीं है।',
+  },
+
+  /**
+   * C2 low-confidence placement. The server already forces 'medium' and skips
+   * both the topic analysis and the mastery seed after a < 3s/question run;
+   * this tells the student why their result looks thin instead of letting a
+   * disarmed default masquerade as a real recommendation.
+   */
+  lowConfidenceNote: {
+    en: 'You moved through this very quickly, so we have not used it to set your level or to pick your topics. Take it again at your own pace for a real placement.',
+    hi: 'तुमने यह बहुत तेजी से पूरा किया, इसलिए हमने इससे तुम्हारा स्तर या topics तय नहीं किए। असली placement के लिए इसे आराम से दोबारा दो।',
+  },
+
   // ── Shared navigation ───────────────────────────────────────────
   goBack: {
     en: 'Go back',

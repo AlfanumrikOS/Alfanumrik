@@ -1150,28 +1150,22 @@ export async function saveCognitiveMetrics(metrics: {
   if (error) console.error('saveCognitiveMetrics:', error.message);
 }
 
-/* ── Question Responses (detailed per-question tracking) ── */
-export async function saveQuestionResponses(responses: Array<{
-  student_id: string;
-  question_id: string;
-  quiz_session_id?: string;
-  selected_answer?: string;
-  is_correct: boolean;
-  response_time_seconds: number;
-  bloom_level_attempted: string;
-  was_in_zpd?: boolean;
-  cognitive_load_experienced?: string;
-  reflection_prompt?: string;
-  reflection_response?: string;
-  reflection_quality?: number;
-  error_type?: string;
-  misconception_detected?: string;
-  quality?: number;
-  interleaved?: boolean;
-}>) {
-  const { error } = await supabase.from('question_responses').insert(responses);
-  if (error) console.error('saveQuestionResponses:', error.message);
-}
+/* ── Question Responses (detailed per-question tracking) ──
+ * `saveQuestionResponses()` was DELETED here on 2026-08-24. It was a
+ * client-side fire-and-forget INSERT into `question_responses`, a table with
+ * ZERO rows in production that no code reads any more. Its only failure
+ * handling was a console.error, so it had been failing silently. Per-question
+ * rows are written server-side and atomically by the canonical v2 submit RPC
+ * (see `submitQuizResults` below) into `quiz_responses` (P4) — the table every
+ * reader (/api/practice/history, the super-admin bloom reports) now uses.
+ * Do not reintroduce a client-side writer for either table.
+ *
+ * The bare name of the legacy profile/XP RPC is deliberately not spelled in
+ * this file: `adaptive-pipeline.test.ts` text-scans the whole source to prove
+ * the client-side fallback to it is gone, and that scan does not strip
+ * comments. Prose here would read as a live call path. (For the record, that
+ * RPC only touches profile/XP anyway — it never wrote `quiz_responses`.)
+ */
 
 /* ── Update Bloom Progression ── */
 export async function upsertBloomProgression(data: {
@@ -1889,7 +1883,10 @@ export async function getQuestionHistoryStats(
     if (chapterNumber != null) totalQuery = totalQuery.eq('chapter_number', chapterNumber);
 
     // Fetch question IDs for this subject/grade/chapter, then count
-    // how many the student has already answered via question_responses
+    // how many the student has already answered via quiz_responses.
+    // Repointed 2026-08-24 off `question_responses` (zero rows in production,
+    // so seen_questions was permanently 0 and coverage_percent permanently
+    // 0%). `quiz_responses.question_id` is populated on every row.
     let questionIdsQuery = supabase.from('question_bank')
       .select('id')
       .eq('subject', subject)
@@ -1907,11 +1904,19 @@ export async function getQuestionHistoryStats(
 
     let seenCount = 0;
     if (questionIds.length > 0) {
-      const { count } = await supabase.from('question_responses')
-        .select('question_id', { count: 'exact', head: true })
+      // DISTINCT question_id, deduped client-side. A plain `count: 'exact'`
+      // would count ROWS, and quiz_responses legitimately holds one row per
+      // ATTEMPT — so a re-attempted question would be counted twice and
+      // seen_questions could exceed total_questions (negative unseen, >100%
+      // coverage). question_responses never had repeats because it never had
+      // any rows at all, which is why the old head-count looked correct.
+      const { data: seenRows } = await supabase.from('quiz_responses')
+        .select('question_id')
         .eq('student_id', studentId)
         .in('question_id', questionIds);
-      seenCount = count ?? 0;
+      seenCount = new Set(
+        (seenRows ?? []).map(r => r.question_id).filter(Boolean)
+      ).size;
     }
 
     return {

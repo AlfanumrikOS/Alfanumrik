@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../providers/auth_provider.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -43,12 +43,30 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     _navigate();
   }
 
+  /// Longest we will sit on the splash waiting for the persisted session to
+  /// come back before falling through to login. Restore is normally sub-frame;
+  /// this only guards a pathological stream.
+  static const Duration _restoreTimeout = Duration(seconds: 5);
+  static const Duration _pollInterval = Duration(milliseconds: 100);
+
   Future<void> _navigate() async {
     await Future.delayed(const Duration(milliseconds: 1800));
     if (!mounted) return;
 
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session != null) {
+    // Tri-state, same rule as the router (CEO defect #3): a SYNCHRONOUS read of
+    // `auth.currentSession` returns null while supabase_flutter is still
+    // restoring, which used to send a fully-signed-in student to /login. Wait
+    // for a terminal status; only `unauthenticated` goes to login.
+    var status = ref.read(authStatusProvider);
+    final deadline = DateTime.now().add(_restoreTimeout);
+    while (status == AuthStatus.restoring && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(_pollInterval);
+      if (!mounted) return;
+      status = ref.read(authStatusProvider);
+    }
+
+    if (!mounted) return;
+    if (status == AuthStatus.authenticated) {
       context.go('/home');
     } else {
       context.go('/login');

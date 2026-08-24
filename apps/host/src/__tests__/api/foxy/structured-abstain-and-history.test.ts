@@ -227,7 +227,7 @@ beforeEach(() => {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('/api/foxy hard-abstain — structured stays absent (case C)', () => {
-  it('hard-abstain response omits structured and inserts no message rows', async () => {
+  it('hard-abstain response omits structured but STILL persists the turn', async () => {
     setGroundedReturn({
       grounded: false,
       abstain_reason: 'no_chunks_retrieved',
@@ -248,9 +248,21 @@ describe('/api/foxy hard-abstain — structured stays absent (case C)', () => {
     expect(body.response).toBe('');
     // Critical: NO structured field surfaces on the abstain branch.
     expect('structured' in body).toBe(false);
-    // No foxy_chat_messages rows inserted on abstain (current route contract).
+
+    // CONTRACT CHANGE (incident 2026-08-24). This assertion used to read
+    // `expect(chatInserts.length).toBe(0)` — it pinned the defect. The
+    // hard-abstain branch wrote NOTHING, so the STUDENT'S OWN QUESTION was
+    // destroyed on every abstain, not just Foxy's answer. That is how
+    // production reached 256/329 sessions with zero messages while
+    // foxy_sessions kept filling up. The turn is now persisted on the abstain
+    // path; the WIRE shape (asserted above) is unchanged.
     const chatInserts = insertCalls.filter((c) => c.table === 'foxy_chat_messages');
-    expect(chatInserts.length).toBe(0);
+    expect(chatInserts.length).toBe(1);
+    const rows = chatInserts[0].rows as Array<Record<string, unknown>>;
+    expect(rows.find((r) => r.role === 'user')?.content).toBe('Solve 2x + 3 = 11');
+    // Assistant side is recorded as the safe bilingual abstain text — never a
+    // fabricated answer (P12).
+    expect(rows.find((r) => r.role === 'assistant')).toBeTruthy();
   });
 });
 

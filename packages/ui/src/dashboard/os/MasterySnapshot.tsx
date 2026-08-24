@@ -22,15 +22,23 @@
  * TodaysMission hero on the same screen. Only the contextual link survives; the
  * empty state keeps its bilingual guidance copy.
  *
+ * Subject scope: rows are restricted to the student's reachable subjects
+ * (useAllowedSubjects → /api/student/subjects → grade_subject_map). This panel
+ * previously counted every subject the RPC returned while the roadmap below it
+ * showed a hardcoded two — two different answers to "which subjects?" on one
+ * screen.
+ *
  * Accessibility: colour is never the sole carrier of meaning — numbers and
  * labels duplicate every colour signal (WCAG 1.4.1). role="list" / role="listitem"
  * give screen-readers a structured bucket enumeration.
  */
 
 import { useMasteryOverview } from '@alfanumrik/lib/swr';
+import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { Skeleton, StatRing } from '@alfanumrik/ui/ui';
 import {
   countBuckets,
+  filterRowsToAllowedSubjects,
   type MasteryOverviewRow,
   type BucketCounts,
 } from '@alfanumrik/lib/dashboard/mastery-buckets';
@@ -92,8 +100,15 @@ const BUCKETS: BucketDef[] = [
 
 export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProps) {
   const { data, isLoading, error, coverage } = useMasteryOverview(studentId);
+  // Same reachable-subject set the roadmaps and the progress page use
+  // (/api/student/subjects = grade_subject_map ⋈ active subjects). Without it
+  // this panel counted EVERY subject get_mastery_overview returned, so its
+  // bucket totals disagreed with the roadmap directly below it on the same
+  // screen. SWR-deduped — no extra request.
+  const { subjects: allowedSubjects } = useAllowedSubjects();
 
-  const rows: MasteryOverviewRow[] = Array.isArray(data) ? (data as MasteryOverviewRow[]) : [];
+  const allRows: MasteryOverviewRow[] = Array.isArray(data) ? (data as MasteryOverviewRow[]) : [];
+  const rows = filterRowsToAllowedSubjects(allRows, allowedSubjects);
   const counts = countBuckets(rows);
   const total = counts.mastered + counts.learning + counts.needsRevision;
 
@@ -345,7 +360,10 @@ export default function MasterySnapshot({ isHi, studentId }: MasterySnapshotProp
                     </p>
                     {hasCta && (
                       <a
-                        href="/quiz"
+                        /* "Review now" must land on the revision surface, not a
+                           blank quiz setup. /revision (ff_revision_os_v1, ON)
+                           reads the same due schedule this bucket counts. */
+                        href="/revision"
                         className="inline-flex items-center min-h-tap-min text-fluid-xs font-semibold transition-opacity hover:opacity-70 focus:outline-none focus-visible:ring-2 rounded"
                         style={{ color: b.color }}
                       >

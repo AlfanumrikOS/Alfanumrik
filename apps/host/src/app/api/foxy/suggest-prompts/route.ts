@@ -87,29 +87,48 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const supabase = await createSupabaseServerClient();
 
     // ── 3 parallel DB queries ─────────────────────────────────────────────────
+    //
+    // DEFECT N1 (fixed 2026-08-24). Queries A and B previously selected
+    // `topic_title` and filtered on `.eq('subject_code', …)` / `.eq('grade', …)`.
+    // NONE of those three columns exist on `concept_mastery` (verified against
+    // information_schema in production). Every call errored, the errors were
+    // swallowed by `?? []` below, and weakTopics/overdueTopics were therefore
+    // ALWAYS empty — which also pinned `bloomHint` to its 'understand' default
+    // forever. Title + subject now come through the same embedded-FK join that
+    // /api/revision/overview already uses:
+    //     concept_mastery.topic_id → curriculum_topics.id → subjects.id
+    // Grade is filtered on `curriculum_topics.grade` (P5: string, never coerced).
+    //
+    // Schedule column: `next_review_at` (timestamptz) — the REAL SM-2 schedule.
+    // The sibling `next_review_date` DATE column is a deprecated ghost: it has
+    // DEFAULT CURRENT_DATE + 1 day, is never written by any function/cron/app
+    // code, and was set on 91/91 rows — which inflated "overdue" 3.4× (91 fake
+    // vs 27 real). Do not repoint back to it. See the same warning in
+    // apps/host/src/app/api/revision/overview/route.ts.
+    const TOPIC_EMBED = 'curriculum_topics!inner(title, title_hi, grade, subjects!inner(code))';
     const [weakResult, overdueResult, cmeResult] = await Promise.all([
       // Query A: weak topics — mastery_probability < 0.6, not "not_started"
       supabase
         .from('concept_mastery')
-        .select('topic_title, mastery_probability, mastery_level')
+        .select(`topic_id, mastery_probability, mastery_level, ${TOPIC_EMBED}`)
         .eq('student_id', studentId) // belt-and-suspenders on top of RLS
-        .eq('subject_code', subject)
-        .eq('grade', grade)
+        .eq('curriculum_topics.grade', grade)
+        .eq('curriculum_topics.subjects.code', subject)
         .neq('mastery_level', 'not_started')
         .lt('mastery_probability', 0.6)
         .order('mastery_probability', { ascending: true })
         .limit(3),
 
-      // Query B: overdue revision — next_review_date <= now()
+      // Query B: overdue revision — next_review_at <= now()
       supabase
         .from('concept_mastery')
-        .select('topic_title, next_review_date, mastery_probability')
+        .select(`topic_id, next_review_at, mastery_probability, ${TOPIC_EMBED}`)
         .eq('student_id', studentId)
-        .eq('subject_code', subject)
-        .eq('grade', grade)
-        .not('next_review_date', 'is', null)
-        .lte('next_review_date', new Date().toISOString())
-        .order('next_review_date', { ascending: true })
+        .eq('curriculum_topics.grade', grade)
+        .eq('curriculum_topics.subjects.code', subject)
+        .not('next_review_at', 'is', null)
+        .lte('next_review_at', new Date().toISOString())
+        .order('next_review_at', { ascending: true })
         .limit(3),
 
       // Query C: CME next action — most recent quiz session for this subject
@@ -123,30 +142,62 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         .limit(1),
     ]);
 
+    // ── Surface query errors instead of swallowing them ───────────────────────
+    // The `?? []` fallbacks below silently converted a broken query into "this
+    // student has no weak topics" for months. The endpoint still degrades to
+    // the static chip set (it must never 4xx/5xx the UI), but a broken query is
+    // now loud. P13: column/table/error-code only — no student data, no titles.
+    for (const [label, result] of [
+      ['weak_topics', weakResult],
+      ['overdue_topics', overdueResult],
+      ['cme_next_action', cmeResult],
+    ] as const) {
+      if (result.error) {
+        logger.error('foxy.suggest_prompts.query_failed', {
+          query: label,
+          table: label === 'cme_next_action' ? 'quiz_sessions' : 'concept_mastery',
+          errorCode: result.error.code ?? null,
+          route: '/api/foxy/suggest-prompts',
+        });
+      }
+    }
+
     // ── Build response payload ────────────────────────────────────────────────
 
-    // Weak topics (P13: topic_title only, no student-identifying data)
-    const weakRows = (weakResult.data ?? []) as Array<{
-      topic_title: string;
+    interface TopicEmbed {
+      title: string | null;
+      title_hi: string | null;
+      grade: string | null;
+      subjects: { code: string | null } | null;
+    }
+
+    /** PostgREST returns an embedded to-one relation as an object (or null). */
+    const titleOf = (row: { curriculum_topics?: TopicEmbed | null }): string =>
+      row.curriculum_topics?.title ?? '';
+
+    // Weak topics (P13: curriculum topic titles only, no student-identifying data)
+    const weakRows = (weakResult.data ?? []) as unknown as Array<{
       mastery_probability: number;
+      curriculum_topics: TopicEmbed | null;
     }>;
-    const weakTopics = weakRows.map((r) => ({
-      title: r.topic_title,
-      mastery: r.mastery_probability,
-    }));
+    const weakTopics = weakRows
+      .map((r) => ({ title: titleOf(r), mastery: r.mastery_probability }))
+      .filter((t) => t.title !== '');
 
     // Overdue topics
-    const overdueRows = (overdueResult.data ?? []) as Array<{
-      topic_title: string;
-      next_review_date: string;
+    const overdueRows = (overdueResult.data ?? []) as unknown as Array<{
+      next_review_at: string;
       mastery_probability: number;
+      curriculum_topics: TopicEmbed | null;
     }>;
-    const overdueTopics = overdueRows.map((r) => {
-      const daysOverdue = Math.round(
-        (Date.now() - new Date(r.next_review_date).getTime()) / 86400000,
-      );
-      return { title: r.topic_title, daysOverdue: Math.max(1, daysOverdue) };
-    });
+    const overdueTopics = overdueRows
+      .map((r) => {
+        const daysOverdue = Math.round(
+          (Date.now() - new Date(r.next_review_at).getTime()) / 86400000,
+        );
+        return { title: titleOf(r), daysOverdue: Math.max(1, daysOverdue) };
+      })
+      .filter((t) => t.title !== '');
 
     // CME next action
     let nextAction: { conceptName: string } | null = null;

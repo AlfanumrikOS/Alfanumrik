@@ -250,7 +250,7 @@ export default function AcidBaseTitration() {
             ref={canvasRef}
             width={280}
             height={190}
-            style={{ width: '100%', borderRadius: 8, border: '1px solid #e2e8f0', display: 'block' }}
+            style={{ width: '100%', height: 'auto', borderRadius: 8, border: '1px solid #e2e8f0', display: 'block' }}
           />
         </div>
       </div>

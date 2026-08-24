@@ -101,7 +101,7 @@ describe('GlobalAppLayout — offline-boundary wrapping (isOfflineScoped)', () =
     expect(screen.queryByTestId('stub-offline-boundary')).not.toBeInTheDocument();
   });
 
-  it('WRAPS children on /foxy — deliberate divergence from showNav, which suppresses nav there', () => {
+  it('WRAPS children on /foxy, and keeps ONLY the mobile bar mounted there', () => {
     pathname = '/foxy';
     render(
       <GlobalAppLayout>
@@ -109,10 +109,23 @@ describe('GlobalAppLayout — offline-boundary wrapping (isOfflineScoped)', () =
       </GlobalAppLayout>,
     );
     expect(screen.getByTestId('stub-offline-boundary')).toBeInTheDocument();
-    // Nav chrome is still suppressed on /foxy (showNav excludes it) — the
-    // divergence is specifically about the offline boundary, not nav.
+
+    // ── 2026-08-24, CEO defect #1 (4C) ─────────────────────────────────────
+    // This assertion USED to be `not.toBeInTheDocument()` for the mobile bar
+    // as well, pinning the "no way back" defect: /foxy suppressed ALL nav
+    // chrome, so the only exit was the header back arrow. Now that `/foxy` is
+    // primary slot 3, the bar it is reached FROM must not vanish on arrival.
+    expect(
+      screen.getByTestId('stub-mobile-bottom-nav'),
+      '/foxy must keep the mobile bottom bar — it is a primary destination now, ' +
+        'and a destination that hides the bar the instant you reach it is a trap',
+    ).toBeInTheDocument();
+
+    // The tablet rail and desktop sidebar stay suppressed: they are fixed LEFT
+    // gutters and .app-shell-v2 (Foxy's shell) is not inset by the .app-shell
+    // margin rules, so they would overlay Foxy's ConversationManager rail.
     expect(screen.queryByTestId('stub-desktop-sidebar')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('stub-mobile-bottom-nav')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('stub-tablet-nav-rail')).not.toBeInTheDocument();
   });
 
   it('passes isHi through to OfflineBoundary', () => {

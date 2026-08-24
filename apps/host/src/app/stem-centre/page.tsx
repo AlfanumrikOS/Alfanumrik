@@ -464,7 +464,11 @@ export default function STEMCentrePage() {
               </div>
 
               <div className="p-4">
-                <div className="bg-gray-50 rounded-xl overflow-hidden min-h-[300px] flex items-center justify-center">
+                {/* items-stretch (not items-center) so the simulation can size to the
+                    full width/height of this box; no overflow-hidden — with the
+                    useResponsiveCanvas repair nothing overflows, and clipping only
+                    hid the symptom instead of revealing it. */}
+                <div className="bg-gray-50 rounded-xl min-h-[300px] flex items-stretch justify-center">
                   {simNode || (
                     <p className="text-gray-400 text-sm">{isHi ? 'सिमुलेशन उपलब्ध नहीं' : 'Simulation not available'}</p>
                   )}

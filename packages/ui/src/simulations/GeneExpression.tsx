@@ -100,7 +100,7 @@ export default function GeneExpression() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Gene Expression — Lac Operon</h3>
-      <canvas ref={canvasRef} width={560} height={270} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <canvas ref={canvasRef} width={560} height={270} style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block' }} />
       <div style={{ marginTop: 8, display: 'flex', gap: 8, justifyContent: 'center' }}>
         <button onClick={() => setHasLactose(false)} style={{ padding: '6px 20px', background: !hasLactose ? '#EF5350' : 'var(--surface-2)', color: !hasLactose ? '#fff' : 'var(--text-1)', border: '2px solid #EF5350', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
           No Lactose (Gene OFF)

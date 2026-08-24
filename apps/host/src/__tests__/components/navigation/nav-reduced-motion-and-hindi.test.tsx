@@ -30,9 +30,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const routerPush = vi.fn();
 let mockIsHi = false;
+/** Mutable so the aria-current cases below can drive a real route change.
+ *  It was hard-coded to '/dashboard', which made every current-slot property
+ *  untestable at this layer. */
+let mockPathname = '/dashboard';
 
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/dashboard',
+  usePathname: () => mockPathname,
   useRouter: () => ({ push: routerPush }),
 }));
 
@@ -122,6 +126,7 @@ function navElement(): HTMLElement {
 beforeEach(() => {
   routerPush.mockReset();
   mockIsHi = false;
+  mockPathname = '/dashboard';
   Object.defineProperty(window, 'scrollY', { writable: true, configurable: true, value: 0 });
 });
 
@@ -177,9 +182,12 @@ describe('MobileBottomNav — prefers-reduced-motion', () => {
     await flushRaf();
 
     const slots = Array.from(document.querySelectorAll('[data-slot]'));
+    // 'foxy' joined the bar at slot 3 on 2026-08-24 (CEO-directed IA reversal
+    // — see the block at the top of nav-config.ts).
     expect(slots.map((s) => s.getAttribute('data-slot'))).toEqual([
       'today',
       'practice',
+      'foxy',
       'progress',
       'more',
     ]);
@@ -248,5 +256,69 @@ describe('MobileBottomNav — long translated labels (P7)', () => {
       'on /dashboard the Today slot owns the current-page marker (TODAY FLAG CONTRACT: /today ' +
         'redirects to /dashboard while ff_today_home_v1 is OFF)',
     ).toEqual(['today']);
+  });
+});
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * EXACTLY ONE aria-current="page", in the RENDERED tree.
+ *
+ * `student-primary-nav-contract.test.ts` pins `resolvePrimaryActiveId`, which
+ * returns a single id BY CONSTRUCTION — so it cannot catch a component that
+ * ignores the resolver and stamps `aria-current` per slot. That is worth
+ * pinning here now that a fifth slot exists and `/foxy` is a route the bar is
+ * actually mounted on: pre-2026-08-24 the bar was suppressed on /foxy, so the
+ * Foxy slot could never have been current no matter what the markup said.
+ * ─────────────────────────────────────────────────────────────────────────── */
+describe('MobileBottomNav — exactly one aria-current in the rendered tree', () => {
+  const CASES: Array<[pathname: string, expectedSlot: string]> = [
+    ['/today', 'today'],
+    ['/dashboard', 'today'],
+    ['/practice', 'practice'],
+    ['/quiz', 'practice'],
+    ['/foxy', 'foxy'],
+    ['/progress', 'progress'],
+  ];
+
+  for (const [pathname, expectedSlot] of CASES) {
+    it(`marks only the ${expectedSlot} slot current on ${pathname}`, () => {
+      mockPathname = pathname;
+      stubMatchMedia(false);
+      render(<MobileBottomNav />);
+
+      const current = Array.from(
+        navElement().querySelectorAll('[aria-current="page"]'),
+      ).map((el) => el.getAttribute('data-slot'));
+
+      expect(
+        current,
+        `on ${pathname} the bar marked ${current.length} slots current: [${current.join(', ')}]`,
+      ).toEqual([expectedSlot]);
+    });
+  }
+
+  it('marks the Foxy slot current on /foxy — the route the bar used to be hidden on', () => {
+    // The 4C half of CEO defect #1 in one assertion. GlobalAppLayout used to
+    // suppress ALL nav chrome on /foxy (`isFocusedFoxy`), so a student inside
+    // Foxy had no bottom bar at all and the only exit was a header back arrow.
+    mockPathname = '/foxy';
+    stubMatchMedia(false);
+    render(<MobileBottomNav />);
+
+    const foxy = navElement().querySelector('[data-slot="foxy"]');
+    expect(foxy, 'the bar renders no Foxy slot').not.toBeNull();
+    expect(foxy!.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('marks NO primary slot current on a More-sheet route', () => {
+    mockPathname = '/memory';
+    stubMatchMedia(false);
+    render(<MobileBottomNav />);
+
+    const current = navElement().querySelectorAll('[aria-current="page"]');
+    expect(
+      Array.from(current).map((el) => el.getAttribute('data-slot')),
+      '/memory belongs to the More sheet — the Foxy slot must not claim it just ' +
+        'because both are Foxy-flavoured surfaces',
+    ).toEqual([]);
   });
 });

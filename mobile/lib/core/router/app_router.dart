@@ -41,35 +41,122 @@ import '../../ui/screens/synthesis/synthesis_screen.dart';
 import '../../ui/screens/progress/hpc_screen.dart';
 import '../../ui/widgets/app_shell.dart';
 import '../../ui/widgets/parent_app_shell.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/experience_provider.dart';
 import '../../providers/parent_provider.dart';
 import '../../providers/role_provider.dart';
 import '../constants/api_constants.dart';
 
+/// Holding route shown while the persisted Supabase session is being restored.
+/// See [AuthStatus.restoring] — this is the route that replaces the old hard
+/// bounce to `/login` on screen unlock (CEO defect #3).
+const String authCheckRoute = '/auth-check';
+
+bool isLoginRouteLocation(String matchedLocation) =>
+    matchedLocation == '/login' || matchedLocation == '/signup';
+
+/// Outcome of the tri-state auth gate.
+///
+/// Exactly one of three things happens:
+///   * [redirectTo] non-null → GoRouter redirects there;
+///   * [proceed] false and [redirectTo] null → stay put (`redirect` returns
+///     null) and the role/experience rules are SKIPPED;
+///   * [proceed] true → fall through to the role/experience rules.
+class AuthGateDecision {
+  final String? redirectTo;
+  final bool proceed;
+
+  const AuthGateDecision.redirect(String this.redirectTo) : proceed = false;
+  const AuthGateDecision.stay()
+      : redirectTo = null,
+        proceed = false;
+  const AuthGateDecision.proceed()
+      : redirectTo = null,
+        proceed = true;
+
+  @override
+  String toString() =>
+      'AuthGateDecision(redirectTo: $redirectTo, proceed: $proceed)';
+}
+
+/// Pure tri-state auth gate — the CEO defect #3 fix, extracted so it can be
+/// unit-tested without Supabase, GoRouter or a widget tree.
+///
+/// The single load-bearing rule: **only [AuthStatus.unauthenticated] may send
+/// the student to `/login`.** [AuthStatus.restoring] parks them on
+/// [authCheckRoute] instead, because a null `currentSession` during async
+/// restore / token refresh / offline is indistinguishable from a real logout
+/// if you only look at one synchronous read — and the app was treating it as
+/// one.
+AuthGateDecision resolveAuthGate({
+  required AuthStatus status,
+  required String matchedLocation,
+}) {
+  final isLoginRoute = isLoginRouteLocation(matchedLocation);
+  final isAuthCheckRoute = matchedLocation == authCheckRoute;
+
+  switch (status) {
+    case AuthStatus.restoring:
+      // Someone sitting on /login or /signup stays there — do not yank a
+      // half-typed form away behind a spinner.
+      if (isLoginRoute) return const AuthGateDecision.stay();
+      return isAuthCheckRoute
+          ? const AuthGateDecision.stay()
+          : const AuthGateDecision.redirect(authCheckRoute);
+
+    case AuthStatus.unauthenticated:
+      return isLoginRoute
+          ? const AuthGateDecision.stay()
+          : const AuthGateDecision.redirect('/login');
+
+    case AuthStatus.authenticated:
+      // Restore finished: leave the holding route and let the flag-OFF /
+      // flag-ON rules pick the real destination on the next pass.
+      if (isAuthCheckRoute) return const AuthGateDecision.redirect('/');
+      return const AuthGateDecision.proceed();
+  }
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
-    // Re-evaluate redirects when the async role lookup resolves so a freshly
-    // authenticated guardian is forked to `/parent` as soon as the role is
-    // known.
+    // Re-evaluate redirects when auth status settles, and (flag ON only) when
+    // the async role lookup resolves so a freshly authenticated guardian is
+    // forked to `/parent` as soon as the role is known.
     //
-    // CRITICAL (flag-OFF byte-identical): this listenable is attached ONLY when
-    // `ApiConstants.useV2` is ON. When OFF it is null, so the [roleProvider] is
-    // NEVER initialized — no `get_user_role` RPC is ever issued on the auth
-    // path of a flag-OFF build, and the router behaves exactly as it does today.
-    refreshListenable: ApiConstants.useV2 ? _RoleRefreshNotifier(ref) : null,
+    // The AUTH half is attached UNCONDITIONALLY. It used to be `useV2 ? … :
+    // null`, and since `USE_V2` defaults to false, a default build had NO
+    // external refresh trigger at all: once the redirect had evaluated with a
+    // momentarily-null session, nothing ever re-ran it when the session came
+    // back. That is half of the false-logout bug.
+    //
+    // The ROLE half stays flag-gated (flag-OFF byte-identical): listening to
+    // [roleProvider] would INITIALIZE it, issuing a `get_user_role` RPC on the
+    // auth path of a flag-OFF build.
+    refreshListenable: _RouterRefreshNotifier(ref),
     redirect: (context, state) {
-      final session = Supabase.instance.client.auth.currentSession;
-      final isAuth = session != null;
-      final isLoginRoute = state.matchedLocation == '/login' ||
-          state.matchedLocation == '/signup';
+      // ── Tri-state auth gate (CEO defect #3) ────────────────────────────────
+      // This deliberately does NOT read `auth.currentSession` synchronously.
+      // supabase_flutter restores the persisted session asynchronously and
+      // restarts autoRefreshToken on foreground; a synchronous read during
+      // either window returns null on a perfectly valid session and used to
+      // hard-bounce the student to /login. Only a DEFINITIVE
+      // `unauthenticated` may redirect to login now — `restoring` holds on
+      // [authCheckRoute]. Logic lives in [resolveAuthGate] so it is testable.
+      final gate = resolveAuthGate(
+        status: ref.read(authStatusProvider),
+        matchedLocation: state.matchedLocation,
+      );
+      if (gate.redirectTo != null) return gate.redirectTo;
+      if (!gate.proceed) return null;
 
-      if (!isAuth && !isLoginRoute) return '/login';
+      // Past this point the student is definitively AUTHENTICATED.
+      final isLoginRoute = isLoginRouteLocation(state.matchedLocation);
 
       // ── /v2 flag OFF: behaviour is BYTE-IDENTICAL to today. The role
       // provider is never consulted; the student tree is the only experience. ──
       if (!ApiConstants.useV2) {
-        if (isAuth && isLoginRoute) return '/';
+        if (isLoginRoute) return '/';
         return null;
       }
 
@@ -92,7 +179,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (experienceAsync.isLoading) {
         // A child switch re-resolves the parent scope. Keep the current parent
         // subroute while its shell renders a closed loading state.
-        if (isAuth && state.matchedLocation.startsWith('/parent')) return null;
+        if (state.matchedLocation.startsWith('/parent')) return null;
         return state.matchedLocation == '/role-check' ? null : '/role-check';
       }
       final resolution =
@@ -115,7 +202,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             : '/experience-unavailable';
       }
 
-      if (isAuth && isLoginRoute) {
+      if (isLoginRoute) {
         return isGuardian ? '/parent' : (oneExperience ? '/today' : '/');
       }
 
@@ -125,7 +212,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         return isGuardian ? '/parent' : (oneExperience ? '/today' : '/');
       }
 
-      if (isAuth && isGuardian) {
+      if (isGuardian) {
         // Keep guardians inside the parent tree. If they somehow land on a
         // student route (deep link, root), send them to /parent.
         if (state.matchedLocation == '/' ||
@@ -146,11 +233,11 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Student (or unresolved role) under the flag: the adaptive Today home is
       // the default authed landing. Redirect the legacy Dashboard root to it.
-      if (isAuth && state.matchedLocation == '/') {
+      if (state.matchedLocation == '/') {
         return oneExperience ? '/today' : null;
       }
       // A non-guardian must never sit on the parent tree.
-      if (isAuth && state.matchedLocation.startsWith('/parent')) {
+      if (state.matchedLocation.startsWith('/parent')) {
         return oneExperience ? '/today' : '/';
       }
       return null;
@@ -162,9 +249,19 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/signup',
         builder: (context, state) => const SignupScreen(),
       ),
+      // Holding route while the persisted Supabase session is restored.
+      // Registered UNCONDITIONALLY (not behind USE_V2) — session restore
+      // happens on every build.
+      GoRoute(
+        path: authCheckRoute,
+        builder: (context, state) => const _CheckingScreen(
+          semanticsLabel: 'Restoring your session',
+          label: 'Getting you back in…',
+        ),
+      ),
       GoRoute(
         path: '/role-check',
-        builder: (context, state) => const _RoleCheckScreen(),
+        builder: (context, state) => const _CheckingScreen(),
       ),
       GoRoute(
         path: '/unsupported-role',
@@ -487,39 +584,63 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-/// Bridges the async [roleProvider] to GoRouter's [GoRouter.refreshListenable]
-/// so the redirect re-runs the moment the role lookup resolves (or changes).
+/// Bridges async providers to GoRouter's [GoRouter.refreshListenable] so the
+/// redirect re-runs the moment they resolve (or change).
 ///
-/// It listens to [roleProvider] via the router provider's own `ref` and pings
-/// listeners on any change. Only consequential when `ApiConstants.useV2` is ON
-/// — the redirect ignores role when the flag is OFF, so a flag-OFF build sees
-/// no extra redirects from this notifier.
-class _RoleRefreshNotifier extends ChangeNotifier {
-  _RoleRefreshNotifier(Ref ref) {
-    _sub = ref.listen<AsyncValue<UserRole>>(
-      roleProvider,
+/// AUTH ([authStatusProvider]) is subscribed UNCONDITIONALLY. This is the
+/// second half of the CEO defect #3 fix: previously the whole listenable was
+/// `ApiConstants.useV2 ? … : null`, and `USE_V2` defaults to false, so a
+/// default build had zero external refresh triggers. A session that came back
+/// after a lock/unlock never re-triggered the redirect, stranding the student
+/// on `/login`. Subscribing here also keeps [authStatusProvider] (and hence the
+/// underlying [authStateProvider] stream) alive for the whole router lifetime,
+/// so `redirect`'s `ref.read` always sees a live value.
+///
+/// ROLE / EXPERIENCE stay flag-gated: `ref.listen` would INITIALIZE
+/// [roleProvider], issuing a `get_user_role` RPC on the auth path of a
+/// flag-OFF build. Flag-OFF behaviour there is unchanged.
+class _RouterRefreshNotifier extends ChangeNotifier {
+  _RouterRefreshNotifier(Ref ref) {
+    _authSub = ref.listen<AuthStatus>(
+      authStatusProvider,
       (_, __) => notifyListeners(),
     );
-    _experienceSub = ref.listen<AsyncValue<OneExperienceResolution>>(
-      oneExperienceProvider,
-      (_, __) => notifyListeners(),
-    );
+    if (ApiConstants.useV2) {
+      _sub = ref.listen<AsyncValue<UserRole>>(
+        roleProvider,
+        (_, __) => notifyListeners(),
+      );
+      _experienceSub = ref.listen<AsyncValue<OneExperienceResolution>>(
+        oneExperienceProvider,
+        (_, __) => notifyListeners(),
+      );
+    }
   }
 
-  late final ProviderSubscription<AsyncValue<UserRole>> _sub;
-  late final ProviderSubscription<AsyncValue<OneExperienceResolution>>
-      _experienceSub;
+  late final ProviderSubscription<AuthStatus> _authSub;
+  ProviderSubscription<AsyncValue<UserRole>>? _sub;
+  ProviderSubscription<AsyncValue<OneExperienceResolution>>? _experienceSub;
 
   @override
   void dispose() {
-    _sub.close();
-    _experienceSub.close();
+    _authSub.close();
+    _sub?.close();
+    _experienceSub?.close();
     super.dispose();
   }
 }
 
-class _RoleCheckScreen extends StatelessWidget {
-  const _RoleCheckScreen();
+/// Shared closed loading state for both holding routes:
+/// `/auth-check` (session restore in flight) and `/role-check` (role RPC in
+/// flight). One widget, two labels — deliberately not duplicated.
+class _CheckingScreen extends StatelessWidget {
+  const _CheckingScreen({
+    this.semanticsLabel = 'Checking account access',
+    this.label = 'Checking your account…',
+  });
+
+  final String semanticsLabel;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -528,13 +649,13 @@ class _RoleCheckScreen extends StatelessWidget {
         child: Center(
           child: Semantics(
             liveRegion: true,
-            label: 'Checking account access',
-            child: const Column(
+            label: semanticsLabel,
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Checking your account…'),
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(label),
               ],
             ),
           ),

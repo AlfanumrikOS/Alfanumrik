@@ -100,7 +100,7 @@ export default function CrystallizationLab() {
         <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Temperature: {temp}°C</label>
         <input type="range" min={20} max={100} value={temp} onChange={e => setTemp(+e.target.value)} style={{ width: '100%', marginTop: 4 }} />
       </div>
-      <canvas ref={canvasRef} width={520} height={260} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <canvas ref={canvasRef} width={520} height={260} style={{ width: '100%', height: 'auto', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
         <b style={{ color: 'var(--orange)' }}>Solubility decreases</b> with decreasing temperature (most salts) | Crystals form at {(crystallized * 100).toFixed(0)}%
       </div>

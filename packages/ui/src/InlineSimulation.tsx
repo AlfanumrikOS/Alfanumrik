@@ -194,7 +194,10 @@ export function InlineSimulation({ simulationId, title, emoji, tip, color = '#08
           </div>
 
           {/* Simulation component */}
-          <div className="p-3" style={{ minHeight: 300, maxHeight: 500 }}>
+          {/* overflow: 'auto' is required alongside maxHeight — without it a
+              simulation taller than 500px spills out of this box and paints over
+              the concept text below instead of scrolling. */}
+          <div className="p-3" style={{ minHeight: 300, maxHeight: 500, overflow: 'auto' }}>
             <SimComponent />
           </div>
 

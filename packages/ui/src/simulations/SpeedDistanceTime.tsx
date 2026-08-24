@@ -97,7 +97,7 @@ export default function SpeedDistanceTime() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Speed, Distance & Time</h3>
-      <canvas ref={canvasRef} width={560} height={260} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <canvas ref={canvasRef} width={560} height={260} style={{ width: '100%', height: 'auto', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
       <div style={{ marginTop: 10 }}>
         <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Speed: {speed} m/s</label>
         <input type="range" min={1} max={20} value={speed} onChange={e => setSpeed(+e.target.value)} style={{ width: '100%' }} />

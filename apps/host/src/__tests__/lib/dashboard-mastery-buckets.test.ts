@@ -24,6 +24,8 @@ import {
   groupBySubject,
   weakestStartedTopic,
   subjectCodeForName,
+  subjectCodeMapFromAllowed,
+  filterRowsToAllowedSubjects,
   type MasteryOverviewRow,
 } from '@alfanumrik/lib/dashboard/mastery-buckets';
 
@@ -231,5 +233,95 @@ describe('subjectCodeForName — display name → canonical code for deep links'
     expect(subjectCodeForName('')).toBeNull();
     expect(subjectCodeForName(null)).toBeNull();
     expect(subjectCodeForName(undefined)).toBeNull();
+  });
+});
+
+/* ── Defect #11: subject scope must equal grade_subject_map, keyed on CODE ──
+ *
+ * SubjectRoadmaps used to filter with a hardcoded `new Set(['Mathematics',
+ * 'Science'])` on the DISPLAY NAME. Production `grade_subject_map` maps
+ * grades 6-10 → {math, science} and grades 11-12 → {biology, chemistry, math,
+ * physics}, so that set dropped Physics/Chemistry/Biology outright: every
+ * grade-11/12 student saw a Mathematics-only mastery surface.
+ *
+ * These cases pin the replacement against the real map for one junior and one
+ * senior grade. They are what would have caught the original defect: a
+ * grade-11 fixture yields four subjects, not one.
+ */
+
+/** Exactly what /api/student/subjects returns for a grade-9 CBSE student. */
+const GRADE_9_ALLOWED = [
+  { code: 'math', name: 'Mathematics' },
+  { code: 'science', name: 'Science' },
+];
+
+/** Exactly what /api/student/subjects returns for a grade-11 science student. */
+const GRADE_11_ALLOWED = [
+  { code: 'biology', name: 'Biology' },
+  { code: 'chemistry', name: 'Chemistry' },
+  { code: 'math', name: 'Mathematics' },
+  { code: 'physics', name: 'Physics' },
+];
+
+/** get_mastery_overview returns the display NAME in `subject`. */
+const OVERVIEW_ROWS = [
+  row({ topic_id: 'a', subject: 'Mathematics' }),
+  row({ topic_id: 'b', subject: 'Science' }),
+  row({ topic_id: 'c', subject: 'Physics' }),
+  row({ topic_id: 'd', subject: 'Chemistry' }),
+  row({ topic_id: 'e', subject: 'Biology' }),
+  row({ topic_id: 'f', subject: 'English' }),
+  row({ topic_id: 'g', subject: 'Social Studies' }),
+];
+
+describe('filterRowsToAllowedSubjects — reachable-subject scope (defect #11)', () => {
+  it('grade 9 → exactly {Mathematics, Science}, dropping English/SST', () => {
+    const kept = filterRowsToAllowedSubjects(OVERVIEW_ROWS, GRADE_9_ALLOWED);
+    expect(kept.map((r) => r.subject).sort()).toEqual(['Mathematics', 'Science']);
+  });
+
+  it('grade 11 → all FOUR senior subjects, not Mathematics alone (the old hardcode bug)', () => {
+    const kept = filterRowsToAllowedSubjects(OVERVIEW_ROWS, GRADE_11_ALLOWED);
+    expect(kept.map((r) => r.subject).sort()).toEqual([
+      'Biology',
+      'Chemistry',
+      'Mathematics',
+      'Physics',
+    ]);
+    // The specific regression: Physics/Chemistry/Biology used to be dropped.
+    expect(kept.map((r) => r.subject)).toContain('Physics');
+  });
+
+  it('accepts rows keyed by CODE too (student_learning_profiles / topic_mastery_rollup)', () => {
+    const codeRows = [
+      { id: 'p1', subject: 'physics' },
+      { id: 'p2', subject: 'math' },
+      { id: 'p3', subject: 'english' },
+    ];
+    const kept = filterRowsToAllowedSubjects(codeRows, GRADE_11_ALLOWED);
+    expect(kept.map((r) => r.subject)).toEqual(['physics', 'math']);
+  });
+
+  it('FAILS OPEN while the allowed list is unresolved — never an all-empty panel', () => {
+    expect(filterRowsToAllowedSubjects(OVERVIEW_ROWS, []).length).toBe(OVERVIEW_ROWS.length);
+    expect(filterRowsToAllowedSubjects(OVERVIEW_ROWS, undefined).length).toBe(OVERVIEW_ROWS.length);
+  });
+
+  it('drops rows with no subject at all, but KEEPS ones whose name we cannot map', () => {
+    const rows = [row({ topic_id: 'x', subject: null }), row({ topic_id: 'y', subject: 'Robotics' })];
+    const kept = filterRowsToAllowedSubjects(rows, GRADE_9_ALLOWED);
+    // An unmappable name is OUR gap, not evidence the subject is unreachable.
+    expect(kept.map((r) => r.topic_id)).toEqual(['y']);
+  });
+
+  it('subjectCodeMapFromAllowed builds the display-name → code map subjectCodeForName consumes', () => {
+    const map = subjectCodeMapFromAllowed(GRADE_11_ALLOWED);
+    expect(map).toEqual({
+      Biology: 'biology',
+      Chemistry: 'chemistry',
+      Mathematics: 'math',
+      Physics: 'physics',
+    });
+    expect(subjectCodeForName('Physics', map)).toBe('physics');
   });
 });

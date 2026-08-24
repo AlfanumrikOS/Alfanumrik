@@ -161,7 +161,7 @@ export default function NuclearDecay() {
         <button onClick={() => setPlaying(p => !p)} style={{ padding: '6px 14px', background: 'var(--surface-2)', color: 'var(--text-1)', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 12 }}>{playing ? 'Pause' : 'Play'}</button>
         <button onClick={reset} style={{ padding: '6px 14px', background: 'var(--surface-2)', color: 'var(--text-2)', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 12 }}>Reset</button>
       </div>
-      <canvas ref={canvasRef} width={540} height={230} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <canvas ref={canvasRef} width={540} height={230} style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block' }} />
       <div style={{ marginTop: 8 }}>
         <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Half-life t½: {halfLife}s</label>
         <input type="range" min={1} max={10} value={halfLife} onChange={e => setHalfLife(+e.target.value)} style={{ width: '100%' }} />

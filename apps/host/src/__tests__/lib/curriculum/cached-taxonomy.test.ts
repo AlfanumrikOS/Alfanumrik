@@ -111,7 +111,9 @@ describe('cached-taxonomy', () => {
  *  2. Cache key is order-independent over the id set.
  *  3. Tagged with the shared `syllabus` tag + a TTL, same as the siblings.
  *  4. Deliberately NOT is_active-filtered (unlike getActiveTopicsForSubjects)
- *     — the query only selects `id, title`, no `is_active` predicate.
+ *     — the query selects `id, title, title_hi`, with no `is_active` predicate.
+ *     (`title_hi` added 2026-08-24 for the /diagnostic results screen, which
+ *     renders topic labels to the student and so must be bilingual — P7.)
  *  5. Cache-layer failure degrades to a direct DB read; genuine DB errors
  *     rethrow without a second query.
  */
@@ -122,11 +124,24 @@ describe('getTopicTitlesByIds', () => {
     expect(cacheCalls).toHaveLength(0);
   });
 
-  it('queries curriculum_topics selecting only id and title (is_active-agnostic)', async () => {
-    dbResult = { data: [{ id: 't1', title: 'Number Systems' }], error: null };
+  it('queries curriculum_topics selecting id, title and title_hi (is_active-agnostic)', async () => {
+    dbResult = {
+      data: [{ id: 't1', title: 'Number Systems', title_hi: 'संख्या पद्धति' }],
+      error: null,
+    };
     const rows = await getTopicTitlesByIds(['t1']);
-    expect(rows).toEqual([{ id: 't1', title: 'Number Systems' }]);
+    expect(rows).toEqual([{ id: 't1', title: 'Number Systems', title_hi: 'संख्या पद्धति' }]);
     expect(fromSpy).toHaveBeenCalledWith('curriculum_topics');
+  });
+
+  it('P7: carries title_hi through for the /diagnostic results screen, and tolerates it being null', async () => {
+    // Added 2026-08-24 — the diagnostic renders topic labels to the student, so
+    // this reader must be bilingual. An untranslated topic yields null; callers
+    // fall back to the English title rather than blanking the chip.
+    dbResult = { data: [{ id: 't1', title: 'Trigonometry', title_hi: null }], error: null };
+    const rows = await getTopicTitlesByIds(['t1']);
+    expect(rows[0].title_hi).toBeNull();
+    expect(rows[0].title).toBe('Trigonometry');
   });
 
   it('builds an order-independent cache key over the id set', async () => {
@@ -134,7 +149,9 @@ describe('getTopicTitlesByIds', () => {
     await getTopicTitlesByIds(['a-id', 'b-id']);
     expect(cacheCalls).toHaveLength(2);
     expect(cacheCalls[0].keyParts).toEqual(cacheCalls[1].keyParts);
-    expect(cacheCalls[0].keyParts[0]).toBe('curriculum-topic-titles-by-id-v1');
+    // v2 since 2026-08-24: the cached ROW SHAPE gained `title_hi`, so the key
+    // had to move or an in-flight v1 entry would keep serving Hindi-less rows.
+    expect(cacheCalls[0].keyParts[0]).toBe('curriculum-topic-titles-by-id-v2');
     expect(cacheCalls[0].keyParts.join('|')).toContain('a-id,b-id');
   });
 

@@ -97,7 +97,7 @@ export default function ProteinSynthesis() {
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Protein Synthesis</h3>
       <p style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 6 }}>Phase: <strong style={{ color: STEPS[step].phase === 'transcription' ? '#7C3AED' : '#2E7D32' }}>{STEPS[step].phase === 'transcription' ? 'Transcription' : 'Translation'}</strong></p>
-      <canvas ref={canvasRef} width={560} height={230} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <canvas ref={canvasRef} width={560} height={230} style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block' }} />
       <div style={{ marginTop: 8, padding: '6px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 12, color: 'var(--text-2)' }}>
         <strong style={{ color: 'var(--text-1)' }}>{STEPS[step].label}:</strong> {STEPS[step].desc}
       </div>

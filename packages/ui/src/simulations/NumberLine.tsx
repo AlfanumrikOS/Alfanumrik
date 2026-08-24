@@ -77,7 +77,7 @@ export default function NumberLine() {
   return (
     <div style={{ background:'var(--surface-1)', borderRadius:12, padding:16, maxWidth:600, margin:'0 auto', fontFamily:'inherit' }}>
       <h3 style={{ color:'var(--text-1)', fontSize:16, fontWeight:700, marginBottom:8 }}>Integer Number Line</h3>
-      <canvas ref={canvasRef} width={560} height={120} style={{ width:'100%', borderRadius:8, background:'var(--surface-2)', display:'block' }} />
+      <canvas ref={canvasRef} width={560} height={120} style={{ width:'100%', height:'auto', borderRadius:8, background:'var(--surface-2)', display:'block' }} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:10 }}>
         <div>
           <label style={{ color:'var(--text-2)', fontSize:12 }}>A = {absMode?`|${a}|=${Math.abs(a)}`:a}</label>

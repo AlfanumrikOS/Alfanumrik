@@ -86,7 +86,7 @@ export default function HeartCirculation() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Heart Circulation</h3>
-      <canvas ref={canvasRef} width={560} height={240} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <canvas ref={canvasRef} width={560} height={240} style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block' }} />
       <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
         <button onClick={() => setPlaying(p => !p)} style={{ padding: '6px 16px', background: playing ? '#f44336' : '#4CAF50', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
           {playing ? 'Pause' : 'Play'}

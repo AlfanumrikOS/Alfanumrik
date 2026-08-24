@@ -4,15 +4,33 @@
  * RevisionRail — the SECONDARY spaced-repetition surface of the Alfa OS
  * dashboard (ff_student_os_v1).
  *
- * Reuses the existing <ReviewsDueCard> (which fetches /api/dashboard/reviews-due
- * and self-suppresses to null when nothing is due) plus a lightweight count of
- * topics flagged due_for_review from useReviewCards. No new data contracts —
- * this is a quieter, decision-secondary framing of work the engine already
- * scheduled. Bilingual via isHi.
+ * ONE number, ONE source (defect #7). This card used to show two contradictory
+ * counts side by side:
+ *   - the badge came from `useReviewCards` → get_review_cards →
+ *     `spaced_repetition_cards`, a table nothing writes from quizzes (19 rows
+ *     platform-wide), so it read 0 for essentially every student; while
+ *   - the nested <ReviewsDueCard> came from /api/dashboard/reviews-due →
+ *     `concept_mastery.next_review_at`, a real number.
+ * A student could see the badge missing and the card announcing "6 reviews
+ * due" in the same 200px of screen.
+ *
+ * Both the badge and the CTA now derive from a SINGLE payload:
+ * GET /api/revision/overview (the same contract the live /revision page reads),
+ * bucketed off `concept_mastery.next_review_at` — the real SM-2 schedule, not
+ * the deprecated `next_review_date` ghost column. `dueNow = overdue + dueToday`
+ * is handed to <ReviewsDueCard> as props, so the badge and the card can no
+ * longer disagree and the dashboard makes one request instead of two.
+ *
+ * The CTA target moved too: /review?due_only=1 was a dead end (301 → /refresh
+ * ?tab=flashcards, which drops the query and reads the same empty
+ * spaced_repetition_cards → "Nothing to refresh right now"). It now goes to
+ * /revision, which is live at 100% and renders these exact items.
+ *
+ * Bilingual via isHi.
  */
 
 import dynamic from 'next/dynamic';
-import { useReviewCards } from '@alfanumrik/lib/swr';
+import { useRevisionOverview } from '@alfanumrik/ui/review/os/useRevisionOverview';
 import { WARM, WARM_10 } from '@alfanumrik/ui/dashboard/os/palette';
 
 const ReviewsDueCard = dynamic(() => import('@alfanumrik/ui/dashboard/ReviewsDueCard'), {
@@ -26,15 +44,17 @@ interface RevisionRailProps {
 }
 
 export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
-  // useReviewCards is the existing spaced-repetition reader; we use only its
-  // length for a glanceable count. ReviewsDueCard owns the primary CTA.
-  const { data: reviewCards, isLoading, error } = useReviewCards(studentId, 20);
-  // `loaded` = the fetch genuinely resolved with an array payload. dueCount
-  // falls back to 0 while loading / on error, so the reassuring "nothing due"
-  // copy below MUST additionally require `loaded && !error` — otherwise a failed
-  // fetch (or the initial pre-data render) would masquerade as "all caught up".
-  const loaded = Array.isArray(reviewCards);
-  const dueCount = loaded ? reviewCards!.length : 0;
+  // Single reader. `enabled` waits for a student id so the OFF/logged-out path
+  // issues zero requests.
+  const { data: overview, isLoading, error } = useRevisionOverview(Boolean(studentId));
+
+  // `loaded` = the fetch genuinely resolved with a payload. dueCount falls back
+  // to 0 while loading / on error, so the reassuring "nothing due" copy below
+  // MUST additionally require `loaded && !error` — otherwise a failed fetch (or
+  // the initial pre-data render) would masquerade as "all caught up".
+  const loaded = Boolean(overview);
+  const dueCount = overview ? overview.overdue.count + overview.dueToday.count : 0;
+  const estimatedMinutes = overview?.estimatedMinutes ?? 0;
 
   return (
     <section
@@ -71,11 +91,12 @@ export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
         </p>
       ) : (
         <>
-          {/* ReviewsDueCard renders the CTA or null (when 0 due). */}
-          <ReviewsDueCard />
+          {/* ReviewsDueCard renders the CTA or null (when 0 due). It reads the
+              count from THIS payload — it does not fetch its own. */}
+          <ReviewsDueCard dueCount={dueCount} estimatedMinutes={estimatedMinutes} />
 
           {/* Only assert "nothing due — nice work" on a genuine success
-              (fetch resolved, no error, empty array). Never let a failed or
+              (fetch resolved, no error, zero due). Never let a failed or
               in-flight fetch look like the student is all caught up. */}
           {!error && loaded && dueCount === 0 && (
             <p className="text-fluid-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>

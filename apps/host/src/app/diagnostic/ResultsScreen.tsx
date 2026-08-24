@@ -12,7 +12,8 @@
 
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { DIAGNOSTIC_COPY as C, RESULT_THRESHOLDS, t } from './copy';
-import type { DiagnosticSummary } from './types';
+import DiagnosticReview from './DiagnosticReview';
+import type { DiagnosticQuestion, DiagnosticSummary } from './types';
 
 const DIFFICULTY_LABELS: Record<string, { en: string; hi: string; color: string }> = {
   easy:   { en: 'Start with Easy questions',   hi: 'आसान प्रश्नों से शुरू करें',    color: '#16A34A' },
@@ -75,12 +76,40 @@ export interface ResultsScreenProps {
   isHi: boolean;
   isPostOnboarding: boolean;
   summary: DiagnosticSummary;
+  /**
+   * The questions as served by /api/diagnostic/start. Supplies the review
+   * screen's text / options / `explanation` / `explanation_hi`; correctness
+   * still comes only from `summary.question_results` (the server's
+   * re-derivation). Optional so an older caller keeps compiling.
+   */
+  questions?: DiagnosticQuestion[];
   onPrimaryCta: () => void;
   onRetake: () => void;
 }
 
-export default function ResultsScreen({ isHi, isPostOnboarding, summary, onPrimaryCta, onRetake }: ResultsScreenProps) {
+/**
+ * Pick the language-appropriate topic label list.
+ *
+ * P7: the server returns `weak_topics` (English `curriculum_topics.title`) plus
+ * a parallel `weak_topics_hi` (`title_hi`, falling back to `title` server-side
+ * for untranslated technical terms). Falls back to the English list when the
+ * `_hi` sibling is absent — e.g. a response from an older deployment.
+ */
+function pickTopics(en: string[] | undefined, hi: string[] | undefined, isHi: boolean): string[] {
+  const base = Array.isArray(en) ? en : [];
+  if (!isHi) return base;
+  return Array.isArray(hi) && hi.length === base.length ? hi : base;
+}
+
+export default function ResultsScreen({ isHi, isPostOnboarding, summary, questions, onPrimaryCta, onRetake }: ResultsScreenProps) {
   const pct = summary.score_percent;
+  const weakTopics = pickTopics(summary.weak_topics, summary.weak_topics_hi, isHi);
+  const strongTopics = pickTopics(summary.strong_topics, summary.strong_topics_hi, isHi);
+  // C2: the server disarms `recommended_difficulty` to 'medium' and flags the
+  // placement 'low' after a < 3s/question run, and suppresses the topic lists
+  // for the same reason. Say so rather than presenting a disarmed default as a
+  // real recommendation.
+  const lowConfidence = summary.placement_confidence === 'low';
   // §7.5b: 80 / 50 — the SAME boundaries /api/diagnostic/complete uses for
   // recommended_difficulty, so the badge, the message and the recommendation
   // can never disagree. Do not drift these apart from RESULT_THRESHOLDS.
@@ -198,8 +227,27 @@ export default function ResultsScreen({ isHi, isPostOnboarding, summary, onPrima
             </div>
           </div>
 
+          {/* C2 — the placement was disarmed. Tell the student, don't hide it. */}
+          {lowConfidence && (
+            <p
+              data-testid="diagnostic-low-confidence-note"
+              style={{
+                margin: 0,
+                fontSize: 12,
+                lineHeight: 1.55,
+                color: '#B45309',
+                background: 'rgba(217,119,6,0.10)',
+                border: '1px solid rgba(217,119,6,0.28)',
+                borderRadius: 10,
+                padding: '10px 12px',
+              }}
+            >
+              {t(C.lowConfidenceNote, isHi)}
+            </p>
+          )}
+
           {/* Weak topics */}
-          {summary.weak_topics && summary.weak_topics.length > 0 && (
+          {weakTopics.length > 0 && (
             <div
               style={{
                 borderRadius: 14,
@@ -222,8 +270,8 @@ export default function ResultsScreen({ isHi, isPostOnboarding, summary, onPrima
                 <span>⚠</span>
                 {isHi ? 'सुधार की जरूरत' : 'Areas to strengthen'}
               </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {summary.weak_topics.map((topic) => (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} data-testid="diagnostic-weak-topics">
+                {weakTopics.map((topic) => (
                   <span
                     key={topic}
                     style={{
@@ -244,7 +292,7 @@ export default function ResultsScreen({ isHi, isPostOnboarding, summary, onPrima
           )}
 
           {/* Strong topics */}
-          {summary.strong_topics && summary.strong_topics.length > 0 && (
+          {strongTopics.length > 0 && (
             <div
               style={{
                 borderRadius: 14,
@@ -267,8 +315,8 @@ export default function ResultsScreen({ isHi, isPostOnboarding, summary, onPrima
                 <span>✓</span>
                 {isHi ? 'मजबूत क्षेत्र' : 'Strong areas'}
               </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {summary.strong_topics.map((topic) => (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }} data-testid="diagnostic-strong-topics">
+                {strongTopics.map((topic) => (
                   <span
                     key={topic}
                     style={{
@@ -288,9 +336,13 @@ export default function ResultsScreen({ isHi, isPostOnboarding, summary, onPrima
             </div>
           )}
 
-          {/* Empty state for topics when RPC failed or returned nothing */}
-          {(!summary.weak_topics || summary.weak_topics.length === 0) &&
-            (!summary.strong_topics || summary.strong_topics.length === 0) && (
+          {/* Empty state for topics — now reached only when the aggregation
+              genuinely produced nothing (every topic in the 50-79 middle band,
+              every topic_id NULL, the curriculum_topics lookup failed, or C2
+              suppressed the analysis). Before Phase 5 the server hardcoded
+              `weak_topics: []`, so this branch ALWAYS won and "Areas to
+              strengthen" had literally never rendered in production. */}
+          {weakTopics.length === 0 && strongTopics.length === 0 && (
             <div
               style={{
                 borderRadius: 14,
@@ -306,6 +358,21 @@ export default function ResultsScreen({ isHi, isPostOnboarding, summary, onPrima
                   : 'Detailed topic analysis is not available. Please start practising.'}
               </p>
             </div>
+          )}
+
+          {/* Phase 5A — per-question review with the explanation the server has
+              always been sending and this page never rendered. Deliberately
+              placed ABOVE the CTAs: the answer to "why was I wrong" is the
+              point of the screen, not a footnote below "Start Practicing".
+              Rendered regardless of placement_confidence — an explanation is
+              ground truth about the question, not an inference about the
+              student, so a speed run still deserves it. */}
+          {summary.question_results && summary.question_results.length > 0 && (
+            <DiagnosticReview
+              isHi={isHi}
+              questions={questions ?? []}
+              results={summary.question_results}
+            />
           )}
 
           {/* CTA — go to dashboard when arriving from onboarding, else to quiz */}

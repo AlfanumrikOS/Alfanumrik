@@ -4,16 +4,18 @@
  * MobileBottomNav — tier 1 of the ONE student navigation (360–767px).
  *
  * Renders the primary slots from resolveStudentPrimaryNav() in the fixed
- * spec order: Today · Practice · Progress · More. The tablet rail
+ * spec order: Today · Practice · Foxy · Progress · More. The tablet rail
  * (TabletNavRail, 768–1023px) and the desktop sidebar (DesktopSidebar, 1024+)
  * render the SAME slots, same labels, same destinations, same order — only the
  * chrome changes. Visibility per tier is CSS-only (globals.css); all three
  * components stay mounted so route transitions never re-mount navigation.
  *
- * 2026-08-09 IA CHANGE: Foxy no longer occupies the raised centre slot. It is
- * a utility (More sheet + sidebar Utilities section), and `/practice` took the
- * primary slot. See nav-config.ts for the full rationale and the
- * PRACTICE FLAG CONTRACT.
+ * 2026-08-24 IA REVERSAL (CEO-directed): Foxy is a primary destination again,
+ * in the CENTRE slot of a five-slot bar — but as a plain slot, NOT the raised
+ * centre FAB it was before 2026-08-09. It is no longer a More-sheet row. This
+ * component is also the ONE nav tier that stays mounted on `/foxy` itself, so
+ * the student always has a way out. See nav-config.ts for the full reversal
+ * record and the PRACTICE FLAG CONTRACT.
  *
  * A11y contract:
  *   - exactly one `aria-current="page"` (resolvePrimaryActiveId picks a single

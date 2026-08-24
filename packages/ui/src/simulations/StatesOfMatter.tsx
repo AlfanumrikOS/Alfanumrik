@@ -213,7 +213,7 @@ export default function StatesOfMatter() {
         height={260}
         role="img"
         aria-label={`Particle simulation showing ${state} state at ${temperature}K`}
-        style={{ width: '100%', borderRadius: 12, border: '2px solid #e2e8f0', display: 'block' }}
+        style={{ width: '100%', height: 'auto', borderRadius: 12, border: '2px solid #e2e8f0', display: 'block' }}
       />
 
       {/* State Display */}

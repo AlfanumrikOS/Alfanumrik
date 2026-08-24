@@ -125,8 +125,76 @@ export async function POST(request: NextRequest) {
       for (const f of required) {
         if (!fields[f]) return NextResponse.json({ error: `${f} is required` }, { status: 400 });
       }
+
+      // P5: grades are STRINGS "6".."12" everywhere — database, RPCs, APIs.
+      const grade = String(fields.grade);
+      const chapterNumber = Number(fields.chapter_number);
+      if (!Number.isInteger(chapterNumber)) {
+        return NextResponse.json({ error: 'chapter_number must be an integer' }, { status: 400 });
+      }
+
+      // BRACES to the trigger's BELT (migration 20260824090000 installs
+      // trg_question_bank_resolve_topic_id, which fills a NULL topic_id on every
+      // write). This route is one of the two writers that caused the regression:
+      // it spread `...fields` straight into the insert and never derived
+      // topic_id, so the one-shot 2026-06-21 backfill decayed back to 32.1% NULL.
+      // Resolving here as well lets an operator get a LOUD 400 naming the exact
+      // (subject, grade, chapter) that has no topic, instead of silently
+      // persisting a question that no topic-scoped selector can ever reach.
+      let topicId: string | null = (fields.topic_id as string | undefined) ?? null;
+      if (!topicId) {
+        const { data: subj } = await supabase
+          .from('subjects')
+          .select('id')
+          .eq('code', fields.subject)
+          .maybeSingle();
+        if (!subj) {
+          return NextResponse.json(
+            {
+              error:
+                `Cannot resolve topic_id: subject '${fields.subject}' does not exist in ` +
+                `subjects.code. Create the subject (and its curriculum_topics rows) first.`,
+            },
+            { status: 400 },
+          );
+        }
+
+        // Deliberately an UNCACHED read (matching the three sibling inline
+        // reads in this file, and unlike ADR-007's cached-taxonomy helper):
+        // this is a WRITE path, and a topic created moments ago must be
+        // resolvable immediately. A stale cache entry here would 400 a
+        // perfectly valid question and send the operator in circles.
+        const { data: topic } = await supabase
+          .from('curriculum_topics')
+          .select('id')
+          .eq('subject_id', subj.id)
+          .eq('grade', grade)
+          .eq('chapter_number', chapterNumber)
+          .eq('is_active', true)
+          .order('display_order', { ascending: true })
+          .order('id', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (!topic) {
+          return NextResponse.json(
+            {
+              error:
+                `Cannot resolve topic_id: no active curriculum_topics row for ` +
+                `(subject='${fields.subject}', grade='${grade}', chapter=${chapterNumber}). ` +
+                `Create that chapter's topic first, then re-submit the question.`,
+            },
+            { status: 400 },
+          );
+        }
+        topicId = topic.id as string;
+      }
+
       const { data, error } = await supabase.from('question_bank').insert({
         ...fields,
+        grade,
+        chapter_number: chapterNumber,
+        topic_id: topicId,
         is_active: fields.is_active ?? true,
         is_verified: false,
       }).select().single();

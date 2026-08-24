@@ -12,13 +12,21 @@
  * alongside the glyph/label. No scoring/XP — masteryProbability is shown as a
  * qualitative impact chip, never a number.
  *
+ * PER-ROW ACTION (added 2026-08, defect #7): every row is now its own
+ * "Revise this" link. Before, this whole directory contained exactly one
+ * router.push — the page-level Start button — so a student could expand
+ * "Overdue", read the three topics they were behind on, and have no way to act
+ * on any specific one. Each link carries the topic id + the canonical subject
+ * CODE (/api/revision/overview already returns `subjects.code`, not a display
+ * name) via the shared `reviseTopicHref`.
+ *
  * States: loading (skeleton), error (distinct from empty), empty (per bucket).
  */
 
 import { useState } from 'react';
 import { Skeleton } from '@alfanumrik/ui/ui';
 import type { RevisionItem } from './useRevisionOverview';
-import { formatSubject, masteryImpact, impactMeta } from './revision-labels';
+import { formatSubject, masteryImpact, impactMeta, reviseTopicHref } from './revision-labels';
 
 type BucketKind = 'overdue' | 'dueToday' | 'upcoming';
 
@@ -107,6 +115,25 @@ function ItemRow({ item, kind, isHi }: { item: RevisionItem; kind: BucketKind; i
         <span aria-hidden="true">{impact.glyph}</span>
         <span>{impact.label}</span>
       </span>
+      {/* The row's own action. 44px+ target; the accessible name names the
+          topic so a screen-reader user isn't given N identical "Revise this"
+          links. */}
+      <a
+        href={reviseTopicHref({ topicId: item.topicId, subject: item.subject })}
+        data-testid="revise-topic-link"
+        className="shrink-0 inline-flex items-center justify-center gap-1 rounded-full px-3 text-xs font-bold transition-transform duration-150 motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+        style={{
+          minHeight: 44,
+          minWidth: 44,
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border)',
+          color: 'var(--orange, #E8581C)',
+        }}
+        aria-label={isHi ? `${title} — यही दोहराओ` : `Revise ${title}`}
+      >
+        {isHi ? 'दोहराओ' : 'Revise'}
+        <span aria-hidden="true">→</span>
+      </a>
     </li>
   );
 }

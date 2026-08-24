@@ -29,7 +29,9 @@ class ChatScreen extends ConsumerStatefulWidget {
   /// loading a new `/foxy?mode=` page).
   final String? initialMode;
 
-  /// Seeds `chat_sessions.topic` and the `chapter` field of the Foxy request.
+  /// Seeds the `chapter` field of the Foxy request (and, server-side,
+  /// `foxy_sessions.chapter`). The old `chat_sessions` table this used to name
+  /// is dead.
   final String? initialTopic;
 
   final String? initialSubject;
@@ -69,8 +71,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final notifier = ref.read(chatProvider.notifier);
     final mode = widget.initialMode;
     if (mode != null && mode.isNotEmpty) {
-      // Explicit-mode launch: always a fresh session so a leftover `learn`
-      // session can never silently swallow an `explorer` launch.
+      // Explicit-mode launch. `startSession` resumes only a thread whose
+      // `mode` MATCHES, so a leftover `learn` session still can never silently
+      // swallow an `explorer` launch — while an interrupted explorer dive now
+      // picks up where it left off instead of restarting from nothing.
       notifier.startSession(
         subject: widget.initialSubject,
         topic: widget.initialTopic,
@@ -290,8 +294,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         actions: [
           // New chat. In an explorer launch this restarts the SAME mode/topic
           // so the student doesn't silently drop out of their dive. In every
-          // other case it is the ORIGINAL bare `startSession()` call —
-          // behaviour unchanged.
+          // other case it is the ORIGINAL bare `startSession()` call.
+          //
+          // `forceNew: true` is REQUIRED here now that `startSession()` resumes
+          // the last matching thread by default (CEO defect #1). Without it,
+          // "New Chat" would restore the conversation the student just asked to
+          // leave.
           IconButton(
             icon: const Icon(Icons.add_comment_outlined, size: 20),
             tooltip: isHi ? 'नई चैट' : 'New Chat',
@@ -301,13 +309,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       subject: chat.subject,
                       topic: chat.topic,
                       mode: chat.mode,
+                      forceNew: true,
                     );
                 return;
               }
               // General chat: reuse the already-picked subject if we have
               // one, otherwise re-prompt (H2 fix — Foxy requires a subject).
               if (chat.subject != null && chat.subject!.isNotEmpty) {
-                ref.read(chatProvider.notifier).startSession(subject: chat.subject);
+                ref
+                    .read(chatProvider.notifier)
+                    .startSession(subject: chat.subject, forceNew: true);
               } else {
                 _promptForSubject();
               }

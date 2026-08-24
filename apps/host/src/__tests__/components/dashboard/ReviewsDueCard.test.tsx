@@ -11,9 +11,27 @@ import React from 'react';
  *   3. error state renders nothing (silent fail)
  *   4. English copy: "{n} reviews due — {m} min"
  *   5. Hindi copy: "{n} रिव्यू बाकी — {m} मिनट"
- *   6. Click navigates to /review?due_only=1
+ *   6. Click navigates to /revision  <-- see DESTINATION note below
  *   7. aria-label set for accessibility (full sentence, not just count)
  *   8. SWR hook called with refreshInterval=60_000
+ *   9. Controlled mode: a parent-supplied dueCount suppresses the fetch
+ *
+ * DESTINATION CHANGE (defect #7, 2026-08). Case 6 previously asserted
+ * `router.push('/review?due_only=1')`. That assertion was PINNING A DEAD END,
+ * not protecting one:
+ *
+ *   /review?due_only=1
+ *     -> 301 (Next config redirect) -> /refresh?tab=flashcards   [query dropped]
+ *     -> /refresh reads `tab` only; `due_only` is never read by anything
+ *     -> QuickRecall reads `spaced_repetition_cards` via get_review_cards
+ *     -> that table holds 19 rows across 2 students platform-wide and no quiz
+ *        writes it, so the student who was just told "6 reviews due" is shown
+ *        "Nothing to refresh right now".
+ *
+ * The card now pushes `/revision` (ff_revision_os_v1, live at 100%), which
+ * renders the very items this count is derived from
+ * (`concept_mastery.next_review_at`). The test is updated because the old
+ * expectation encoded the defect as the contract.
  */
 
 // ── AuthContext mock ─────────────────────────────────────────────────────────
@@ -118,7 +136,7 @@ describe('ReviewsDueCard', () => {
     expect(screen.getByText(/पिछले हफ्ते का याद ताज़ा करें/)).toBeDefined();
   });
 
-  it('navigates to /review?due_only=1 when clicked', async () => {
+  it('navigates to /revision when clicked (NOT the dead /review?due_only=1 chain)', async () => {
     mockSwrState = {
       data: { success: true, data: { dueCount: 2, oldestDueDate: '2026-04-20', estimatedMinutes: 2 } },
       error: null,
@@ -127,7 +145,10 @@ describe('ReviewsDueCard', () => {
     await renderCard();
     const btn = screen.getByRole('button');
     fireEvent.click(btn);
-    expect(mockPush).toHaveBeenCalledWith('/review?due_only=1');
+    expect(mockPush).toHaveBeenCalledWith('/revision');
+    // Explicitly pin the dead destination OUT: /review 301s to
+    // /refresh?tab=flashcards, which drops the query and reads an empty table.
+    expect(mockPush).not.toHaveBeenCalledWith('/review?due_only=1');
   });
 
   it('exposes a descriptive aria-label for accessibility', async () => {
@@ -157,5 +178,34 @@ describe('ReviewsDueCard', () => {
     expect(opts.revalidateOnFocus).toBe(true);
     // Hits /api/dashboard/reviews-due
     expect(swrCalls[0].key).toBe('/api/dashboard/reviews-due');
+  });
+});
+
+/* ── Controlled mode (defect #7): one number, one source ───────────────────
+ * RevisionRail owns /api/revision/overview for its badge and passes the count
+ * down. In that mode the card must NOT fetch — a second fetch is exactly how
+ * the badge and the card came to show two different numbers. */
+describe('ReviewsDueCard — controlled by a parent-supplied count', () => {
+  it('renders from props and passes a NULL SWR key (no request of its own)', async () => {
+    // Deliberately seed a CONTRADICTORY fetch payload. If the card ever read
+    // it, the assertion below would show 9, not 6.
+    mockSwrState = {
+      data: { success: true, data: { dueCount: 9, oldestDueDate: null, estimatedMinutes: 99 } },
+      error: null,
+      isLoading: false,
+    };
+    const { default: ReviewsDueCard } = await import('@alfanumrik/ui/dashboard/ReviewsDueCard');
+    render(React.createElement(ReviewsDueCard, { dueCount: 6, estimatedMinutes: 9 }));
+
+    expect(screen.getByText(/6 reviews due — 9 min/i)).toBeDefined();
+    expect(swrCalls[0].key).toBeNull();
+  });
+
+  it('renders nothing when the supplied count is 0', async () => {
+    const { default: ReviewsDueCard } = await import('@alfanumrik/ui/dashboard/ReviewsDueCard');
+    const { container } = render(
+      React.createElement(ReviewsDueCard, { dueCount: 0, estimatedMinutes: 2 }),
+    );
+    expect(container.firstChild).toBeNull();
   });
 });

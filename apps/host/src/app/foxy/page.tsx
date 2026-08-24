@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { authedFetch } from '@alfanumrik/lib/authed-fetch';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
 
@@ -28,7 +29,7 @@ const InlineSimulation = dynamic(() => import('@alfanumrik/ui/InlineSimulation')
 const LoadingState = dynamic(() => import('@alfanumrik/ui/foxy/LoadingState').then(m => ({ default: m.LoadingState })), { ssr: false });
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import type { FoxyResponse } from '@alfanumrik/lib/foxy/schema';
-import { generateTitle, MODE_MAP, type ConversationSummary } from '@alfanumrik/ui/foxy/ConversationManager.utils';
+import { generateTitle, subjectTitleFallback, MODE_MAP, type ConversationSummary } from '@alfanumrik/ui/foxy/ConversationManager.utils';
 const ConversationManager = dynamic(() => import('@alfanumrik/ui/foxy/ConversationManager').then(m => ({ default: m.ConversationManager })), { ssr: false });
 // NOTE: <ConversationHeader> is no longer rendered on this page — its two unique
 // contributions (the conversation title + "New Chat") were folded into the
@@ -46,6 +47,7 @@ import {
 } from './_lib/foxy-constants';
 import type { SubjectConfig, ChatMessage } from './_lib/foxy-types';
 import { fetchMastery } from './_lib/fetch-mastery';
+import { resolveTopicId } from './_lib/resolve-topic-id';
 import { useFoxyChat, readStoredThreadId } from './_hooks/useFoxyChat';
 import type { CoachDirective } from './_hooks/useFoxyChat';
 import type { LearningActionType } from '@alfanumrik/ui/foxy/ChatBubble';
@@ -195,58 +197,56 @@ async function fetchRecentSession(
   };
 }
 
-async function fetchAllConversations(studentId: string, isHi = false): Promise<ConversationSummary[]> {
-  // Step 1: get recent sessions ordered by activity
-  const { data: sessions, error: sessionsError } = await supabase
-    .from('foxy_sessions')
-    .select('id, subject, chapter, last_active_at')
-    .eq('student_id', studentId)
-    .order('last_active_at', { ascending: false })
-    .limit(30);
-  if (sessionsError) {
-    // Confirmed live 2026-08-08: a student with 1,359 real foxy_sessions rows
-    // saw an empty sidebar with no trace of why — the error was discarded
-    // here and the UI rendered identically to a genuinely empty account.
-    console.error('[fetchAllConversations] foxy_sessions query failed:', sessionsError);
+/**
+ * Fetch the student's Foxy chat history LIST.
+ *
+ * 2026-08-24 — this used to read `foxy_sessions` + `foxy_chat_messages`
+ * client-side straight over PostgREST and DISCARD the error, which is why a
+ * student with 1,359 real sessions saw an empty sidebar on 2026-08-08: a
+ * failed fetch rendered identically to a genuinely empty account. It now goes
+ * through `GET /api/foxy/sessions` (server-side auth + RLS + P13-clean
+ * projection) and THROWS on any failure, so the caller can put the rail into a
+ * distinct error state instead of an empty one.
+ *
+ * The endpoint returns `title: null` for a thread with no user turn yet —
+ * the bilingual subject-name fallback is applied HERE because the server does
+ * not know the student's language (P7).
+ */
+async function fetchAllConversations(isHi = false): Promise<ConversationSummary[]> {
+  // authedFetch forwards `Authorization: Bearer <token>` from the live Supabase
+  // session, which is what the route's authorizeRequest authenticates on. The
+  // browser Supabase client persists that session in localStorage, NOT a cookie
+  // (packages/lib/src/supabase-client.ts uses plain `createClient`), so a bare
+  // fetch() sends no credential the server can read and 401s — which would pin
+  // the "Couldn't load your chats" rail on permanently for every password-login
+  // student, strictly worse than the empty rail this fix replaces.
+  const res = await authedFetch('/api/foxy/sessions?limit=30', {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    throw new Error(`foxy sessions list failed: HTTP ${res.status}`);
   }
-  if (!sessions || sessions.length === 0) return [];
-
-  // Step 2: batch-fetch messages for all sessions in a single query
-  const sessionIds = sessions.map((s: any) => s.id);
-  const { data: allMsgs, error: msgsError } = await supabase
-    .from('foxy_chat_messages')
-    .select('session_id, role, content, created_at')
-    .in('session_id', sessionIds)
-    .order('created_at', { ascending: true });
-  if (msgsError) {
-    console.error('[fetchAllConversations] foxy_chat_messages query failed:', msgsError);
+  const payload = (await res.json()) as {
+    success?: boolean;
+    data?: { sessions?: Array<Record<string, any>> };
+  };
+  if (!payload?.success || !Array.isArray(payload.data?.sessions)) {
+    throw new Error('foxy sessions list failed: malformed payload');
   }
-
-  // Step 3: group messages by session
-  const msgsBySession: Record<string, Array<{ role: string; content: string; created_at: string }>> = {};
-  for (const msg of (allMsgs ?? [])) {
-    if (!msgsBySession[(msg as any).session_id]) msgsBySession[(msg as any).session_id] = [];
-    msgsBySession[(msg as any).session_id].push(msg as any);
-  }
-
-  // Step 4: build summaries for sessions that have at least 1 message
-  return sessions
-    .filter((s: any) => msgsBySession[s.id]?.length > 0)
-    .map((s: any) => {
-      const msgs = msgsBySession[s.id] || [];
-      const lastMsg = msgs[msgs.length - 1];
-      return {
-        id: s.id,
-        title: generateTitle(msgs, s.subject, isHi),
-        subject: s.subject || 'science',
-        chapter: s.chapter || undefined,
-        chapterNumber: undefined,
-        lastMessage: lastMsg?.content?.substring(0, 80) || '',
-        messageCount: msgs.length,
-        updatedAt: s.last_active_at || new Date().toISOString(),
-        isActive: false,
-      };
-    });
+  return payload.data!.sessions!.map((s) => {
+    const subject = s.subject || 'science';
+    return {
+      id: s.id,
+      title: s.title || subjectTitleFallback(subject, isHi),
+      subject,
+      chapter: s.chapter || undefined,
+      chapterNumber: undefined,
+      // Deliberately absent: the list endpoint carries no message bodies (P13).
+      messageCount: s.messageCount ?? 0,
+      updatedAt: s.updatedAt || new Date().toISOString(),
+      isActive: false,
+    } satisfies ConversationSummary;
+  });
 }
 
 async function fetchConversationById(sessionId: string) {
@@ -383,6 +383,11 @@ function FoxyExperience() {
   // Conversation sessions state
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
+  // The rail's THIRD state. Without it a failed history fetch is
+  // indistinguishable from an empty account — see fetchAllConversations().
+  const [conversationsError, setConversationsError] = useState(false);
+  // Bumped by the Retry button to re-run the load effect.
+  const [conversationsReloadKey, setConversationsReloadKey] = useState(0);
   const [conversationSidebarOpen, setConversationSidebarOpen] = useState(false);
 
   // UI state
@@ -655,15 +660,40 @@ function FoxyExperience() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authStudent, setChatSessionId, setMessages]);
 
-  // Load conversation list
+  // Load conversation list.
+  //
+  // The `.catch` is the whole point: BEFORE this, a rejected/failed history
+  // fetch left `conversations` at `[]` and the rail rendered "No conversations
+  // yet". Now the failure sets a distinct error flag and the rail renders
+  // "Couldn't load your chats — Retry". `cancelled` guards a late response
+  // from an unmounted/superseded load overwriting a newer one.
   useEffect(() => {
     if (!authStudent?.id) return;
+    let cancelled = false;
     setConversationsLoading(true);
-    fetchAllConversations(authStudent.id, isHi).then(convs => {
-      setConversations(convs);
-      setConversationsLoading(false);
-    });
-  }, [authStudent?.id, isHi]);
+    setConversationsError(false);
+    fetchAllConversations(isHi)
+      .then(convs => {
+        if (cancelled) return;
+        setConversations(convs);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.error('[foxy] conversation history load failed:', err);
+        // Keep whatever list we already had rather than blanking it — a failed
+        // REFRESH must not delete a list the student can still see.
+        setConversationsError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setConversationsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [authStudent?.id, isHi, conversationsReloadKey]);
+
+  /** Retry handler for the rail's error state. */
+  const retryConversations = useCallback(() => {
+    setConversationsReloadKey(k => k + 1);
+  }, []);
 
   // Select a conversation from the sidebar
   const selectConversation = useCallback(async (sessionId: string) => {
@@ -723,19 +753,38 @@ function FoxyExperience() {
   // Refresh conversation list after a message is sent (debounced)
   const refreshConversations = useCallback(() => {
     if (!student?.id) return;
-    fetchAllConversations(student.id, isHi).then(convs => {
-      setConversations(
-        convs.map(c => ({
-          ...c,
-          isActive: c.id === chatSessionId,
-        }))
-      );
-    });
+    fetchAllConversations(isHi)
+      .then(convs => {
+        setConversations(
+          convs.map(c => ({
+            ...c,
+            isActive: c.id === chatSessionId,
+          }))
+        );
+        // A successful refresh clears a stale error banner.
+        setConversationsError(false);
+      })
+      .catch(err => {
+        // A failed post-send refresh is honest too: the rail shows the error
+        // state rather than silently keeping a list that is now out of date.
+        console.error('[foxy] conversation history refresh failed:', err);
+        setConversationsError(true);
+      });
   }, [student?.id, chatSessionId, isHi]);
 
-  // Apply URL context (subject, chapter, mode, grade, source) — runs after student
-  // loads AND allowedSubjects resolves, so subject validation can use the real
-  // entitlement set (grade + plan + stream). Applies at most once per page load.
+  // Apply URL context (subject, chapter, topic, topic_id, mode, grade, source) —
+  // runs after student loads AND allowedSubjects resolves, so subject validation
+  // can use the real entitlement set (grade + plan + stream). Applies at most
+  // once per page load.
+  //
+  // `topic_id` (added 2026-08, defect #10) is a FIRST-CLASS deep-link param.
+  // /progress' decay list, the Revision Center's due buckets and its primary CTA
+  // all hold a concept_mastery.topic_id and no topic name; they used to link
+  // `/foxy?topic_id=<uuid>`, which this effect never read — the tap landed on a
+  // completely unscoped Foxy and read as "nothing happened". It is now resolved
+  // to {title, subject code, chapter} and routed through the SAME switchSubject
+  // path a normal `?subject=&chapter=` link uses. An explicit `?subject=` /
+  // `?topic=` in the URL still WINS over the resolved values.
   useEffect(() => {
     if (!student) return;
     if (typeof window === 'undefined') return;
@@ -750,36 +799,67 @@ function FoxyExperience() {
     const chapterParam = params.get('chapter');
     const modeParam = params.get('mode');
     const topicParam = params.get('topic');
+    const topicIdParam = params.get('topic_id');
     const gradeParam = params.get('grade');
     const sourceParam = params.get('source');
-    if (!subjectParam && !modeParam && !topicParam && !chapterParam && !gradeParam) {
+    if (!subjectParam && !modeParam && !topicParam && !topicIdParam && !chapterParam && !gradeParam) {
       urlContextAppliedRef.current = true;
       return;
     }
 
-    // Validate subject param against the student's actual allowed-subjects set.
-    // If the student isn't entitled to the requested subject (e.g. commerce
-    // stream getting `?subject=science`), fall back to the first allowed one —
-    // never silently land on a subject the dropdown can't show.
-    const allowedCodes = new Set(allowedSubjects.map((s) => s.code));
-    let validatedSubject: string | undefined;
-    if (subjectParam && allowedCodes.has(subjectParam)) {
-      validatedSubject = subjectParam;
-    } else if (subjectParam && allowedSubjects.length > 0) {
-      validatedSubject = allowedSubjects[0].code;
-    }
-
-    const ctx: { subject?: string; grade?: string; topic?: string; mode?: string; source?: string } = {};
-    if (validatedSubject) ctx.subject = validatedSubject;
-    if (gradeParam) ctx.grade = gradeParam;
-    if (topicParam) ctx.topic = topicParam;
-    if (chapterParam) ctx.topic = chapterParam;
-    if (modeParam) ctx.mode = modeParam;
-    if (sourceParam) ctx.source = sourceParam;
-    setUrlContext(ctx);
-    if (validatedSubject) switchSubject(validatedSubject);
-    if (modeParam) setSessionMode(modeParam);
+    // Mark applied BEFORE the await so a re-render mid-lookup can't double-apply.
     urlContextAppliedRef.current = true;
+
+    let cancelled = false;
+    (async () => {
+      // Resolve topic_id → {title, subject code, chapter}. Best-effort: null on
+      // any failure, in which case the other params still apply unchanged.
+      const resolved = topicIdParam ? await resolveTopicId(topicIdParam) : null;
+      if (cancelled) return;
+
+      // Explicit ?subject= wins; otherwise use the resolved topic's subject.
+      const requestedSubject = subjectParam ?? resolved?.subjectCode ?? null;
+
+      // Validate the subject against the student's actual allowed-subjects set.
+      // If the student isn't entitled to the requested subject (e.g. commerce
+      // stream getting `?subject=science`), fall back to the first allowed one —
+      // never silently land on a subject the dropdown can't show.
+      const allowedCodes = new Set(allowedSubjects.map((s) => s.code));
+      let validatedSubject: string | undefined;
+      if (requestedSubject && allowedCodes.has(requestedSubject)) {
+        validatedSubject = requestedSubject;
+      } else if (requestedSubject && allowedSubjects.length > 0) {
+        validatedSubject = allowedSubjects[0].code;
+      }
+
+      const resolvedTitle = resolved
+        ? (isHi && resolved.titleHi) || resolved.title || null
+        : null;
+      const resolvedChapter =
+        resolved?.chapterNumber != null ? String(resolved.chapterNumber) : null;
+
+      const ctx: { subject?: string; grade?: string; topic?: string; mode?: string; source?: string } = {};
+      if (validatedSubject) ctx.subject = validatedSubject;
+      if (gradeParam) ctx.grade = gradeParam;
+      // Precedence (last write wins, as before): ?topic= → ?chapter= → resolved
+      // title. A resolved real title beats a bare chapter number, and an
+      // explicit ?topic= beats everything.
+      if (resolvedTitle) ctx.topic = resolvedTitle;
+      if (chapterParam) ctx.topic = chapterParam;
+      if (topicParam) ctx.topic = topicParam;
+      if (modeParam) ctx.mode = modeParam;
+      if (sourceParam) ctx.source = sourceParam;
+      setUrlContext(ctx);
+      if (validatedSubject) switchSubject(validatedSubject);
+      if (modeParam) setSessionMode(modeParam);
+      // resolvedChapter is intentionally not pushed into ctx.topic when a real
+      // title exists — the title is the more useful scoping string for Foxy.
+      void resolvedChapter;
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [student, allowedSubjects]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load topics on subject/grade change
@@ -1941,6 +2021,8 @@ function FoxyExperience() {
           onNewChat={handleNewConversation}
           onClose={() => setConversationSidebarOpen(false)}
           isLoading={conversationsLoading}
+          hasError={conversationsError}
+          onRetry={retryConversations}
         />
 
         {/* Desktop topic sidebar — chapters/mastery */}

@@ -228,7 +228,7 @@ export default function ElectronConfiguration() {
           ref={canvasRef}
           width={490}
           height={180}
-          style={{ width: '100%', display: 'block' }}
+          style={{ width: '100%', height: 'auto', display: 'block' }}
           role="img"
           aria-label={`Orbital diagram for ${el.name}: ${configStr}`}
         />

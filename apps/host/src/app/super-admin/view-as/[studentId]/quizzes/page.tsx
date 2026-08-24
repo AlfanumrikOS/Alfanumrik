@@ -85,11 +85,16 @@ interface QuizResponse {
   explanation?: string;
   bloom_level?: string;
   difficulty?: string;
-  /* question_responses (v2 fallback) columns */
+  error_type?: string;
+  /* DEPRECATED shape — the legacy `question_responses` fallback these came
+   * from was removed from /api/super-admin/students/[id]/quiz-history on
+   * 2026-08-24 (that table has zero rows in production). The API never sends
+   * these fields any more; the `??` fallbacks below are inert.
+   * TODO(frontend): drop these three fields and their `??` fallbacks at
+   * lines ~363-398 once no cached client bundle expects them. */
   selected_answer?: number | string;
   response_time_seconds?: number;
   bloom_level_attempted?: string;
-  error_type?: string;
 }
 
 export default function ViewAsQuizzesPage({

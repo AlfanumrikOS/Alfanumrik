@@ -6,7 +6,7 @@ import { logger } from '@alfanumrik/lib/logger';
 /**
  * GET /api/practice/history — Practice Center history + lightweight analytics
  * for the authenticated student. Read-only aggregation over quiz_sessions and
- * question_responses. No RPC, no schema, no writes.
+ * quiz_responses. No RPC, no schema, no writes.
  *
  * Auth/scoping mirrors the sibling /api/dashboard/reviews-due and
  * /api/revision/overview routes exactly:
@@ -14,6 +14,25 @@ import { logger } from '@alfanumrik/lib/logger';
  *   - studentId is taken ONLY from the session (never from query/body)
  *   - supabaseAdmin (service role) query is ALWAYS filtered by that studentId
  *   - same null-guard + error shape, same private 5-min cache
+ *
+ * DATA-SOURCE CORRECTION (CEO defect #9, 2026-08-24). Two of the three panels
+ * this route feeds were permanently empty in production:
+ *   - errorPatterns and bloomDistribution read `question_responses`, a legacy
+ *     table with ZERO rows in production. It was written only by a
+ *     client-side fire-and-forget insert and read by nothing else; the
+ *     20260623000700/000800 migrations repointed get_bloom_progression,
+ *     get_knowledge_gaps and get_dashboard_data off it but missed this route.
+ *     Both now read `quiz_responses` — the table the atomic server-side
+ *     submit path actually writes (P4) — joined on quiz_session_id exactly as
+ *     before. Note the column rename: quiz_responses.bloom_level, NOT the
+ *     legacy question_responses.bloom_level_attempted.
+ *   - dueReviewCount filtered `concept_mastery.next_review_date`, a ghost DATE
+ *     column with `DEFAULT CURRENT_DATE + 1 day` that NOTHING ever writes, so
+ *     it marked every touched concept due forever (91 due vs 27 real — 3.4x
+ *     inflation). Now filters the real SM-2 column `next_review_at <= now()`,
+ *     matching /api/dashboard/reviews-due and /api/revision/overview.
+ * avgScore was NOT changed: it reads server-written quiz_sessions.score_percent
+ * and was always correct. The response SHAPE is unchanged — only its source.
  *
  * P1: score_percent / correct / total are read straight from the stored
  *     quiz_sessions row — never recomputed.
@@ -43,9 +62,10 @@ interface QuizSessionRow {
   completed_at: string | null;
 }
 
-interface QuestionResponseRow {
+interface QuizResponseRow {
   is_correct: boolean | null;
-  bloom_level_attempted: string | null;
+  /** quiz_responses.bloom_level — NOT the legacy `bloom_level_attempted`. */
+  bloom_level: string | null;
   error_type: string | null;
 }
 
@@ -129,14 +149,24 @@ export async function GET(request: Request) {
         : 0;
 
     // dueReviewCount: same query family as /api/dashboard/reviews-due.
-    const today = new Date().toISOString().slice(0, 10);
+    // Due-schedule source of truth is `concept_mastery.next_review_at`
+    // (timestamptz), written by the live SM-2 in update_learner_state_post_quiz.
+    // Do NOT read `next_review_date` — that DATE column is a deprecated ghost
+    // (DEFAULT CURRENT_DATE + 1, never written by any function/cron/app code),
+    // so it marks every touched concept "due" one day after first attempt,
+    // forever. The mastery_probability < 0.95 filter is kept so this count
+    // agrees with /api/dashboard/reviews-due. Rows with a NULL next_review_at
+    // (never scheduled) are correctly excluded by the lte filter.
+    // Known deliberate divergence: reviews-due also applies a
+    // `>= academicYearStart` floor for its dashboard CTA; this panel is a
+    // lifetime practice summary and intentionally omits that floor.
     let dueReviewCount = 0;
     {
       const { data: dueData, error: dueError } = await supabaseAdmin
         .from('concept_mastery')
-        .select('next_review_date', { count: 'exact', head: false })
+        .select('next_review_at', { count: 'exact', head: false })
         .eq('student_id', studentId)
-        .lte('next_review_date', today)
+        .lte('next_review_at', new Date().toISOString())
         .lt('mastery_probability', 0.95);
 
       if (dueError) {
@@ -149,18 +179,26 @@ export async function GET(request: Request) {
       }
     }
 
-    // ── errorPatterns + bloomDistribution: aggregate question_responses over
-    //    the returned (last-30) sessions. Capped work via an IN filter on the
+    // ── errorPatterns + bloomDistribution: aggregate quiz_responses over the
+    //    returned (last-30) sessions. Capped work via an IN filter on the
     //    session IDs we already loaded. If columns are absent or the query
-    //    fails, return [] rather than failing the whole route. ──
+    //    fails, return [] rather than failing the whole route.
+    //
+    //    Source is `quiz_responses` — the table the atomic server-side submit
+    //    path (submit_quiz_results_v2 / atomic_quiz_profile_update, P4)
+    //    actually writes. It carries `error_type` (server-classified since
+    //    migration 20260623000300) and `bloom_level`. The legacy
+    //    `question_responses` table this block used to read has ZERO rows in
+    //    production and must not be reintroduced — see the header note. ──
     const errorPatterns: { type: string; count: number }[] = [];
     const bloomDistribution: { bloomLevel: string; attempted: number; correct: number }[] = [];
 
     if (sessionRows.length > 0) {
       const sessionIds = sessionRows.map((r) => r.id);
       const { data: respData, error: respError } = await supabaseAdmin
-        .from('question_responses')
-        .select('is_correct, bloom_level_attempted, error_type')
+        .from('quiz_responses')
+        .select('is_correct, bloom_level, error_type')
+        .eq('student_id', studentId)
         .in('quiz_session_id', sessionIds);
 
       if (respError) {
@@ -169,7 +207,7 @@ export async function GET(request: Request) {
           route: '/api/practice/history',
         });
       } else {
-        const responses = (respData ?? []) as QuestionResponseRow[];
+        const responses = (respData ?? []) as QuizResponseRow[];
 
         const errorCounts = new Map<string, number>();
         const bloomAgg = new Map<string, { attempted: number; correct: number }>();
@@ -178,11 +216,11 @@ export async function GET(request: Request) {
           if (r.error_type) {
             errorCounts.set(r.error_type, (errorCounts.get(r.error_type) ?? 0) + 1);
           }
-          if (r.bloom_level_attempted) {
-            const agg = bloomAgg.get(r.bloom_level_attempted) ?? { attempted: 0, correct: 0 };
+          if (r.bloom_level) {
+            const agg = bloomAgg.get(r.bloom_level) ?? { attempted: 0, correct: 0 };
             agg.attempted += 1;
             if (r.is_correct === true) agg.correct += 1;
-            bloomAgg.set(r.bloom_level_attempted, agg);
+            bloomAgg.set(r.bloom_level, agg);
           }
         }
 

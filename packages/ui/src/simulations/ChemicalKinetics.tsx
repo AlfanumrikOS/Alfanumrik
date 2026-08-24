@@ -102,7 +102,7 @@ export default function ChemicalKinetics() {
           <input type="range" min={250} max={400} step={5} value={temp} onChange={e => setTemp(+e.target.value)} style={{ width: '100%' }} />
         </div>
       </div>
-      <canvas ref={canvasRef} width={540} height={240} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <canvas ref={canvasRef} width={540} height={240} style={{ width: '100%', height: 'auto', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
       <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, padding: '6px 10px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 12 }}>
           Effective k: <b style={{ color: 'var(--orange)' }}>{kEffective.toFixed(3)}</b>

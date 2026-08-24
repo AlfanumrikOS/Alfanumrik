@@ -147,16 +147,28 @@ describe('/progress — learning velocity (Deep Analysis tab)', () => {
   });
 });
 
-describe('/progress — decay topics', () => {
+describe('/progress — lowest-mastery topics', () => {
   it('labels a BKT mastery probability as mastery, never as retention', async () => {
-    tableResults.set('concept_mastery', {
-      data: [{ id: 'c1', topic_id: 't1', mastery_probability: 0.42, next_review_at: new Date().toISOString() }],
+    // Source re-pointed 2026-08 (defect #10): the list reads the
+    // `topic_mastery_rollup` view (which joins curriculum_topics + subjects)
+    // instead of a bare, unjoined `concept_mastery` select whose only label was
+    // a UUID prefix. The heading changed with it — the query has no
+    // next_review_at bound, so it is a LOW-MASTERY list, not a due list.
+    tableResults.set('topic_mastery_rollup', {
+      data: [{
+        subject: 'math',
+        topic_tag: 'Fractions',
+        chapter_number: 2,
+        mastery_probability: 0.42,
+        next_review_at: new Date().toISOString(),
+      }],
       error: null,
     });
-    tableResults.set('curriculum_topics', { data: [{ id: 't1', title: 'Fractions', subject: 'math' }], error: null });
 
     render(<ProgressPage />);
-    await waitFor(() => expect(screen.getByText(/Topics that need revision/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Lowest mastery/i)).toBeTruthy());
+    // The real title is on screen, not a UUID prefix.
+    expect(screen.getByText('Fractions')).toBeTruthy();
 
     const chip = screen.getByTestId('decay-mastery-value');
     expect(chip.textContent).toContain('42%');

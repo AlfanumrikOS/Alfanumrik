@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { track } from '@alfanumrik/lib/analytics';
-import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession, checkQuizAnswer, type QuizAnswerCheck } from '@alfanumrik/lib/supabase';
+import { submitQuizResults, saveCognitiveMetrics, supabase, updateChapterProgress, startQuizSession, checkQuizAnswer, type QuizAnswerCheck } from '@alfanumrik/lib/supabase';
 import { invalidateDashboard, useFeatureFlags } from '@alfanumrik/lib/swr';
 import { useNextTask } from '@alfanumrik/lib/quiz/v2/use-next-task';
 import { OPTION_LETTERS, parseOptions, isMcqQuestion } from '@alfanumrik/lib/quiz/options';
@@ -273,17 +273,25 @@ function getTimeEstimate(qt: string): number {
  */
 const isQuestionMCQ = isMcqQuestion;
 
-/** Classify error type for wrong answers — used by adaptive processing */
-function classifyQuizError(question: Question, response: Response): string {
-  // If student answered very quickly (<5s), likely careless
-  if ((response.time_spent ?? 0) < 5) return 'careless';
-  // If question is 'remember' level and wrong, likely knowledge gap
-  if (question.bloom_level === 'remember') return 'knowledge_gap';
-  // If question is 'apply' or higher, likely conceptual
-  if (['apply', 'analyze', 'evaluate', 'create'].includes(question.bloom_level ?? '')) return 'conceptual';
-  // Default
-  return 'procedural';
-}
+/* `classifyQuizError(question, response)` lived here and was DELETED
+ * 2026-08-24 when its single call site — the client-side write into the dead
+ * `question_responses` table — was removed (see the tombstone in
+ * handleQuizComplete). It branched on `bloom_level`: 'remember' →
+ * 'knowledge_gap'; 'apply'|'analyze'|'evaluate'|'create' → 'conceptual';
+ * otherwise 'procedural'.
+ *
+ * It was NOT the classifier behind `quiz_responses.error_type`. That value is
+ * produced at answer time by `classifyError` (@alfanumrik/lib, called around
+ * the setResponses below) and persisted by the server submit RPC. Comments in
+ * `packages/lib/src/quiz/resume.ts` and
+ * `apps/host/src/__tests__/quiz/resume-payload.test.ts` still cite this
+ * function by name and attribute quiz_responses.error_type to it — that
+ * attribution was already inaccurate.
+ * TODO(assessment/testing): restate those two rationales against
+ * `classifyError`. The underlying rule they defend still holds and now has a
+ * second consumer: a fabricated `bloom_level` default on resume would skew the
+ * Bloom's panel that /api/practice/history reads off quiz_responses.bloom_level.
+ */
 
 const VALID_QUIZ_COUNTS = [5, 10, 15, 20] as const;
 
@@ -1977,26 +1985,27 @@ export default function QuizPage() {
           });
         }
 
-        // Save per-question responses for ALL quiz modes (populates question_responses table).
-        // Runs for practice, cognitive, and exam modes — enables adaptive learning tracking.
-        if (res?.session_id) {
-          saveQuestionResponses(allResponses.map((r, i) => ({
-            student_id: student!.id,
-            question_id: r.question_id,
-            quiz_session_id: res.session_id,
-            selected_answer: String(r.selected_option),
-            is_correct: r.is_correct,
-            response_time_seconds: r.time_spent,
-            bloom_level_attempted: questions[i]?.bloom_level || 'remember',
-            was_in_zpd: questions[i]?.difficulty === 2,
-            error_type: !r.is_correct ? (r.error_type || classifyQuizError(questions[i], r)) : undefined,
-            quality: r.is_correct ? (r.time_spent < 10 ? 5 : 4) : (r.time_spent < 5 ? 1 : 2),
-          }))).catch((err: unknown) => {
-            console.warn('[quiz] saveQuestionResponses failed:', err instanceof Error ? err.message : String(err));
-          });
-
-          // CME mastery state is updated server-side via atomic_quiz_profile_update RPC
-        }
+        // REMOVED 2026-08-24 — client-side saveQuestionResponses() write.
+        // It inserted a duplicate copy of every response into the legacy
+        // `question_responses` table, which has ZERO rows in production and is
+        // read by nothing (the 20260623000700/000800 migrations repointed the
+        // last readers off it; /api/practice/history and the super-admin bloom
+        // reports were repointed in the same change as this one). The write's
+        // only error handling was a console.warn, so it had been failing
+        // silently and nobody could tell. Per-question rows are already
+        // written server-side and atomically by `submit_quiz_results_v2` into
+        // `quiz_responses` (P4), which is the table every reader now uses.
+        // Nothing is lost by dropping this.
+        //
+        // CME mastery state is updated server-side by that same v2 RPC: for
+        // each response whose question carries a topic_id it calls
+        // `update_learner_state_post_quiz`, which is what actually writes
+        // concept mastery (migration 20260814000022, lines 714-731).
+        // NOTE — do NOT re-attribute this to `atomic_quiz_profile_update`, as
+        // an earlier version of this comment did. That is a SEPARATE RPC that
+        // only touches profile/XP (students, student_learning_profiles,
+        // xp_transactions); it writes neither `quiz_responses` nor mastery.
+        // There is no client-side mastery write here and must never be one.
 
         // Save cognitive metrics for this session (cognitive mode only — tracks ZPD and fatigue)
         if (quizMode === 'cognitive' && res?.session_id) {

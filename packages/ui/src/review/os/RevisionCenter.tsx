@@ -12,7 +12,10 @@
  * via useCosmicLightSurface while mounted. Bilingual via isHi.
  *
  *   1. RevisionHeader      → total-due ring + streak
- *   2. StartRevisionCTA    → handoff to existing /refresh?tab=flashcards session
+ *   2. StartRevisionCTA    → opens the FIRST overdue topic (topic-scoped Foxy
+ *                            revise deep-link); falls back to the unscoped
+ *                            /refresh?tab=flashcards session only when nothing
+ *                            is due
  *   3. DueBuckets          → overdue / due-today / upcoming (expandable)
  *   4. RevisionSchedule    → 7-day strip from upcoming.byDay
  *   5. SubjectRevisionLoad → per-subject due count + qualitative impact
@@ -53,6 +56,11 @@ export default function RevisionCenter({ studentId, isHi }: RevisionCenterProps)
 
   const dueNow = overview ? overview.overdue.count + overview.dueToday.count : 0;
 
+  // The topic the primary CTA promises to open: most-overdue first (the route
+  // orders by next_review_at ascending), else the first item due today.
+  const nextTopic =
+    overview?.overdue.items[0] ?? overview?.dueToday.items[0] ?? null;
+
   // Due-now items power the per-subject qualitative impact derivation.
   const dueItems = useMemo(
     () =>
@@ -78,6 +86,7 @@ export default function RevisionCenter({ studentId, isHi }: RevisionCenterProps)
         estimatedMinutes={overview?.estimatedMinutes ?? 0}
         isLoading={isLoading && !overview}
         isHi={isHi}
+        nextTopic={nextTopic}
       />
 
       <DueBuckets

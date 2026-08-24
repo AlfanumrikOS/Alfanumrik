@@ -111,7 +111,7 @@ export default function BufferSolution() {
         </label>
         <input type="range" min={-10} max={10} step={0.5} value={addedMMol} onChange={e => setAddedMMol(+e.target.value)} style={{ width: '100%', marginTop: 4 }} />
       </div>
-      <canvas ref={canvasRef} width={540} height={220} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <canvas ref={canvasRef} width={540} height={220} style={{ width: '100%', height: 'auto', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
       <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'stretch' }}>
         <div style={{ flex: 1, padding: '8px 10px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 12, textAlign: 'center' }}>
           <div style={{ color: 'var(--text-2)' }}>Buffer pH</div>

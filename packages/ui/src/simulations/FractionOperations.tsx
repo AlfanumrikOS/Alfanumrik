@@ -70,7 +70,7 @@ export default function FractionOperations() {
   return (
     <div style={{ background:'var(--surface-1)', borderRadius:12, padding:16, maxWidth:600, margin:'0 auto', fontFamily:'inherit' }}>
       <h3 style={{ color:'var(--text-1)', fontSize:16, fontWeight:700, marginBottom:8 }}>Fraction Operations</h3>
-      <canvas ref={canvasRef} width={460} height={160} style={{ width:'100%', borderRadius:8, background:'var(--surface-2)', display:'block' }} />
+      <canvas ref={canvasRef} width={460} height={160} style={{ width:'100%', height:'auto', borderRadius:8, background:'var(--surface-2)', display:'block' }} />
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:10 }}>
         {[['Fraction A', n1, setN1, d1, setD1],['Fraction B', n2, setN2, d2, setD2]].map(([lbl, n, sn, d, sd], i) => (
           <div key={i} style={{ background:'var(--surface-2)', borderRadius:8, padding:10 }}>

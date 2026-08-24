@@ -99,7 +99,7 @@ export default function MeiosisStages() {
           </button>
         ))}
       </div>
-      <canvas ref={canvasRef} width={560} height={220} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <canvas ref={canvasRef} width={560} height={220} style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block' }} />
       <div style={{ marginTop: 8, padding: '6px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 12, color: 'var(--text-2)' }}>
         <strong style={{ color: 'var(--text-1)' }}>{STAGES[stage].name}:</strong> {STAGES[stage].desc}
       </div>

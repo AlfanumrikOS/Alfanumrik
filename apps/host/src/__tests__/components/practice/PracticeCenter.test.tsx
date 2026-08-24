@@ -122,3 +122,51 @@ describe('PracticeCenter — Alfa OS Practice Center container', () => {
     expect(screen.getByText(/अभ्यास के लिए बकाया/)).toBeInTheDocument();
   });
 });
+
+/* ── Defect #8: the weak-topic CTA must carry a subject CODE, never a NAME ──
+ *
+ * `get_mastery_overview` selects `'subject', s.name`, so MasteryOverviewRow.
+ * subject is a DISPLAY NAME ("Mathematics"). Every consumer inside
+ * /quiz/page.tsx does `allowedSubjects.find(s => s.code === selectedSubject)`.
+ * A name matches nothing, and the page then silently falls back to the FIRST
+ * allowed subject — so "practise Mathematics" landed the student in Biology.
+ *
+ * quizHref is a pure exported function, so these assert the emitted URL
+ * directly rather than through the lazily-mounted component.
+ */
+describe('WeakTopicLauncher.quizHref — subject CODE, or no subject param at all', () => {
+  const weakRow = (subject: string | null, chapter?: number) => ({
+    topic_id: 't1',
+    title: 'Real Numbers',
+    mastery_level: 'developing',
+    mastery_probability: 0.3,
+    subject,
+    chapter_number: chapter ?? null,
+  });
+
+  it('emits the CODE resolved from the display name (never the raw name)', async () => {
+    const { quizHref } = await import('@alfanumrik/ui/practice/os/WeakTopicLauncher');
+    const href = quizHref(weakRow('Mathematics') as never);
+    expect(href).toBe('/quiz?subject=math');
+    expect(href).not.toContain('Mathematics');
+  });
+
+  it('prefers the live per-student name→code map over the static one', async () => {
+    const { quizHref } = await import('@alfanumrik/ui/practice/os/WeakTopicLauncher');
+    const href = quizHref(weakRow('Physics') as never, { Physics: 'physics' });
+    expect(href).toBe('/quiz?subject=physics');
+  });
+
+  it('keeps the chapter scope alongside the code', async () => {
+    const { quizHref } = await import('@alfanumrik/ui/practice/os/WeakTopicLauncher');
+    expect(quizHref(weakRow('Science', 4) as never)).toBe('/quiz?subject=science&chapter=4');
+  });
+
+  it('OMITS the subject param entirely when the name cannot be resolved', async () => {
+    const { quizHref } = await import('@alfanumrik/ui/practice/os/WeakTopicLauncher');
+    // Sending a bogus subject is WORSE than sending none: /quiz falls back to
+    // the first allowed subject, i.e. lands the student on the wrong one.
+    expect(quizHref(weakRow('Underwater Basket Weaving', 2) as never)).toBe('/quiz');
+    expect(quizHref(weakRow(null) as never)).toBe('/quiz');
+  });
+});

@@ -5,12 +5,12 @@
  * `resolveStudentPrimaryNav()` is now the single source for the navigation
  * rendered by ALL THREE tier components (MobileBottomNav < 768,
  * TabletNavRail 768–1023, DesktopSidebar 1024+). The product contract it
- * encodes — four slots, one fixed order, the same destinations at every
+ * encodes — five slots, one fixed order, the same destinations at every
  * breakpoint — had NO test at all when it landed. Every property below could
  * be broken by a one-line edit to nav-config.ts and nothing in the suite
  * would have gone red:
  *
- *   - dropping a slot (three-item bar)
+ *   - dropping a slot (four-item bar)
  *   - reordering (Progress before Practice)
  *   - giving the overflow slot an href (a "More" that navigates)
  *   - re-listing a primary destination inside the More sheet (the exact
@@ -25,7 +25,7 @@
  * a pure function over a config object, so a browser adds cost and nothing
  * else. The properties that genuinely need a browser — which tier is
  * visible at which width, exactly one `aria-current="page"` in the rendered
- * accessibility tree, the four slots fitting at 360px — are pinned in
+ * accessibility tree, the five slots fitting at 360px — are pinned in
  * `e2e/ui-nav-contract.spec.ts`. The two layers are deliberately disjoint.
  */
 import { describe, it, expect } from 'vitest';
@@ -41,13 +41,22 @@ import {
   type ResolvedNavSlot,
 } from '@alfanumrik/ui/navigation/nav-config';
 
-/** The product order, restated here so a change to the export is a failure. */
-const EXPECTED_ORDER = ['today', 'practice', 'progress', 'more'] as const;
+/** The product order, restated here so a change to the export is a failure.
+ *
+ *  `foxy` was added at slot 3 on 2026-08-24 by the CEO-directed IA reversal
+ *  recorded at the top of nav-config.ts. It is deliberately restated here
+ *  rather than derived: if someone "re-fixes" Foxy back into the More sheet on
+ *  the strength of the superseded 2026-08-09 rationale, this constant is what
+ *  makes that a red test instead of a silent regression. */
+const EXPECTED_ORDER = ['today', 'practice', 'foxy', 'progress', 'more'] as const;
 
-/** The three primary DESTINATIONS (the fourth slot is overflow, not a route).
+/** The four primary DESTINATIONS (the fifth slot is overflow, not a route).
  *  `/learn` left the bar in the 2026-08-19 Today consolidation; `/today` does
  *  that job now. The route itself still resolves and is still deep-linked to. */
-const EXPECTED_HREFS = ['/today', '/practice', '/progress'] as const;
+const EXPECTED_HREFS = ['/today', '/practice', '/foxy', '/progress'] as const;
+
+/** Count of primary DESTINATION slots (everything except the overflow). */
+const PRIMARY_COUNT = EXPECTED_HREFS.length;
 
 /**
  * Flag states the bar must survive identically. The PRACTICE FLAG CONTRACT
@@ -74,17 +83,17 @@ const FLAG_STATES: Array<{ name: string; flags: Record<string, boolean> | null |
   },
 ];
 
-describe('student primary nav — the four-slot contract', () => {
-  it('exports the order as a four-entry product constant', () => {
+describe('student primary nav — the five-slot contract', () => {
+  it('exports the order as a five-entry product constant', () => {
     expect(STUDENT_PRIMARY_ORDER).toEqual(EXPECTED_ORDER);
   });
 
-  it('resolves exactly four slots, in the declared order, in every flag state', () => {
+  it('resolves exactly five slots, in the declared order, in every flag state', () => {
     for (const { name, flags } of FLAG_STATES) {
       const slots = resolveStudentPrimaryNav({ flags });
       expect(slots.map((s) => s.id), `slot order with ${name}`).toEqual([...EXPECTED_ORDER]);
-      expect(slots, `slot COUNT with ${name} — the bar is four items in every flag state, never three`)
-        .toHaveLength(4);
+      expect(slots, `slot COUNT with ${name} — the bar is five items in every flag state, never four`)
+        .toHaveLength(EXPECTED_ORDER.length);
     }
   });
 
@@ -101,11 +110,33 @@ describe('student primary nav — the four-slot contract', () => {
     }
   });
 
-  it('routes the first three slots to the declared destinations', () => {
+  it('routes the first four slots to the declared destinations', () => {
     const slots = resolveStudentPrimaryNav();
-    expect(slots.slice(0, 3).map((s) => s.href)).toEqual([...EXPECTED_HREFS]);
-    for (const slot of slots.slice(0, 3)) {
+    expect(slots.slice(0, PRIMARY_COUNT).map((s) => s.href)).toEqual([...EXPECTED_HREFS]);
+    for (const slot of slots.slice(0, PRIMARY_COUNT)) {
       expect(slot.kind, `${slot.id} must be a destination`).toBe('destination');
+    }
+  });
+
+  /**
+   * THE BLANK-BUTTON GUARD, restated for the Foxy slot specifically.
+   *
+   * nav-config.ts records a real incident: `/learn` was deleted from CORE_TABS
+   * while resolveStudentPrimaryNav() still destructured four names out of the
+   * array, so every later slot shifted up one, the last spread `undefined`,
+   * and students got a blank, hrefless nav button. Adding a slot is the same
+   * class of edit as removing one. This asserts the NEW slot specifically
+   * resolves with a real, non-empty href — not just that some slot does.
+   */
+  it('gives the Foxy slot a real, non-empty destination href', () => {
+    for (const { name, flags } of FLAG_STATES) {
+      const foxy = resolveStudentPrimaryNav({ flags }).find((s) => s.id === 'foxy');
+      expect(foxy, `Foxy slot missing with ${name}`).toBeDefined();
+      expect(foxy!.kind, `Foxy must be a destination with ${name}`).toBe('destination');
+      expect(typeof foxy!.href, `Foxy href type with ${name}`).toBe('string');
+      expect(foxy!.href, `Foxy href must be non-empty with ${name}`).toBeTruthy();
+      expect(foxy!.href!.trim(), `Foxy href must not be whitespace with ${name}`).not.toBe('');
+      expect(foxy!.href, `Foxy href with ${name}`).toBe('/foxy');
     }
   });
 
@@ -167,7 +198,7 @@ describe('student primary nav — the primaries are never ALSO in the More sheet
     // shifted every later slot and left the last one spreading `undefined`.
     // Pin the list anyway: the bar's destinations are a product contract.
     expect(CORE_TABS.map((t) => t.href)).toEqual([...EXPECTED_HREFS]);
-    expect(CORE_TABS).toHaveLength(3);
+    expect(CORE_TABS).toHaveLength(PRIMARY_COUNT);
   });
 
   it('never resolves a slot without an href, label or icon', () => {
@@ -193,7 +224,7 @@ describe('student primary nav — the primaries are never ALSO in the More sheet
     // The sidebar is the 1024+ projection of the SAME four slots. A student who
     // resizes must not meet a different name for the same route.
     const sidebarItems = SIDEBAR_SECTIONS.flatMap((s) => s.items);
-    for (const slot of resolveStudentPrimaryNav().slice(0, 3)) {
+    for (const slot of resolveStudentPrimaryNav().slice(0, PRIMARY_COUNT)) {
       const match = sidebarItems.find((i) => i.href === slot.href);
       expect(match, `${slot.href} is a primary destination but is absent from the desktop sidebar`)
         .toBeDefined();
@@ -230,7 +261,11 @@ describe('student primary nav — exactly one slot is ever current', () => {
     // instead, which the tier components derive from a null primary id.
     ['/profile', null, 'a More-sheet destination must not light a primary slot'],
     ['/leaderboard', null, 'a More-sheet destination must not light a primary slot'],
-    ['/foxy', null, 'Foxy is a utility, not a primary destination (2026-08-09 IA change)'],
+    // 2026-08-24 CEO-directed IA reversal — Foxy is primary slot 3 again.
+    // This case previously asserted `null` under the 2026-08-09 rationale.
+    ['/foxy', 'foxy', 'Foxy is primary slot 3 (2026-08-24 CEO-directed IA reversal)'],
+    ['/foxy/anything', 'foxy', 'descendant of the Foxy primary destination'],
+    ['/memory', null, 'a More-sheet destination — the Foxy slot must NOT claim it'],
   ];
 
   for (const [pathname, expected, why] of CASES) {

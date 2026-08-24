@@ -37,8 +37,10 @@ import { relative, resolve, sep } from 'node:path';
  *   - Only LITERAL hrefs. Template literals and computed hrefs
  *     (`href={\`/learn/${code}\`}`) are skipped — resolving them needs data flow
  *     analysis, and guessing would produce false positives.
- *   - `router.push(...)` / `redirect(...)` call sites are NOT scanned. Same
- *     reason; most take computed paths. A follow-up could add the literal subset.
+ *   - `router.push(...)` / `router.replace(...)` / `redirect(...)` call sites are
+ *     scanned for their LITERAL subset only (added 2026-08-24 — see the
+ *     "programmatic-navigation canary" block below). Computed/template targets
+ *     are still skipped for the same reason as computed hrefs.
  *   - `/api/*` is skipped: those are route handlers (`route.ts`), not pages, and
  *     are covered by the API route-manifest specs.
  *   - External URLs, `#anchors`, `mailto:`, `tel:` are not internal links.
@@ -249,6 +251,61 @@ for (const abs of navSourceFiles) {
   }
 }
 
+// ── 3c. collect PROGRAMMATIC navigation targets (router.push / redirect) ──────
+/**
+ * G3 — the follow-up the DELIBERATE LIMITS block above promised, and it is
+ * overdue: the 2026-08-24 remediation wave found FOUR broken student CTAs and
+ * every one of them was a `router.push` call site, not an `href`:
+ *   - `router.push('/review?due_only=1')` (ReviewsDueCard) — 301s to
+ *     `/refresh?tab=flashcards`, a page that structurally cannot serve
+ *     "due only".
+ *   - `router.push('/refresh?tab=flashcards')` (StartRevisionCTA) — hardcoded,
+ *     ignoring which topic was actually due.
+ *   - `router.push('/quiz')` bare and unscoped (WeakTopicLauncher).
+ *   - `router.push('/foxy?topic=a3f2b1c0…')` (/progress) — resolves, param unread.
+ *
+ * A JSX `href` and a `router.push` are the same user-visible promise; only one
+ * of them was being checked. This block closes that asymmetry for the LITERAL
+ * subset, reusing the same route tree, the same redirect table, the same
+ * normalisation and the same KNOWN_DEAD_LINKS discipline as the href scan.
+ *
+ * Note what this half can and cannot do, because the four defects split across
+ * both halves: G3 catches a push at a path that does not EXIST. The last two of
+ * the four above resolve fine and are a different failure — the target ignores
+ * the param it was sent. That is `deep-link-param-contract.test.ts` (G4), which
+ * is deliberately a separate guard rather than an overload of this one.
+ *
+ * Same literal-only limits: `router.push(\`/learn/${'${'}code}\`)` and
+ * `router.push(target)` are skipped, `/api/*` is skipped.
+ */
+const NAV_CALL_LITERAL =
+  /(?:\brouter\s*\.\s*(?:push|replace)|(?<![.\w])redirect)\s*\(\s*['"`](\/[^'"`]*)['"`]/g;
+
+/**
+ * Pure so the teeth block below can drive the REAL scanner over synthetic
+ * source instead of re-implementing the regex (which would only prove the copy
+ * agrees with itself).
+ */
+export function collectNavCallHits(rel: string, source: string): HrefHit[] {
+  const out: HrefHit[] = [];
+  const lines = source.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    // A `//`-commented example must not be treated as a live call site. Cheap
+    // line-level guard: this scan is line-based already.
+    const code = lines[i].replace(/^\s*(?:\/\/|\*|\/\*).*$/, '');
+    for (const m of code.matchAll(NAV_CALL_LITERAL)) {
+      if (m[1].includes('${')) continue;
+      out.push({ path: normalizeUrlPath(m[1]), rel, line: i + 1 });
+    }
+  }
+  return out;
+}
+
+const navCallHits: HrefHit[] = [];
+for (const abs of navSourceFiles) {
+  navCallHits.push(...collectNavCallHits(toPosix(relative(REPO_ROOT, abs)), readFileSync(abs, 'utf8')));
+}
+
 const ROUTES = enumerateRoutes(APP_DIR);
 const REDIRECTS = redirectSources(readFileSync(NEXT_CONFIG, 'utf8'));
 
@@ -284,6 +341,11 @@ const unresolved = internalHrefs.filter(
 
 const internalPropertyHrefs = propertyHrefHits.filter((h) => !h.path.startsWith('/api/'));
 const unresolvedProperty = internalPropertyHrefs.filter(
+  (h) => !isResolvable(h.path, ROUTES, REDIRECTS) && !KNOWN_DEAD_LINKS.has(h.path),
+);
+
+const internalNavCalls = navCallHits.filter((h) => !h.path.startsWith('/api/'));
+const unresolvedNavCalls = internalNavCalls.filter(
   (h) => !isResolvable(h.path, ROUTES, REDIRECTS) && !KNOWN_DEAD_LINKS.has(h.path),
 );
 
@@ -465,6 +527,86 @@ describe('nav-destination canary — no nav item leads to a blank page', () => {
     expect(isResolvable('/review', ROUTES, REDIRECTS)).toBe(true);
     // ...and its destination is a real page.
     expect(ROUTES).toContain('/refresh');
+  });
+});
+
+describe('programmatic-navigation canary (G3) — router.push / redirect literals resolve', () => {
+  it('scanned real call sites (non-vacuous)', () => {
+    // If the regex stops matching, everything below passes trivially. Pin that
+    // it still sees the ~200 literal programmatic navigations this app makes,
+    // including the auth-guard replaces every protected page performs.
+    expect(internalNavCalls.length).toBeGreaterThan(80);
+    expect(internalNavCalls.some((h) => h.path === '/login')).toBe(true);
+    expect(internalNavCalls.some((h) => h.path === '/dashboard')).toBe(true);
+    // ...and it reaches BOTH apps/host pages and packages/ui components, which
+    // is where the four broken CTAs lived.
+    expect(internalNavCalls.some((h) => h.rel.startsWith('apps/host/src/'))).toBe(true);
+    expect(internalNavCalls.some((h) => h.rel.startsWith('packages/ui/src/'))).toBe(true);
+  });
+
+  it('every literal router.push / router.replace / redirect target resolves', () => {
+    const report = unresolvedNavCalls.map((h) => `  ${h.path}\n      ${h.rel}:${h.line}`).join('\n');
+    expect(
+      unresolvedNavCalls.map((h) => `${h.path} (${h.rel}:${h.line})`),
+      `Programmatic navigation(s) target paths with no page.tsx and no redirect. Unlike a ` +
+        `dead <Link>, these fire AFTER the user has already committed to the action — the ` +
+        `student taps, the app navigates, and lands on a 404:\n${report}\n\n` +
+        `Fix by adding the page, adding a redirect in apps/host/next.config.js, or correcting the target.`,
+    ).toEqual([]);
+  });
+
+  it('skips computed targets rather than guessing at them', () => {
+    // The stated design principle: a canary that cries wolf gets deleted. A
+    // template target is not resolvable without data-flow analysis, so it is
+    // out of scope — assert that explicitly so nobody "fixes" it by guessing.
+    const probe = [
+      "router.push(`/learn/${subject}/${chapter}`);",
+      'router.push(target);',
+      "router.push(`/foxy?${params.toString()}`);",
+    ].join('\n');
+    expect(collectNavCallHits('computed.tsx', probe)).toEqual([]);
+  });
+
+  it('MATCHES the literal forms it is meant to catch (planted)', () => {
+    const probe = [
+      "router.push('/answer-checker');",
+      'router.replace("/onboarding");',
+      "  redirect('/pricing');",
+      "router.push('/review?due_only=1');", // query stripped by normalizeUrlPath
+    ].join('\n');
+    const found = collectNavCallHits('planted.tsx', probe).map((h) => h.path);
+    expect(found).toEqual(['/answer-checker', '/onboarding', '/pricing', '/review']);
+  });
+
+  it('FLAGS a planted dead push through the real scanner + real route tree', () => {
+    // End-to-end teeth: the same `collectNavCallHits` the production scan uses,
+    // resolved against the REAL enumerated routes and redirects. If this ever
+    // returns [], the guard has gone tautological and must be repaired.
+    const planted = collectNavCallHits(
+      'packages/ui/src/planted/DeadCTA.tsx',
+      "  <Button onClick={() => router.push('/quiz-arena')}>Start</Button>\n" +
+        "  const go = () => router.replace('/refresh?tab=flashcards');\n" +
+        "  if (!session) redirect('/login');\n",
+    );
+    const dead = planted.filter((h) => !isResolvable(h.path, ROUTES, REDIRECTS));
+    expect(dead.map((h) => h.path)).toEqual(['/quiz-arena']);
+    // ...and the two live targets in the same snippet are NOT flagged, so the
+    // guard is discriminating rather than just noisy.
+    expect(isResolvable('/refresh', ROUTES, REDIRECTS)).toBe(true);
+    expect(isResolvable('/login', ROUTES, REDIRECTS)).toBe(true);
+  });
+
+  it('ignores a commented-out example push', () => {
+    expect(collectNavCallHits('c.tsx', "// router.push('/answer-checker');")).toEqual([]);
+    expect(collectNavCallHits('c.tsx', " * router.push('/answer-checker');")).toEqual([]);
+  });
+
+  it('does not mistake NextResponse.redirect for a route literal', () => {
+    // `NextResponse.redirect(new URL('/login', req.url))` takes a URL object,
+    // not a path literal — and matching the member form would also drag in
+    // every `res.redirect(...)`-shaped helper. Negative lookbehind pins it.
+    const probe = "NextResponse.redirect('/login');\nfoo.redirect('/x');";
+    expect(collectNavCallHits('member.tsx', probe)).toEqual([]);
   });
 });
 

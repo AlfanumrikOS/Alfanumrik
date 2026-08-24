@@ -135,7 +135,7 @@ export default function CapacitorCharging() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Capacitor Charging (RC Circuit)</h3>
-      <canvas ref={canvasRef} width={540} height={240} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <canvas ref={canvasRef} width={540} height={240} style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block' }} />
       <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
         {[['R', R, setR, 1, 100, 'kΩ'], ['C', C, setC, 1, 100, 'μF'], ['V₀', V0, setV0, 5, 20, 'V']].map(([label, val, setter, mn, mx, unit]) => (
           <div key={label as string}>
