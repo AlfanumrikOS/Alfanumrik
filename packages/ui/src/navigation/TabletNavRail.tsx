@@ -29,7 +29,14 @@
  * P7: every label bilingual via AuthContext.isHi.
  */
 
-import { useEffect, useState } from 'react';
+import {
+  Component,
+  Suspense,
+  lazy,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
@@ -46,10 +53,76 @@ import {
 } from './nav-config';
 import { NavMoreSheet, useMoreSheetItems } from './NavMoreSheet';
 import { useHasUpcomingExam } from './use-has-upcoming-exam';
-// Imported from the MODULE, not the '../ui/primitives' barrel, so the
-// always-mounted rail does not pull the whole primitive library into the
-// shared first-load chunk (P10).
-import { Menu, type MenuItem } from '../ui/primitives/Menu';
+// TYPE-ONLY. Erased at compile time, so it pulls no runtime module and cannot
+// put Menu back into this file's chunk. The VALUE import is the lazy() below.
+import type { MenuItem } from '../ui/primitives/Menu';
+
+/* ── The flyout Menu is LAZY (P10) ─────────────────────────────────────────
+ *
+ * Imported from the MODULE, never the '../ui/primitives' barrel: packages/ui
+ * has no `"sideEffects": false`, so a barrel import cannot be tree-shaken and
+ * would drag the whole primitive library along.
+ *
+ * WHY LAZY — measured, not assumed. `Menu` had zero consumers before this rail
+ * mounted it, so it was tree-shaken out of the production build entirely
+ * (`grep -l data-menu-scrim .next/static/chunks/*.js` returned NOTHING on the
+ * commit before #1624). A STATIC import put it in `87234-<hash>.js`, 3.6 kB
+ * gzipped, which webpack emits as an INITIAL chunk and which then appeared in
+ * 73 route RSC client-reference manifests — the exact set `check-bundle-size`
+ * gates on. Every one of those 73 routes gained +3.0 kB of first-load JS,
+ * including `/onboarding`, `/settings` and `/notifications`, which are on
+ * GlobalAppLayout's nav EXCLUSION list and never render this rail at all.
+ * That breached the P10 per-page ratchet on 10 routes and turned main red.
+ *
+ * The rail itself is already `next/dynamic`-loaded from GlobalAppLayout, so
+ * its own chunk (`60397.<hash>.js`) is async and appears in 0 manifests; this
+ * one static edge was the only thing escaping into the gated set. Behind a
+ * lazy boundary the Menu chunk becomes async too and drops out of every
+ * manifest — the same shape as `MathRenderer` → `katex-segments`, whose
+ * chunks likewise appear in 0 manifests.
+ *
+ * NOTHING THAT USED TO RENDER EAGERLY IS DEFERRED. The flyouts exist only when
+ * `ff_nav_groups_v1` is ON *and* a group has rows, so with the flag OFF (its
+ * seeded state) the import is never even requested: flag OFF is byte-identical
+ * to before #1624. With the flag ON the import starts the moment the rail
+ * renders a flyout, well before any student can reach for it.
+ * ─────────────────────────────────────────────────────────────────────────── */
+const Menu = lazy(() =>
+  import('../ui/primitives/Menu').then((m) => ({ default: m.Menu })),
+);
+
+interface MenuChunkBoundaryProps {
+  /** Rendered instead of `children` once the lazy chunk has failed. */
+  fallback: ReactNode;
+  children: ReactNode;
+}
+
+/**
+ * Chunk-load guard for the lazy <Menu> above. `React.lazy` caches a REJECTED
+ * import and re-throws it on every later render, and this rail is mounted from
+ * the ROOT layout — so on a flaky 4G connection an unguarded failure would
+ * escape past every route-level `error.tsx` straight to `global-error` and
+ * blank the whole app. Degrading to the inert trigger keeps the primary five
+ * slots, the More sheet and the page itself alive, and the grouped rows stay
+ * reachable from the mobile sheet and the desktop sidebar, neither of which
+ * depends on this chunk. Same posture as MathRenderer's MathErrorBoundary:
+ * visible > pretty.
+ */
+class MenuChunkBoundary extends Component<MenuChunkBoundaryProps, { failed: boolean }> {
+  constructor(props: MenuChunkBoundaryProps) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) return this.props.fallback;
+    return this.props.children;
+  }
+}
 
 export function TabletNavRail() {
   const pathname = usePathname();
@@ -250,21 +323,27 @@ export function TabletNavRail() {
               borderTop: '1px solid var(--line)',
             }}
           >
-            {flyoutGroups.map((group) => (
-              <Menu
-                key={group.key}
-                items={group.items}
-                isHi={isHi}
-                label={group.label}
-                // The rail hugs the leading edge, so the panel opens INTO the
-                // page. usePopoverPosition flips it left if there is no room.
-                placement="right-start"
-                onNavigate={(href) => router.push(href)}
-              >
+            {flyoutGroups.map((group) => {
+              /* ONE trigger element, used as BOTH the <Menu> child and the
+                 Suspense/error fallback. Same markup, same classes, same box —
+                 so while the Menu chunk is in flight the rail is pixel-identical
+                 and there is no layout shift and no flash on swap.
+
+                 aria-haspopup / aria-expanded are declared here rather than
+                 left entirely to <Menu>'s cloneElement so the button's ROLE is
+                 stable across the swap: a screen reader that reaches the rail
+                 mid-load hears a collapsed menu button, not a plain button that
+                 silently becomes one. <Menu> then overrides aria-expanded with
+                 the live open state and adds aria-controls. Still a menu button
+                 and not a destination, so — exactly as before — it never takes
+                 aria-current="page". */
+              const trigger = (
                 <button
                   type="button"
                   data-nav-group={group.key}
                   data-active={activeGroupKey === group.key ? 'true' : 'false'}
+                  aria-haspopup="menu"
+                  aria-expanded={false}
                   className="nav-rail-tablet__slot"
                 >
                   <span className="nav-rail-tablet__icon" aria-hidden="true">
@@ -272,8 +351,27 @@ export function TabletNavRail() {
                   </span>
                   <span className="nav-rail-tablet__label">{group.label}</span>
                 </button>
-              </Menu>
-            ))}
+              );
+
+              return (
+                <MenuChunkBoundary key={group.key} fallback={trigger}>
+                  <Suspense fallback={trigger}>
+                    <Menu
+                      items={group.items}
+                      isHi={isHi}
+                      label={group.label}
+                      // The rail hugs the leading edge, so the panel opens INTO
+                      // the page. usePopoverPosition flips it left if there is
+                      // no room.
+                      placement="right-start"
+                      onNavigate={(href) => router.push(href)}
+                    >
+                      {trigger}
+                    </Menu>
+                  </Suspense>
+                </MenuChunkBoundary>
+              );
+            })}
           </div>
         )}
       </nav>
