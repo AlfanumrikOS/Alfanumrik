@@ -6,6 +6,25 @@ import { useAuth, type UserRole } from '@alfanumrik/lib/AuthContext';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
 import { getSidebarSections, getItemLockForGrade, isItemVisibleForFlags, resolveActiveNavHref, type NavFlagGatedItem } from './nav-config';
 import { useHasUpcomingExam } from './use-has-upcoming-exam';
+// Imported from the MODULE, not '../ui/primitives' (the barrel), so the
+// always-mounted sidebar does not drag the whole primitive library into the
+// shared first-load chunk (P10).
+import { Tooltip } from '../ui/primitives/Tooltip';
+
+/**
+ * Sections that start CLOSED. Account was already closed by default; the two
+ * grouped-secondary-nav sections (ff_nav_groups_v1) join it so turning the
+ * flag on adds eight destinations without turning the sidebar into a wall of
+ * twenty links on first paint. The student opens what they want; the state is
+ * per-session, exactly as it already was for Account.
+ *
+ * Keyed by section TITLE, matching the existing collapse map.
+ */
+const DEFAULT_COLLAPSED_SECTIONS: Record<string, boolean> = {
+  Account: true,
+  'Practice & Tests': true,
+  Explore: true,
+};
 
 export function DesktopSidebar() {
   const pathname = usePathname();
@@ -14,7 +33,9 @@ export function DesktopSidebar() {
   const isHi = auth?.isHi ?? false;
   const { activeRole } = auth;
   const [collapsed, setCollapsed] = useState(false);
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({ Account: true });
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(
+    () => ({ ...DEFAULT_COLLAPSED_SECTIONS }),
+  );
   
   const { data: navFlags } = useFeatureFlags();
   // Was `useState(true)` — hard-coded, never set, never derived, so "Exam
@@ -47,7 +68,15 @@ export function DesktopSidebar() {
       items: section.items
         .filter(item => isItemVisibleForFlags(item as NavFlagGatedItem, navFlags))
         .filter(passesExamGate),
-    }));
+    }))
+    // EMPTY-SECTION SKIP — the sidebar twin of NavMoreSheet's empty-group
+    // skip, and load-bearing for the ff_nav_groups_v1 rollout. Every item in
+    // the "Practice & Tests" and "Explore" sections carries that flag, so with
+    // it OFF both sections filter down to zero items; without this line the
+    // sidebar would render two disclosure headers that expand onto nothing.
+    // No pre-existing section can hit this branch (each has >= 1 ungated
+    // item), so with the flag off the rendered sidebar is unchanged.
+    .filter(section => section.items.length > 0);
 
   // Single-winner active resolution across the WHOLE sidebar, so exactly one
   // item can carry aria-current="page". A per-item isNavItemActive() loop
@@ -152,7 +181,16 @@ export function DesktopSidebar() {
                     const gradeChipLabel = lock.locked
                       ? (isHi ? `कक्षा ${lock.gradeMin}+` : `Grade ${lock.gradeMin}+`)
                       : null;
-                    return (
+                    const itemLabel = isHi ? item.labelHi : item.label;
+                    // Collapsed (56px icon-only rail) the label span below is
+                    // not rendered, so the hint carries the ONLY copy the
+                    // student can read. Locked rows append the grade chip
+                    // because their icon alone says nothing about why they do
+                    // not respond.
+                    const collapsedHint = lock.locked
+                      ? `${itemLabel} · ${gradeChipLabel}`
+                      : itemLabel;
+                    const navButton = (
                       <button
                         key={item.href}
                         type="button"
@@ -164,9 +202,18 @@ export function DesktopSidebar() {
                         // no "you are here". Matches the bottom bar and rail.
                         aria-current={active ? 'page' : undefined}
                         data-active={active ? 'true' : 'false'}
+                        // Collapsed, the visible label span is not rendered, so
+                        // an unlocked row had NO accessible name at all — the
+                        // only child was an aria-hidden emoji. A tooltip does
+                        // not fix that (aria-describedby is a description, not
+                        // a name), so the name is supplied explicitly here.
+                        // EXPANDED BEHAVIOUR IS UNCHANGED: still `undefined`,
+                        // so the name still comes from the visible text.
                         aria-label={lock.locked
-                          ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
-                          : undefined}
+                          ? `${itemLabel} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
+                          : collapsed
+                            ? itemLabel
+                            : undefined}
                         title={lock.locked && !collapsed
                           ? (isHi ? `कक्षा ${lock.gradeMin} में अनलॉक होगा` : `Unlocks in grade ${lock.gradeMin}`)
                           : undefined}
@@ -201,6 +248,21 @@ export function DesktopSidebar() {
                           <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: 'var(--orange)' }} />
                         ) : null}
                       </button>
+                    );
+                    // COLLAPSED-RAIL TOOLTIPS. At 56px the sidebar is icons
+                    // only, with no labels and (until now) no hints — the
+                    // collapsed nav was literally unreadable. The Tooltip
+                    // primitive shows on hover AND on keyboard focus and wires
+                    // aria-describedby, so it works for pointer and keyboard
+                    // alike. `side="right"` points away from the leading edge.
+                    // Expanded, the button is returned bare — identical markup
+                    // to before this change.
+                    return collapsed ? (
+                      <Tooltip key={item.href} content={collapsedHint} side="right">
+                        {navButton}
+                      </Tooltip>
+                    ) : (
+                      navButton
                     );
                   })}
                 </div>}

@@ -207,3 +207,46 @@ export const TEST_OS_FLAGS = {
   /** Alfa OS pre-test briefing hub at /exam-briefing. Default off. */
   V1: 'ff_test_os_v1',
 } as const;
+
+/**
+ * NAV_GROUPS_FLAGS — gates GROUPED secondary student navigation (2026-08-24).
+ *
+ *  ff_nav_groups_v1
+ *    When ON, the student secondary navigation (the More sheet / sidebar
+ *    projections) renders two ranked groups — "Practice" and "Explore" — that
+ *    re-surface EIGHT routes which are live today but currently carry no nav
+ *    entry:
+ *      Practice — /pyq, /revision, /assignments, /exams
+ *      Explore  — /learn, /dive, /synthesis, /library
+ *
+ *    NOT eight-plus-/simulations. An earlier draft of this block said "nine"
+ *    and listed /simulations; that was wrong and the shipped nav-config.ts
+ *    membership never included it. /simulations is not a destination — it is a
+ *    legacy alias whose page body is `router.replace('/stem-centre')`
+ *    (apps/host/src/app/(student)/simulations/page.tsx), and /stem-centre
+ *    already ships as the row named "STEM Lab" 🔬. Listing it would put one
+ *    destination under two names at one breakpoint, which is exactly what
+ *    student-primary-nav-contract.test.ts fails on. Do not re-add it.
+ *
+ *    When OFF, the navigation renders byte-identically to today: no new row
+ *    mounts, the primary five-slot bar is untouched, and all eight routes stay
+ *    reachable exactly as they are now (they are already deep-linked from
+ *    notifications, teacher assignment links and Foxy, none of which route
+ *    through the nav).
+ *
+ *    This is a PARTIAL, GROUPED reversal of the Phase 3 IA trim (2026-08-10),
+ *    which cut MORE_ITEMS 18 → 10 rows and SIDEBAR_SECTIONS 22 → 14 links while
+ *    deliberately retaining every route — see the comment block headed
+ *    "PHASE 3 IA TRIM (2026-08-10)" in
+ *    packages/ui/src/navigation/nav-config.ts (cited by heading, not line
+ *    number, because that block moves). It is a
+ *    separate, independently rampable flag so the grouped IA can be rolled back
+ *    without disturbing the primary bar or the trim itself.
+ *
+ *    Presentation-layer only: no schema, scoring, XP, or routing change.
+ *    Seeded OFF / 0% by migration 20260824120000_seed_ff_nav_groups_v1.sql.
+ */
+export const NAV_GROUPS_FLAGS = {
+  /** Grouped secondary student navigation ("Practice" / "Explore"). Default off. */
+  V1: 'ff_nav_groups_v1',
+} as const;

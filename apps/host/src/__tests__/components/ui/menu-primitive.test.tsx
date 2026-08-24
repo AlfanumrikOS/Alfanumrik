@@ -563,12 +563,58 @@ describe('Menu — placement and positioning', () => {
     expect(panel().getAttribute('data-placement')).toBe('bottom-start');
   });
 
-  it('data-placement reflects an explicit placement', async () => {
+  /**
+   * JSDOM'S ZERO-RECTS ARE A FREE, DETERMINISTIC FLIP FIXTURE.
+   *
+   * `getBoundingClientRect()` returns all zeros here, which puts the anchor at
+   * the viewport ORIGIN (top=bottom=left=right=0) inside a 1024x768 jsdom
+   * window. Walk usePopoverPosition.update() with `placement: 'top-end'`:
+   *
+   *   need        = h + gap            = 0 + 8   =    8
+   *   room.top    = rect.top    - pad  = 0 - 8   =   -8   → less than `need`
+   *   room.bottom = vh - rect.bottom - pad = 768 - 0 - 8 = 760 → has room
+   *   → `room[side] < need && room[OPPOSITE[side]] >= need` holds, so the side
+   *     flips top → bottom and `resolved` becomes 'bottom-end'.
+   *
+   * So `bottom-end` is the CORRECT answer, not a regression: there is
+   * genuinely no room above an anchor pinned to the viewport ceiling. The
+   * cross-axis alignment ('end') is preserved by the flip, which is the other
+   * half of the contract this pins.
+   *
+   * This asserts the RESOLVED placement exactly. It must NOT be relaxed to
+   * accept either value — `data-placement` used to echo the raw PROP, so a
+   * panel that had already flipped still advertised its unflipped preference
+   * and anything keyed off the attribute (enter-animation origin, arrow
+   * direction, visual-regression assertions) read a value the panel had
+   * stopped honouring. An "either value passes" assertion would restore that
+   * blind spot exactly.
+   */
+  it('data-placement reports the RESOLVED placement — top-end flips to bottom-end at the JSDOM origin', async () => {
     renderMenu({ placement: 'top-end' });
     fireEvent.click(trigger());
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeNull());
 
-    expect(panel().getAttribute('data-placement')).toBe('top-end');
+    expect(
+      panel().getAttribute('data-placement'),
+      'requested top-end at the viewport origin has no room above, so the resolved ' +
+        'placement is bottom-end; data-placement must report the resolved value, not the prop',
+    ).toBe('bottom-end');
+  });
+
+  /**
+   * The counterpart: a placement that does NOT flip must be reported verbatim,
+   * so the test above is pinning a real flip rather than a hook that always
+   * rewrites the attribute. `right-start` is not an arbitrary pick — it is the
+   * placement TabletNavRail passes to its grouped-nav flyouts, and at the
+   * origin room.right = 1024 - 0 - 8 = 1016 >= need (8), so the rail's flyouts
+   * open into the page exactly as declared.
+   */
+  it('data-placement reports a placement that did NOT flip verbatim (right-start, the rail flyout placement)', async () => {
+    renderMenu({ placement: 'right-start' });
+    fireEvent.click(trigger());
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeNull());
+
+    expect(panel().getAttribute('data-placement')).toBe('right-start');
   });
 
   it('coordinates are FINITE numbers under JSDOM zero-rects (never NaN)', async () => {
