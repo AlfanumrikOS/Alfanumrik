@@ -24,7 +24,7 @@
  * `e2e/ui-nav-contract.spec.ts`. Nothing here duplicates that.
  */
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const routerPush = vi.fn();
@@ -281,7 +281,7 @@ describe('TabletNavRail — flyouts appear only with the flag on, and never doub
     }
   });
 
-  it('opens a flyout containing exactly that group, and keeps those rows OUT of the sheet', () => {
+  it('opens a flyout containing exactly that group, and keeps those rows OUT of the sheet', async () => {
     mockFlags = ON_STATE;
     const { container } = render(<TabletNavRail />);
 
@@ -299,9 +299,23 @@ describe('TabletNavRail — flyouts appear only with the flag on, and never doub
     });
     expect(expectedPracticeRows, 'fixture sanity: the practice group has four rows').toHaveLength(4);
 
-    const practiceTrigger = container.querySelector('[data-nav-group="practice"]') as HTMLElement;
+    // The flyout panel sits behind a `React.lazy` + <Suspense> boundary in
+    // TabletNavRail (the Menu primitive is code-split out of the rail's chunk
+    // for the P10 bundle budget), so both the live trigger and the panel arrive
+    // on a later tick. The Suspense fallback is a pixel-identical but INERT
+    // copy of the trigger, so a synchronous click lands on a button with no
+    // handler; wait for <Menu> to swap in the real one (it is the clone that
+    // carries `aria-controls`) before clicking, then `findBy*` the panel —
+    // `getBy*` cannot see either of them yet.
+    const practiceTrigger = await waitFor(() => {
+      const live = container.querySelector(
+        '[data-nav-group="practice"][aria-controls]',
+      ) as HTMLElement | null;
+      expect(live, 'the lazy <Menu> chunk never resolved into a live trigger').not.toBeNull();
+      return live as HTMLElement;
+    });
     fireEvent.click(practiceTrigger);
-    const menu = screen.getByRole('menu');
+    const menu = await screen.findByRole('menu');
     expect(
       [...menu.querySelectorAll('[role="menuitem"]')].map((n) => n.textContent?.trim()),
       'the rail flyout must render the same rows, icons and order as the config',
