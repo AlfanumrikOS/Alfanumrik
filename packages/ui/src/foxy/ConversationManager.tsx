@@ -45,6 +45,18 @@ interface ConversationManagerProps {
   onNewChat: () => void;
   onClose: () => void;
   isLoading: boolean;
+  /**
+   * THE THREE STATES ARE THREE STATES (2026-08-24).
+   *
+   * `true` when the history fetch FAILED. This rail previously had only two
+   * states — loading and "everything else" — so a discarded fetch error
+   * rendered the exact same "No conversations yet" fox as a genuinely empty
+   * account. Confirmed live 2026-08-08 against a student with 1,359 real
+   * `foxy_sessions` rows. Never fold this back into the empty branch.
+   */
+  hasError?: boolean;
+  /** Retry handler for the error state. Omit and the Retry button is hidden. */
+  onRetry?: () => void;
 }
 
 export function ConversationManager({
@@ -56,6 +68,8 @@ export function ConversationManager({
   onNewChat,
   onClose,
   isLoading,
+  hasError = false,
+  onRetry,
 }: ConversationManagerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedSubjects, setCollapsedSubjects] = useState<Set<string>>(new Set());
@@ -69,7 +83,9 @@ export function ConversationManager({
     return conversations.filter(
       c =>
         c.title.toLowerCase().includes(q) ||
-        c.lastMessage.toLowerCase().includes(q) ||
+        // `lastMessage` is optional since the list endpoint stopped returning
+        // message bodies (P13) — guard rather than assuming a string.
+        (c.lastMessage || '').toLowerCase().includes(q) ||
         c.subject.toLowerCase().includes(q) ||
         (c.chapter || '').toLowerCase().includes(q)
     );
@@ -207,6 +223,42 @@ export function ConversationManager({
         </div>
       </div>
 
+      {/*
+        A REFRESH that failed while a list is already on screen. The full error
+        panel below would replace history the student can still read and still
+        open, which is its own kind of lie — but staying silent is the original
+        defect. So: keep the list, and say so in a slim banner above it.
+        The full-panel branch below is scoped to `filtered.length === 0`, which
+        is the initial-load failure — the case that used to render as "No
+        conversations yet".
+      */}
+      {hasError && !isLoading && filtered.length > 0 && (
+        <div
+          className="mx-3 mb-2 px-3 py-2 rounded-xl flex items-center gap-2"
+          role="status"
+          data-testid="conversation-list-stale-banner"
+          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+        >
+          <span className="text-xs" aria-hidden="true">{'⚠️'}</span>
+          <span className="text-[10px] flex-1" style={{ color: 'var(--text-2)' }}>
+            {isHi
+              ? 'ये सूची पुरानी हो सकती है'
+              : 'This list may be out of date'}
+          </span>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              data-testid="conversation-list-stale-retry"
+              className="text-[10px] font-bold px-2 py-1 rounded-lg"
+              style={{ color: 'var(--accent)', minHeight: 'var(--tap-min, 44px)' }}
+            >
+              {isHi ? 'रिफ्रेश' : 'Refresh'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Conversation list — subject/chapter tree */}
       <div className="flex-1 overflow-y-auto px-2 pb-4">
         {isLoading ? (
@@ -220,8 +272,49 @@ export function ConversationManager({
               </div>
             ))}
           </div>
+        ) : hasError && filtered.length === 0 ? (
+          /* ERROR \u2014 deliberately NOT the empty state. Different icon, different
+             copy, an assertive live region, and a Retry. "We couldn't load
+             this" and "you have nothing here" are opposite facts and a student
+             who sees the wrong one stops trusting the history. */
+          <div
+            className="text-center py-8 px-4"
+            role="alert"
+            data-testid="conversation-list-error"
+          >
+            <div className="text-3xl mb-2" aria-hidden="true">{'\u26A0\uFE0F'}</div>
+            <p className="text-xs font-semibold" style={{ color: 'var(--text-1)' }}>
+              {isHi
+                ? '\u0906\u092A\u0915\u0940 \u091A\u0948\u091F \u0932\u094B\u0921 \u0928\u0939\u0940\u0902 \u0939\u094B \u092A\u093E\u0908\u0902'
+                : "Couldn't load your chats"}
+            </p>
+            <p className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
+              {isHi
+                ? '\u0906\u092A\u0915\u0940 \u092A\u0941\u0930\u093E\u0928\u0940 \u091A\u0948\u091F \u0938\u0941\u0930\u0915\u094D\u0937\u093F\u0924 \u0939\u0948\u0902 \u2014 \u092C\u0938 \u0905\u092D\u0940 \u0926\u093F\u0916 \u0928\u0939\u0940\u0902 \u0930\u0939\u0940\u0902\u0964'
+                : "Your old chats are safe \u2014 we just can't show them right now."}
+            </p>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                data-testid="conversation-list-retry"
+                /* 44px floor on both axes (--tap-min), per the a11y contract
+                   the nav tiers already hold themselves to. */
+                className="mt-3 inline-flex items-center justify-center px-4 rounded-xl text-xs font-bold text-on-surface-accent transition-all active:scale-[0.97]"
+                style={{
+                  background: 'var(--surface-accent)',
+                  minHeight: 'var(--tap-min, 44px)',
+                  minWidth: 'var(--tap-min, 44px)',
+                }}
+              >
+                {isHi
+                  ? '\u092B\u093F\u0930 \u0915\u094B\u0936\u093F\u0936 \u0915\u0930\u0947\u0902'
+                  : 'Retry'}
+              </button>
+            )}
+          </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-8 px-4">
+          <div className="text-center py-8 px-4" data-testid="conversation-list-empty">
             <div className="text-3xl mb-2">{'\uD83E\uDD8A'}</div>
             <p className="text-xs" style={{ color: 'var(--text-3)' }}>
               {searchQuery
@@ -339,11 +432,18 @@ export function ConversationManager({
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-0.5">
+                                  {/* Preview line only when there IS a preview.
+                                      The list endpoint no longer returns message
+                                      bodies (P13), so this is usually absent \u2014
+                                      and inventing filler copy ("New chat") for a
+                                      thread that demonstrably has messages was
+                                      worse than showing nothing. The count badge
+                                      to the right carries the real signal. */}
                                   <span
                                     className="text-[10px] truncate flex-1"
                                     style={{ color: 'var(--text-3)' }}
                                   >
-                                    {conv.lastMessage || (isHi ? '\u0928\u0908 \u091A\u0948\u091F' : 'New chat')}
+                                    {conv.lastMessage || ''}
                                   </span>
                                   <span
                                     className="text-[8px] font-medium shrink-0 px-1 py-0.5 rounded"

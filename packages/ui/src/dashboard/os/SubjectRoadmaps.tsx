@@ -19,6 +19,10 @@
  * SkillTree. The chapter nodes are not even constructed while collapsed, so the
  * collapsed state costs one button per subject.
  *
+ * Subject scope comes from /api/student/subjects (useAllowedSubjects), keyed
+ * on subject CODE — NOT a hardcoded display-name set. See the filter comment
+ * in the body for why the old hardcode was a defect, not just a smell.
+ *
  * Everything below the fold is unchanged: identical
  * `/foxy?subject=..&chapter=..&source=dashboard` destinations (the subject
  * param is OMITTED when the display name can't be resolved to a canonical
@@ -30,6 +34,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMasteryOverview } from '@alfanumrik/lib/swr';
+import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { SkillTree, type SkillTreeNode } from '@alfanumrik/ui/ui/SkillTree';
 import { Skeleton } from '@alfanumrik/ui/ui';
 import {
@@ -37,6 +42,8 @@ import {
   roadmapStatusForRow,
   masteryPercent,
   subjectCodeForName,
+  subjectCodeMapFromAllowed,
+  filterRowsToAllowedSubjects,
   type MasteryOverviewRow,
   type RoadmapStatus,
 } from '@alfanumrik/lib/dashboard/mastery-buckets';
@@ -58,6 +65,16 @@ const STATUS_LABEL: Record<RoadmapStatus, { en: string; hi: string }> = {
 export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: SubjectRoadmapsProps) {
   const router = useRouter();
   const { data, isLoading, error } = useMasteryOverview(studentId);
+  // The authoritative reachable-subject set (grade_subject_map ⋈ active
+  // subjects, via /api/student/subjects). SWR-deduped with the dashboard's own
+  // useAllowedSubjects call, so this costs no extra request.
+  const { subjects: allowedSubjects } = useAllowedSubjects();
+  // The prop still wins when supplied (callers may pass a richer map); the hook
+  // is the fallback so this component is correct standalone too.
+  const nameToCode =
+    subjectCodeByName && Object.keys(subjectCodeByName).length > 0
+      ? subjectCodeByName
+      : subjectCodeMapFromAllowed(allowedSubjects);
 
   // Which subject cards are expanded. Empty map = every subject collapsed,
   // which is the default the CEO asked for. Local UI state only.
@@ -67,13 +84,17 @@ export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: 
 
   const rows: MasteryOverviewRow[] = Array.isArray(data) ? (data as MasteryOverviewRow[]) : [];
 
-  // Filter to Mathematics and Science only — the two core CBSE subjects the
-  // dashboard roadmap should surface. Everything else (English, Hindi, SST,
-  // etc.) is accessible via /learn but does not get a roadmap card here.
-  const TARGET_SUBJECTS = new Set(['Mathematics', 'Science']);
-  const filteredRows: MasteryOverviewRow[] = rows.filter((r) =>
-    r.subject && TARGET_SUBJECTS.has(r.subject),
-  );
+  // Restrict to the subjects the student can actually reach.
+  //
+  // This used to be `new Set(['Mathematics','Science'])` — a hardcoded filter
+  // on the DISPLAY NAME. grade_subject_map gives grades 11-12
+  // {physics, chemistry, biology, math}, so that set dropped Physics,
+  // Chemistry and Biology outright and every senior student saw a
+  // Mathematics-only roadmap. The reachable set now comes from
+  // /api/student/subjects (keyed on subject CODE), which IS grade_subject_map
+  // — correct by construction rather than a second list to keep in sync.
+  // Fail-open while the list is unresolved (see filterRowsToAllowedSubjects).
+  const filteredRows: MasteryOverviewRow[] = filterRowsToAllowedSubjects(rows, allowedSubjects);
 
   if (isLoading && !data) {
     return (
@@ -153,7 +174,7 @@ export default function SubjectRoadmaps({ isHi, studentId, subjectCodeByName }: 
                   // and silently falls back to the first allowed subject on a
                   // bogus value, so sending a raw name lands on the WRONG
                   // subject.
-                  const code = subjectCodeForName(g.subject, subjectCodeByName);
+                  const code = subjectCodeForName(g.subject, nameToCode);
                   const onClick =
                     status === 'locked'
                       ? undefined

@@ -142,8 +142,10 @@ export async function GET(
       }
     }
 
-    // Compute bloomDistribution from question_responses
-    // quiz_sessions doesn't have bloom_level, so we derive from question_responses
+    // Compute bloomDistribution from quiz_responses.bloom_level.
+    // quiz_sessions has no bloom_level, so we derive it per-response. (The
+    // query below already read quiz_responses; only this comment still named
+    // the dead `question_responses` table — corrected 2026-08-24.)
     const bloomDistribution: Record<string, number> = {};
     try {
       const { data: responses } = await supabaseAdmin

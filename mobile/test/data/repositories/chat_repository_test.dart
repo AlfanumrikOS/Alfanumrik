@@ -8,6 +8,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alfanumrik/core/constants/api_constants.dart';
+import 'package:alfanumrik/data/models/chat_message.dart';
 import 'package:alfanumrik/data/repositories/chat_repository.dart';
 
 void main() {
@@ -155,9 +156,248 @@ void main() {
     });
   });
 
+  group('ChatRepository.parseSessionId (CEO defect #1, fault 3)', () {
+    test('extracts the camelCase sessionId /api/foxy returns', () {
+      expect(
+        ChatRepository.parseSessionId({
+          'success': true,
+          'response': 'hi',
+          'sessionId': '0f7f5d6e-1c2b-4a3d-9e8f-1122334455aa',
+        }),
+        '0f7f5d6e-1c2b-4a3d-9e8f-1122334455aa',
+      );
+    });
+
+    test('extracts the legacy snake_case session_id (Edge Function shape)', () {
+      expect(
+        ChatRepository.parseSessionId({
+          'reply': 'hi',
+          'session_id': 'sess-abc',
+        }),
+        'sess-abc',
+      );
+    });
+
+    test('blank / missing / non-string ids are treated as absent', () {
+      // Echoing back `''` would put the route on its create-a-new-session
+      // branch every turn — exactly the bug being fixed.
+      expect(ChatRepository.parseSessionId({'sessionId': '   '}), isNull);
+      expect(ChatRepository.parseSessionId({'sessionId': 42}), isNull);
+      expect(ChatRepository.parseSessionId(const {}), isNull);
+    });
+  });
+
+  group('ChatRepository.parseHistory (GET /api/foxy?sessionId=…)', () {
+    test('adapts the route contract into ordered ChatMessages', () {
+      final messages = ChatRepository.parseHistory({
+        'success': true,
+        'session': {'id': 'sess-1'},
+        'messages': [
+          {
+            'id': 'm1',
+            'role': 'user',
+            'content': 'what is inertia',
+            'created_at': '2026-08-24T10:00:00.000Z',
+          },
+          {
+            'id': 'm2',
+            'role': 'assistant',
+            'content': 'Inertia is…',
+            'structured': null,
+            'tokens_used': 91,
+            'created_at': '2026-08-24T10:00:04.000Z',
+          },
+        ],
+      });
+
+      expect(messages, hasLength(2));
+      expect(messages.first.role, 'user');
+      expect(messages.last.content, 'Inertia is…');
+    });
+
+    test('skips malformed rows instead of blanking the thread', () {
+      final messages = ChatRepository.parseHistory({
+        'messages': [
+          {'id': 'm1', 'role': 'user', 'content': 'ok'},
+          {'id': 'm2', 'role': 'assistant'}, // no content
+          'not-a-map',
+          {'id': 'm3', 'content': 'no role'},
+        ],
+      });
+      expect(messages, hasLength(1));
+    });
+
+    test('missing/!list messages field yields an empty transcript', () {
+      expect(ChatRepository.parseHistory(const {}), isEmpty);
+      expect(ChatRepository.parseHistory({'messages': 'nope'}), isEmpty);
+    });
+
+    test('keeps the most recent `limit` turns', () {
+      final rows = List.generate(
+        10,
+        (i) => {'id': 'm$i', 'role': 'user', 'content': 'q$i'},
+      );
+      final messages =
+          ChatRepository.parseHistory({'messages': rows}, limit: 3);
+      expect(messages.map((m) => m.content), ['q7', 'q8', 'q9']);
+    });
+  });
+
+  group('ChatRepository.pickResumableSession', () {
+    final now = DateTime.utc(2026, 8, 24, 12, 0, 0);
+
+    ChatSession session(
+      String id, {
+      String mode = 'learn',
+      String? subject = 'science',
+      Duration age = Duration.zero,
+    }) {
+      final at = now.subtract(age);
+      return ChatSession(
+        id: id,
+        studentId: 'student-1',
+        subject: subject,
+        mode: mode,
+        createdAt: at,
+        lastActiveAt: at,
+      );
+    }
+
+    test('picks the most recently active matching thread', () {
+      final picked = ChatRepository.pickResumableSession(
+        [
+          session('a', age: const Duration(hours: 3)),
+          session('b', age: const Duration(minutes: 10)),
+          session('c', age: const Duration(hours: 1)),
+        ],
+        mode: 'learn',
+        subject: 'science',
+        now: now,
+      );
+      expect(picked?.id, 'b');
+    });
+
+    test('never crosses modes', () {
+      final picked = ChatRepository.pickResumableSession(
+        [session('a', mode: 'learn')],
+        mode: 'explorer',
+        subject: 'science',
+        now: now,
+      );
+      expect(picked, isNull);
+    });
+
+    test('subject match is case-insensitive', () {
+      final picked = ChatRepository.pickResumableSession(
+        [session('a', subject: 'Science')],
+        mode: 'learn',
+        subject: 'science',
+        now: now,
+      );
+      expect(picked?.id, 'a');
+    });
+
+    test('a different subject is not resumable', () {
+      expect(
+        ChatRepository.pickResumableSession(
+          [session('a', subject: 'maths')],
+          mode: 'learn',
+          subject: 'science',
+          now: now,
+        ),
+        isNull,
+      );
+    });
+
+    test('honours the server idle window (SESSION_IDLE_MINUTES = 240)', () {
+      // Mirrors apps/host/src/app/api/foxy/_lib/session.ts. Offering to resume
+      // a thread the server would reset anyway just recreates the bug.
+      expect(ChatRepository.foxySessionIdleWindow, const Duration(hours: 4));
+
+      expect(
+        ChatRepository.pickResumableSession(
+          [session('stale', age: const Duration(hours: 5))],
+          mode: 'learn',
+          subject: 'science',
+          now: now,
+        ),
+        isNull,
+      );
+      expect(
+        ChatRepository.pickResumableSession(
+          [session('fresh', age: const Duration(hours: 3, minutes: 59))],
+          mode: 'learn',
+          subject: 'science',
+          now: now,
+        )?.id,
+        'fresh',
+      );
+    });
+
+    test('a null requested subject matches any subject in the same mode', () {
+      final picked = ChatRepository.pickResumableSession(
+        [session('a', subject: 'maths')],
+        mode: 'learn',
+        now: now,
+      );
+      expect(picked?.id, 'a');
+    });
+  });
+
+  group('ChatSession.fromFoxyJson', () {
+    test('maps a foxy_sessions row (chapter → topic, snake_case)', () {
+      final s = ChatSession.fromFoxyJson(const {
+        'id': 'sess-1',
+        'student_id': 'student-1',
+        'subject': 'science',
+        'chapter': '8',
+        'mode': 'explorer',
+        'created_at': '2026-08-24T09:00:00.000Z',
+        'last_active_at': '2026-08-24T11:00:00.000Z',
+      });
+
+      expect(s.id, 'sess-1');
+      expect(s.topic, '8');
+      expect(s.mode, 'explorer');
+      expect(s.activeAt, DateTime.utc(2026, 8, 24, 11));
+    });
+
+    test('also accepts the GET /api/foxy/sessions camelCase shape', () {
+      // apps/host/src/app/api/foxy/sessions/route.ts returns
+      // { id, title, subject, chapter, updatedAt, messageCount }. Parsing it
+      // here already means adopting that endpoint is a one-line change in
+      // getRecentSessions — blocked only on the route also returning `mode`
+      // (see the TODO there; mode-scoped resume is what stops an explorer
+      // launch inheriting a learn thread).
+      final s = ChatSession.fromFoxyJson(
+        const {
+          'id': 'sess-2',
+          'subject': 'maths',
+          'updatedAt': '2026-08-24T11:30:00.000Z',
+          'messageCount': 7,
+        },
+        studentId: 'student-1',
+      );
+
+      expect(s.studentId, 'student-1');
+      expect(s.messageCount, 7);
+      expect(s.activeAt, DateTime.utc(2026, 8, 24, 11, 30));
+    });
+
+    test('falls back to createdAt when last activity is absent', () {
+      final s = ChatSession.fromFoxyJson(const {
+        'id': 'sess-3',
+        'student_id': 'student-1',
+        'created_at': '2026-08-24T09:00:00.000Z',
+      });
+      expect(s.activeAt, DateTime.utc(2026, 8, 24, 9));
+      expect(s.mode, 'learn');
+    });
+  });
+
   // NOTE: constructor-level tests (with full ChatRepository instantiation)
   // require Supabase + Dio mocks (mocktail/mockito), which aren't currently
   // in pubspec. The static helpers above cover the migration's behavioral
-  // surface; constructor wiring is exercised indirectly via the existing
-  // chat_provider integration smoke when run on a configured device.
+  // surface; the notifier-level session-id round-trip is covered in
+  // test/providers/chat_session_persistence_test.dart via a fake repository.
 }

@@ -25,7 +25,6 @@
 
 import { NextResponse } from 'next/server';
 import { logAudit } from '@alfanumrik/lib/rbac';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { classifyIntent, routeIntent } from '@alfanumrik/lib/ai';
 import { screenStudentFacingText } from '@alfanumrik/lib/ai/validation/output-screen';
@@ -38,6 +37,15 @@ import { stripFakeQuizClaim } from '@alfanumrik/lib/foxy/anti-fake-quiz-claim';
 import { coerceStudentFacingText } from '@alfanumrik/lib/foxy/recover-from-text';
 import type { RagSource, DiagramRef, ChatMessage } from './constants';
 import { refundQuota, resolveTenantAiOverrides } from './quota';
+// Incident 2026-08-24: every foxy_chat_messages write goes through the shared
+// seam so a rejected write is logged + alertable instead of swallowed. The
+// previous code here discarded the insert result entirely.
+import {
+  insertFoxyMessages,
+  finalizeAssistantTurn,
+  updateFoxyMessage,
+} from './message-persistence';
+import { SAFE_ABSTAIN_MESSAGE } from '@alfanumrik/lib/ai/validation/output-guard';
 
 export async function runLegacyFoxyFlow(params: {
   studentId: string;
@@ -120,6 +128,14 @@ export async function persistLegacyFoxyResponse(params: {
   mode: string;
   legacy: Awaited<ReturnType<typeof runLegacyFoxyFlow>>;
   logFoxyAsk: (tokens: number | null) => void;
+  /**
+   * Incident 2026-08-24. When the grounded path already pre-inserted the user
+   * + pending-assistant rows (ff_foxy_native_turns_v1) and then fell back here
+   * on an upstream_error / circuit_open abstain, this function must RESOLVE
+   * those rows instead of INSERTing a second copy of the same turn.
+   * Undefined/null at the kill-switch call site (no pre-insert happened there).
+   */
+  preInserted?: { userId: string | null; assistantId: string | null } | null;
 }): Promise<Response> {
   // ── Unconditional anti-fake backstop (P6 "fake action", flag-INDEPENDENT) ──
   // Both legacy call sites (ff_grounded_ai_foxy OFF kill-switch AND the
@@ -187,6 +203,20 @@ export async function persistLegacyFoxyResponse(params: {
       },
     });
     await refundQuota(params.studentId, 'foxy_chat');
+    // Incident 2026-08-24: never leave a pre-inserted assistant row stranded
+    // as an empty `pending` orphan on the safety-blocked exit. P12: only
+    // SAFE_ABSTAIN_MESSAGE is stored — never the blocked model text.
+    if (params.preInserted?.assistantId) {
+      await updateFoxyMessage(
+        params.preInserted.assistantId,
+        { content: SAFE_ABSTAIN_MESSAGE, pending: false },
+        {
+          stage: 'safety_blocked_update',
+          sessionId: params.resolvedSessionId,
+          studentId: params.studentId,
+        },
+      );
+    }
     try {
       params.logFoxyAsk(0);
     } catch (telemetryErr) {
@@ -208,31 +238,58 @@ export async function persistLegacyFoxyResponse(params: {
     });
   }
 
-  // Persist turns (non-fatal)
+  // Persist turns (non-fatal, but NEVER silent — incident 2026-08-24).
+  //
+  // The previous implementation was `await supabaseAdmin.from(...).insert([...])`
+  // with the result discarded entirely. supabase-js resolves with
+  // `{ data: null, error }` rather than throwing, so a rejected write produced
+  // no log line at all and the turn continued as if it had been saved.
   const now = new Date().toISOString();
-  try {
-    await supabaseAdmin.from('foxy_chat_messages').insert([
-      {
-        session_id: params.resolvedSessionId,
-        student_id: params.studentId,
-        role: 'user',
-        content: params.message,
-        sources: null,
-        tokens_used: null,
-        created_at: now,
-      },
-      {
-        session_id: params.resolvedSessionId,
-        student_id: params.studentId,
-        role: 'assistant',
+  const assistantRow = {
+    session_id: params.resolvedSessionId,
+    student_id: params.studentId,
+    role: 'assistant' as const,
+    content: responseText,
+    sources: params.legacy.sources.length > 0 ? params.legacy.sources : null,
+    tokens_used: params.legacy.tokensUsed,
+  };
+  if (params.preInserted?.assistantId) {
+    // Grounded path already wrote user + pending-assistant rows before falling
+    // back here. Resolve them instead of duplicating the turn.
+    await finalizeAssistantTurn({
+      assistantId: params.preInserted.assistantId,
+      patch: {
         content: responseText,
-        sources: params.legacy.sources.length > 0 ? params.legacy.sources : null,
-        tokens_used: params.legacy.tokensUsed,
-        created_at: new Date(Date.now() + 1).toISOString(),
+        sources: assistantRow.sources,
+        tokens_used: assistantRow.tokens_used,
+        pending: false,
       },
-    ]);
-  } catch (saveErr) {
-    console.warn('[foxy] legacy message save failed:', saveErr instanceof Error ? saveErr.message : String(saveErr));
+      fallbackRow: { ...assistantRow, pending: false, created_at: now },
+      updateStage: 'legacy_insert',
+      fallbackStage: 'legacy_insert',
+      sessionId: params.resolvedSessionId,
+      studentId: params.studentId,
+    });
+  } else {
+    await insertFoxyMessages(
+      [
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'user',
+          content: params.message,
+          sources: null,
+          tokens_used: null,
+          created_at: now,
+        },
+        { ...assistantRow, created_at: new Date(Date.now() + 1).toISOString() },
+      ],
+      {
+        stage: 'legacy_insert',
+        sessionId: params.resolvedSessionId,
+        studentId: params.studentId,
+      },
+    );
   }
 
   logAudit(params.authUserId, {

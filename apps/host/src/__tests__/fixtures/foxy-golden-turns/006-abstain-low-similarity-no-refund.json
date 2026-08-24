@@ -146,6 +146,14 @@
       "op": "select"
     },
     {
+      "table": "foxy_chat_messages",
+      "op": "insert",
+      "patchKeys": [
+        "0",
+        "1"
+      ]
+    },
+    {
       "table": "learning_events",
       "op": "insert",
       "patchKeys": [

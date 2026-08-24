@@ -94,12 +94,21 @@ export function useSubjects() {
   return useSWR('subjects', () => unwrapOrThrow(getSubjects()), STATIC_CONFIG);
 }
 
-/* ── Student Snapshot (XP, streaks, mastery counts) ── */
+/* ── Student Snapshot (XP, streaks, mastery counts) ──
+ *
+ * Inherits the global `revalidateOnFocus: false`. It previously opted INTO focus
+ * revalidation, which made every tab refocus — including the one that happens on
+ * every mobile screen unlock — refire the snapshot read. That was the visible
+ * flicker students saw on unlock even in the cases where auth state held.
+ * Freshness is already covered without it: `invalidateSnapshot()` after every
+ * mutation that can move XP/streaks, `revalidateOnReconnect` when the phone gets
+ * signal back, and the 10 s `dedupingInterval` for genuine remounts. Do not
+ * re-add `revalidateOnFocus: true` here, and do not change the global default. */
 export function useStudentSnapshot(studentId: string | undefined) {
   return useSWR(
     studentId ? `snapshot/${studentId}` : null,
     () => getStudentSnapshot(studentId!),
-    { ...DEFAULT_CONFIG, revalidateOnFocus: true } // No polling; refreshed via invalidateSnapshot() after mutations
+    DEFAULT_CONFIG // No polling; refreshed via invalidateSnapshot() after mutations
   );
 }
 

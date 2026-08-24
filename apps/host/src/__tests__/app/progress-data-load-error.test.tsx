@@ -42,8 +42,11 @@ const { authState } = vi.hoisted(() => ({
   },
 }));
 
+// Stable router spy — the "Revise Now" destination assertions below need to
+// read the pushes, so the mock must not mint a fresh fn on every render.
+const { pushSpy } = vi.hoisted(() => ({ pushSpy: vi.fn() }));
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: pushSpy, replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -60,6 +63,29 @@ vi.mock('@alfanumrik/lib/usePermissions', () => ({
 
 vi.mock('@alfanumrik/lib/pulse/use-pulse', () => ({
   useMyPulse: () => ({ data: null, error: null, isLoading: false, mutate: vi.fn() }),
+}));
+
+/* The reachable-subject set (defect #11). Mocked so the Subject-Mastery scope
+ * is deterministic instead of depending on a real /api/student/subjects fetch.
+ * `allowedSubjects.subjects` is mutable so one case can flip the grade band. */
+const { allowedSubjects } = vi.hoisted(() => ({
+  allowedSubjects: {
+    subjects: [
+      { code: 'math', name: 'Mathematics' },
+      { code: 'science', name: 'Science' },
+    ] as { code: string; name: string }[],
+  },
+}));
+vi.mock('@alfanumrik/lib/useAllowedSubjects', () => ({
+  useAllowedSubjects: () => ({
+    subjects: allowedSubjects.subjects,
+    unlocked: allowedSubjects.subjects,
+    locked: [],
+    isLoading: false,
+    error: null,
+    degraded: false,
+    refresh: vi.fn(),
+  }),
 }));
 
 // Recharts is heavy and irrelevant to error/empty gating.
@@ -159,6 +185,10 @@ const SCORE_72_LABEL = /(?:Overall score|समग्र स्कोर): 72/;
 beforeEach(() => {
   authState.isHi = false;
   authState.student = { id: 'stu-1', grade: '8', preferred_subject: 'math' };
+  allowedSubjects.subjects = [
+    { code: 'math', name: 'Mathematics' },
+    { code: 'science', name: 'Science' },
+  ];
   warnSpy.mockClear();
   seedAllHealthyAndEmpty();
 });
@@ -468,5 +498,162 @@ describe('/progress — the pending placeholder is announced (Finding #5, WCAG 2
     expect(document.querySelector('[role="status"][aria-busy="true"]')).toBeNull();
     // Sibling precedent is untouched: the error card is still role="alert".
     expect(screen.getByText("Couldn't load your progress").closest('[role="alert"]')).not.toBeNull();
+  });
+});
+
+/* ══ Defect #10 — the low-mastery list must name the topic ══════════════════
+ *
+ * `loadPerf` used to select `id, topic_id, mastery_probability, next_review_at`
+ * from `concept_mastery` with NO join, then render
+ * `topic_id.substring(0, 8) + '…'`. The student read "a3f2b1c0…" with an empty
+ * subject, and "Revise Now" pushed `/foxy?topic=a3f2b1c0%E2%80%A6` — a param
+ * Foxy stashes verbatim with no lookup and no switchSubject, so the tap read as
+ * "nothing happened".
+ *
+ * It now reads `public.topic_mastery_rollup` (the security_invoker view that
+ * already joins curriculum_topics + subjects), so the title and the subject
+ * CODE are real. The heading was corrected too: the query filters on
+ * `mastery_probability < 0.5` with NO next_review_at bound, so it is a
+ * LOW-MASTERY list, not a DUE list — "due" belongs to /revision.
+ *
+ * NOTE on matchers: SectionHeader renders `{icon} {children}` as two sibling
+ * text nodes, so the heading element's text includes the icon. Headings are
+ * matched with a regex substring for that reason.
+ */
+const ROLLUP_ROWS = [
+  {
+    subject: 'math',
+    topic_tag: 'Real Numbers',
+    chapter_number: 1,
+    mastery_probability: 0.21,
+    next_review_at: null,
+  },
+  {
+    subject: 'science',
+    topic_tag: 'Light and Reflection',
+    chapter_number: 10,
+    mastery_probability: 0.34,
+    next_review_at: null,
+  },
+];
+
+describe('/progress — low-mastery list reads topic_mastery_rollup, not a bare UUID', () => {
+  it('renders the REAL topic title, never a UUID prefix', async () => {
+    tableResults.set('student_learning_profiles', { data: [RETURNING_PROFILE], error: null });
+    tableResults.set('topic_mastery_rollup', { data: ROLLUP_ROWS, error: null });
+    render(React.createElement(ProgressPage));
+
+    await waitFor(() => expect(screen.getByText('Real Numbers')).toBeDefined());
+    expect(screen.getByText('Light and Reflection')).toBeDefined();
+    // The exact shape of the old defect: an 8-hex-char chip ending in an ellipsis.
+    expect(screen.queryByText(/^[0-9a-f]{8}…$/)).toBeNull();
+  });
+
+  it('is titled as a LOW-MASTERY list, not a due list (that concept belongs to /revision)', async () => {
+    tableResults.set('student_learning_profiles', { data: [RETURNING_PROFILE], error: null });
+    tableResults.set('topic_mastery_rollup', { data: ROLLUP_ROWS, error: null });
+    render(React.createElement(ProgressPage));
+
+    await waitFor(() => expect(screen.getByText(/Lowest mastery/)).toBeDefined());
+    expect(screen.queryByText(/Topics that need revision/)).toBeNull();
+  });
+
+  it('"Revise Now" navigates to a subject + topic scoped destination Foxy actually reads', async () => {
+    tableResults.set('student_learning_profiles', { data: [RETURNING_PROFILE], error: null });
+    tableResults.set('topic_mastery_rollup', { data: [ROLLUP_ROWS[0]], error: null });
+    render(React.createElement(ProgressPage));
+
+    await waitFor(() => expect(screen.getByText('Real Numbers')).toBeDefined());
+    fireEvent.click(screen.getByText('Revise Now'));
+
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    const dest = String(pushSpy.mock.calls[0][0]);
+    const q = new URLSearchParams(dest.slice('/foxy?'.length));
+    expect(q.get('topic')).toBe('Real Numbers');
+    expect(q.get('subject')).toBe('math'); // a CODE, from subjects.code
+    expect(q.get('chapter')).toBe('1');
+    // The unreachable dead branch is gone — no UUID-shaped topic param.
+    expect(dest).not.toMatch(/topic=[0-9a-f]{8}/);
+  });
+
+  it('BILINGUAL (P7): the Hindi heading replaces the English one', async () => {
+    authState.isHi = true;
+    tableResults.set('student_learning_profiles', { data: [RETURNING_PROFILE], error: null });
+    tableResults.set('topic_mastery_rollup', { data: ROLLUP_ROWS, error: null });
+    render(React.createElement(ProgressPage));
+
+    await waitFor(() =>
+      expect(screen.getByText(/सबसे कम महारत वाले विषय/)).toBeDefined(),
+    );
+    expect(screen.queryByText(/Lowest mastery/)).toBeNull();
+  });
+});
+
+/* ══ Defect #11 — Subject Mastery shows only the reachable subjects ═════════
+ *
+ * student_learning_profiles carries a row for EVERY subject the student ever
+ * touched. This list rendered all of them, while the dashboard's mastery
+ * widgets were scoped — two different answers to "which subjects?" one tap
+ * apart. Both now key off /api/student/subjects (= grade_subject_map).
+ */
+describe('/progress — Subject Mastery scope matches grade_subject_map (defect #11)', () => {
+  const profileFor = (subject: string) => ({
+    ...RETURNING_PROFILE,
+    id: `prof-${subject}`,
+    subject,
+  });
+
+  it('grade 9: shows math + science, hides a stale english profile', async () => {
+    tableResults.set('student_learning_profiles', {
+      data: [profileFor('math'), profileFor('science'), profileFor('english')],
+      error: null,
+    });
+    tableResults.set('subjects', {
+      data: [
+        { code: 'math', name: 'Mathematics', name_hi: 'गणित', icon: 'M', color: '#f00' },
+        { code: 'science', name: 'Science', name_hi: 'विज्ञान', icon: 'S', color: '#0f0' },
+        { code: 'english', name: 'English', name_hi: 'अंग्रेज़ी', icon: 'E', color: '#00f' },
+      ],
+      error: null,
+    });
+    render(React.createElement(ProgressPage));
+
+    await waitFor(() => expect(screen.getByText(/Subject Mastery/)).toBeDefined());
+    expect(screen.getByText('Mathematics')).toBeDefined();
+    expect(screen.getByText('Science')).toBeDefined();
+    expect(screen.queryByText('English')).toBeNull();
+  });
+
+  it('grade 11: Physics/Chemistry/Biology are NOT dropped (the old hardcode bug)', async () => {
+    allowedSubjects.subjects = [
+      { code: 'biology', name: 'Biology' },
+      { code: 'chemistry', name: 'Chemistry' },
+      { code: 'math', name: 'Mathematics' },
+      { code: 'physics', name: 'Physics' },
+    ];
+    tableResults.set('student_learning_profiles', {
+      data: [
+        profileFor('physics'),
+        profileFor('chemistry'),
+        profileFor('biology'),
+        profileFor('math'),
+      ],
+      error: null,
+    });
+    tableResults.set('subjects', {
+      data: [
+        { code: 'physics', name: 'Physics', name_hi: 'भौतिकी', icon: 'P', color: '#f00' },
+        { code: 'chemistry', name: 'Chemistry', name_hi: 'रसायन', icon: 'C', color: '#0f0' },
+        { code: 'biology', name: 'Biology', name_hi: 'जीव विज्ञान', icon: 'B', color: '#00f' },
+        { code: 'math', name: 'Mathematics', name_hi: 'गणित', icon: 'M', color: '#ff0' },
+      ],
+      error: null,
+    });
+    render(React.createElement(ProgressPage));
+
+    await waitFor(() => expect(screen.getByText(/Subject Mastery/)).toBeDefined());
+    for (const name of ['Physics', 'Chemistry', 'Biology', 'Mathematics']) {
+      expect(screen.getByText(name)).toBeDefined();
+    }
   });
 });

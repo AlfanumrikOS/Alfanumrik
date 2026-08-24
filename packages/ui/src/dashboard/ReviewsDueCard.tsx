@@ -10,9 +10,23 @@ import { authedFetch } from '@alfanumrik/lib/authed-fetch';
  *
  * Pedagogy moat: research shows spaced-repetition retention improves
  * dramatically when the system PROMPTS the learner at the right moment.
- * concept_mastery.next_review_date is already populated nightly by the
- * SM-2 cron; this card is the visible hook that drives the student to
- * /review?due_only=1.
+ * concept_mastery.next_review_at is the live SM-2 schedule; this card is the
+ * visible hook that drives the student into the revision surface.
+ *
+ * DESTINATION (fixed 2026-08, defect #7): the CTA used to push
+ * `/review?due_only=1`. `/review` is a permanent redirect to
+ * `/refresh?tab=flashcards` (declared in the Next config), which DROPS the
+ * query string and then reads `spaced_repetition_cards` — a table no quiz
+ * writes — so the student was reliably told "Nothing to refresh right now" one
+ * tap after being told N reviews were due. It now pushes `/revision`
+ * (ff_revision_os_v1, live at 100%), which renders the very items this count
+ * came from.
+ *
+ * DATA SOURCE: by default the card fetches /api/dashboard/reviews-due itself
+ * (standalone use). When a parent already holds the count — RevisionRail reads
+ * /api/revision/overview for its badge — it passes `dueCount` +
+ * `estimatedMinutes` as props and the card skips its own request entirely, so
+ * the badge and the card can never show two different numbers.
  *
  * Render rules:
  *  - dueCount === 0 → render NOTHING (return null). No empty card noise.
@@ -91,12 +105,29 @@ function Skeleton() {
   );
 }
 
-export default function ReviewsDueCard() {
+interface ReviewsDueCardProps {
+  /**
+   * Externally-supplied due count. When provided the card renders from it and
+   * makes NO request of its own (single-source guarantee for RevisionRail).
+   */
+  dueCount?: number;
+  /** Externally-supplied minute estimate; passed alongside `dueCount`. */
+  estimatedMinutes?: number;
+}
+
+export default function ReviewsDueCard({
+  dueCount,
+  estimatedMinutes,
+}: ReviewsDueCardProps = {}) {
   const { isHi } = useAuth();
   const router = useRouter();
 
+  // A null SWR key disables the request; the hook itself still runs
+  // unconditionally, so hook order is stable.
+  const controlled = typeof dueCount === 'number';
+
   const { data, error, isLoading } = useSWR<ReviewsDueResponse>(
-    '/api/dashboard/reviews-due',
+    controlled ? null : '/api/dashboard/reviews-due',
     fetcher,
     {
       refreshInterval: 60_000,        // 1 min — student-visible nudge stays fresh
@@ -107,23 +138,24 @@ export default function ReviewsDueCard() {
     }
   );
 
-  // Loading state — shimmer matches dashboard cards
-  if (isLoading && !data) return <Skeleton />;
+  if (!controlled) {
+    // Loading state — shimmer matches dashboard cards
+    if (isLoading && !data) return <Skeleton />;
+    // Silent failure on error — return nothing rather than break the dashboard
+    if (error) return null;
+    if (!data?.data) return null;
+  }
 
-  // Silent failure on error — return nothing rather than break the dashboard
-  if (error) return null;
-
-  const payload = data?.data;
-  if (!payload) return null;
-  const { dueCount, estimatedMinutes } = payload;
+  const count = controlled ? (dueCount as number) : data!.data!.dueCount;
+  const minutes = controlled ? (estimatedMinutes ?? 0) : data!.data!.estimatedMinutes;
 
   // Empty state: render NOTHING (zero pending = no card)
-  if (dueCount <= 0) return null;
+  if (count <= 0) return null;
 
-  const titleEn = `${dueCount} review${dueCount === 1 ? '' : 's'} due — ${estimatedMinutes} min`;
+  const titleEn = `${count} review${count === 1 ? '' : 's'} due — ${minutes} min`;
   // Hinglish: keep "review" as loanword to match existing dashboard copy
   // ("रिव्यू बाकी") that students already recognize.
-  const titleHi = `${dueCount} रिव्यू बाकी — ${estimatedMinutes} मिनट`;
+  const titleHi = `${count} रिव्यू बाकी — ${minutes} मिनट`;
 
   const subtitleEn = 'Quick review locks in what you learnt last week';
   const subtitleHi = 'पिछले हफ्ते का याद ताज़ा करें';
@@ -138,7 +170,7 @@ export default function ReviewsDueCard() {
   return (
     <button
       type="button"
-      onClick={() => router.push('/review?due_only=1')}
+      onClick={() => router.push('/revision')}
       aria-label={ariaLabel}
       className="w-full rounded-2xl p-4 flex items-center gap-3 transition-all active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       style={{

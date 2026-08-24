@@ -108,7 +108,7 @@ export default function ExothermicEndothermic() {
           <input type="range" min={10} max={100} value={Math.abs(dH)} onChange={e => setDH(type === 'Exothermic' ? -e.target.value : +e.target.value)} style={{ width: '100%' }} />
         </div>
       </div>
-      <canvas ref={canvasRef} width={540} height={260} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <canvas ref={canvasRef} width={540} height={260} style={{ width: '100%', height: 'auto', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
         Formula: <b style={{ color: 'var(--orange)' }}>ΔH = H_products − H_reactants</b> &nbsp;({type === 'Exothermic' ? 'ΔH < 0, heat released' : 'ΔH > 0, heat absorbed'})
       </div>

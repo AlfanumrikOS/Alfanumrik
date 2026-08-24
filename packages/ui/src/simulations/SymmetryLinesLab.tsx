@@ -72,7 +72,7 @@ export default function SymmetryLinesLab() {
   return (
     <div style={{ background:'var(--surface-1)', borderRadius:12, padding:16, maxWidth:600, margin:'0 auto', fontFamily:'inherit' }}>
       <h3 style={{ color:'var(--text-1)', fontSize:16, fontWeight:700, marginBottom:8 }}>Symmetry Lines Lab</h3>
-      <canvas ref={canvasRef} width={460} height={280} style={{ width:'100%', borderRadius:8, background:'var(--surface-2)', display:'block' }} />
+      <canvas ref={canvasRef} width={460} height={280} style={{ width:'100%', height:'auto', borderRadius:8, background:'var(--surface-2)', display:'block' }} />
       <div style={{ display:'flex', gap:8, marginTop:10, justifyContent:'center' }}>
         <button onClick={()=>setMode('alphabet')} style={btnStyle(mode==='alphabet')}>Alphabet Mode</button>
         <button onClick={()=>setMode('polygon')} style={btnStyle(mode==='polygon')}>Polygon Mode</button>

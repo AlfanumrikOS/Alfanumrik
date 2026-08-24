@@ -16,6 +16,7 @@
  */
 
 import useSWR from 'swr';
+import { authedFetch } from '@alfanumrik/lib/authed-fetch';
 
 /** A single due/upcoming review item. Mirrors the route's RevisionItem. */
 export interface RevisionItem {
@@ -53,7 +54,11 @@ export interface RevisionOverview {
 }
 
 async function fetchRevisionOverview(url: string): Promise<RevisionOverview> {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  // authedFetch forwards `Authorization: Bearer <token>` from the live Supabase
+  // session (the session lives in localStorage, not a cookie), which is what
+  // the route's authorizeRequest authenticates on. A bare fetch() sends no
+  // credential the server can read and 401s.
+  const res = await authedFetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) {
     const err = new Error('Revision overview fetch failed') as Error & { status: number };
     err.status = res.status;
@@ -80,9 +85,11 @@ async function fetchRevisionOverview(url: string): Promise<RevisionOverview> {
  * Reads the revision overview. Gated by `enabled` (the page only fetches once
  * the flag resolves ON, so the OFF path issues zero requests).
  */
+export const REVISION_OVERVIEW_KEY = '/api/revision/overview';
+
 export function useRevisionOverview(enabled: boolean) {
   return useSWR<RevisionOverview>(
-    enabled ? '/api/revision/overview' : null,
+    enabled ? REVISION_OVERVIEW_KEY : null,
     fetchRevisionOverview,
     {
       revalidateOnFocus: false,

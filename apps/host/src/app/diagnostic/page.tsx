@@ -921,6 +921,13 @@ export default function DiagnosticPage() {
         isHi={isHi}
         isPostOnboarding={isPostOnboarding}
         summary={summary}
+        // Phase 5A: the review screen needs the question text / options /
+        // explanation / explanation_hi it was already served by
+        // /api/diagnostic/start. `resetToSetup` clears `questions`, so this is
+        // only ever the set that produced THIS summary. Correctness still comes
+        // solely from `summary.question_results` (the server's re-derivation) —
+        // never from these rows' `correct_answer_index`.
+        questions={questions}
         onPrimaryCta={() => router.push(isPostOnboarding ? '/dashboard' : '/quiz')}
         onRetake={resetToSetup}
       />

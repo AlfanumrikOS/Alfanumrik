@@ -58,6 +58,15 @@ import {
 } from './constants';
 import { refundQuota } from './quota';
 import { extractValidatedStructured } from './responders';
+// Incident 2026-08-24: every foxy_chat_messages write goes through the shared
+// seam so a rejected write is logged + alertable instead of swallowed.
+import {
+  insertFoxyMessages,
+  assistantIdOf,
+  finalizeAssistantTurn,
+  updateFoxyMessage,
+} from './message-persistence';
+import { SAFE_ABSTAIN_MESSAGE } from '@alfanumrik/lib/ai/validation/output-guard';
 import { classifyExpectationLifecycle } from './cognitive-context';
 // D8 (Foxy North-Star Phase 2): parity with the blocking path — stamp the
 // coarse explanation-format label onto the existing foxy.chat audit detail.
@@ -212,6 +221,60 @@ export async function handleStreamingFoxyTurn(params: {
     await refundQuota(params.studentId, 'foxy_chat');
   };
 
+  /**
+   * Incident 2026-08-24: a stream that ends on `abstain` / `error` / a dropped
+   * connection used to persist NOTHING — the student's own question was
+   * destroyed along with the missing answer, and any pre-inserted
+   * `pending=true` assistant row was left as a permanent orphan. Resolve the
+   * turn here so the conversation record survives every terminal path.
+   *
+   * Best-effort and never throws; the student's SSE stream is unaffected.
+   */
+  const persistOnAbstain = async () => {
+    if (params.preInsertedAssistantId) {
+      await updateFoxyMessage(
+        params.preInsertedAssistantId,
+        { content: SAFE_ABSTAIN_MESSAGE, pending: false },
+        {
+          stage: 'abstain_update',
+          sessionId: params.resolvedSessionId,
+          studentId: params.studentId,
+        },
+      );
+      return;
+    }
+    const now = new Date().toISOString();
+    await insertFoxyMessages(
+      [
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'user',
+          content: params.message,
+          sources: null,
+          tokens_used: null,
+          created_at: now,
+        },
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'assistant',
+          content: SAFE_ABSTAIN_MESSAGE,
+          structured: null,
+          sources: null,
+          tokens_used: null,
+          coach_mode_used: params.coachMode ?? null,
+          created_at: new Date(Date.now() + 1).toISOString(),
+        },
+      ],
+      {
+        stage: 'abstain_insert',
+        sessionId: params.resolvedSessionId,
+        studentId: params.studentId,
+      },
+    );
+  };
+
   // B'-5 Phase 2: assistant-message UUID captured from the persistence
   // INSERT and emitted to the client via a synthesized `persisted` SSE
   // frame in flush(). Stays null when persistence fails — the client then
@@ -338,75 +401,72 @@ export async function handleStreamingFoxyTurn(params: {
           }))
         : null;
 
+    const streamAssistantRow = {
+      session_id: params.resolvedSessionId,
+      student_id: params.studentId,
+      role: 'assistant' as const,
+      content: persistContent,
+      // CHECK constraint `structured_role_check` permits structured only
+      // on assistant rows; the column is nullable so legacy/fallback writes
+      // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
+      structured: persistStructured,
+      sources: safetyRedacted ? null : sourcesPayload,
+      tokens_used: lastTokensUsed,
+      // B'-5: parity with the blocking path — record coach mode for
+      // feedback correlation.
+      coach_mode_used: params.coachMode ?? null,
+    };
     if (params.preInsertedAssistantId) {
       // Phase 2 of Foxy continuity fix (2026-05-18): UPDATE rather than INSERT.
       // The user row was already inserted with pending=false; the assistant
       // row is the one we need to flip from pending=true → false + content.
-      try {
-        const { error: updateErr } = await supabaseAdmin
-          .from('foxy_chat_messages')
-          .update({
-            content: persistContent,
-            structured: persistStructured,
-            sources: safetyRedacted ? null : sourcesPayload,
-            tokens_used: lastTokensUsed,
-            pending: false,
-          })
-          .eq('id', params.preInsertedAssistantId);
-        if (updateErr) {
-          console.warn('[foxy] streaming message update failed:', updateErr.message);
-        }
-        assistantMessageId = params.preInsertedAssistantId;
-      } catch (err) {
-        console.warn(
-          '[foxy] streaming message update threw:',
-          err instanceof Error ? err.message : String(err),
-        );
-      }
+      //
+      // Incident 2026-08-24: if that UPDATE is rejected (a BEFORE UPDATE
+      // immutability guard would do exactly this) fall back to INSERTing the
+      // assistant turn so the answer materialises instead of being stranded as
+      // an empty pending row. Both outcomes are logged + metered.
+      assistantMessageId = await finalizeAssistantTurn({
+        assistantId: params.preInsertedAssistantId,
+        patch: {
+          content: persistContent,
+          structured: persistStructured,
+          sources: safetyRedacted ? null : sourcesPayload,
+          tokens_used: lastTokensUsed,
+          pending: false,
+        },
+        fallbackRow: {
+          ...streamAssistantRow,
+          pending: false,
+          created_at: new Date().toISOString(),
+        },
+        updateStage: 'streaming_update',
+        fallbackStage: 'streaming_update_fallback_insert',
+        sessionId: params.resolvedSessionId,
+        studentId: params.studentId,
+      });
     } else {
       // Legacy path (flag off, or pre-insert failed): INSERT both rows.
-      try {
-        const now = new Date().toISOString();
-        const { data: insertedRows } = await supabaseAdmin
-          .from('foxy_chat_messages')
-          .insert([
-            {
-              session_id: params.resolvedSessionId,
-              student_id: params.studentId,
-              role: 'user',
-              content: params.message,
-              sources: null,
-              tokens_used: null,
-              created_at: now,
-            },
-            {
-              session_id: params.resolvedSessionId,
-              student_id: params.studentId,
-              role: 'assistant',
-              content: persistContent,
-              // CHECK constraint `structured_role_check` permits structured only
-              // on assistant rows; the column is nullable so legacy/fallback writes
-              // explicitly null. Migration: 20260430010000_foxy_chat_messages_add_structured.
-              structured: persistStructured,
-              sources: safetyRedacted ? null : sourcesPayload,
-              tokens_used: lastTokensUsed,
-              // B'-5: parity with the blocking path — record coach mode for
-              // feedback correlation.
-              coach_mode_used: params.coachMode ?? null,
-              created_at: new Date(Date.now() + 1).toISOString(),
-            },
-          ])
-          .select('id, role');
-        if (insertedRows) {
-          const assistantRow = insertedRows.find((r) => r.role === 'assistant');
-          assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
-        }
-      } catch (err) {
-        console.warn(
-          '[foxy] streaming message save failed:',
-          err instanceof Error ? err.message : String(err),
-        );
-      }
+      const now = new Date().toISOString();
+      const streamInsert = await insertFoxyMessages(
+        [
+          {
+            session_id: params.resolvedSessionId,
+            student_id: params.studentId,
+            role: 'user',
+            content: params.message,
+            sources: null,
+            tokens_used: null,
+            created_at: now,
+          },
+          { ...streamAssistantRow, created_at: new Date(Date.now() + 1).toISOString() },
+        ],
+        {
+          stage: 'streaming_insert',
+          sessionId: params.resolvedSessionId,
+          studentId: params.studentId,
+        },
+      );
+      assistantMessageId = assistantIdOf(streamInsert);
     }
 
     // Phase 3 (2026-05-18): pending-expectations lifecycle for streaming
@@ -638,8 +698,11 @@ export async function handleStreamingFoxyTurn(params: {
           }
         }
       } else {
-        // Stream closed without a `done` event → refund (defensive).
+        // Stream closed without a `done` event → refund (defensive) AND
+        // persist the turn (incident 2026-08-24 — this path used to write
+        // nothing at all, losing the student's question).
         await finalizeOnError();
+        await persistOnAbstain();
       }
     },
   });

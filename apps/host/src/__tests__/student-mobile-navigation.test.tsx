@@ -104,9 +104,19 @@ describe('live student mobile navigation', () => {
     expect(within(dialog).queryByRole('button', { name: 'Home' })).not.toBeInTheDocument();
 
     // Section membership is preserved — items render inside their group, not lost.
-    expect(within(dialog).getByRole('button', { name: 'Foxy' })).toBeInTheDocument();
+    // UPDATED 2026-08-24 (CEO-directed IA reversal). This line used to assert a
+    // "Foxy" row here. `/foxy` is primary slot 3 now and was removed from
+    // MORE_ITEMS; a row here as well would be one destination in two places at
+    // the same breakpoint. "Reminders" is the Utilities group's first member
+    // now and stands in for the same INTENT — items land inside their group.
+    expect(within(dialog).getByRole('button', { name: 'Reminders' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'STEM Lab' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Profile' })).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole('button', { name: 'Foxy' }),
+      'Foxy is a primary slot now — a More-sheet row for it as well is the ' +
+        'one-destination-two-places violation the IA law forbids',
+    ).not.toBeInTheDocument();
   });
 
   it('keeps the More sheet overflow scrollable so every item stays reachable on short viewports', () => {

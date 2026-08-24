@@ -54,6 +54,24 @@ interface RoleData {
   guardian: { id: string; name: string } | null;
 }
 
+/* ─── Session Probe ───
+ *
+ * The three genuinely distinct outcomes of asking "is this browser signed in?".
+ * The middle one is the whole point: 'none' means Supabase authoritatively told
+ * us there is no session, while 'unknown' means we asked and did not hear back
+ * in time. Collapsing 'unknown' into 'none' (which a bare `?? null` does) is
+ * what produced the false logout on mobile screen-lock resume — see the
+ * probeSession comment in fetchUser.
+ */
+type SessionUser = NonNullable<
+  Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']
+>['user'];
+
+type SessionProbe =
+  | { readonly kind: 'session'; readonly user: SessionUser }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'unknown' };
+
 /* ─── Theme Type ─── */
 //  'light' / 'dark' / 'system' are the legacy preferences. 'hc' (high-contrast)
 //  is added for the cosmic redesign's visibility requirement — see
@@ -210,6 +228,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // load retries); a definitive verdict clears the code AND sets this ref.
   const inviteRedeemedRef = useRef(false);
 
+  /* ─── Resume-safety refs (false-logout-on-screen-lock fix, 2026-08-24) ───
+   *
+   * THE DEFECT these three refs exist to kill: a mobile browser FREEZES the
+   * tab when the screen locks. On unlock, supabase-js fires TOKEN_REFRESHED
+   * *and* every setTimeout that was pending during the freeze fires at once.
+   * The old code then (a) re-ran fetchUser without setIsLoading(true) and
+   * (b) let those instantly-expired timers clear roles/student/teacher/
+   * guardian. isLoggedIn is derived as `roles.length > 0`, so the guards in
+   * StudentOSDashboard / foxy (`!isLoading && !isLoggedIn → /login`) bounced
+   * a student whose Supabase session in localStorage was still perfectly
+   * valid. It was never a real sign-out — only a client-state race.
+   *
+   * hasEverResolvedRef — flips true the first time fetchUser learns the auth
+   *   state AUTHORITATIVELY (a real getSession() answer, session or no
+   *   session). Failing open to logged-out on a timeout is CORRECT for a cold
+   *   boot (P15: no session ⇒ land on /login) and CATASTROPHIC on a resume
+   *   (a known-good session gets demoted to logged-out). This ref is what
+   *   tells those two situations apart.
+   * rolesRef — mirrors `roles` so fetchUser (a useCallback with [] deps, by
+   *   design, to keep a stable identity) can read the CURRENT roles without
+   *   capturing a stale closure.
+   * hiddenEpochRef — increments every time the document goes hidden. A
+   *   fetchUser call snapshots it on entry; if it has moved by the time a
+   *   timer fires, the tab was backgrounded mid-call and that timer is a
+   *   freeze artefact, not evidence of a stalled network.
+   */
+  const hasEverResolvedRef = useRef(false);
+  const rolesRef = useRef<UserRole[]>([]);
+  const hiddenEpochRef = useRef(0);
+  // Guards the visibilitychange re-validation against duplicate concurrent runs.
+  const resumeRevalidatingRef = useRef(false);
+
   // B11: Use useCallback + roles dependency to prevent stale closure.
   // Without useCallback, event handlers that captured a previous version of
   // setActiveRole would validate against an outdated roles array.
@@ -234,18 +284,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 12s is fast enough that the user isn't stuck, generous enough that a
     // slow connection still completes normally.
     const TIMEOUT_MS = 12_000;
+    // A timer that fires more than this far past its nominal delay did not
+    // "time out" — the tab was frozen (screen lock / backgrounded) and the
+    // callback ran the instant it thawed. Wall-clock overshoot is the tell.
+    const FREEZE_OVERSHOOT_MS = 3_000;
+    const entryHiddenEpoch = hiddenEpochRef.current;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     const timeoutPromise = new Promise<void>((resolve) => {
-      timeoutId = setTimeout(() => {
-        console.warn(`[AuthContext] fetchUser exceeded ${TIMEOUT_MS}ms — failing open`);
-        setStudent(null);
-        setTeacher(null);
-        setGuardian(null);
-        setRoles([]);
-        setActiveRoleState('none');
-        setIsLoading(false);
-        resolve();
-      }, TIMEOUT_MS);
+      let rearmed = false;
+      const arm = (delay: number) => {
+        const armedAt = Date.now();
+        timeoutId = setTimeout(() => {
+          // ── Freeze detection ──
+          // Two independent signals that this is a thawed-tab artefact rather
+          // than a genuinely stalled request:
+          //   1. the callback ran far later than `delay` (wall-clock overshoot)
+          //   2. the document went hidden at least once during this call
+          // Either one buys the request ONE fresh full timeout window, so a
+          // resume gets a real chance to finish instead of being judged on
+          // time that elapsed while the CPU was suspended.
+          const overshoot = Date.now() - armedAt - delay;
+          const wasHidden = hiddenEpochRef.current !== entryHiddenEpoch;
+          if (!rearmed && (overshoot > FREEZE_OVERSHOOT_MS || wasHidden)) {
+            rearmed = true;
+            arm(TIMEOUT_MS);
+            return;
+          }
+
+          // ── Genuine timeout ──
+          // Fail open to logged-out ONLY when we have never once resolved the
+          // auth state and hold no roles. Otherwise preserve the last-known-good
+          // identity and just stop the spinner: a slow/failed refresh must never
+          // demote a valid session to signed-out (that IS the false logout).
+          const knownGood = hasEverResolvedRef.current || rolesRef.current.length > 0;
+          if (knownGood) {
+            console.warn(
+              `[AuthContext] fetchUser exceeded ${TIMEOUT_MS}ms — preserving last-known-good session`,
+            );
+            setIsLoading(false);
+            resolve();
+            return;
+          }
+          console.warn(`[AuthContext] fetchUser exceeded ${TIMEOUT_MS}ms — failing open`);
+          setStudent(null);
+          setTeacher(null);
+          setGuardian(null);
+          setRoles([]);
+          setActiveRoleState('none');
+          setIsLoading(false);
+          resolve();
+        }, delay);
+      };
+      arm(TIMEOUT_MS);
     });
 
     const work = (async () => {
@@ -253,15 +343,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         // getSession() is fast when the token is fresh (localStorage read, ~0 ms).
         // When the token is expired it makes a network call for refresh which can
-        // stall. We race it against a 4 s timeout as a safety net: if it hasn't
-        // returned in 4 s, we treat the user as not logged in and return early —
-        // the auth event system (SIGNED_IN / TOKEN_REFRESHED) will re-trigger
-        // fetchUser once the session resolves, recovering automatically.
-        const sessionUser = await Promise.race([
-          supabase.auth.getSession().then((r) => r.data.session?.user ?? null),
-          new Promise<null>((resolve) => { setTimeout(() => resolve(null), 4_000); }),
-        ]);
-        const user = sessionUser;
+        // stall, so we still race it against a timeout.
+        //
+        // WHAT CHANGED (false-logout fix): the old race resolved `null` for BOTH
+        // "there is no session" and "we haven't heard back yet", then treated the
+        // conflated null as proof of logged-out and cleared every role. On a
+        // screen-lock resume the pending 4 s timer fired the moment the tab
+        // thawed — before the network round-trip could possibly finish — so a
+        // perfectly valid session was read as "no session" and the user was
+        // bounced to /login. probeSession now returns a THIRD outcome,
+        // 'unknown', which is explicitly NOT a logged-out verdict.
+        const probeSession = async (timeoutMs: number): Promise<SessionProbe> => {
+          let probeTimer: ReturnType<typeof setTimeout> | null = null;
+          try {
+            return await Promise.race([
+              supabase.auth.getSession().then((r) => {
+                const u = r.data.session?.user ?? null;
+                // An authoritative answer either way — session or genuinely none.
+                return u ? ({ kind: 'session', user: u } as const) : ({ kind: 'none' } as const);
+              }),
+              new Promise<SessionProbe>((resolve) => {
+                probeTimer = setTimeout(() => resolve({ kind: 'unknown' } as const), timeoutMs);
+              }),
+            ]);
+          } finally {
+            if (probeTimer) clearTimeout(probeTimer);
+          }
+        };
+
+        let probe = await probeSession(4_000);
+        if (probe.kind === 'unknown') {
+          // Not yet known — NOT logged out. Retry once with a short backoff and a
+          // more generous window. A thawing tab needs a moment for its network
+          // stack to come back; a genuinely absent session answers instantly.
+          await new Promise((r) => { setTimeout(r, 750); });
+          probe = await probeSession(6_000);
+        }
+
+        if (probe.kind === 'unknown') {
+          // Still unknown after the retry. Clear NOTHING: we have no evidence the
+          // user is signed out, and destroying last-known-good state here is
+          // exactly the false logout. Drop the spinner and let the auth event
+          // system (TOKEN_REFRESHED / SIGNED_IN) or the visibilitychange
+          // re-validation below recover once the session actually resolves.
+          console.warn('[AuthContext] session state unknown after retry — preserving current state');
+          setIsLoading(false);
+          return;
+        }
+
+        // From here the answer is authoritative, so later timeouts are allowed to
+        // trust the last-known-good state instead of failing open.
+        hasEverResolvedRef.current = true;
+
+        const user = probe.kind === 'session' ? probe.user : null;
         if (!user) {
           setAuthUserId(null);
           setStudent(null);
@@ -661,6 +795,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (timeoutId) clearTimeout(timeoutId);
   }, []);
 
+  // Keep rolesRef in step with `roles` so fetchUser — deliberately a []-deps
+  // useCallback for a stable identity — can read the CURRENT roles when deciding
+  // whether a timeout is allowed to clear them.
+  useEffect(() => {
+    rolesRef.current = roles;
+  }, [roles]);
+
   const refreshSnapshot = useCallback(async () => {
     if (!student) return;
     const snap = await getStudentSnapshot(student.id);
@@ -834,6 +975,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // P13: clear PostHog identity on cross-tab signout too.
         try { posthogReset(); } catch { /* never throw from analytics */ }
       } else if (event === 'TOKEN_REFRESHED') {
+        // ⚠️ CRITICAL: Set isLoading=true BEFORE fetchUser to prevent race condition.
+        // Without this, pages like /dashboard see isLoading=false + isLoggedIn=false
+        // during the gap between TOKEN_REFRESHED and fetchUser completion, and
+        // redirect to /login. This is the SAME race the SIGNED_IN branch below has
+        // guarded against for a long time; TOKEN_REFRESHED was simply never fixed,
+        // and it is the branch that fires on a mobile screen-lock resume — which is
+        // why the false logout reproduced on unlock and not on a normal login.
+        setIsLoading(true);
         fetchUser();
       } else if (event === 'SIGNED_IN') {
         // ⚠️ CRITICAL: Set isLoading=true BEFORE fetchUser to prevent race condition.
@@ -879,9 +1028,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    // ── Resume re-validation (false-logout-on-screen-lock fix) ──
+    //
+    // Two jobs, one listener:
+    //  hidden  → bump hiddenEpochRef so any in-flight fetchUser knows its timers
+    //            spanned a background/freeze window and must not be trusted as
+    //            genuine timeouts.
+    //  visible → self-heal. If Supabase still holds a session but our roles are
+    //            empty, some earlier race wrongly emptied them; re-hydrate under
+    //            isLoading=true so the page guards see "loading", not
+    //            "logged out", and never fire router.replace('/login').
+    //
+    // Note this only ever ADDS a session back. It never signs anyone out — a real
+    // sign-out arrives as the SIGNED_OUT event, which is untouched.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        hiddenEpochRef.current += 1;
+        return;
+      }
+      if (resumeRevalidatingRef.current) return; // no duplicate concurrent runs
+      resumeRevalidatingRef.current = true;
+      void (async () => {
+        try {
+          const { data } = await supabase.auth.getSession();
+          const hasSession = !!data.session?.user;
+          // P13: log the boolean verdict only — never the user id, email or token.
+          if (hasSession && rolesRef.current.length === 0) {
+            setIsLoading(true);
+            await fetchUser();
+          }
+        } catch {
+          // Re-validation is best-effort. It must never itself break auth.
+        } finally {
+          resumeRevalidatingRef.current = false;
+        }
+      })();
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
     return () => {
       cancelled = true;
       subscription.unsubscribe();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
     };
   }, [fetchUser]);
 

@@ -19,11 +19,20 @@
  *   (An AnswerChecker™ CTA used to close the widget; removed because it linked
  *    to a /answer-checker route that was never built.)
  *
+ * EMPTY STATES (2026-08-24, CEO defect #6). An empty prediction list has three
+ * mutually exclusive causes and this widget renders a DIFFERENT, true state for
+ * each — see `resolveEmptyCause`. It previously rendered one generic No-Data-Yet card
+ * for all three, telling grade 6-9/11 students (for whom BoardScore is
+ * structurally impossible — their grade has no `cbse_chapter_weights` rows) and
+ * grade-10/12 students with an empty `selected_subjects` (37 of 38 in
+ * production) that the fix was to practise more. It was not.
+ *
  * Design: matches MasterySnapshot patterns — rounded-3xl p-5 wrapper,
  * rounded-2xl p-3 cards, CSS variable palette, bilingual via isHi.
  */
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import useSWR from 'swr';
 import { StatRing, Skeleton } from '@alfanumrik/ui/ui';
 import { authedFetch } from '@alfanumrik/lib/authed-fetch';
@@ -110,10 +119,22 @@ interface BoardScoreWidgetProps {
 // cached prediction instantly and refreshes in the background.
 const CLIENT_TIMEOUT_MS = 20_000;
 
+/**
+ * Why an empty prediction list is empty. Supplied by GET /api/board-score
+ * ONLY when the list is empty (the happy path skips the extra reads).
+ * Counts only — no subject names, no identifiers (P13).
+ */
+interface BoardScoreEligibility {
+  grade: string;
+  grade_has_board_weights: boolean;
+  selected_subject_count: number;
+  eligible_subject_count: number;
+}
+
 /** Discriminated fetch result so SWR carries one `data` payload. */
 type BoardScoreResult =
   | { kind: 'disabled' }
-  | { kind: 'data'; data: BoardScorePrediction[] };
+  | { kind: 'data'; data: BoardScorePrediction[]; eligibility?: BoardScoreEligibility };
 
 async function fetchBoardScore(): Promise<BoardScoreResult> {
   const controller = new AbortController();
@@ -128,15 +149,47 @@ async function fetchBoardScore(): Promise<BoardScoreResult> {
       err.status = res.status;
       throw err;
     }
-    const json = (await res.json()) as { code: string; data?: BoardScorePrediction[] };
+    const json = (await res.json()) as {
+      code: string;
+      data?: BoardScorePrediction[];
+      eligibility?: BoardScoreEligibility;
+    };
     if (json.code === 'disabled') {
       return { kind: 'disabled' };
     }
-    return { kind: 'data', data: json.data ?? [] };
+    return { kind: 'data', data: json.data ?? [], eligibility: json.eligibility };
   } finally {
     clearTimeout(timer);
   }
 }
+
+/**
+ * The three distinct reasons a student sees no BoardScore™, resolved from the
+ * server's eligibility block. Each one needs DIFFERENT copy — collapsing them
+ * into one generic No-Data-Yet card (the pre-2026-08-24 behaviour) blamed the
+ * student for a platform gap in two of the three cases.
+ *
+ * `pending` is the fail-safe default when no eligibility block arrives: it is
+ * the only one of the three that asserts nothing about the student.
+ */
+type EmptyCause = 'grade_unsupported' | 'needs_subjects' | 'pending';
+
+export function resolveEmptyCause(eligibility: BoardScoreEligibility | undefined): EmptyCause {
+  if (!eligibility) return 'pending';
+  if (!eligibility.grade_has_board_weights) return 'grade_unsupported';
+  if (eligibility.selected_subject_count === 0 || eligibility.eligible_subject_count === 0) {
+    return 'needs_subjects';
+  }
+  return 'pending';
+}
+
+// Lazily loaded — the picker (and its `useSetup` / `useAllowedSubjects`
+// dependencies) must not sit in the dashboard's first-load bundle (P10). It is
+// fetched only when a student taps "Choose subjects".
+const BoardSubjectPicker = dynamic(() => import('./BoardSubjectPicker'), {
+  ssr: false,
+  loading: () => <Skeleton height={220} rounded="rounded-2xl" />,
+});
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -155,7 +208,10 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
 
   const disabled = data?.kind === 'disabled';
   const predictions = data?.kind === 'data' ? data.data : [];
+  const eligibility = data?.kind === 'data' ? data.eligibility : undefined;
   const [selectedIdx, setSelectedIdx] = useState(0);
+  // Subject picker disclosure for the `needs_subjects` empty state.
+  const [pickingSubjects, setPickingSubjects] = useState(false);
   // 2026-08-06 declutter: the chapter breakdown + recovery plan (up to 10 rows
   // combined) now live behind ONE disclosure, collapsed by default. The dashboard
   // is a glance surface — the gauge + marks + coverage bar are the first-paint
@@ -166,6 +222,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
   useEffect(() => {
     setSelectedIdx(0);
     setShowDetails(false);
+    setPickingSubjects(false);
   }, [predictions.length]);
 
   // ── Labels ──────────────────────────────────────────────────────────────────
@@ -188,9 +245,41 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
     hideAnalysis:  isHi ? 'विश्लेषण छिपाएँ'             : 'Hide analysis',
     selectSubject: isHi ? 'विषय चुनें'                  : 'Select subject',
     lowCoverage:   isHi ? '⚠ अधिक Quiz खेलें — सटीकता बढ़ेगी' : '⚠ Practice more to improve accuracy',
-    noData:        isHi ? 'अभी कोई डेटा नहीं'           : 'No Data Yet',
-    noDataDesc:    isHi ? 'Quiz खेलें और Foxy से पढ़ें — आपका स्कोर बनना शुरू हो जाएगा।'
-                        : 'Practice quizzes and study with Foxy — your predicted score will appear here.',
+
+    /* ── Empty-state copy, one string set per CAUSE (2026-08-24) ──────────
+       The single generic no-data-yet pair that used to live here (a
+       No-Data-Yet heading over "practise quizzes and study with Foxy and
+       your predicted score will appear here") was REMOVED, not renamed. It
+       told every student the emptiness was their own doing. In production
+       it was shown to grade 6-9/11 students
+       whose grade has no `cbse_chapter_weights` rows at all (BoardScore is
+       structurally impossible for them, no amount of practice changes it)
+       and to grade-10/12 students whose `selected_subjects` is empty (a
+       one-tap fix that the copy never mentioned). Practising more fixed
+       neither. Never attribute a platform gap to the learner. */
+
+    // Cause 1 — grades 6, 7, 8, 9, 11: no CBSE board paper, no weight rows.
+    gradeTitle:    isHi ? 'बोर्ड स्कोर™ कक्षा 10 और 12 के लिए'
+                        : 'BoardScore™ is for Classes 10 and 12',
+    gradeDesc:     isHi ? 'CBSE बोर्ड परीक्षा कक्षा 10 और 12 में होती है, इसलिए अनुमानित बोर्ड अंक वहीं से शुरू होते हैं। तब तक तुम्हारी सारी प्रगति सुरक्षित रहती है।'
+                        : 'CBSE sets board papers in Classes 10 and 12, so predicted board marks start there. Everything you learn until then still counts.',
+
+    // Cause 2 — grade 10/12 but no board subjects elected. ACTIONABLE.
+    subjectsTitle: isHi ? 'अपने बोर्ड विषय चुनो'
+                        : 'Choose your board subjects',
+    subjectsDesc:  isHi ? 'बोर्ड स्कोर™ हर विषय के अंक अलग-अलग बताता है, इसलिए पहले यह जानना ज़रूरी है कि तुम बोर्ड में कौन-से विषय दे रहे हो। एक बार चुन लो — इसमें एक मिनट लगेगा।'
+                        : 'BoardScore™ predicts marks subject by subject, so it first needs to know which subjects you are taking in the board exam. Pick them once — it takes a minute.',
+    subjectsCta:   isHi ? 'विषय चुनें'                  : 'Choose subjects',
+    // No `cancel` string here on purpose: the picker's own back control
+    // (SubjectStep's "← Go back" / "← वापस जाओ") IS the cancel, and a second
+    // dismiss label would be two ways to say one thing.
+
+    // Cause 3 — everything is eligible, the overnight run has not produced a row yet.
+    pendingTitle:  isHi ? 'पहला अनुमान बन रहा है'
+                        : 'Your first prediction is being built',
+    pendingDesc:   isHi ? 'तुम्हारे विषय चुने जा चुके हैं। बोर्ड स्कोर™ रात में अपडेट होता है — पहला अनुमान अगले अपडेट के बाद यहाँ दिखेगा।'
+                        : 'Your subjects are set. BoardScore™ updates overnight — your first prediction appears here after the next update.',
+
     errorTitle:    isHi ? 'स्कोर लोड नहीं हो सका'     : 'Could not load score',
     errorDesc:     isHi ? 'कृपया पुनः प्रयास करें।'    : 'Please try again.',
     retry:         isHi ? 'पुनः प्रयास'                : 'Retry',
@@ -281,14 +370,100 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
     );
   }
 
-  // ── Empty (nightly cron hasn't run yet) ─────────────────────────────────────
+  // ── Empty — THREE different truths, never one generic No-Data-Yet ─────────
 
   if (predictions.length === 0) {
+    const cause = resolveEmptyCause(eligibility);
+
+    /* Cause 1 — the student's grade has no CBSE mark-allocation data at all
+       (grades 6, 7, 8, 9, 11 in production). This is permanent for their
+       current class and there is NOTHING the student can do about it, so it
+       renders as a single low-prominence strip rather than a full card-sized
+       dead widget. Judgement call: hiding it entirely (return null) is also
+       defensible and is a one-line change, but a silent absence gives a
+       Class 9 student no way to understand why their Class 10 sibling has
+       the card — one honest line costs ~40px and answers that. */
+    if (cause === 'grade_unsupported') {
+      return (
+        <section
+          className="rounded-2xl px-4 py-3 flex items-start gap-3"
+          style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+          aria-label={T.title}
+          data-testid="board-score-grade-unsupported"
+        >
+          <span className="text-fluid-base flex-shrink-0" aria-hidden="true">🎓</span>
+          <div className="min-w-0">
+            <p className="text-fluid-xs font-bold" style={{ color: 'var(--text-2)' }}>
+              {T.gradeTitle}
+            </p>
+            <p className="text-fluid-xs mt-0.5 leading-relaxed" style={{ color: 'var(--text-3)' }}>
+              {T.gradeDesc}
+            </p>
+          </div>
+        </section>
+      );
+    }
+
+    /* Cause 2 — board grade, but no elected board subjects. 37 of the 38
+       active grade-10/12 students in production sit here, and it is a
+       one-tap fix, so this state carries a REAL working CTA (the picker
+       writes through the governed set_selected_subjects path). */
+    if (cause === 'needs_subjects') {
+      return (
+        <section
+          className="rounded-3xl p-5"
+          style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+          aria-label={T.title}
+          data-testid="board-score-needs-subjects"
+        >
+          <h2 className="text-fluid-2xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--text-3)' }}>
+            {T.title}
+          </h2>
+          <p className="text-fluid-xs mb-4" style={{ color: 'var(--text-3)' }}>{T.subtitle}</p>
+
+          {pickingSubjects && studentId ? (
+            <div className="rounded-2xl p-4" style={{ background: 'var(--surface-2)' }}>
+              <BoardSubjectPicker
+                isHi={isHi}
+                studentId={studentId}
+                onSaved={() => {
+                  setPickingSubjects(false);
+                  void mutate();
+                }}
+                onCancel={() => setPickingSubjects(false)}
+              />
+            </div>
+          ) : (
+            <div className="rounded-2xl p-5 text-center" style={{ border: '1px dashed var(--border)' }}>
+              <span className="text-3xl" aria-hidden="true">📚</span>
+              <p className="text-fluid-sm font-bold mt-2" style={{ color: 'var(--text-2)' }}>
+                {T.subjectsTitle}
+              </p>
+              <p className="text-fluid-xs mt-1 leading-relaxed max-w-xs mx-auto" style={{ color: 'var(--text-3)' }}>
+                {T.subjectsDesc}
+              </p>
+              <button
+                type="button"
+                onClick={() => setPickingSubjects(true)}
+                data-testid="board-score-choose-subjects"
+                className="mt-4 inline-flex items-center justify-center min-h-tap-comfort px-5 py-2.5 rounded-xl text-fluid-xs font-bold transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                style={{ background: ACCENT_SURFACE, color: ON_ACCENT }}
+              >
+                {T.subjectsCta}
+              </button>
+            </div>
+          )}
+        </section>
+      );
+    }
+
+    /* Cause 3 — eligible, just no computed row yet. */
     return (
       <section
         className="rounded-3xl p-5"
         style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
         aria-label={T.title}
+        data-testid="board-score-pending"
       >
         <h2 className="text-fluid-2xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--text-3)' }}>
           {T.title}
@@ -299,9 +474,9 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
           style={{ border: '1px dashed var(--border)' }}
         >
           <span className="text-3xl" aria-hidden="true">📊</span>
-          <p className="text-fluid-sm font-bold mt-2" style={{ color: 'var(--text-2)' }}>{T.noData}</p>
+          <p className="text-fluid-sm font-bold mt-2" style={{ color: 'var(--text-2)' }}>{T.pendingTitle}</p>
           <p className="text-fluid-xs mt-1 leading-relaxed max-w-xs mx-auto" style={{ color: 'var(--text-3)' }}>
-            {T.noDataDesc}
+            {T.pendingDesc}
           </p>
         </div>
       </section>
@@ -406,7 +581,15 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
               </span>
             )}
           </div>
-          <p className="text-fluid-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{T.predicted}</p>
+          {/* D1 (open, assessment-owned): the ring, this marks readout and the
+              coverage bar below are ALL scoped to `sel` — one subject — but
+              nothing on screen said so when the student has a single subject
+              (the tab row only renders at 2+). Naming the subject on both
+              denominators is a label-only clarification; no maths changed
+              here and none may change here — the numbers are assessment's. */}
+          <p className="text-fluid-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+            {T.predicted} · {subjectLabel}
+          </p>
           {sel.coverage_pct < 60 && (
             <p className="text-fluid-xs mt-1 font-semibold" style={{ color: WARM }}>
               {T.lowCoverage}
@@ -452,7 +635,7 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
       {/* ── Coverage bar ────────────────────────────────────────────────────── */}
       <div className="mb-4">
         <div className="flex justify-between gap-2 text-fluid-xs mb-1.5" style={{ color: 'var(--text-3)' }}>
-          <span>{T.coverage}</span>
+          <span>{T.coverage} · {subjectLabel}</span>
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>
             {Math.round(sel.coverage_pct)}%
             {' '}({sel.chapters_with_data}/{sel.total_chapters} {T.chapters})

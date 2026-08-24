@@ -716,3 +716,78 @@ Pre-REG-400: 379 entries. This section adds REG-400, REG-401 and REG-402.
 (REG-371..REG-377 remain RESERVED).
 
 ---
+
+## Phase 7 — The Silent-Failure Guard Batch (2026-08-24 CEO-reported remediation wave)
+
+Thirteen CEO-reported defects were fixed in this wave. Not one of them was visible to CI,
+and they share a single mechanism: **the failure had no failing channel**. Exceptions were
+routed into `RAISE NOTICE` (which Postgres does not emit at the default `log_min_messages`
+and supabase-js never surfaces — operationally a comment); driver errors were discarded into
+`?? []`; `try/catch` was wrapped around supabase-js calls that never throw, making the catch
+unreachable; a dead table returned `[]` instead of erroring; a `router.push` target resolved
+to a page that ignored the param it was sent.
+
+Each of those is a class, not an instance. The entries below pin the CLASS with a structural
+scan of the source tree, so the next occurrence fails at commit time rather than surviving
+for months in production. Three of the six guards are mechanically ratcheted: they recompute
+the violation set from source on every run and hold a frozen baseline that may shrink but
+never grow.
+
+The wave's own numbers are the argument for the batch: Foxy persisted **zero** rows for
+**21 days**; `question_responses` had **0 rows** while a sibling panel on the same card kept
+updating off the live table; the `concept_mastery.next_review_date` ghost column inflated
+"due for review" by **3.4x** (91 rows vs 27).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-422 | `silent_supabase_write_swallow` | supabase-js resolves `{data: null, error}` and does NOT throw, so `try { await supabase.from(x).insert(…) } catch` is UNREACHABLE for the failure mode that actually occurs (constraint violation, RLS denial, PGRST204 schema-cache miss). All seven `foxy_chat_messages` write sites were written that way and Foxy persisted zero messages for 21 days while every turn returned 200. Pinned three ways: (a) a structural rule `unreachable_catch_write` over the student-facing server lane (20 roots under `apps/host/src/app/api` + `packages/lib/src`) that fails on any try-block containing an `await` + a literal `.from('…')` + a write verb with no `error` token bound — comments stripped first so the incident write-up that QUOTES the broken idiom is not self-incriminating; (b) a ZERO-TOLERANCE, non-baselined assertion that every `foxy_chat_messages` write goes through the single `_lib/message-persistence.ts` seam, and that the seam binds `error` on both its insert and update paths and logs `foxy.message_persist_failed`; (c) behavioural coverage of the four silent-failure branches at the route. Verified to FAIL against the pre-fix source: the matcher reports `unreachable_catch_write` at `HEAD:apps/host/src/app/api/foxy/_lib/legacy-flow.ts:213`. | `apps/host/src/__tests__/silent-supabase-error-swallow.test.ts` (13 tests) + `apps/host/src/__tests__/api/foxy/structured-persistence.test.ts` | E | P12, P13 |
+| REG-423 | `dead_table_read` | No application query may target a table that cannot return real data. `/api/practice/history` kept reading `question_responses` (0 rows in production) after migrations `20260623000700`/`20260623000800` repointed every other reader to `quiz_responses` — for 14 months, "Common mistakes" and "Bloom's levels attempted" rendered their empty state for every student while "Average score", fed by the live table on the SAME card, kept updating. That asymmetry is what made it invisible: the card looked alive. The scan walks `apps/host/src` + `packages/lib/src` (generated `database.types.ts` and test files excluded), strips comments, and fails on a literal `.from()` against `question_responses`, `topic_mastery`, `cme_concept_state` (both COMMENT-tombstoned by `20260808000100`) or `chat_messages` (`to_regclass` → NULL). ALLOWLIST is empty and that is the intended steady state. | `apps/host/src/__tests__/dead-table-and-ghost-column-reads.test.ts` | E | P8 |
+| REG-424 | `ghost_column_read` | A column that nothing writes is worse than a missing one — it reads as data. `concept_mastery.next_review_date` is a DATE with `DEFAULT CURRENT_DATE + 1 day` that no function, cron or application code has ever written, so reading it marks every concept a student has ever touched due for review one day later, forever: 91 rows due by the ghost against 27 by the real `next_review_at` (timestamptz, written by `update_learner_state_post_quiz`) — a 3.4x inflation of the revision queue. Windowed to `concept_mastery` query chains ONLY (1200-char chain window, ended early by the next `.from(`), because `spaced_repetition_cards.next_review_date` is a legitimate, actively-written column — a blanket identifier ban would have been the cry-wolf version of this guard. The allowlist briefly held `/api/foxy/suggest-prompts` and was emptied the moment that fix landed, which is what the staleness assertion is for. | `apps/host/src/__tests__/dead-table-and-ghost-column-reads.test.ts` | E | P8 |
+| REG-425 | `deep_link_param_contract` | A CTA that RESOLVES but whose target ignores its param is indistinguishable from a dead button to the student and indistinguishable from success to CI. `/foxy?topic_id=<uuid>` resolved — real page, no 404, nothing in Sentry — and the Foxy page never read `topic_id`, so every Revision Center CTA opened an unscoped tutor. Two complementary guards: (a) G3 extends the existing internal-link canary to the LITERAL subset of `router.push` / `router.replace` / `redirect` call sites, which is where all four broken CTAs in this wave lived and which the canary's own header had flagged as an unscanned gap; (b) G4 is new and closes what a route canary structurally cannot — for a hand-maintained table of seven student deep-link routes it derives the READ set by scanning each page (stopping at the next routable segment, so `/quiz/ncert`'s `params.has('types')` cannot be miscredited to `/quiz`) and the EMIT set from literal query strings plus the `URLSearchParams` builder form, then fails when EMIT ⊄ READ. Hard, non-allowlisted pins: `/foxy` still reads `topic_id`; `resolveTopicId` still exists; nothing emits `/review?due_only=` (that param was discarded by the 301 to `/refresh?tab=flashcards`); `reviseTopicHref` emits only params `/foxy` reads. Verified to FAIL against the pre-fix source: `HEAD:packages/ui/src/dashboard/ReviewsDueCard.tsx:141` emits `/review?due_only`, and HEAD `/progress` emitted `topic_id` while HEAD `/foxy` read only `subject, chapter, mode, topic, grade, source, prompt`. Eleven PRE-EXISTING instances of the same class found on day one are recorded with reason + `TODO(owner)` rather than silently fixed — notably `/quiz?topic=` from four surfaces, `/foxy?message=` from QuizResults' "Ask Foxy", and `/foxy?q=` from MisconceptionExplainer. | `apps/host/src/__tests__/deep-link-param-contract.test.ts` (19 tests) + `apps/host/src/__tests__/internal-href-route-resolution.test.ts` (32 tests, G3 block) | E | P7 |
+| REG-426 | `canvas_sized_within_its_container` | A `<canvas>` sized imperatively from a measured width, inside a container with no `overflow` handling, silently paints outside its own box — on the narrow viewports that are the majority of this product's traffic. Pinned at both layers: the `useResponsiveCanvas` hook clamps to the container's own measured width (never a window/viewport read) and re-measures on resize, and the simulation shells are asserted structurally to size from the hook rather than from a hard-coded pixel width. | `packages/lib/src/__tests__/hooks/useResponsiveCanvas.test.tsx` + `packages/ui/src/__tests__/simulation-canvas-sizing.test.ts` (22 tests together) | E | P7 |
+| REG-427 | `token_refreshed_never_false_logouts` | Supabase emits `TOKEN_REFRESHED` on tab resume. The auth listener treated it like a fresh sign-in and cleared the resolved role WITHOUT raising `isLoading`, so for one render the app saw "authenticated, no role" — which every role gate reads as logged-out. Students resuming a backgrounded tab were bounced to `/login` mid-session. Asserted behaviourally: a `TOKEN_REFRESHED` event on an already-hydrated session leaves the role intact and never transits through a state that would trip a redirect guard. | `apps/host/src/__tests__/auth-context-resume-false-logout.test.tsx` | E | P15 |
+| REG-428 | `data_default_without_error` | `const { data } = await supabase.from(…); return data ?? []` never binds the driver error, so a query filtering on a column that does not exist returns 200 with an empty payload and the UI shows its ordinary empty state. This is precisely how `/api/foxy/suggest-prompts` hid THREE nonexistent-column queries. The rule fires only when the binding demonstrably comes from an `await …from('literal')` destructure that omits `error` AND is then defaulted with `?? []` / `?? {}` / `|| []` (or carries an in-destructure `= []`), so ordinary defaulting on non-supabase values is not touched. Read-side unreachable catches are covered by the sibling rule `unreachable_catch_read`. Both are RATCHETS over a frozen file-level baseline (10 and 17 files) carrying a reason and a `TODO(backend):` per group; the baseline may shrink but never grow, and a staleness assertion forces an entry out the moment its file is clean. Verified to FAIL against the pre-fix source: the matcher reports `unreachable_catch_read` at `HEAD:apps/host/src/app/api/foxy/suggest-prompts/route.ts:59`. | `apps/host/src/__tests__/silent-supabase-error-swallow.test.ts` (13 tests) | E | P12, P13 |
+
+### Invariants covered by this section
+
+- **P7 (bilingual UI / user-facing correctness)** — REG-425 and REG-426 both pin failures that are
+  invisible to every layer except the student's eye: a CTA that navigates but does nothing, and a
+  canvas that paints outside its box. Neither produces an error anywhere in the stack.
+- **P8 (RLS boundary / substrate honesty)** — REG-423 and REG-424 pin the distinction between
+  "no rows yet" and "wired to nothing". Both failure modes are SUCCESSFUL queries; only a
+  structural scan can tell them apart.
+- **P12 / P13 (AI safety, data privacy)** — REG-422's seam is the P13 sharp edge: the failure log
+  carries stage label, UUIDs, row count, roles and the PostgREST error `code` plus the parsed
+  constraint NAME, and deliberately NOT the driver `message`/`details`/`hint`, because Postgres
+  embeds the failing row's values in `DETAIL` on NOT NULL / CHECK / unique violations — logging
+  them verbatim would put the student's message text straight into the logs.
+- **P15 (onboarding integrity)** — REG-427 sits on the #1 retention path rather than the
+  acquisition path, but the mechanism is the same P15 one: an auth state transition that briefly
+  looks unauthenticated is a logout to every guard downstream of it.
+
+### The durable lesson
+
+**A defect that cannot fail loudly will not be found by adding more tests of the same kind.**
+Every one of these seven classes was already "covered" by tests that passed: a mock that
+resolves `{data: [], error: null}` makes the swallowing code and the correct code
+byte-indistinguishable, and a route canary that only asks "does this path resolve?" cannot
+see a param being dropped. What broke the pattern was changing the KIND of assertion —
+structural scans over the real source tree, run on every commit, that recompute the violation
+set instead of confirming a fixture.
+
+Two design rules made the batch shippable rather than noisy, and both should be reused:
+**(1) ratchet, don't demand zero.** Where a rule found pre-existing debt (10 + 17 files for
+REG-428, eleven param contracts for REG-425) the debt is recorded with a reason and a
+`TODO(owner)` and frozen, so the guard gates NEW code from day one instead of waiting on a
+remediation programme. A staleness assertion deletes each entry by failing once it is fixed,
+so the allowlist cannot rot into permanent cover.
+**(2) strip comments before matching.** Each of these guards documents, in prose, the exact
+defective idiom it forbids. A guard that indicts its own incident write-up teaches people to
+delete the write-up.
+
+### Catalog total
+
+Pre-REG-422: this section adds REG-422 through REG-428 (7 entries).
+**REG-429 is the next free id** (REG-371..REG-377 remain RESERVED).
+
+---

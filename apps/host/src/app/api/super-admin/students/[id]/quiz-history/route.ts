@@ -54,29 +54,22 @@ export async function GET(
     // If a specific quizId is requested, fetch individual responses
     let responses: unknown[] = [];
     if (quizId && isValidUUID(quizId)) {
-      // Try quiz_responses first (core schema), then question_responses (v2 cognitive)
+      // Source: quiz_responses — the table the atomic server-side submit path
+      // writes (P4). A second read of the legacy `question_responses` table
+      // used to sit here as a "v2 cognitive" fallback; that table has ZERO
+      // rows in production (its only writer was a client-side fire-and-forget
+      // insert, now removed), so the fallback could only ever return [] while
+      // costing an extra round trip on every empty session. Removed
+      // 2026-08-24. Do not reintroduce it.
       const { data: coreResponses } = await supabaseAdmin
         .from('quiz_responses')
         .select(
-          'id, question_id, question_text, options, correct_answer_index, student_answer_index, student_answer_text, is_correct, time_taken_seconds, explanation, bloom_level, difficulty, created_at'
+          'id, question_id, question_text, options, correct_answer_index, student_answer_index, student_answer_text, is_correct, time_taken_seconds, explanation, bloom_level, difficulty, error_type, created_at'
         )
         .eq('quiz_session_id', quizId)
         .order('created_at', { ascending: true });
 
-      if (coreResponses && coreResponses.length > 0) {
-        responses = coreResponses;
-      } else {
-        // Fallback to question_responses (v2 cognitive engine)
-        const { data: cogResponses } = await supabaseAdmin
-          .from('question_responses')
-          .select(
-            'id, question_id, selected_answer, is_correct, response_time_seconds, bloom_level_attempted, error_type, created_at'
-          )
-          .eq('quiz_session_id', quizId)
-          .order('created_at', { ascending: true });
-
-        responses = cogResponses || [];
-      }
+      responses = coreResponses || [];
     }
 
     // Fire-and-forget page view tracking

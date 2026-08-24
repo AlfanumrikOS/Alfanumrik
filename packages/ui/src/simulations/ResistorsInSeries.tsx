@@ -95,7 +95,7 @@ export default function ResistorsInSeries() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Resistors in Series</h3>
-      <canvas ref={canvasRef} width={560} height={280} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
+      <canvas ref={canvasRef} width={560} height={280} style={{ width: '100%', height: 'auto', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
       <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {[['R₁', r1, setR1, '#e8581c'], ['R₂', r2, setR2, '#7c3aed'], ['R₃', r3, setR3, '#10b981'], ['V', voltage, setVoltage, '#facc15']].map(([label, val, setter, color]) => (
           <div key={label as string}>

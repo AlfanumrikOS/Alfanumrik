@@ -6,11 +6,12 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 407 entries upper bound / 402 honest (target: 35 — TARGET
-EXCEEDED). Independently measured body-backed `REG-N` ids: 368 (max 421) as of
-the 2026-08-23 REG-421 filing — see addendum #2 below. (The immediately
-preceding state, 406/401 and 367/max-420, was the REG-419/420 filing; both
-addenda are kept so the delta is auditable rather than overwritten.)**
+**Total catalog: 414 entries upper bound / 409 honest (target: 35 — TARGET
+EXCEEDED). Independently measured body-backed `REG-N` ids: 375 (max 428) as of
+the 2026-08-24 REG-422..428 filing — see addendum #3 below. (The immediately
+preceding state, 407/402 and 368/max-421, was the REG-421 filing; the state
+before that, 406/401 and 367/max-420, was REG-419/420. All addenda are kept so
+each delta is auditable rather than overwritten.)**
 See the 2026-08-11 addenda below — that three-way divergence is PRE-EXISTING
 and still unresolved; do not quote any one of the three numbers as "the" total
 without saying which definition you used. The 346 figure was RE-MEASURED on
@@ -62,9 +63,31 @@ violation set from the source tree and ratchets a frozen 25-file baseline
 downward only. Measured count moves 367 → 368 (+1, exactly the entry filed);
 declared totals move 406/401 → 407/402. The pre-existing three-way divergence is
 carried forward unchanged, not resolved.
-**REG-422 is the next free REG id.**
-Latest REG id: **REG-421** (filed 2026-08-23, testing agent, in
-`11-infrastructure.md`).
+**2026-08-24 addendum #3 (testing agent, Phase 7 anti-regression guard batch).**
+Filed **REG-422..REG-428** (7 entries) as one section, "Phase 7 — The
+Silent-Failure Guard Batch", in `15-cross-cutting.md`. They pin the seven
+CLASSES behind the thirteen CEO-reported defects fixed in the 2026-08-24 wave —
+silent supabase write swallow (Foxy: 21 days, zero rows), dead-table read
+(`question_responses`, 0 rows, sibling panel still live), ghost-column read
+(`concept_mastery.next_review_date`, 3.4x due-queue inflation), CTA-resolves-
+but-param-ignored, canvas sized outside its own container, `TOKEN_REFRESHED`
+false logout on resume, and `?? []` over a query filtering nonexistent columns.
+Deliberately filed as CLASSES in the cross-cutting shard rather than split
+across `02-foxy-ai` / `06-auth-onboarding` / `03-quiz-integrity`: they share one
+mechanism (no failing channel) and one durable lesson, and splitting them would
+have lost that. Three of the six backing guards are mechanically ratcheted
+static analyzers over the real source tree with frozen, shrink-only baselines
+(10 + 17 files for REG-428; 11 param contracts for REG-425) — the pre-existing
+debt is recorded with a reason and a `TODO(owner)` so the guards gate NEW code
+from day one. Measured count moves 368 → 375 (+7, exactly the entries filed);
+declared totals move 407/402 → 414/409. Independent re-measure of a DIFFERENT
+definition on the same day (distinct ids appearing as a `| REG-N |` table-row
+id across shards 01-15) reads 371 after this filing (364 before) — quoted here
+only to show the pre-existing three-way divergence is carried forward unchanged,
+NOT resolved.
+**REG-429 is the next free REG id.**
+Latest REG id: **REG-428** (filed 2026-08-24, testing agent, in
+`15-cross-cutting.md`).
 
 **2026-08-23 reconciliation (launch-readiness catalog audit, testing agent).**
 Commit `b00b9c872` ("fix(quality): bilingual subject grid + mobile contract

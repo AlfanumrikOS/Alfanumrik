@@ -6,10 +6,18 @@ import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
  * GET /api/super-admin/strategic-reports/bloom-by-grade
  *
  * Computes distribution of Bloom's taxonomy levels per grade,
- * based on question_responses (which stores bloom_level_attempted per response).
+ * based on quiz_responses.bloom_level (stamped per response by the atomic
+ * server-side submit path).
  *
- * Fallback: if question_responses has no bloom_level data, joins
+ * Fallback: for responses whose bloom_level is NULL, joins
  * quiz_responses -> question_bank to get bloom_level from the question.
+ *
+ * DATA-SOURCE CORRECTION (2026-08-24): Strategy 1 used to read the legacy
+ * `question_responses` table, which has ZERO rows in production — so this
+ * report always silently fell through to the question_bank join, and would
+ * have shown operators an empty chart had the join also been unavailable.
+ * `question_responses` is dead (written only by a removed client-side
+ * fire-and-forget insert, read by nothing). Do not repoint back to it.
  *
  * Query params:
  *   grade — optional filter (e.g. "6", "7", ..., "12")
@@ -40,11 +48,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const gradeFilter = searchParams.get('grade');
 
-    // Strategy 1: Use question_responses which has bloom_level directly + student_id
-    // Join to students for grade
-    let query = supabaseAdmin
-      .from('question_responses')
-      .select('student_id, bloom_level_attempted');
+    // Strategy 1: Use quiz_responses, which carries bloom_level directly +
+    // student_id. question_id is retained so Strategy 2 can fill NULL rows.
+    const query = supabaseAdmin
+      .from('quiz_responses')
+      .select('student_id, question_id, bloom_level');
 
     // We need student grade, so fetch students separately and join in JS
     // (Supabase JS client doesn't support cross-table joins without FK path easily)
@@ -60,7 +68,7 @@ export async function GET(request: NextRequest) {
 
     if (responsesResult.error) {
       return NextResponse.json(
-        { error: 'Failed to fetch question responses', detail: responsesResult.error.message },
+        { error: 'Failed to fetch quiz responses', detail: responsesResult.error.message },
         { status: 500 }
       );
     }
@@ -81,79 +89,58 @@ export async function GET(request: NextRequest) {
       studentGradeMap.set(s.id, s.grade);
     }
 
-    // Check if question_responses has bloom_level_attempted data
-    const responsesWithBloom = responses.filter(r => r.bloom_level_attempted);
+    // Strategy 2 (per-row fallback, not per-report): responses whose
+    // bloom_level is NULL — e.g. the pre-backfill cohort — are resolved by
+    // looking the level up on question_bank. Previously this was an
+    // all-or-nothing branch that only ran when Strategy 1 produced zero rows;
+    // because Strategy 1 read a dead table it ALWAYS ran, and a partially
+    // stamped cohort would have been silently under-counted. Now the two
+    // strategies compose: direct stamp first, question_bank only to fill gaps.
+    const questionIdsNeedingLookup = Array.from(
+      new Set(
+        responses
+          .filter(r => !r.bloom_level && r.question_id)
+          .map(r => r.question_id as string)
+      )
+    );
 
-    let gradeBloomCounts: Record<string, Record<BloomLevel, number>>;
+    const questionBloomMap = new Map<string, string>();
+    if (questionIdsNeedingLookup.length > 0) {
+      // Fetch in batches of 500 to avoid URL-too-long
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < questionIdsNeedingLookup.length; i += BATCH_SIZE) {
+        const batch = questionIdsNeedingLookup.slice(i, i + BATCH_SIZE);
+        const { data: questions } = await supabaseAdmin
+          .from('question_bank')
+          .select('id, bloom_level')
+          .in('id', batch);
 
-    if (responsesWithBloom.length > 0) {
-      // Strategy 1: Use bloom_level from question_responses directly
-      gradeBloomCounts = {};
-
-      for (const r of responses) {
-        const grade = studentGradeMap.get(r.student_id);
-        if (!grade) continue; // Student not in filter or not active
-
-        const bloom = normalizeBloomLevel(r.bloom_level_attempted);
-        if (!bloom) continue;
-
-        if (!gradeBloomCounts[grade]) {
-          gradeBloomCounts[grade] = { remember: 0, understand: 0, apply: 0, analyze: 0, evaluate: 0, create: 0 };
-        }
-        gradeBloomCounts[grade][bloom]++;
-      }
-    } else {
-      // Strategy 2 fallback: join quiz_responses -> question_bank for bloom_level
-      const { data: quizResponses, error: qrErr } = await supabaseAdmin
-        .from('quiz_responses')
-        .select('student_id, question_id');
-
-      if (qrErr) {
-        return NextResponse.json(
-          { error: 'Failed to fetch quiz responses', detail: qrErr.message },
-          { status: 500 }
-        );
-      }
-
-      // Collect unique question IDs
-      const questionIds = Array.from(new Set((quizResponses || []).map(r => r.question_id).filter(Boolean)));
-
-      // Fetch bloom_level from question_bank for those questions (batch)
-      const questionBloomMap = new Map<string, string>();
-      if (questionIds.length > 0) {
-        // Fetch in batches of 500 to avoid URL-too-long
-        const BATCH_SIZE = 500;
-        for (let i = 0; i < questionIds.length; i += BATCH_SIZE) {
-          const batch = questionIds.slice(i, i + BATCH_SIZE);
-          const { data: questions } = await supabaseAdmin
-            .from('question_bank')
-            .select('id, bloom_level')
-            .in('id', batch);
-
-          if (questions) {
-            for (const q of questions) {
-              if (q.bloom_level) {
-                questionBloomMap.set(q.id, q.bloom_level);
-              }
+        if (questions) {
+          for (const q of questions) {
+            if (q.bloom_level) {
+              questionBloomMap.set(q.id, q.bloom_level);
             }
           }
         }
       }
+    }
 
-      gradeBloomCounts = {};
-      for (const r of quizResponses || []) {
-        const grade = studentGradeMap.get(r.student_id);
-        if (!grade) continue;
+    const gradeBloomCounts: Record<string, Record<BloomLevel, number>> = {};
 
-        const rawBloom = questionBloomMap.get(r.question_id);
-        const bloom = normalizeBloomLevel(rawBloom);
-        if (!bloom) continue;
+    for (const r of responses) {
+      // P5: grade is a STRING key throughout ("6".."12"), never an integer.
+      const grade = studentGradeMap.get(r.student_id);
+      if (!grade) continue; // Student not in filter or not active
 
-        if (!gradeBloomCounts[grade]) {
-          gradeBloomCounts[grade] = { remember: 0, understand: 0, apply: 0, analyze: 0, evaluate: 0, create: 0 };
-        }
-        gradeBloomCounts[grade][bloom]++;
+      const rawBloom =
+        r.bloom_level ?? (r.question_id ? questionBloomMap.get(r.question_id) : undefined);
+      const bloom = normalizeBloomLevel(rawBloom);
+      if (!bloom) continue;
+
+      if (!gradeBloomCounts[grade]) {
+        gradeBloomCounts[grade] = { remember: 0, understand: 0, apply: 0, analyze: 0, evaluate: 0, create: 0 };
       }
+      gradeBloomCounts[grade][bloom]++;
     }
 
     // Convert counts to percentages

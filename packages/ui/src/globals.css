@@ -1763,7 +1763,25 @@ body.foxy-body-lock {
 .app-shell-v2.foxy-shell > .app-shell-content {
   min-height: 0;
   height: 100%;
+  /* >=768px there is no fixed bottom bar on /foxy (the tablet rail and the
+     desktop sidebar are LEFT gutters and both self-suppress here), so the
+     safe-area inset is the whole bottom clearance. */
   padding-bottom: var(--safe-bottom) !important;
+}
+
+/* 2026-08-24 — /foxy is primary slot 3 and the mobile bottom bar now stays
+   mounted there (see GlobalAppLayout). This rule reserves the bar's height so
+   the ChatInput composer sits ABOVE it instead of behind it. Scoped to the
+   band where `.bottom-nav-mobile` is actually displayed (globals.css nav-tier
+   switch: `display: block` only below 768px), so the tablet/desktop rule above
+   is untouched. `--shell-nav-h-notched` already folds in `--safe-bottom`, so
+   this replaces rather than adds to the base value. `box-sizing: border-box`
+   (preflight) means the `height: 100%` above shrinks its content box by this
+   padding rather than overflowing the 100dvh shell. */
+@media (max-width: 767.98px) {
+  .app-shell-v2.foxy-shell > .app-shell-content {
+    padding-bottom: var(--shell-nav-h-notched) !important;
+  }
 }
 
 .app-shell-v2.foxy-shell > .app-shell-header {

@@ -79,7 +79,7 @@ export default function SeedGermination() {
   return (
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Seed Germination</h3>
-      <canvas ref={canvasRef} width={560} height={240} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+      <canvas ref={canvasRef} width={560} height={240} style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block' }} />
       <div style={{ marginTop: 8, display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
         {STAGES.map((s, i) => (
           <button key={i} onClick={() => setStage(i)} style={{ padding: '4px 10px', background: stage === i ? 'var(--orange)' : 'var(--surface-2)', color: stage === i ? '#fff' : 'var(--text-1)', border: '1px solid #ddd', borderRadius: 6, cursor: 'pointer', fontSize: 11 }}>{i + 1}. {s.name.split(' ')[0]}</button>

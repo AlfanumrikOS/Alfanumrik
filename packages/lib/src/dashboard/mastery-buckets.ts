@@ -246,3 +246,71 @@ export function subjectCodeForName(
   }
   return SUBJECT_CODE_BY_NAME[normalized] ?? null;
 }
+
+/* ── Reachable-subject selector (defect #11) ──────────────────────────────────
+ * Three dashboard surfaces used to answer "which subjects does this student
+ * have?" three different ways, and only one of them filtered at all — with a
+ * HARDCODED set of display NAMES (`['Mathematics','Science']`). That silently
+ * dropped Physics / Chemistry / Biology, so every grade-11/12 student saw only
+ * Mathematics.
+ *
+ * The authoritative answer already exists: GET /api/student/subjects, which is
+ * derived from `grade_subject_map ⋈ subjects WHERE is_active` (grades 6-10 →
+ * math + science; grades 11-12 → physics/chemistry/biology + math). These two
+ * helpers let every surface key off that one list, by subject CODE, instead of
+ * maintaining a second hardcoded list of names.
+ */
+
+/** The shape every caller already has from `useAllowedSubjects()`. */
+export interface AllowedSubjectRef {
+  code: string;
+  name?: string | null;
+}
+
+/**
+ * Build the display-name → canonical-code map `subjectCodeForName` consumes,
+ * from the live allowed-subjects list. Same construction the Alfa OS dashboard
+ * did inline; factored here so all three surfaces share one copy.
+ */
+export function subjectCodeMapFromAllowed(
+  allowed: readonly AllowedSubjectRef[] | null | undefined,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const s of allowed ?? []) {
+    if (s?.name && s.code) map[s.name] = s.code;
+  }
+  return map;
+}
+
+/**
+ * Keep only the rows whose subject resolves to a code the student can actually
+ * reach.
+ *
+ * FAIL-OPEN by design: when `allowed` is empty we return the rows untouched.
+ * An empty list means "/api/student/subjects hasn't answered yet (or answered
+ * degraded)", and hiding every subject in that window would blame the student
+ * for a platform gap — showing one subject too many for a few hundred ms is
+ * strictly less harmful than an all-empty mastery panel.
+ *
+ * A row whose subject NAME cannot be resolved to a code is also kept: the
+ * unresolvable case is our mapping gap, not evidence the subject is unreachable.
+ */
+export function filterRowsToAllowedSubjects<T extends { subject?: string | null }>(
+  rows: readonly T[],
+  allowed: readonly AllowedSubjectRef[] | null | undefined,
+): T[] {
+  const list = allowed ?? [];
+  if (list.length === 0) return [...rows];
+  const codes = new Set(list.map((s) => s.code).filter(Boolean));
+  const byName = subjectCodeMapFromAllowed(list);
+  return rows.filter((row) => {
+    const raw = row.subject?.trim();
+    if (!raw) return false;
+    // Rows may carry either the display NAME (get_mastery_overview) or the
+    // CODE (student_learning_profiles / topic_mastery_rollup) — accept both.
+    if (codes.has(raw)) return true;
+    const code = subjectCodeForName(raw, byName);
+    if (code === null) return true; // unresolvable ⇒ our gap, not theirs
+    return codes.has(code);
+  });
+}

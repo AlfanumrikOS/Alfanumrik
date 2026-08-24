@@ -39,6 +39,27 @@ export interface DiagnosticResponse {
   bloom_level: string;
 }
 
+/**
+ * One server-authoritative per-question verdict from /api/diagnostic/complete.
+ *
+ * DELIBERATELY MINIMAL. The question text, options, `explanation` and
+ * `explanation_hi` are NOT here — the page already holds them on
+ * `DiagnosticQuestion` from /api/diagnostic/start, and re-sending them would
+ * pay for the same bytes twice on a 2-5 Mbps connection (P10).
+ *
+ * What IS here is exactly the set the client must not be trusted to compute:
+ * correctness and the correct index. The review screen joins on `question_id`.
+ * Same discipline as P1's "display the score the server returned, never
+ * recompute it" — applied one level down, per question.
+ */
+export interface DiagnosticQuestionResult {
+  question_id: string;
+  question_number: number;
+  is_correct: boolean;
+  selected_index: number | null;
+  correct_index: number | null;
+}
+
 export interface DiagnosticSummary {
   session_id: string;
   score_percent: number;
@@ -48,6 +69,25 @@ export interface DiagnosticSummary {
   strong_topics: string[];
   recommended_difficulty: 'easy' | 'medium' | 'hard';
   rpc_failed?: boolean;
+
+  // ─── Phase 5 additions ────────────────────────────────────────
+  // All OPTIONAL: a client built against a newer server must still render a
+  // response from an older deployment (and the Flutter client, which shares
+  // this contract, ignores unknown keys).
+
+  /**
+   * C2 placement validity. The server has always returned this
+   * (`complete/route.ts`); this type used to drop it on the floor, so the UI
+   * could not tell an acted-on placement from a disarmed one.
+   */
+  placement_confidence?: 'low' | 'normal';
+
+  /** P7 siblings of weak_topics / strong_topics (Devanagari titles). */
+  weak_topics_hi?: string[];
+  strong_topics_hi?: string[];
+
+  /** Per-question verdicts, in served order. Absent on an older server. */
+  question_results?: DiagnosticQuestionResult[];
 }
 
 /** §5.4 fallback CTA. `kind` is one of other_subject | guided_lesson | foxy. */

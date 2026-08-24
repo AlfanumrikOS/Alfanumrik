@@ -1,16 +1,16 @@
 import { type UserRole } from '@alfanumrik/lib/AuthContext';
 import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 
-// ─── The student primary navigation (2026-08-09) ───────────────────────────
+// ─── The student primary navigation (2026-08-09, revised 2026-08-24) ───────
 //
-// FOUR primary slots, one fixed order, identical labels + destinations + order
+// FIVE primary slots, one fixed order, identical labels + destinations + order
 // at EVERY breakpoint. Only the PRESENTATION changes across tiers:
 //
-//   360–767px   → four-item bottom bar          (MobileBottomNav)
+//   360–767px   → five-item bottom bar          (MobileBottomNav)
 //   768–1023px  → vertical navigation rail      (TabletNavRail)
 //   1024px+     → persistent sidebar            (DesktopSidebar)
 //
-//   1. Today  2. Practice  3. Progress  4. More
+//   1. Today  2. Practice  3. Foxy  4. Progress  5. More
 //
 // `Learn` was slot 2 until the 2026-08-19 Today consolidation. /today does that
 // job now; the /learn route still resolves and is still deep-linked to from
@@ -22,13 +22,43 @@ import { ROLE_CONFIG } from '@alfanumrik/lib/constants';
 // (all three tier components do) must call resolveStudentPrimaryNav() rather
 // than reading CORE_TABS directly.
 //
-// IA CHANGE — Foxy left the primary bar. It previously occupied slot 3 as a
-// raised centre FAB. Per the navigation spec, Foxy / profile / notifications /
-// search are UTILITIES, not primary destinations, so `/foxy` moved into the
-// More sheet's "Utilities" group (its first entry) and into the desktop
-// sidebar's new "Utilities" section. `/practice` took the vacated primary
-// slot. `/foxy` itself is untouched as a route and its deep links still work;
-// /foxy also keeps suppressing all nav chrome, as before.
+// ═══ IA REVERSAL — Foxy is a PRIMARY DESTINATION again (2026-08-24) ═══
+//
+// CEO-DIRECTED, explicitly overriding the 2026-08-09 decision recorded below.
+// The CEO defect report reads verbatim: "Foxy shall be in the main Menu in
+// mobile view and students chat history shall be recorded and displayed to
+// student." That is the authority for this reversal — do NOT "re-fix" it back
+// to a utility on the strength of the 2026-08-09 rationale, which is retained
+// immediately below only as history.
+//
+//   SUPERSEDED (2026-08-09): "Foxy left the primary bar. It previously
+//   occupied slot 3 as a raised centre FAB. Per the navigation spec, Foxy /
+//   profile / notifications / search are UTILITIES, not primary destinations,
+//   so `/foxy` moved into the More sheet's 'Utilities' group (its first entry)
+//   and into the desktop sidebar's new 'Utilities' section. `/practice` took
+//   the vacated primary slot."
+//
+// What changed on 2026-08-24:
+//   - `/foxy` is CORE_TABS slot 3 — the CENTRE of a five-slot bar, the same
+//     position it held as the pre-2026-08-09 centre FAB (thumb-reachable, and
+//     it restores the muscle memory that IA change broke). It is a plain slot,
+//     NOT a raised FAB: the FAB chrome is what made it read as an unranked
+//     affordance rather than a destination.
+//   - No primary destination was displaced. Today / Practice / Progress all
+//     keep their slots; the bar goes 4 → 5. This is inside the geometry the
+//     bottom-bar CSS was already written for — globals.css
+//     `.bottom-nav-mobile__slot` documents "five slots share the row evenly
+//     and can never fall under the tap floor: 5 x 44 = 220px, which fits the
+//     360px baseline viewport with ~140px to spare".
+//   - `/foxy` is REMOVED from MORE_ITEMS and moved out of SIDEBAR_SECTIONS'
+//     "Utilities" section into "Main", because a primary slot that is ALSO an
+//     overflow row is the one-destination-two-places violation the IA law
+//     below forbids (and which student-primary-nav-contract.test.ts pins).
+//   - `/foxy` no longer suppresses the MOBILE bottom bar. It still suppresses
+//     the tablet rail and desktop sidebar (both self-suppress; see
+//     GlobalAppLayout). A primary destination that hides the bar the moment
+//     you reach it is a trap: pre-reversal the ONLY exit from /foxy was the
+//     header back arrow.
 //
 // IA law "one destination = one name = one icon" (2026-08-05). `/progress` was
 // "Me" 🙂 here and "My Progress" 📈 in SIDEBAR_SECTIONS — one route wearing two
@@ -48,6 +78,12 @@ export const CORE_TABS = [
   { id: 'today', href: '/today', icon: '☀️', activeIcon: '☀️', label: 'Today', labelHi: 'आज', altHrefs: ['/dashboard'], badge: 'streak' },
   // Slot 2 — see PRACTICE FLAG CONTRACT in resolveStudentPrimaryNav().
   { id: 'practice', href: '/practice', icon: '⚡', activeIcon: '⚡', label: 'Practice', labelHi: 'अभ्यास', altHrefs: ['/quiz'] },
+  // Slot 3 — CEO-directed IA reversal, 2026-08-24. See the block above.
+  // Centre of the five-slot bar. `/memory` is deliberately NOT an altHref:
+  // it is its own named More-sheet destination ("What Foxy remembers") and
+  // giving it to this slot would light Foxy current on a route the student
+  // reached from somewhere else.
+  { id: 'foxy', href: '/foxy', icon: '🦊', activeIcon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', altHrefs: [] },
   { id: 'progress', href: '/progress', icon: '📈', activeIcon: '📈', label: 'Progress', labelHi: 'प्रगति', altHrefs: [] },
 ] as const;
 
@@ -78,12 +114,11 @@ export const CORE_TABS = [
 // it is what keeps exactly one slot `aria-current` while the Today routing
 // flag settles.
 export const MORE_ITEMS = [
-  // 2026-08-09 — Foxy is a UTILITY, not a primary destination. It used to be
-  // the raised centre FAB in CORE_TABS; the navigation spec reserves the
-  // primary slots for Today / Practice / Progress / More and classes
-  // Foxy alongside profile, notifications and search. It leads the utilities
-  // group so it stays one interaction away on phones.
-  { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी', group: 'utilities' },
+  // `/foxy` is NOT listed here — it is primary slot 3 as of the 2026-08-24
+  // CEO-directed IA reversal (see the block at the top of this file). It led
+  // the "utilities" group from 2026-08-09 until then. Re-adding it would put
+  // one destination in two places at the same breakpoint, which the IA law
+  // below forbids and which student-primary-nav-contract.test.ts fails on.
   // Was "Settings & Notifications" — wrong on both halves. The page carries no
   // settings controls, and the job the IA gives this destination is reminders.
   { href: '/notifications', icon: '🔔', label: 'Reminders', labelHi: 'रिमाइंडर', group: 'utilities' },
@@ -111,9 +146,10 @@ export const MORE_ITEMS = [
  *  groups in this order. Mirrors SIDEBAR_SECTIONS' Utilities/Study/Account
  *  sections so both projections share the same mental model (IA law). */
 export const MORE_SHEET_GROUPS: { key: string; en: string; hi: string }[] = [
-  // Utilities first — Foxy, reminders and the memory screen are the things a
-  // student reaches for mid-session, and Foxy in particular lost its
-  // centre-FAB slot when the primary destinations were fixed.
+  // Utilities first — reminders and the memory screen are the things a
+  // student reaches for mid-session. Foxy itself left this group on
+  // 2026-08-24 (CEO-directed IA reversal) and is now primary slot 3; the
+  // group still has two members, so the header still renders.
   { key: 'utilities', en: 'Utilities', hi: 'उपयोगिताएँ' },
   { key: 'study', en: 'Study', hi: 'पढ़ाई' },
   { key: 'account', en: 'Account', hi: 'खाता' },
@@ -126,12 +162,12 @@ export const MORE_SHEET_GROUPS: { key: string; en: string; hi: string }[] = [
   // rather than kept as dead config.
 ];
 
-// The desktop projection of the SAME trimmed set as MORE_ITEMS: four primary
+// The desktop projection of the SAME trimmed set as MORE_ITEMS: the primary
 // destinations in the Main section, then the identical Utilities / Study /
 // Account membership the More sheet renders. Item-for-item mirroring is the
 // point — a student who resizes from 360px to 1440px must not discover a
 // different product. The only structural difference is that the sidebar shows
-// the four primaries inline (the phone tiers render them as the bar itself).
+// the primaries inline (the phone tiers render them as the bar itself).
 export const SIDEBAR_SECTIONS = [
   {
     // 2026-08-09 — was titled "Home" while also containing an item called
@@ -155,6 +191,13 @@ export const SIDEBAR_SECTIONS = [
     items: [
       { href: '/today', icon: '☀️', label: 'Today', labelHi: 'आज' },
       { href: '/practice', icon: '⚡', label: 'Practice', labelHi: 'अभ्यास' },
+      // 2026-08-24 — moved UP from the "Utilities" section below when the
+      // CEO-directed IA reversal made `/foxy` primary slot 3. Item-for-item
+      // mirroring of CORE_TABS is the IA law this file keeps recording: a
+      // student who resizes from 360px to 1440px must not discover a
+      // different product, and a primary destination filed under "Utilities"
+      // on desktop is exactly that.
+      { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
       // Matches CORE_TABS exactly — same name, same icon, same route.
       { href: '/progress', icon: '📈', label: 'Progress', labelHi: 'प्रगति' },
     ],
@@ -174,13 +217,15 @@ export const SIDEBAR_SECTIONS = [
     ],
   },
   {
-    // 2026-08-09 — new section. Foxy left the primary bar (it was the centre
-    // FAB); it and the other non-destination affordances the spec calls
-    // utilities live here, mirroring the More sheet's "Utilities" group so
-    // both projections carry the same mental model.
+    // 2026-08-09 — new section for the non-destination affordances the spec
+    // calls utilities, mirroring the More sheet's "Utilities" group so both
+    // projections carry the same mental model.
+    //
+    // 2026-08-24 — `/foxy` LEFT this section for "Main" (CEO-directed IA
+    // reversal; it is primary slot 3 now). The section keeps two members, so
+    // it still renders. Do not move Foxy back here.
     title: 'Utilities', titleHi: 'उपयोगिताएँ',
     items: [
-      { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
       // Same relabel as MORE_ITEMS — the page has no settings controls and the
       // IA names this job reminders.
       { href: '/notifications', icon: '🔔', label: 'Reminders', labelHi: 'रिमाइंडर' },
@@ -252,7 +297,7 @@ export function isItemVisibleForFlags(
  *
  * MobileBottomNav (< 768), TabletNavRail (768–1023) and DesktopSidebar (1024+)
  * all read resolveStudentPrimaryNav(). They differ only in chrome: the same
- * four slots, the same labels, the same destinations, the same order.
+ * five slots, the same labels, the same destinations, the same order.
  * ─────────────────────────────────────────────────────────────────────────── */
 
 export type StudentNavSlotId = (typeof CORE_TABS)[number]['id'] | 'more';
@@ -321,7 +366,7 @@ export const STUDENT_MORE_SLOT: ResolvedNavSlot = MORE_SLOT;
  *
  * PRACTICE FLAG CONTRACT (`ff_practice_os_v1`)
  * --------------------------------------------
- * The Practice SLOT is permanent — the bar is four items in every flag state,
+ * The Practice SLOT is permanent — the bar is five items in every flag state,
  * never three. The flag governs what `/practice` RENDERS, not whether the slot
  * exists:
  *

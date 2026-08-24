@@ -42,6 +42,11 @@ import {
   classifyExpectationLifecycle,
   type ChapterTopicProgress,
 } from './cognitive-context';
+// Incident 2026-08-24: every foxy_chat_messages write goes through the shared
+// seam. The three persistence blocks below previously destructured only `data`
+// and dropped the driver `error` on the floor, so a rejected insert produced
+// zero log output and the responder returned 200 as if the turn had been saved.
+import { insertFoxyMessages, assistantIdOf } from './message-persistence';
 
 // ─── Helper: structured-payload extraction (defense-in-depth) ───────────────
 //
@@ -206,43 +211,36 @@ export async function persistMathTurnAndRespond(params: {
   // not pre-insert). tokens_used is null: solveMath does not expose a token
   // count, and this turn does NOT flow through the grounded meta. XP is 0 by
   // construction (no submitQuizResults / atomic_quiz_profile_update anywhere).
-  let assistantMessageId: string | null = null;
   const now = new Date().toISOString();
-  try {
-    const { data: insertedRows } = await supabaseAdmin
-      .from('foxy_chat_messages')
-      .insert([
-        {
-          session_id: params.resolvedSessionId,
-          student_id: params.studentId,
-          role: 'user',
-          content: params.message,
-          sources: null,
-          tokens_used: null,
-          created_at: now,
-        },
-        {
-          session_id: params.resolvedSessionId,
-          student_id: params.studentId,
-          role: 'assistant',
-          content: assistantContent,
-          structured: structured ?? null,
-          sources: null,
-          tokens_used: null,
-          created_at: new Date(Date.now() + 1).toISOString(),
-        },
-      ])
-      .select('id, role');
-    if (insertedRows) {
-      const assistantRow = insertedRows.find((r) => r.role === 'assistant');
-      assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
-    }
-  } catch (saveErr) {
-    console.warn(
-      '[foxy] math message save failed:',
-      saveErr instanceof Error ? saveErr.message : String(saveErr),
-    );
-  }
+  const mathInsert = await insertFoxyMessages(
+    [
+      {
+        session_id: params.resolvedSessionId,
+        student_id: params.studentId,
+        role: 'user',
+        content: params.message,
+        sources: null,
+        tokens_used: null,
+        created_at: now,
+      },
+      {
+        session_id: params.resolvedSessionId,
+        student_id: params.studentId,
+        role: 'assistant',
+        content: assistantContent,
+        structured: structured ?? null,
+        sources: null,
+        tokens_used: null,
+        created_at: new Date(Date.now() + 1).toISOString(),
+      },
+    ],
+    {
+      stage: 'math_insert',
+      sessionId: params.resolvedSessionId,
+      studentId: params.studentId,
+    },
+  );
+  const assistantMessageId: string | null = assistantIdOf(mathInsert);
 
   // Pending-expectations lifecycle (parity with the grounded blocking path).
   if (params.usePendingExpectations) {
@@ -429,43 +427,36 @@ export async function respondCurriculumOutOfScope(params: {
 
   // Persist user + assistant rows (mirrors persistMathTurnAndRespond's INSERT
   // path). tokens_used null; NO XP, NO mastery writes anywhere.
-  let assistantMessageId: string | null = null;
   const now = new Date().toISOString();
-  try {
-    const { data: insertedRows } = await supabaseAdmin
-      .from('foxy_chat_messages')
-      .insert([
-        {
-          session_id: params.resolvedSessionId,
-          student_id: params.studentId,
-          role: 'user',
-          content: params.message,
-          sources: null,
-          tokens_used: null,
-          created_at: now,
-        },
-        {
-          session_id: params.resolvedSessionId,
-          student_id: params.studentId,
-          role: 'assistant',
-          content: responseText,
-          structured,
-          sources: null,
-          tokens_used: null,
-          created_at: new Date(Date.now() + 1).toISOString(),
-        },
-      ])
-      .select('id, role');
-    if (insertedRows) {
-      const assistantRow = insertedRows.find((r) => r.role === 'assistant');
-      assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
-    }
-  } catch (saveErr) {
-    console.warn(
-      '[foxy] math out-of-scope message save failed:',
-      saveErr instanceof Error ? saveErr.message : String(saveErr),
-    );
-  }
+  const scopeInsert = await insertFoxyMessages(
+    [
+      {
+        session_id: params.resolvedSessionId,
+        student_id: params.studentId,
+        role: 'user',
+        content: params.message,
+        sources: null,
+        tokens_used: null,
+        created_at: now,
+      },
+      {
+        session_id: params.resolvedSessionId,
+        student_id: params.studentId,
+        role: 'assistant',
+        content: responseText,
+        structured,
+        sources: null,
+        tokens_used: null,
+        created_at: new Date(Date.now() + 1).toISOString(),
+      },
+    ],
+    {
+      stage: 'curriculum_out_of_scope_insert',
+      sessionId: params.resolvedSessionId,
+      studentId: params.studentId,
+    },
+  );
+  const assistantMessageId: string | null = assistantIdOf(scopeInsert);
 
   // Audit (P13: reason + scope metadata only — never the problem text). 0 XP.
   logAudit(params.userId, {
@@ -564,43 +555,36 @@ export async function respondSafeguarding(params: {
 
   // Persist user + assistant rows (mirrors respondCurriculumOutOfScope's
   // INSERT path). tokens_used null; NO XP, NO mastery writes anywhere.
-  let assistantMessageId: string | null = null;
   const now = new Date().toISOString();
-  try {
-    const { data: insertedRows } = await supabaseAdmin
-      .from('foxy_chat_messages')
-      .insert([
-        {
-          session_id: params.resolvedSessionId,
-          student_id: params.studentId,
-          role: 'user',
-          content: params.message,
-          sources: null,
-          tokens_used: null,
-          created_at: now,
-        },
-        {
-          session_id: params.resolvedSessionId,
-          student_id: params.studentId,
-          role: 'assistant',
-          content: responseText,
-          structured,
-          sources: null,
-          tokens_used: null,
-          created_at: new Date(Date.now() + 1).toISOString(),
-        },
-      ])
-      .select('id, role');
-    if (insertedRows) {
-      const assistantRow = insertedRows.find((r) => r.role === 'assistant');
-      assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
-    }
-  } catch (saveErr) {
-    console.warn(
-      '[foxy] safeguarding message save failed:',
-      saveErr instanceof Error ? saveErr.message : String(saveErr),
-    );
-  }
+  const safeguardingInsert = await insertFoxyMessages(
+    [
+      {
+        session_id: params.resolvedSessionId,
+        student_id: params.studentId,
+        role: 'user',
+        content: params.message,
+        sources: null,
+        tokens_used: null,
+        created_at: now,
+      },
+      {
+        session_id: params.resolvedSessionId,
+        student_id: params.studentId,
+        role: 'assistant',
+        content: responseText,
+        structured,
+        sources: null,
+        tokens_used: null,
+        created_at: new Date(Date.now() + 1).toISOString(),
+      },
+    ],
+    {
+      stage: 'safeguarding_insert',
+      sessionId: params.resolvedSessionId,
+      studentId: params.studentId,
+    },
+  );
+  const assistantMessageId: string | null = assistantIdOf(safeguardingInsert);
 
   // Audit (P13: flow/category/tier flags ONLY — NEVER the student's message
   // text, NEVER the disclosure excerpt). 0 XP.

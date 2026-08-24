@@ -125,6 +125,16 @@ const RLS_HELPERS = [
   // template as is_school_admin_of_student. Its inner read of
   // student_exam_entries bypasses RLS.
   'is_own_exam_entry',
+  // Architect review (migration 20260824090000, 2026-08-24): the new
+  // learner_state_write_failures diagnostics table needs an admin/super_admin
+  // SELECT policy. The canonical baseline shape for that
+  // ("domain_events_super_admin_select") inlines EXISTS(user_roles JOIN roles),
+  // which would have added a 224th entry to the inline ledger. Same call as
+  // 20260802090100: mint the helper instead of grandfathering new debt, so the
+  // ledger stays frozen at 223 and continues to ratchet DOWN. NOT a duplicate of
+  // is_admin() — that one keys off admin_users, and 20260803140000 reconciles
+  // admin_users INTO RBAC one-way, so an RBAC-only admin has no admin_users row.
+  'is_rbac_platform_admin',
 ] as const;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -694,7 +704,11 @@ describe('generalized RLS recursion guard: parser non-vacuity', () => {
     // exam-entry-ownership helper, minted fresh rather than grandfathering
     // an inline EXISTS on a brand-new policy.
     expect(RLS_HELPERS).toContain('is_own_exam_entry');
-    expect(RLS_HELPERS.length).toBe(12);
+    // Architect review 2026-08-24 (migration 20260824090000): RBAC admin-read
+    // helper, minted fresh so the new learner_state_write_failures admin SELECT
+    // policy delegates instead of inlining a user_roles JOIN roles EXISTS.
+    expect(RLS_HELPERS).toContain('is_rbac_platform_admin');
+    expect(RLS_HELPERS.length).toBe(13);
   });
 });
 

@@ -21,14 +21,28 @@
  * no `difficulty` param, so difficulty is left to the quiz setup screen. Rows
  * with no usable chapter_number fall back to a subject-only deep-link.
  *
+ * ?subject= MUST be a canonical subject CODE. get_mastery_overview returns the
+ * display NAME (`subjects.name`, e.g. "Mathematics"), but every consumer in
+ * /quiz does `allowedSubjects.find(s => s.code === selectedSubject)` — a name
+ * matches nothing, and the page then silently falls back to the FIRST allowed
+ * subject, landing the student on the wrong subject entirely. So the name is
+ * resolved through `subjectCodeForName` (live allowed-subjects map first,
+ * canonical static map second) and the param is OMITTED when it cannot be
+ * resolved. Omitting is strictly safer than sending a name: no param means
+ * "let the student pick", a bogus param means "silently pick the wrong one".
+ * Same pattern as dashboard/os/SubjectRoadmaps.
+ *
  * States: loading (skeleton), error (visually DISTINCT from empty), empty
  * (nothing weak yet → encouraging zero-state, NOT an error).
  */
 
 import { useMasteryOverview } from '@alfanumrik/lib/swr';
+import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { Skeleton } from '@alfanumrik/ui/ui';
 import {
   masteryPercent,
+  subjectCodeForName,
+  subjectCodeMapFromAllowed,
   type MasteryOverviewRow,
 } from '@alfanumrik/lib/dashboard/mastery-buckets';
 
@@ -47,18 +61,32 @@ function weakestStarted(rows: MasteryOverviewRow[]): MasteryOverviewRow[] {
     .slice(0, MAX_ROWS);
 }
 
-/** Deep link into the existing /quiz engine, scoped where params are supported. */
-function quizHref(row: MasteryOverviewRow): string {
-  const subject = row.subject ? encodeURIComponent(row.subject) : '';
-  if (!subject) return '/quiz';
+/**
+ * Deep link into the existing /quiz engine, scoped where params are supported.
+ *
+ * `row.subject` is a display NAME; /quiz matches on CODE. Resolve, and OMIT
+ * `subject` entirely when it cannot be resolved — never emit the raw name.
+ * `chapter` is only meaningful alongside a subject, so it rides the same gate.
+ */
+export function quizHref(
+  row: MasteryOverviewRow,
+  subjectCodeByName?: Record<string, string>,
+): string {
+  const code = subjectCodeForName(row.subject, subjectCodeByName);
+  if (!code) return '/quiz';
   const chapter = typeof row.chapter_number === 'number' && row.chapter_number > 0
     ? row.chapter_number
     : null;
+  const subject = encodeURIComponent(code);
   return chapter ? `/quiz?subject=${subject}&chapter=${chapter}` : `/quiz?subject=${subject}`;
 }
 
 export default function WeakTopicLauncher({ studentId, isHi }: WeakTopicLauncherProps) {
   const { data, isLoading, error } = useMasteryOverview(studentId);
+  // Authoritative name → code map for the deep links (SWR-deduped with every
+  // other useAllowedSubjects consumer on the page).
+  const { subjects: allowedSubjects } = useAllowedSubjects();
+  const subjectCodeByName = subjectCodeMapFromAllowed(allowedSubjects);
 
   const rows: MasteryOverviewRow[] = Array.isArray(data) ? (data as MasteryOverviewRow[]) : [];
   const weak = weakestStarted(rows);
@@ -118,7 +146,7 @@ export default function WeakTopicLauncher({ studentId, isHi }: WeakTopicLauncher
             return (
               <li key={row.topic_id}>
                 <a
-                  href={quizHref(row)}
+                  href={quizHref(row, subjectCodeByName)}
                   className="group flex items-center justify-between gap-3 rounded-2xl px-4 py-3 transition-transform duration-150 motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                   style={{
                     minHeight: 48,

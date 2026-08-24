@@ -112,7 +112,7 @@ export default function NervousSystem() {
         </svg>
       )}
       {mode === 'reflex' && (
-        <canvas ref={canvasRef} width={560} height={220} style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+        <canvas ref={canvasRef} width={560} height={220} style={{ width: '100%', height: 'auto', borderRadius: 8, display: 'block' }} />
       )}
       {mode === 'speed' && (
         <div style={{ background: 'var(--surface-2)', borderRadius: 8, padding: 16 }}>

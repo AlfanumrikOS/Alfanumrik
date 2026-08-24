@@ -101,3 +101,35 @@ export function formatShortDay(
   });
   return { weekday, day, isoLabel };
 }
+
+/* ── Topic-scoped revision destination (defect #7) ────────────────────────────
+ * Every revision CTA used to land on the same unscoped flashcard session, so a
+ * student who tapped a specific overdue topic got a generic screen (and, in
+ * practice, an empty one). These helpers build the ONE destination shape that
+ * carries which topic was promised.
+ *
+ * `/foxy` is the existing topic-scoped surface; it reads `subject`, `chapter`,
+ * `topic`, `mode` and (since this change) `topic_id`, resolving the id to the
+ * real title + subject + chapter before switching subject. `subject` here is
+ * already a canonical CODE — /api/revision/overview selects `subjects.code`, not
+ * the display name — so no name→code resolution is needed on this surface.
+ */
+
+export interface ReviseTarget {
+  topicId: string;
+  /** Canonical subject CODE (never a display name). */
+  subject?: string | null;
+}
+
+/** Deep link that revises exactly the topic the CTA named. */
+export function reviseTopicHref(target: ReviseTarget): string {
+  const params = new URLSearchParams();
+  params.set('topic_id', target.topicId);
+  // 'unknown' is the route's sentinel for a row whose subject FK didn't
+  // resolve — omit rather than send it, so Foxy doesn't fall back to the
+  // wrong subject on a bogus code.
+  if (target.subject && target.subject !== 'unknown') params.set('subject', target.subject);
+  params.set('mode', 'revise');
+  params.set('source', 'revision');
+  return `/foxy?${params.toString()}`;
+}

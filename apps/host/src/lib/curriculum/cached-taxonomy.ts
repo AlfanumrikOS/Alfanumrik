@@ -139,11 +139,22 @@ export async function getSubjectIdCodeRows(codes: string[]): Promise<SubjectIdCo
 export interface TopicTitleRow {
   id: string;
   title: string | null;
+  /**
+   * P7 sibling of `title`. Added 2026-08-24 for the /diagnostic results screen,
+   * which renders topic labels to the student and therefore needs both
+   * languages. Nullable: not every curriculum_topics row is translated, and
+   * untranslated technical terms are shown in English rather than blanked.
+   * Callers that only need English (e.g. /api/v2/exam-schedule) may ignore it.
+   */
+  title_hi: string | null;
 }
 
 async function fetchTopicTitlesByIdsRaw(sortedIds: string[]): Promise<TopicTitleRow[]> {
   const admin = getSupabaseAdmin();
-  const { data, error } = await admin.from('curriculum_topics').select('id, title').in('id', sortedIds);
+  const { data, error } = await admin
+    .from('curriculum_topics')
+    .select('id, title, title_hi')
+    .in('id', sortedIds);
   if (error) {
     throw new Error(`curriculum_topics id lookup failed: ${error.message}`);
   }
@@ -151,7 +162,7 @@ async function fetchTopicTitlesByIdsRaw(sortedIds: string[]): Promise<TopicTitle
 }
 
 /**
- * Topic id → title for an arbitrary, caller-known set of topic ids.
+ * Topic id → title (+ `title_hi`) for an arbitrary, caller-known set of topic ids.
  * Deliberately NOT filtered by `is_active` — unlike getActiveTopicsForSubjects(),
  * a caller here already has specific ids in hand (e.g. topics a student
  * scoped into an exam-schedule entry) and a topic later deactivated by a
@@ -167,7 +178,11 @@ export async function getTopicTitlesByIds(ids: string[]): Promise<TopicTitleRow[
   const sortedIds = [...ids].sort();
   const cached = unstable_cache(
     () => fetchTopicTitlesByIdsRaw(sortedIds),
-    ['curriculum-topic-titles-by-id-v1', sortedIds.join(',')],
+    // v1 -> v2 (2026-08-24): the cached ROW SHAPE gained `title_hi`. Without a
+    // key bump, an in-flight v1 entry would keep serving Hindi-less rows until
+    // its TTL expired, silently degrading the /diagnostic results screen to
+    // English for Hindi users.
+    ['curriculum-topic-titles-by-id-v2', sortedIds.join(',')],
     { revalidate: SYLLABUS_TTL_SECONDS, tags: [SYLLABUS_CACHE_TAG] },
   );
   return withCacheFallback(cached, () => fetchTopicTitlesByIdsRaw(sortedIds), 'topic-titles-by-id');

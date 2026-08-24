@@ -102,7 +102,7 @@ export default function SolarSystem() {
     <div style={{ background: 'var(--surface-1)', borderRadius: 12, padding: 16, maxWidth: 600, margin: '0 auto', fontFamily: 'inherit' }}>
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Solar System — Kepler&#39;s Third Law</h3>
       <canvas ref={canvasRef} width={560} height={320} onClick={handleClick}
-        style={{ width: '100%', borderRadius: 8, background: '#0f172a', display: 'block', cursor: 'crosshair' }} />
+        style={{ width: '100%', height: 'auto', borderRadius: 8, background: '#0f172a', display: 'block', cursor: 'crosshair' }} />
       <div style={{ marginTop: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
         <button onClick={() => setPaused(p => !p)} style={{ padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'var(--orange)', color: '#fff', fontWeight: 700 }}>
           {paused ? 'Play' : 'Pause'}

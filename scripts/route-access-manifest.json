@@ -461,6 +461,13 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/foxy/sessions",
+      "file": "apps/host/src/app/api/foxy/sessions/route.ts",
+      "access": "student",
+      "owner": "foxy-backend",
+      "rationale": "GET-only list of the CALLER'S OWN Foxy chat threads for the conversation rail (replaces the client-side PostgREST read that discarded its error and rendered a failed fetch identically to an empty account). Student-scoped RLS read: gated by authorizeRequest(request, 'foxy.chat', { requireStudentId: true }) before any DB access - the same permission and student-scoping as the sibling /api/foxy/voice - and studentId comes from the session only, never from a query param. NO serviceRoleUse entry by design: every query runs through the RLS-scoped createSupabaseRouteClient(request) (Bearer-aware for web/mobile with cookie fallback, anon key only, so it cannot bypass RLS), with the 'Students see own foxy sessions' / 'Students see own foxy messages' policies as a real second line of defence behind an explicit .eq('student_id', studentId) on all three SELECTs. Correspondingly absent from scripts/admin-client-allowlist.json. P13: no message body crosses the wire - the response carries session id, derived title (the student's own opening prompt, truncated by deriveConversationTitle, returned only to that same student), subject, chapter, updatedAt and a message COUNT; assistant output and sources are never selected. Logs carry route + error codes only, no ids or content."
+    },
+    {
       "path": "/api/foxy/suggest-prompts",
       "file": "apps/host/src/app/api/foxy/suggest-prompts/route.ts",
       "access": "auth",

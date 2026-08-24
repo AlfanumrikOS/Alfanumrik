@@ -92,7 +92,7 @@ export default function DataHandling() {
   return (
     <div style={{ background:'var(--surface-1)', borderRadius:12, padding:16, maxWidth:600, margin:'0 auto', fontFamily:'inherit' }}>
       <h3 style={{ color:'var(--text-1)', fontSize:16, fontWeight:700, marginBottom:8 }}>Data Handling & Statistics</h3>
-      <canvas ref={canvasRef} width={520} height={200} style={{ width:'100%', borderRadius:8, background:'var(--surface-2)', display:'block' }} />
+      <canvas ref={canvasRef} width={520} height={200} style={{ width:'100%', height:'auto', borderRadius:8, background:'var(--surface-2)', display:'block' }} />
       <div style={{ display:'flex', gap:6, marginTop:10, justifyContent:'center' }}>
         {(['bar','pie','line','histogram'] as ChartType[]).map(c=><button key={c} onClick={()=>setChart(c)} style={btnStyle(chart===c)}>{c.charAt(0).toUpperCase()+c.slice(1)}</button>)}
       </div>

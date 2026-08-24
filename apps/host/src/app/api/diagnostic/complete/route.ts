@@ -26,9 +26,18 @@
  *   success: true,
  *   data: {
  *     session_id, score_percent, correct_answers, total_questions,
- *     weak_topics, strong_topics, recommended_difficulty, placement_confidence
+ *     weak_topics, weak_topics_hi, strong_topics, strong_topics_hi,
+ *     recommended_difficulty, placement_confidence, question_results
  *   }
  * }
+ *
+ * `question_results` carries ONLY the bits the client cannot be trusted to
+ * know: the server-derived `is_correct` and the authoritative `correct_index`.
+ * Question text, options and explanations are NOT re-sent — the client already
+ * holds them from `/api/diagnostic/start` (whose `CLIENT_QUESTION_FIELDS`
+ * includes `explanation` + `explanation_hi`) and joins on `question_id`. This
+ * keeps the review screen honest (correctness comes from one place, exactly as
+ * P1 requires for the score) without paying to ship the same payload twice.
  *
  * Correctness contract — spec
  * `docs/superpowers/specs/2026-07-29-diagnostic-cold-start-correctness.md` §7A:
@@ -46,6 +55,39 @@
  *    and are neither removed nor weakened here.
  *  - P1 is unchanged: `score_percent = Math.round((correct / total) * 100)`
  *    over the SERVER-derived correct count, at every form length.
+ *
+ * Phase 5 (2026-08-24) — the diagnostic now FEEDS the adaptive spine:
+ *
+ *  - C3 (5C): `weak_topics` / `strong_topics` are DERIVED, never the hardcoded
+ *    `[]` they used to be. Per-topic accuracy is aggregated from the same
+ *    server-derived correctness computed for C1, keyed on the authoritative
+ *    `question_bank.topic_id` (NOT the client's `topic` field), and resolved to
+ *    display titles via `curriculum_topics`. A NULL/unresolvable topic is
+ *    OMITTED — never fabricated, never rendered as a UUID. Banding rules live
+ *    in `@alfanumrik/lib/diagnostic/evidence`.
+ *
+ *  - C4 (5D): every answered, topic-resolved response is written into the
+ *    canonical mastery spine via `update_learner_state_post_quiz` — the same
+ *    RPC `submit_quiz_results_v2` uses — with DAMPED BKT priors
+ *    (`DIAGNOSTIC_BKT_PARAMS`). A diagnostic is a cold-start estimate, not a
+ *    practice attempt; the full reasoning for each damped parameter is in the
+ *    header of `@alfanumrik/lib/diagnostic/evidence`. This is what makes the
+ *    dashboard, /revision, /practice and Foxy's cognitive context non-empty for
+ *    a brand-new student.
+ *
+ *    P2 is untouched: this RPC writes `concept_mastery` only. It awards no XP,
+ *    touches no `students` row and creates no `quiz_sessions` row — the
+ *    diagnostic remains XP-neutral (AC-32).
+ *
+ *    P4-style resilience: the mastery write is fire-and-forget and fully
+ *    error-isolated. A failing or slow RPC can never fail, delay past its own
+ *    await, or alter the student's completion response.
+ *
+ *  - C5: on a C2 low-confidence (speed-run) placement, BOTH the mastery write
+ *    and the weak/strong labels are SUPPRESSED. The same run that makes the
+ *    placement meaningless makes its topic-level inference meaningless too.
+ *    Per-question explanations are still returned: an explanation is ground
+ *    truth about the question, not an inference about the student.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -54,6 +96,12 @@ import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { DIAGNOSTIC_PLACEMENT_THRESHOLDS } from '@alfanumrik/lib/diagnostic/placement';
+import {
+  DIAGNOSTIC_BKT_PARAMS,
+  aggregateDiagnosticTopics,
+  type DiagnosticTopicOutcome,
+} from '@alfanumrik/lib/diagnostic/evidence';
+import { getTopicTitlesByIds } from '@/lib/curriculum/cached-taxonomy';
 
 interface DiagnosticResponseItem {
   question_id: string;
@@ -180,18 +228,26 @@ export async function POST(request: NextRequest) {
       )
     );
 
+    // C3/C4: `topic_id` and `bloom_level` come from the BANK, never from the
+    // client's `topic` / `bloom_level` wire fields. Those are advisory metadata
+    // echoed back by the page and are no more trustworthy than `is_correct`.
     type BankRow = {
       id: string;
       question_text: string;
       options: unknown;
       correct_answer_index: number | null;
+      topic_id: string | null;
+      bloom_level: string | null;
+      difficulty: number | null;
     };
     const bankById = new Map<string, BankRow>();
 
     if (questionIds.length > 0) {
       const { data: bankRows, error: bankError } = await admin
         .from('question_bank')
-        .select('id, question_text, options, correct_answer_index')
+        .select(
+          'id, question_text, options, correct_answer_index, topic_id, bloom_level, difficulty'
+        )
         .in('id', questionIds);
 
       if (bankError) {
@@ -231,7 +287,29 @@ export async function POST(request: NextRequest) {
     // index and the bank row's `correct_answer_index`.
     let unresolvableCount = 0;
 
-    const responseRows = responses.map((r, idx) => {
+    /**
+     * The single server-derived record per response. Everything downstream —
+     * the persisted `diagnostic_responses` row, the P1 numerator, the
+     * `question_results` review payload, the topic aggregation and the mastery
+     * write — reads THIS array, so all five can never disagree with each other.
+     */
+    interface DerivedResponse {
+      questionNumber: number;
+      questionId: string;
+      studentIndex: number | null;
+      correctIndex: number | null;
+      isCorrect: boolean;
+      responseTimeMs: number | null;
+      topicId: string | null;
+      bloomLevel: string | null;
+      difficulty: number | null;
+      questionText: string;
+      options: unknown;
+      /** Client-supplied `topic` echo — persisted as-is for wire compat only. */
+      conceptCode: string;
+    }
+
+    const derived: DerivedResponse[] = responses.map((r, idx) => {
       const bank = bankById.get(r.question_id);
       const timeSeconds = Number(r.time_taken_seconds);
       const studentIndex = Number.isInteger(r.selected_answer_index)
@@ -239,6 +317,7 @@ export async function POST(request: NextRequest) {
         : null;
       const correctIndex =
         typeof bank?.correct_answer_index === 'number' ? bank.correct_answer_index : null;
+      const bankDifficulty = typeof bank?.difficulty === 'number' ? bank.difficulty : null;
 
       // A missing bank row (deleted/renamed question, or a forged question_id)
       // resolves to incorrect — never to the client's claim.
@@ -247,21 +326,39 @@ export async function POST(request: NextRequest) {
       if (correctIndex === null) unresolvableCount++;
 
       return {
-        assessment_id: session_id,
-        student_id: student.id,
-        question_number: idx + 1,
-        concept_code: typeof r.topic === 'string' && r.topic ? r.topic : 'unknown',
-        layer: 1,
-        question_text: bank?.question_text ?? '',
-        options: bank?.options ?? null,
-        correct_index: correctIndex,
-        student_index: studentIndex,
-        is_correct: serverIsCorrect,
-        response_time_ms: Number.isFinite(timeSeconds)
+        questionNumber: idx + 1,
+        questionId: typeof r.question_id === 'string' ? r.question_id : '',
+        studentIndex,
+        correctIndex,
+        isCorrect: serverIsCorrect,
+        responseTimeMs: Number.isFinite(timeSeconds)
           ? Math.max(0, Math.round(timeSeconds * 1000))
           : null,
+        topicId: typeof bank?.topic_id === 'string' && bank.topic_id ? bank.topic_id : null,
+        bloomLevel:
+          typeof bank?.bloom_level === 'string' && bank.bloom_level ? bank.bloom_level : null,
+        difficulty: bankDifficulty !== null && Number.isFinite(bankDifficulty)
+          ? Math.trunc(bankDifficulty)
+          : null,
+        questionText: bank?.question_text ?? '',
+        options: bank?.options ?? null,
+        conceptCode: typeof r.topic === 'string' && r.topic ? r.topic : 'unknown',
       };
     });
+
+    const responseRows = derived.map((d) => ({
+      assessment_id: session_id,
+      student_id: student.id,
+      question_number: d.questionNumber,
+      concept_code: d.conceptCode,
+      layer: 1,
+      question_text: d.questionText,
+      options: d.options ?? null,
+      correct_index: d.correctIndex,
+      student_index: d.studentIndex,
+      is_correct: d.isCorrect,
+      response_time_ms: d.responseTimeMs,
+    }));
 
     if (unresolvableCount > 0) {
       logger.warn('diagnostic_answer_unresolvable', {
@@ -337,6 +434,28 @@ export async function POST(request: NextRequest) {
         correct_answers: correctCount,
         raw_score_pct: scorePercent,
         actual_time_seconds: actualTimeSeconds,
+        // ─── `next_path` — KEEP, DELIBERATELY WRITE-ONLY (assessment ruling,
+        //     2026-08-24, revisited after Phase 5D landed) ───────────────────
+        //
+        // Verified again after 5D: `next_path` still has ZERO readers repo-wide
+        // (grep across apps/, packages/, mobile/, supabase/functions/ finds only
+        // this write and its own tests). That was the right question to ask —
+        // and the answer is NOT "add a reader".
+        //
+        // Adaptation now flows through `concept_mastery` (seeded below), which
+        // every existing ZPD / SRS / remediation consumer already reads. A
+        // second "read next_path to choose difficulty" path would be a
+        // COMPETING source of truth for the same decision and would drift from
+        // the mastery spine the moment the student takes one real quiz. Do not
+        // build one.
+        //
+        // It is not dead weight either: this is the only durable record of what
+        // the platform CONCLUDED at placement time. `concept_mastery` records
+        // what the student did; `next_path` records the verdict we drew from it,
+        // including whether we trusted the run at all. Without it, "why was this
+        // student placed at hard?" is unanswerable after the fact. Reclassified
+        // from "the adaptive hand-off" to "the placement audit record" —
+        // written every time, read by humans during investigation.
         next_path: {
           recommended_difficulty: recommendedDifficulty,
           placement_confidence: placementConfidence,
@@ -357,10 +476,131 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Topic-level weak/strong analysis is intentionally empty for now: the
-    // client sends topic_id UUIDs (not display names), and the previous
-    // implementation's live behavior was the empty-array fallback. The page
-    // renders its "analysis not available" empty state for empty arrays.
+    // ── C3 — derive weak/strong topics (was a hardcoded `[]`) ───────────────
+    //
+    // C5: a speed run's topic-level inference is as meaningless as its
+    // placement, so both lists stay empty and the page keeps rendering its
+    // honest "analysis not available" empty state.
+    let weakTopics: string[] = [];
+    let weakTopicsHi: string[] = [];
+    let strongTopics: string[] = [];
+    let strongTopicsHi: string[] = [];
+
+    const topicIds = Array.from(
+      new Set(derived.map((d) => d.topicId).filter((id): id is string => !!id))
+    );
+
+    if (placementConfidence === 'normal' && topicIds.length > 0) {
+      try {
+        // ADR-007 / `alfanumrik/no-inline-taxonomy-reads`: go through the shared
+        // `syllabus`-tagged cached taxonomy reader rather than an inline
+        // `.from('curriculum_topics')`. `getTopicTitlesByIds` is deliberately
+        // NOT is_active-filtered, which is what we want here — a topic
+        // deactivated by a curriculum edit after the student answered its
+        // question should still show its name, not silently vanish from the
+        // analysis. It gained `title_hi` for this caller (P7).
+        const topicRows = await getTopicTitlesByIds(topicIds);
+
+        const titleById = new Map<string, { title: string; title_hi: string | null }>();
+        for (const row of topicRows) {
+          if (typeof row.title === 'string' && row.title.trim().length > 0) {
+            titleById.set(row.id, { title: row.title, title_hi: row.title_hi ?? null });
+          }
+        }
+
+        const outcomes: DiagnosticTopicOutcome[] = [];
+        for (const d of derived) {
+          if (!d.topicId) continue; // NULL topic_id — omit, never fabricate
+          const t = titleById.get(d.topicId);
+          if (!t) continue; // unresolvable title — omit
+          outcomes.push({
+            topicId: d.topicId,
+            title: t.title,
+            titleHi: t.title_hi,
+            isCorrect: d.isCorrect,
+          });
+        }
+
+        const labels = aggregateDiagnosticTopics(outcomes);
+        weakTopics = labels.weak.map((l) => l.title);
+        weakTopicsHi = labels.weak.map((l) => l.titleHi);
+        strongTopics = labels.strong.map((l) => l.title);
+        strongTopicsHi = labels.strong.map((l) => l.titleHi);
+      } catch (topicErr) {
+        // Non-fatal: the student still gets the score AND the per-question
+        // explanations. `getTopicTitlesByIds` throws on a genuine DB error;
+        // both lists stay empty and the page shows its honest empty state.
+        logger.warn('diagnostic_topic_aggregation_failed', {
+          route: '/api/diagnostic/complete',
+          studentId: student.id,
+          session_id,
+          error: topicErr instanceof Error ? topicErr.message : String(topicErr),
+        });
+      }
+    }
+
+    // ── C4 — seed the canonical mastery spine ───────────────────────────────
+    //
+    // Same RPC `submit_quiz_results_v2` uses, with DAMPED BKT priors (see
+    // `@alfanumrik/lib/diagnostic/evidence` for the per-parameter ruling).
+    // One call per answered, topic-resolved response.
+    //
+    // P4-style resilience: awaited so ordering is deterministic in tests, but
+    // EVERY call is individually try/caught and the whole block is wrapped, so
+    // no mastery failure can change the student's response. P2: this RPC writes
+    // `concept_mastery` only — no XP, no `students` row, no `quiz_sessions`.
+    if (placementConfidence === 'normal') {
+      let masteryFailures = 0;
+      let masteryWrites = 0;
+      for (const d of derived) {
+        if (!d.topicId) continue; // no topic → nothing to attribute mastery to
+        try {
+          const { error: masteryError } = await admin.rpc(
+            'update_learner_state_post_quiz',
+            {
+              p_student_id: student.id,
+              p_topic_id: d.topicId,
+              p_is_correct: d.isCorrect,
+              p_bloom_level: d.bloomLevel,
+              // The diagnostic delivers no per-item error classification.
+              p_error_type: null,
+              p_response_time_ms: d.responseTimeMs,
+              // question_bank.difficulty is an INTEGER column — passing the
+              // categorical 'medium'-style string here would 42883 before the
+              // function body runs. Keep this numeric.
+              p_difficulty: d.difficulty,
+              ...DIAGNOSTIC_BKT_PARAMS,
+            }
+          );
+          if (masteryError) {
+            masteryFailures++;
+          } else {
+            masteryWrites++;
+          }
+        } catch {
+          masteryFailures++;
+        }
+      }
+
+      if (masteryFailures > 0) {
+        // P13: topic UUIDs and counts only — never question or answer text.
+        logger.warn('diagnostic_mastery_seed_partial', {
+          route: '/api/diagnostic/complete',
+          studentId: student.id,
+          session_id,
+          written: masteryWrites,
+          failed: masteryFailures,
+        });
+      } else if (masteryWrites > 0) {
+        logger.info('diagnostic_mastery_seeded', {
+          route: '/api/diagnostic/complete',
+          studentId: student.id,
+          session_id,
+          written: masteryWrites,
+        });
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -368,10 +608,21 @@ export async function POST(request: NextRequest) {
         score_percent: scorePercent,
         correct_answers: correctCount,
         total_questions: totalQuestions,
-        weak_topics: [],
-        strong_topics: [],
+        weak_topics: weakTopics,
+        weak_topics_hi: weakTopicsHi,
+        strong_topics: strongTopics,
+        strong_topics_hi: strongTopicsHi,
         recommended_difficulty: recommendedDifficulty,
         placement_confidence: placementConfidence,
+        // 5A — the authoritative per-question verdict the review screen renders
+        // alongside the explanation it already holds from /api/diagnostic/start.
+        question_results: derived.map((d) => ({
+          question_id: d.questionId,
+          question_number: d.questionNumber,
+          is_correct: d.isCorrect,
+          selected_index: d.studentIndex,
+          correct_index: d.correctIndex,
+        })),
       },
     });
   } catch (err) {

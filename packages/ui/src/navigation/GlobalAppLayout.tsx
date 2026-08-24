@@ -40,7 +40,28 @@ function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isLoggedIn, activeRole, isHi } = useAuth();
 
-  // Foxy requires edge-to-edge true full screen and has its own back navigation
+  // Foxy requires edge-to-edge true full screen at tablet/desktop, where its
+  // own three-column layout (ConversationManager rail + topic sidebar + chat)
+  // needs the full viewport width.
+  //
+  // 2026-08-24 — this used to suppress ALL nav chrome on /foxy, which was the
+  // "no way back" defect: the only exit from Foxy was the header back arrow.
+  // Now that `/foxy` is primary slot 3 (CEO-directed IA reversal, see
+  // nav-config.ts), a destination that hides the bar the instant you reach it
+  // is a trap — and the Foxy slot could never be `aria-current`, because the
+  // bar was not in the tree on the one route it names.
+  //
+  // The MOBILE bottom bar therefore stays mounted on /foxy; the tablet rail
+  // and desktop sidebar do not. That split is deliberate, not an oversight:
+  //   - <768px the bar is a fixed 60px strip. globals.css gives .foxy-shell
+  //     matching bottom clearance in that band so the composer is never
+  //     covered, and Foxy's body-lock (position:fixed) means the bar's
+  //     scroll-hide never fires — it is a PERSISTENT exit.
+  //   - >=768px the rail/sidebar are fixed LEFT gutters, and .app-shell-v2
+  //     (Foxy's shell) is not inset by the `.app-shell` margin rules, so they
+  //     would overlay the ConversationManager rail. Both components already
+  //     self-suppress on /foxy (see DesktopSidebar/TabletNavRail), and those
+  //     tiers keep the header back arrow as their exit.
   const isFocusedFoxy = pathname === '/foxy' || pathname?.startsWith('/foxy');
 
   const isExcluded = pathname === '/' ||
@@ -73,7 +94,12 @@ function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
                      pathname?.startsWith('/demo') ||
                      pathname?.startsWith('/settings');
 
-  const showNav = isLoggedIn && activeRole === 'student' && !isFocusedFoxy && !isExcluded;
+  /** Student on a route the navigation belongs on at all. */
+  const navEligible = isLoggedIn && activeRole === 'student' && !isExcluded;
+  /** Tablet rail + desktop sidebar — still suppressed on /foxy. */
+  const showNav = navEligible && !isFocusedFoxy;
+  /** Mobile bottom bar — mounted on /foxy too (see isFocusedFoxy above). */
+  const showMobileNav = navEligible;
 
   // Wave B (ff_offline_v2, default OFF). Deliberately NOT the same condition
   // as `showNav` above: `showNav` excludes Foxy (`isFocusedFoxy`) and a long
@@ -105,7 +131,7 @@ function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
       */}
       {showNav && <DesktopSidebar />}
       {showNav && <TabletNavRail />}
-      {showNav && <MobileBottomNav />}
+      {showMobileNav && <MobileBottomNav />}
       {/*
         The skip-link target has one persistent owner. V3 RoleShell owns the
         semantic <main>, but must not race this id while its presence

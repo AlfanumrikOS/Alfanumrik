@@ -100,11 +100,19 @@ vi.mock('@alfanumrik/lib/ai', () => ({
 // Other tables (foxy_sessions, students, cme_*, etc.) return permissive
 // stubs so the route progresses to the persistence step.
 const insertCalls: { table: string; rows: unknown }[] = [];
+const updateCalls: { table: string; patch: unknown }[] = [];
+
+// Injectable driver errors for foxy_chat_messages. supabase-js does NOT throw
+// on a rejected write — it RESOLVES with `{ data: null, error }`. These knobs
+// reproduce that exact shape, which is what the 2026-08-24 incident turned on.
+let _messageInsertError: { code: string; message: string } | null = null;
+let _messageUpdateError: { code: string; message: string } | null = null;
 
 function makeChain(table: string) {
   // The route uses many chained methods. Build a permissive chain that
   // returns sensible defaults.
   const chain: Record<string, unknown> = {};
+  let isUpdate = false;
 
   // Default resolvers per table.
   const resolveDefault = (): { data: unknown; error: unknown } => {
@@ -145,15 +153,34 @@ function makeChain(table: string) {
   // the bare insert promise).
   chain.insert = (rows: unknown) => {
     insertCalls.push({ table, rows });
+    const err = table === 'foxy_chat_messages' ? _messageInsertError : null;
+    // `.insert(rows).select('id, role')` resolves with the inserted rows —
+    // mirror that so the route can capture the assistant-row UUID.
+    const selectResult = () => {
+      if (err) return { data: null, error: err };
+      const list = Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : [rows];
+      return {
+        data: list.map((r, i) => ({ id: `msg-${r.role ?? 'row'}-${i}`, role: r.role })),
+        error: null,
+      };
+    };
     // Return a thenable so `await supabaseAdmin.from(t).insert(rows)` works.
     return {
       then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
-        Promise.resolve({ data: null, error: null }).then(resolve, reject),
-      // Allow .select() chaining if needed (route uses .insert(...).select('id').single() for sessions).
+        Promise.resolve({ data: null, error: err }).then(resolve, reject),
+      // Allow .select() chaining (route uses .insert(...).select('id').single()
+      // for sessions and .insert(...).select('id, role') for messages).
       select: () => ({
         single: () => Promise.resolve({ data: { id: 'session-uuid-1' }, error: null }),
+        then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+          Promise.resolve(selectResult()).then(resolve, reject),
       }),
     };
+  };
+  chain.update = (patch: unknown) => {
+    updateCalls.push({ table, patch });
+    isUpdate = true;
+    return chain;
   };
   // Terminal awaits.
   chain.single = () => Promise.resolve(resolveDefault());
@@ -162,7 +189,12 @@ function makeChain(table: string) {
   (chain as { then: unknown }).then = (
     resolve: (v: unknown) => unknown,
     reject?: (e: unknown) => unknown,
-  ) => Promise.resolve(resolveDefault()).then(resolve, reject);
+  ) => {
+    if (isUpdate && table === 'foxy_chat_messages' && _messageUpdateError) {
+      return Promise.resolve({ data: null, error: _messageUpdateError }).then(resolve, reject);
+    }
+    return Promise.resolve(resolveDefault()).then(resolve, reject);
+  };
   return chain;
 }
 
@@ -217,9 +249,30 @@ function findAssistantInsert(): Record<string, unknown> | null {
   return null;
 }
 
+function findMessageInserts(): Array<Record<string, unknown>> {
+  const rows: Array<Record<string, unknown>> = [];
+  for (const call of insertCalls) {
+    if (call.table !== 'foxy_chat_messages') continue;
+    const list = Array.isArray(call.rows)
+      ? (call.rows as Array<Record<string, unknown>>)
+      : [call.rows as Record<string, unknown>];
+    rows.push(...list);
+  }
+  return rows;
+}
+
+function persistFailureLogs(): Array<Record<string, unknown>> {
+  return loggerError.mock.calls
+    .filter((c: unknown[]) => c[0] === 'foxy.message_persist_failed')
+    .map((c: unknown[]) => c[1] as Record<string, unknown>);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   insertCalls.length = 0;
+  updateCalls.length = 0;
+  _messageInsertError = null;
+  _messageUpdateError = null;
   _authorizeImpl.mockResolvedValue({
     authorized: true,
     userId: 'auth-user-1',
@@ -359,5 +412,157 @@ describe('/api/foxy structured persistence', () => {
     const auditDetails = (_logAuditImpl.mock.calls[0][1] as { details: Record<string, unknown> })
       .details;
     expect(auditDetails.structured_present).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Incident 2026-08-24 — "Foxy persisted ZERO messages for 21 days"
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Production evidence: max(foxy_chat_messages.created_at) = 2026-08-02, while
+// foxy_sessions kept being created normally (283 rows in August). 256/329
+// sessions in the trailing 30 days had ZERO messages. Nothing alerted.
+//
+// Two structural defects made that possible and invisible; both are pinned
+// here.
+//
+//   D1. EVERY foxy_chat_messages write site destructured only `data` and
+//       dropped the driver `error`, inside a try/catch that could never fire.
+//       supabase-js RESOLVES with `{ data: null, error }` on a rejected write
+//       — it does not throw. So a constraint violation / missing column /
+//       RLS denial produced no log line at all and the turn returned 200 as
+//       if the message had been saved.
+//
+//   D2. The hard-abstain return was a pure early-exit that wrote NOTHING.
+//       When the grounded service abstains, the STUDENT'S OWN QUESTION was
+//       destroyed, not just Foxy's answer — which is precisely the shape of
+//       "sessions exist, messages don't".
+//
+// P13: the failure log must carry ids / counts / error codes / constraint
+// NAMES only — never the student's message text.
+describe('/api/foxy message-persistence failure surfacing (incident 2026-08-24)', () => {
+  it('D1: a rejected foxy_chat_messages INSERT is logged, not swallowed', async () => {
+    setGroundedReturn(makeGroundedSuccess({ structured: VALID_STRUCTURED }));
+    // The exact shape supabase-js hands back on a CHECK violation.
+    _messageInsertError = {
+      code: '23514',
+      message:
+        'new row for relation "foxy_chat_messages" violates check constraint "structured_role_check"',
+    };
+
+    const { POST } = await import('@/app/api/foxy/route');
+    const res = await POST(
+      makePostRequest({ message: 'Solve 2x + 3 = 11', subject: 'math', grade: '7' }),
+    );
+
+    // The student still gets their answer — a persistence failure must never
+    // break the turn (P4-style resilience).
+    expect(res.status).toBe(200);
+
+    // ...but the route MUST have surfaced the write failure.
+    const failures = persistFailureLogs();
+    expect(failures.length).toBeGreaterThanOrEqual(1);
+    const f = failures[0];
+    expect(f.table).toBe('foxy_chat_messages');
+    expect(f.stage).toBe('grounded_insert');
+    expect(f.errorCode).toBe('23514');
+    expect(f.errorKind).toBe('check_violation');
+    // Constraint NAME is the alertable/diagnosable field.
+    expect(f.constraint).toBe('structured_role_check');
+    // Identifiers present for triage.
+    expect(f.foxySessionId).toBe('session-uuid-1');
+    expect(f.studentId).toBe('student-uuid-1');
+  });
+
+  it('D1/P13: the failure log carries no message text and no raw driver strings', async () => {
+    const secret = 'my private question about photosynthesis';
+    setGroundedReturn(makeGroundedSuccess());
+    _messageInsertError = {
+      code: '23502',
+      // Postgres embeds the failing row values in DETAIL — the exact reason
+      // the raw driver message must never be logged verbatim.
+      message: `null value in column "content" violates not-null constraint DETAIL: Failing row contains (${secret}).`,
+    };
+
+    const { POST } = await import('@/app/api/foxy/route');
+    await POST(makePostRequest({ message: secret, subject: 'math', grade: '7' }));
+
+    const failures = persistFailureLogs();
+    expect(failures.length).toBeGreaterThanOrEqual(1);
+    for (const f of failures) {
+      const serialized = JSON.stringify(f);
+      expect(serialized).not.toContain(secret);
+      expect(serialized).not.toContain('Failing row');
+      expect(f).not.toHaveProperty('content');
+      expect(f).not.toHaveProperty('message');
+    }
+    // Structural identifiers survived the scrub.
+    expect(failures[0].errorCode).toBe('23502');
+    expect(failures[0].errorKind).toBe('not_null_violation');
+    expect(failures[0].column).toBe('content');
+  });
+
+  it('D2: a hard abstain still persists the turn instead of losing the question', async () => {
+    // `no_supporting_chunks` is NOT in LEGACY_FALLBACK_ABSTAIN_REASONS, so this
+    // is the terminal hard-abstain return — the branch that used to write
+    // nothing at all.
+    setGroundedReturn({
+      grounded: false,
+      abstain_reason: 'no_supporting_chunks',
+      suggested_alternatives: [],
+      citations: [],
+      trace_id: 'trace-abstain',
+      meta: { latency_ms: 12, tokens_used: 0 },
+    });
+
+    const { POST } = await import('@/app/api/foxy/route');
+    const res = await POST(
+      makePostRequest({ message: 'What is turgor pressure?', subject: 'science', grade: '7' }),
+    );
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.groundingStatus).toBe('hard-abstain');
+
+    const rows = findMessageInserts();
+    const userRow = rows.find((r) => r.role === 'user');
+    expect(userRow, 'the student question MUST be persisted on the abstain path').toBeTruthy();
+    expect(userRow!.content).toBe('What is turgor pressure?');
+    // A well-formed turn: the assistant side is recorded too (safe abstain
+    // text, never fabricated content).
+    expect(rows.find((r) => r.role === 'assistant')).toBeTruthy();
+  });
+
+  it('D1: a rejected pending→final UPDATE falls back to an INSERT and is logged', async () => {
+    // ff_foxy_native_turns_v1 ON → the route pre-inserts user + pending
+    // assistant rows, then UPDATEs the assistant row on completion. A
+    // BEFORE UPDATE immutability guard would reject that UPDATE and strand the
+    // answer as an empty pending row forever.
+    _isFeatureEnabled.mockImplementation((flag: string) => {
+      if (flag === 'ai_usage_global') return Promise.resolve(true);
+      if (flag === 'ff_grounded_ai_foxy') return Promise.resolve(true);
+      if (flag === 'ff_foxy_streaming') return Promise.resolve(false);
+      if (flag === 'ff_foxy_native_turns_v1') return Promise.resolve(true);
+      return Promise.resolve(false);
+    });
+    _messageUpdateError = {
+      code: 'P0001',
+      message: 'foxy_chat_messages rows are immutable',
+    };
+    setGroundedReturn(makeGroundedSuccess({ structured: VALID_STRUCTURED }));
+
+    const { POST } = await import('@/app/api/foxy/route');
+    const res = await POST(makePostRequest({ message: 'Q', subject: 'math', grade: '7' }));
+    expect(res.status).toBe(200);
+
+    // The rejected UPDATE is logged with its stage...
+    const stages = persistFailureLogs().map((f) => f.stage);
+    expect(stages).toContain('grounded_update');
+
+    // ...and the assistant turn still materialises via the fallback INSERT
+    // carrying the real answer (not the empty pending placeholder).
+    const assistantRows = findMessageInserts().filter((r) => r.role === 'assistant');
+    expect(assistantRows.length).toBeGreaterThanOrEqual(2); // pending + fallback
+    const finalRow = assistantRows[assistantRows.length - 1];
+    expect(finalRow.pending).toBe(false);
+    expect(finalRow.content).toBe(denormalizeFoxyResponse(VALID_STRUCTURED));
   });
 });

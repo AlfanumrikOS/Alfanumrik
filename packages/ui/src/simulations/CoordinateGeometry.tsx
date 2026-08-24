@@ -101,7 +101,7 @@ export default function CoordinateGeometry() {
     <div style={{ background:'var(--surface-1)', borderRadius:12, padding:16, maxWidth:600, margin:'0 auto', fontFamily:'inherit' }}>
       <h3 style={{ color:'var(--text-1)', fontSize:16, fontWeight:700, marginBottom:4 }}>Coordinate Geometry</h3>
       <p style={{ color:'var(--text-2)', fontSize:11, marginBottom:8 }}>Click to place points (max 3). Drag to move.</p>
-      <canvas ref={canvasRef} width={W} height={H} style={{ width:'100%', borderRadius:8, background:'var(--surface-2)', display:'block', cursor:'crosshair' }}
+      <canvas ref={canvasRef} width={W} height={H} style={{ width:'100%', height:'auto', borderRadius:8, background:'var(--surface-2)', display:'block', cursor:'crosshair' }}
         onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} />
       <button onClick={()=>setPts([{x:2,y:3},{x:6,y:7}])} style={{ marginTop:8, padding:'5px 14px', borderRadius:6, border:'none', cursor:'pointer', background:'var(--surface-2)', color:'var(--text-1)', fontSize:12 }}>Reset</button>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginTop:8 }}>

@@ -34,11 +34,17 @@ import { NextRequest } from 'next/server';
  *      80 → hard. (The 40/70 cuts this file used to assert were the PRE-fix
  *      thresholds; under the 5/6/4 blueprint they placed nearly everyone at
  *      'hard'. Moved, not weakened.)
- *   5. AC-32: the diagnostic is XP-neutral — `atomic_quiz_profile_update` (and
- *      any other RPC) is never called.
+ *   5. AC-32: the diagnostic is XP-neutral — `atomic_quiz_profile_update` and
+ *      every other XP-bearing RPC is never called. (UPDATED 2026-08-24: this
+ *      used to read "any other RPC". Phase 5D adds a NON-XP mastery-seeding
+ *      call to `update_learner_state_post_quiz`, which does not violate AC-32.
+ *      See the XP-neutrality block for the corrected assertions.)
  *   6. 409 ALREADY_COMPLETED idempotency guard.
  *   7. Delete-then-insert on diagnostic_responses (retry safety).
  *   8. Response envelope the /diagnostic page consumes.
+ *   9. Phase 5 (2026-08-24): per-question `question_results`, derived
+ *      weak/strong topics, and damped mastery seeding. See the Phase 5 banner
+ *      near the bottom of this file.
  *
  * P13: every fixture id is synthetic (`student-1`, `q-0`, a fixed UUID). No real
  * student data, no names, no emails, no phone numbers.
@@ -84,7 +90,11 @@ interface RecordedQuery {
 const recorded: RecordedQuery[] = [];
 const results = new Map<string, { data: unknown; error: unknown }>();
 
-/** AC-32 — the XP-neutrality spy. Any RPC call at all fails the assertion. */
+/**
+ * The RPC spy. AC-32 asserts over the RPC NAMES here (no XP-bearing RPC), and
+ * the Phase 5D block asserts the mastery-seed call shape. It is NOT a
+ * "no RPC ever" spy any more — see the XP-neutrality block for why.
+ */
 const mockRpc = vi.fn();
 
 function setResult(key: string, result: { data: unknown; error: unknown }) {
@@ -136,6 +146,19 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
 
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+}));
+
+/**
+ * Phase 5C topic-title resolution goes through the shared `syllabus`-tagged
+ * cached taxonomy reader (ADR-007 / `alfanumrik/no-inline-taxonomy-reads`),
+ * not an inline `.from('curriculum_topics')`. Mocked here so the route's
+ * behaviour is tested without `unstable_cache` memoising across cases.
+ */
+const { mockGetTopicTitlesByIds } = vi.hoisted(() => ({
+  mockGetTopicTitlesByIds: vi.fn(),
+}));
+vi.mock('@/lib/curriculum/cached-taxonomy', () => ({
+  getTopicTitlesByIds: (...a: unknown[]) => mockGetTopicTitlesByIds(...a),
 }));
 
 import { POST } from '@/app/api/diagnostic/complete/route';
@@ -265,6 +288,7 @@ beforeEach(() => {
   recorded.length = 0;
   results.clear();
   mockRpc.mockResolvedValue({ data: null, error: null });
+  mockGetTopicTitlesByIds.mockResolvedValue([]);
   setAuthorized();
   setHappyPathDb();
 });
@@ -569,7 +593,37 @@ describe('POST /api/diagnostic/complete — C2 speed-run placement guard (AC-30)
 // ══════════════════════════════════════════════════════════════════════════════
 
 describe('POST /api/diagnostic/complete — XP neutrality (AC-32, P2 untouched)', () => {
-  it('never calls atomic_quiz_profile_update — or any RPC — on a full submission', async () => {
+  // ⚠️ AC-32 IS ABOUT XP, NOT ABOUT RPCs IN GENERAL.
+  //
+  // This block used to assert `expect(mockRpc).not.toHaveBeenCalled()` — "no
+  // RPC at all". That was a true statement about the route in 2026-07 and a
+  // WRONG statement of the invariant. Phase 5D (2026-08-24) makes the route
+  // call `update_learner_state_post_quiz` to seed `concept_mastery`, which
+  // awards no XP, touches no `students` row and creates no `quiz_sessions`
+  // row — i.e. it does not violate AC-32 at all.
+  //
+  // The assertions below therefore name the XP-bearing RPCs explicitly rather
+  // than banning the whole mechanism. The topic-bearing counterpart of this
+  // test (where the mastery RPC actually fires) lives in the Phase 5D block
+  // further down; the fixtures HERE carry no `topic_id`, so nothing fires.
+  const XP_BEARING_RPCS = [
+    'atomic_quiz_profile_update',
+    'submit_quiz_results',
+    'submit_quiz_results_v2',
+    'award_xp',
+  ];
+
+  it('never calls atomic_quiz_profile_update or any other XP-bearing RPC', async () => {
+    const res = await post(armed(15, 15));
+    expect(res.status).toBe(200);
+    for (const call of mockRpc.mock.calls) {
+      expect(XP_BEARING_RPCS).not.toContain(call[0]);
+    }
+  });
+
+  it('calls no RPC at all when no question carries a topic_id (nothing to attribute mastery to)', async () => {
+    // The default fixture bank rows have no topic_id — the exact shape of the
+    // ~9.5% of reachable question_bank rows that still have a NULL topic.
     const res = await post(armed(15, 15));
     expect(res.status).toBe(200);
     expect(mockRpc).not.toHaveBeenCalled();
@@ -758,5 +812,404 @@ describe('POST /api/diagnostic/complete — error paths', () => {
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.code).toBe('NO_STUDENT');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 5 (2026-08-24) — CEO defect #4: "After diagnostic test completion it
+// does not adapt to strengthen the student upon wrong answers. Student shall
+// also know why was the answer incorrect."
+//
+// Three things were broken, all pinned below:
+//   5A  `question_results` — the route returned only aggregates, so the results
+//       screen had nothing per-question to render an explanation against, and
+//       `placement_confidence` (returned since day one) was dropped by the
+//       client type.
+//   5C  `weak_topics` / `strong_topics` were HARDCODED `[]`, which is why
+//       "Areas to strengthen" had never rendered in production.
+//   5D  the placement was a terminal write — `next_path` had zero readers and
+//       nothing fed `concept_mastery`.
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Bank row shape once topic metadata is attached (the real column set). */
+interface TopicBankRow extends BankRow {
+  topic_id: string | null;
+  bloom_level: string | null;
+  difficulty: number | null;
+}
+
+const TOPIC_A = 'aaaaaaaa-0000-4000-8000-000000000001';
+const TOPIC_B = 'bbbbbbbb-0000-4000-8000-000000000002';
+
+/**
+ * Build a matched (responses, question_bank, curriculum_topics) triple where
+ * each entry of `spec` is `[topicId, correctCount, wrongCount]`.
+ */
+function armTopics(
+  spec: Array<[topicId: string | null, correct: number, wrong: number]>,
+  opts: {
+    seconds?: number;
+    titles?: Record<string, { title: string | null; title_hi: string | null }>;
+  } = {},
+) {
+  const seconds = opts.seconds ?? NORMAL_SECONDS;
+  const responses: Array<Record<string, unknown>> = [];
+  const bank: TopicBankRow[] = [];
+  let n = 0;
+
+  for (const [topicId, correct, wrong] of spec) {
+    for (let i = 0; i < correct + wrong; i++) {
+      const id = `tq-${n++}`;
+      const selected = i % 4;
+      const shouldBeCorrect = i < correct;
+      bank.push({
+        ...makeBankRow(id, shouldBeCorrect ? selected : (selected + 1) % 4),
+        topic_id: topicId,
+        bloom_level: 'understand',
+        difficulty: 2,
+      });
+      responses.push({
+        question_id: id,
+        selected_answer_index: selected,
+        is_correct: shouldBeCorrect,
+        time_taken_seconds: seconds,
+        // The CLIENT topic field is deliberately garbage here: the route must
+        // key on question_bank.topic_id and never on this.
+        topic: 'client-supplied-nonsense',
+        difficulty: 9,
+        bloom_level: 'create',
+      });
+    }
+  }
+
+  setResult('question_bank.select', { data: bank, error: null });
+
+  const defaultTitles: Record<string, { title: string | null; title_hi: string | null }> = {
+    [TOPIC_A]: { title: 'Linear Equations', title_hi: 'रैखिक समीकरण' },
+    [TOPIC_B]: { title: 'Trigonometry', title_hi: 'त्रिकोणमिति' },
+  };
+  const titles = opts.titles ?? defaultTitles;
+  mockGetTopicTitlesByIds.mockResolvedValue(
+    Object.entries(titles).map(([id, t]) => ({ id, ...t })),
+  );
+
+  return responses;
+}
+
+function masteryCalls() {
+  return mockRpc.mock.calls.filter((c) => c[0] === 'update_learner_state_post_quiz');
+}
+
+// ── 5A — the student is finally told something ────────────────────────────────
+
+describe('POST /api/diagnostic/complete — 5A per-question results', () => {
+  it('returns one question_results entry per response, in served order', async () => {
+    const res = await post(armed(6, 4));
+    const body = await res.json();
+    expect(Array.isArray(body.data.question_results)).toBe(true);
+    expect(body.data.question_results.length).toBe(6);
+    expect(
+      body.data.question_results.map((r: { question_number: number }) => r.question_number),
+    ).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(
+      body.data.question_results.map((r: { question_id: string }) => r.question_id),
+    ).toEqual(['q-0', 'q-1', 'q-2', 'q-3', 'q-4', 'q-5']);
+  });
+
+  it('question_results.is_correct is the SERVER verdict, never the client claim', async () => {
+    // Client claims all 10 correct; only 3 really are.
+    const res = await post(armed(10, 3, { claim: 'all-true' }));
+    const body = await res.json();
+    const flags = body.data.question_results.map((r: { is_correct: boolean }) => r.is_correct);
+    expect(flags.filter(Boolean).length).toBe(3);
+    // …and it agrees exactly with the headline count in the same response.
+    expect(flags.filter(Boolean).length).toBe(body.data.correct_answers);
+  });
+
+  it('the per-question verdicts can never contradict the P1 headline score', async () => {
+    for (const [total, correct] of [[15, 0], [15, 15], [12, 5], [10, 7]] as const) {
+      recorded.length = 0;
+      const res = await post(armed(total, correct));
+      const body = await res.json();
+      const derivedCorrect = body.data.question_results.filter(
+        (r: { is_correct: boolean }) => r.is_correct,
+      ).length;
+      expect(derivedCorrect).toBe(body.data.correct_answers);
+      expect(body.data.score_percent).toBe(Math.round((derivedCorrect / total) * 100));
+    }
+  });
+
+  it('carries the authoritative correct_index and the student index for the review UI', async () => {
+    const res = await post(armed(4, 2));
+    const body = await res.json();
+    for (const r of body.data.question_results) {
+      expect(typeof r.selected_index).toBe('number');
+      expect(typeof r.correct_index).toBe('number');
+      expect(r.is_correct).toBe(r.selected_index === r.correct_index);
+    }
+  });
+
+  it('an unresolvable question_id yields a null correct_index and is_correct false (never a green row)', async () => {
+    const c = buildCase(3, 3);
+    c.responses.push({
+      question_id: 'ghost',
+      selected_answer_index: 1,
+      is_correct: true,
+      time_taken_seconds: NORMAL_SECONDS,
+      topic: null,
+      difficulty: 2,
+      bloom_level: 'understand',
+    });
+    const res = await post(arm(c));
+    const body = await res.json();
+    const ghost = body.data.question_results[3];
+    expect(ghost.question_id).toBe('ghost');
+    expect(ghost.correct_index).toBeNull();
+    expect(ghost.is_correct).toBe(false);
+  });
+
+  it('does NOT re-send question text, options or explanations (P10 — the client already has them)', async () => {
+    const res = await post(armed(4, 2));
+    const body = await res.json();
+    for (const r of body.data.question_results) {
+      expect(Object.keys(r).sort()).toEqual([
+        'correct_index',
+        'is_correct',
+        'question_id',
+        'question_number',
+        'selected_index',
+      ]);
+    }
+  });
+
+  it('placement_confidence reaches the client on both the normal and low paths', async () => {
+    let body = await (await post(armed(10, 8))).json();
+    expect(body.data.placement_confidence).toBe('normal');
+
+    recorded.length = 0;
+    body = await (await post(armed(10, 8, { seconds: 1 }))).json();
+    expect(body.data.placement_confidence).toBe('low');
+  });
+});
+
+// ── 5C — weak/strong topics are derived, never a literal ──────────────────────
+
+describe('POST /api/diagnostic/complete — 5C derived weak/strong topics', () => {
+  it('THE PIN: weak_topics is derived from real per-topic accuracy, not the old hardcoded []', async () => {
+    // Topic A: 0 correct / 3 wrong -> 0%   -> weak
+    // Topic B: 4 correct / 0 wrong -> 100% -> strong
+    const res = await post(armTopics([[TOPIC_A, 0, 3], [TOPIC_B, 4, 0]]));
+    const body = await res.json();
+    expect(body.data.weak_topics).toEqual(['Linear Equations']);
+    expect(body.data.strong_topics).toEqual(['Trigonometry']);
+  });
+
+  it('keys on question_bank.topic_id, NOT the client-supplied topic field', async () => {
+    const res = await post(armTopics([[TOPIC_A, 0, 2]]));
+    const body = await res.json();
+    expect(body.data.weak_topics).toEqual(['Linear Equations']);
+    expect(JSON.stringify(body.data)).not.toContain('client-supplied-nonsense');
+  });
+
+  it('P7: returns a Hindi sibling list of the same length for both lists', async () => {
+    const res = await post(armTopics([[TOPIC_A, 0, 2], [TOPIC_B, 3, 0]]));
+    const body = await res.json();
+    expect(body.data.weak_topics_hi).toEqual(['रैखिक समीकरण']);
+    expect(body.data.strong_topics_hi).toEqual(['त्रिकोणमिति']);
+    expect(body.data.weak_topics_hi.length).toBe(body.data.weak_topics.length);
+    expect(body.data.strong_topics_hi.length).toBe(body.data.strong_topics.length);
+  });
+
+  it('OMITS a NULL topic_id rather than fabricating a label', async () => {
+    const res = await post(armTopics([[null, 0, 4], [TOPIC_A, 0, 2]]));
+    const body = await res.json();
+    expect(body.data.weak_topics).toEqual(['Linear Equations']);
+  });
+
+  it('OMITS a topic whose curriculum_topics title cannot be resolved (never renders a UUID)', async () => {
+    const res = await post(
+      armTopics([[TOPIC_A, 0, 3], [TOPIC_B, 0, 3]], {
+        titles: { [TOPIC_A]: { title: 'Linear Equations', title_hi: 'रैखिक समीकरण' } },
+      }),
+    );
+    const body = await res.json();
+    expect(body.data.weak_topics).toEqual(['Linear Equations']);
+    for (const label of [...body.data.weak_topics, ...body.data.strong_topics]) {
+      expect(label).not.toMatch(/^[0-9a-f-]{36}$/i);
+    }
+  });
+
+  it('still returns 200 with the score when the curriculum_topics lookup errors', async () => {
+    const responses = armTopics([[TOPIC_A, 0, 4]]);
+    // getTopicTitlesByIds THROWS on a genuine DB error (it does not return an
+    // error tuple) — the route must absorb that, not 500 the student.
+    mockGetTopicTitlesByIds.mockRejectedValue(new Error('topics read exploded'));
+    const res = await post(responses);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.score_percent).toBe(0);
+    expect(body.data.weak_topics).toEqual([]);
+  });
+
+  it('C5: suppresses BOTH lists on a low-confidence speed run', async () => {
+    const res = await post(armTopics([[TOPIC_A, 0, 4], [TOPIC_B, 4, 0]], { seconds: 1 }));
+    const body = await res.json();
+    expect(body.data.placement_confidence).toBe('low');
+    expect(body.data.weak_topics).toEqual([]);
+    expect(body.data.strong_topics).toEqual([]);
+    // …but the per-question review the client renders is NOT suppressed.
+    expect(body.data.question_results.length).toBe(8);
+  });
+
+  it('skips the topic-title lookup entirely when no question has a topic_id', async () => {
+    await post(armed(10, 5));
+    expect(mockGetTopicTitlesByIds).not.toHaveBeenCalled();
+  });
+
+  it('never reads curriculum_topics inline — it goes through the cached taxonomy reader (ADR-007)', async () => {
+    await post(armTopics([[TOPIC_A, 0, 2]]));
+    expect(mockGetTopicTitlesByIds).toHaveBeenCalledWith([TOPIC_A]);
+    expect(queriesFor('curriculum_topics', 'select').length).toBe(0);
+  });
+
+  it('de-duplicates topic ids before the lookup', async () => {
+    await post(armTopics([[TOPIC_A, 3, 3]]));
+    expect(mockGetTopicTitlesByIds).toHaveBeenCalledWith([TOPIC_A]);
+  });
+});
+
+// ── 5D — the diagnostic feeds the canonical mastery spine ─────────────────────
+
+describe('POST /api/diagnostic/complete — 5D mastery seeding', () => {
+  it('calls update_learner_state_post_quiz exactly once per answered topic-resolved question', async () => {
+    await post(armTopics([[TOPIC_A, 1, 2], [TOPIC_B, 2, 0]]));
+    expect(masteryCalls().length).toBe(5);
+  });
+
+  it('skips questions with a NULL topic_id — no call, and no crash', async () => {
+    await post(armTopics([[null, 2, 2], [TOPIC_A, 1, 1]]));
+    const calls = masteryCalls();
+    expect(calls.length).toBe(2);
+    for (const c of calls) {
+      expect((c[1] as Record<string, unknown>).p_topic_id).toBe(TOPIC_A);
+    }
+  });
+
+  it('passes the SERVER-derived correctness, the bank topic, and the bank bloom level', async () => {
+    await post(armTopics([[TOPIC_A, 1, 1]]));
+    const args = masteryCalls().map((c) => c[1] as Record<string, unknown>);
+    expect(args.map((a) => a.p_is_correct)).toEqual([true, false]);
+    for (const a of args) {
+      expect(a.p_student_id).toBe(STUDENT_ID);
+      expect(a.p_topic_id).toBe(TOPIC_A);
+      // Bloom from question_bank ('understand'), NOT the client's 'create'.
+      expect(a.p_bloom_level).toBe('understand');
+    }
+  });
+
+  it('passes p_difficulty as an INTEGER — a TEXT value would 42883 before the function body runs', async () => {
+    await post(armTopics([[TOPIC_A, 2, 0]]));
+    for (const c of masteryCalls()) {
+      const d = (c[1] as Record<string, unknown>).p_difficulty;
+      expect(typeof d).toBe('number');
+      expect(Number.isInteger(d as number)).toBe(true);
+      // …and it is the BANK difficulty (2), not the client claimed 9.
+      expect(d).toBe(2);
+    }
+  });
+
+  it('passes the DAMPED diagnostic BKT priors, not the RPC defaults', async () => {
+    const { DIAGNOSTIC_BKT_PARAMS, QUIZ_BKT_PARAM_DEFAULTS } = await import(
+      '@alfanumrik/lib/diagnostic/evidence'
+    );
+    await post(armTopics([[TOPIC_A, 1, 1]]));
+    for (const c of masteryCalls()) {
+      const a = c[1] as Record<string, unknown>;
+      expect(a.p_p_learn).toBe(DIAGNOSTIC_BKT_PARAMS.p_p_learn);
+      expect(a.p_p_slip).toBe(DIAGNOSTIC_BKT_PARAMS.p_p_slip);
+      expect(a.p_p_guess).toBe(DIAGNOSTIC_BKT_PARAMS.p_p_guess);
+      // Explicitly NOT the quiz defaults — a diagnostic is a cold-start
+      // estimate, not a practice attempt.
+      expect(a.p_p_learn).not.toBe(QUIZ_BKT_PARAM_DEFAULTS.p_p_learn);
+    }
+  });
+
+  it('does NOT reuse p_hint_level as the damping dial (a diagnostic shows no hints)', async () => {
+    await post(armTopics([[TOPIC_A, 1, 1]]));
+    for (const c of masteryCalls()) {
+      const a = c[1] as Record<string, unknown>;
+      // Absent/null => the RPC treats the attempt as independent, which is the
+      // truth. Routing it into hinted_attempts to buy damping would be a
+      // semantic lie in a column whose whole job is independence reporting.
+      expect(a.p_hint_level ?? null).toBeNull();
+    }
+  });
+
+  it('C5: writes NOTHING to the spine on a low-confidence speed run', async () => {
+    const res = await post(armTopics([[TOPIC_A, 2, 2]], { seconds: 1 }));
+    expect((await res.json()).data.placement_confidence).toBe('low');
+    expect(masteryCalls().length).toBe(0);
+  });
+
+  it('RESILIENCE: a mastery-write error does not fail the completion response', async () => {
+    const responses = armTopics([[TOPIC_A, 2, 2]]);
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'mastery write exploded' } });
+    const res = await post(responses);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.score_percent).toBe(50);
+    expect(body.data.question_results.length).toBe(4);
+  });
+
+  it('RESILIENCE: a THROWN mastery error does not fail the completion response either', async () => {
+    const responses = armTopics([[TOPIC_A, 4, 0]]);
+    mockRpc.mockRejectedValue(new Error('connection reset'));
+    const res = await post(responses);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.score_percent).toBe(100);
+  });
+
+  it('RESILIENCE: one failing write does not abort the remaining writes', async () => {
+    const responses = armTopics([[TOPIC_A, 2, 2]]);
+    let n = 0;
+    mockRpc.mockImplementation(() => {
+      n++;
+      return n === 2
+        ? Promise.reject(new Error('transient'))
+        : Promise.resolve({ data: null, error: null });
+    });
+    const res = await post(responses);
+    expect(res.status).toBe(200);
+    expect(masteryCalls().length).toBe(4);
+  });
+
+  it('P2: the mastery write is the ONLY rpc — no XP-bearing RPC is ever reached', async () => {
+    await post(armTopics([[TOPIC_A, 3, 1]]));
+    const names = new Set(mockRpc.mock.calls.map((c) => c[0]));
+    expect(names).toEqual(new Set(['update_learner_state_post_quiz']));
+  });
+
+  it('P2: still touches no XP-bearing table on the topic-bearing path', async () => {
+    await post(armTopics([[TOPIC_A, 3, 1]]));
+    const tables = new Set(recorded.map((r) => r.table));
+    for (const forbidden of ['quiz_sessions', 'student_learning_profiles']) {
+      expect(tables.has(forbidden)).toBe(false);
+    }
+    expect(queriesFor('students', 'update').length).toBe(0);
+  });
+
+  it('seeds the spine only AFTER the responses are durably inserted', async () => {
+    const responses = armTopics([[TOPIC_A, 2, 0]]);
+    setResult('diagnostic_responses.insert', {
+      data: null,
+      error: { message: 'insert exploded' },
+    });
+    const res = await post(responses);
+    expect(res.status).toBe(500);
+    // A submission that did not persist must not move mastery.
+    expect(masteryCalls().length).toBe(0);
   });
 });
