@@ -348,7 +348,6 @@ const BASELINE: BaselineGroup[] = [
       'apps/host/src/app/api/learner/memory/route.ts',
       'apps/host/src/app/api/learner/review/grade/route.ts',
       'apps/host/src/app/api/quiz/ncert-questions/route.ts',
-      'apps/host/src/app/api/student/engagement/route.ts',
       'apps/host/src/app/api/v2/student/progress/route.ts',
       'packages/lib/src/domains/profile.ts',
       'packages/lib/src/domains/quiz.ts',
