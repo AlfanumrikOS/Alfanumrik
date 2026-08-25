@@ -410,18 +410,29 @@ describe('GET /api/foxy/sessions — payload contract', () => {
  * 4. Paging.
  * ─────────────────────────────────────────────────────────────────────────── */
 describe('GET /api/foxy/sessions — limit and cursor', () => {
-  it('clamps limit to 1..50 and defaults to 30', async () => {
-    const limitOf = async (q: string) => {
-      queries = [];
-      await GET(request(q));
-      const l = queries[0].filters.find((f) => f.op === 'limit');
-      return l!.args[0];
+  it('clamps the RETURNED page to 1..50, defaulting to 30', async () => {
+    // The clamp is a contract about how many sessions come back, not about how
+    // many rows are scanned to find them. Since 2026-08-25 the route scans in
+    // fixed batches and loops until it can fill the requested page, so asserting
+    // the DB query's `limit` argument would pin an implementation detail instead
+    // of the promise. Assert the promise.
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      id: `s${i}`,
+      subject: 'math',
+      chapter: null,
+      last_active_at: new Date(Date.UTC(2026, 7, 20, 0, 0, 60 - i)).toISOString(),
+    }));
+    const pageSizeOf = async (q: string) => {
+      sessionsResult = { data: many, error: null };
+      countResult = { data: many.map((s) => ({ session_id: s.id })), error: null };
+      const body = await (await GET(request(q))).json();
+      return body.data.sessions.length;
     };
-    expect(await limitOf('')).toBe(30);
-    expect(await limitOf('?limit=5')).toBe(5);
-    expect(await limitOf('?limit=999')).toBe(50);
-    expect(await limitOf('?limit=0')).toBe(1);
-    expect(await limitOf('?limit=banana')).toBe(30);
+    expect(await pageSizeOf('')).toBe(30);
+    expect(await pageSizeOf('?limit=5')).toBe(5);
+    expect(await pageSizeOf('?limit=999')).toBe(50);
+    expect(await pageSizeOf('?limit=0')).toBe(1);
+    expect(await pageSizeOf('?limit=banana')).toBe(30);
   });
 
   it('applies a cursor as a strict last_active_at upper bound', async () => {
@@ -437,22 +448,58 @@ describe('GET /api/foxy/sessions — limit and cursor', () => {
     expect(queries, 'a bad cursor must not reach the database').toEqual([]);
   });
 
-  it('derives nextCursor from the last SCANNED session, not the last RETURNED one', async () => {
-    // A full page whose LAST row is a zero-message session that gets filtered
-    // out. Deriving the cursor from the returned rows would rewind paging and
-    // loop the "load more" button on the same page forever.
-    sessionsResult = {
-      data: [
-        { id: 's1', subject: 'math', chapter: null, last_active_at: '2026-08-20T10:00:00Z' },
-        { id: 'empty', subject: 'math', chapter: null, last_active_at: '2026-08-19T10:00:00Z' },
-      ],
-      error: null,
-    };
-    countResult = { data: [{ session_id: 's1' }], error: null };
+  it('skips a filtered-out row mid-scan and still fills the page', async () => {
+    // A zero-message session sitting between real ones must neither become the
+    // cursor nor cut the page short. The cursor must come from the last
+    // INCLUDED row so paging resumes strictly older and never rewinds.
+    const rows = [
+      { id: 's1', subject: 'math', chapter: null, last_active_at: '2026-08-20T10:00:00Z' },
+      { id: 'empty', subject: 'math', chapter: null, last_active_at: '2026-08-19T10:00:00Z' },
+      { id: 's2', subject: 'math', chapter: null, last_active_at: '2026-08-18T10:00:00Z' },
+    ];
+    sessionsResult = { data: rows, error: null };
+    countResult = { data: [{ session_id: 's1' }, { session_id: 's2' }], error: null };
 
     const body = await (await GET(request('?limit=2'))).json();
-    expect(body.data.sessions.map((s: any) => s.id)).toEqual(['s1']);
-    expect(body.data.nextCursor).toBe('2026-08-19T10:00:00Z');
+    expect(body.data.sessions.map((s: any) => s.id)).toEqual(['s1', 's2']);
+    expect(body.data.nextCursor).toBe('2026-08-18T10:00:00Z');
+  });
+
+  it('fills the page when the NEWEST sessions are all empty shells', async () => {
+    // Regression, 2026-08-25. `foxy_chat_messages` took zero writes from
+    // 2026-08-02 to 2026-08-25 (the broadcast-trigger argument swap fixed in
+    // #1628) while `foxy_sessions` kept writing, leaving 324 message-less
+    // sessions — 274 of them NEWER than every surviving conversation.
+    //
+    // The route scanned exactly one page, filtered every shell out, and
+    // returned `sessions: []` with a non-null cursor. Its contract said that
+    // means "keep going", but the web rail issues exactly ONE request, so a
+    // student holding 1,439 sessions and 3,048 messages was shown
+    // "No conversations yet". Measured: 221 shells stacked in front of their
+    // newest real session, i.e. eight round trips to reach one conversation.
+    //
+    // The route must now absorb the shell run itself and return real history.
+    const shells = Array.from({ length: 40 }, (_, i) => ({
+      id: `shell${i}`,
+      subject: 'math',
+      chapter: null,
+      last_active_at: new Date(Date.UTC(2026, 7, 24, 0, 0, 40 - i)).toISOString(),
+    }));
+    const real = Array.from({ length: 5 }, (_, i) => ({
+      id: `real${i}`,
+      subject: 'math',
+      chapter: null,
+      last_active_at: new Date(Date.UTC(2026, 7, 1, 0, 0, 5 - i)).toISOString(),
+    }));
+    sessionsResult = { data: [...shells, ...real], error: null };
+    countResult = { data: real.map((s) => ({ session_id: s.id })), error: null };
+
+    const body = await (await GET(request('?limit=30'))).json();
+    expect(
+      body.data.sessions.map((s: any) => s.id),
+      'a run of empty shells must not render as an empty rail',
+    ).toEqual(real.map((s) => s.id));
+    expect(body.data.nextCursor, 'history exhausted').toBeNull();
   });
 
   it('reports nextCursor:null on a partial page (end of history)', async () => {

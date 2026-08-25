@@ -159,108 +159,170 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // client silently returned an empty history for every password-login student.
     const supabase = await createSupabaseRouteClient(request);
 
-    let sessionQuery = supabase
-      .from('foxy_sessions')
-      .select('id, subject, chapter, last_active_at')
-      .eq('student_id', studentId)
-      .order('last_active_at', { ascending: false })
-      .limit(limit);
-    if (cursor) sessionQuery = sessionQuery.lt('last_active_at', cursor);
+    // ── Scan loop (2026-08-25) ────────────────────────────────────────────
+    // The zero-message filter runs AFTER paging, so a scanned page can come
+    // back entirely filtered out. This route's contract already said "an empty
+    // `sessions` array with a non-null `nextCursor` means keep going" — but no
+    // client implemented that, and the web rail (`fetchAllConversations` in
+    // apps/host/src/app/foxy/page.tsx) issues exactly ONE request and renders
+    // whatever it gets. The burden is moved here, where it belongs: the route
+    // keeps scanning until it can fill a page or genuinely runs out.
+    //
+    // Why it mattered: `foxy_chat_messages` took zero writes from 2026-08-02
+    // to 2026-08-25 (the broadcast-trigger argument swap, fixed in #1628)
+    // while `foxy_sessions` kept writing normally. That left 324 message-less
+    // sessions, 274 of them created during the outage — and because they are
+    // the MOST RECENT, they filled the entire first page. Measured on the
+    // student with the largest history (1,439 sessions / 3,048 messages): all
+    // 30 of their most recent sessions were empty shells, their newest real
+    // session was 2026-08-02, and 221 shells sat in front of real history — so
+    // a 30-row page needed EIGHT round trips to reach one visible
+    // conversation. The rail rendered "No conversations yet".
+    //
+    // SCAN_PAGE is deliberately larger than MAX_LIMIT so a single round trip
+    // clears a meaningful run of shells; MAX_SCANS bounds worst-case work at
+    // SCAN_PAGE * MAX_SCANS sessions per request. If that budget is spent
+    // before the page fills, `nextCursor` points at the last SCANNED row so
+    // paging resumes exactly where it stopped and nothing is skipped.
+    const SCAN_PAGE = 100;
+    const MAX_SCANS = 8;
 
-    const { data: sessions, error: sessionsError } = await sessionQuery;
+    const items: FoxySessionListItem[] = [];
+    let scanCursor: string | null = cursor;
+    let lastIncludedCursor: string | null = null;
+    let exhausted = false;
+    let scans = 0;
 
-    if (sessionsError) {
-      // THE defect this route exists to fix: a failed query must never render
-      // as "no conversations". Surface it; the client shows a Retry.
-      logger.error('foxy.sessions.list_failed', {
-        route: '/api/foxy/sessions',
-        query: 'foxy_sessions',
-        errorCode: sessionsError.code ?? null,
-      });
-      return failure('SESSION_LIST_FAILED', 500);
-    }
+    while (items.length < limit && scans < MAX_SCANS && !exhausted) {
+      scans += 1;
 
-    const sessionRows = (sessions ?? []) as Array<{
-      id: string;
-      subject: string | null;
-      chapter: string | null;
-      last_active_at: string | null;
-    }>;
-
-    if (sessionRows.length === 0) {
-      return NextResponse.json({
-        success: true,
-        data: { sessions: [], nextCursor: null },
-      });
-    }
-
-    const sessionIds = sessionRows.map((s) => s.id);
-
-    // Two narrow queries instead of one wide one. Selecting every message's
-    // `content` for 30 sessions to compute a count would pull the entire
-    // assistant corpus for the page across the network for no reason.
-    //   A) counts   — ids only, no bodies.
-    //   B) titles   — USER turns only, oldest first; the first row per session
-    //                 is the student's opening prompt.
-    const [countResult, firstUserResult] = await Promise.all([
-      supabase
-        .from('foxy_chat_messages')
-        .select('session_id')
+      let sessionQuery = supabase
+        .from('foxy_sessions')
+        .select('id, subject, chapter, last_active_at')
         .eq('student_id', studentId)
-        .in('session_id', sessionIds),
-      supabase
-        .from('foxy_chat_messages')
-        .select('session_id, content, created_at')
-        .eq('student_id', studentId)
-        .eq('role', 'user')
-        .in('session_id', sessionIds)
-        .order('created_at', { ascending: true }),
-    ]);
+        .order('last_active_at', { ascending: false })
+        .limit(SCAN_PAGE);
+      if (scanCursor) sessionQuery = sessionQuery.lt('last_active_at', scanCursor);
 
-    if (countResult.error || firstUserResult.error) {
-      logger.error('foxy.sessions.messages_failed', {
-        route: '/api/foxy/sessions',
-        countErrorCode: countResult.error?.code ?? null,
-        titleErrorCode: firstUserResult.error?.code ?? null,
-      });
-      return failure('SESSION_LIST_FAILED', 500);
-    }
+      const { data: sessions, error: sessionsError } = await sessionQuery;
 
-    const countBySession = new Map<string, number>();
-    for (const row of (countResult.data ?? []) as Array<{ session_id: string }>) {
-      countBySession.set(row.session_id, (countBySession.get(row.session_id) ?? 0) + 1);
-    }
+      if (sessionsError) {
+        // THE defect this route exists to fix: a failed query must never render
+        // as "no conversations". Surface it; the client shows a Retry.
+        logger.error('foxy.sessions.list_failed', {
+          route: '/api/foxy/sessions',
+          query: 'foxy_sessions',
+          errorCode: sessionsError.code ?? null,
+        });
+        return failure('SESSION_LIST_FAILED', 500);
+      }
 
-    const firstUserBySession = new Map<string, string>();
-    for (const row of (firstUserResult.data ?? []) as Array<{
-      session_id: string;
-      content: string | null;
-    }>) {
-      // Rows arrive oldest-first, so the FIRST one seen per session wins.
-      if (!firstUserBySession.has(row.session_id) && row.content) {
-        firstUserBySession.set(row.session_id, row.content);
+      const sessionRows = (sessions ?? []) as Array<{
+        id: string;
+        subject: string | null;
+        chapter: string | null;
+        last_active_at: string | null;
+      }>;
+
+      if (sessionRows.length === 0) {
+        exhausted = true;
+        break;
+      }
+      // A short read means there is nothing older left to scan.
+      if (sessionRows.length < SCAN_PAGE) exhausted = true;
+
+      const sessionIds = sessionRows.map((s) => s.id);
+
+      // Two narrow queries instead of one wide one. Selecting every message's
+      // `content` to compute a count would pull the entire assistant corpus for
+      // the page across the network for no reason.
+      //   A) counts   — ids only, no bodies.
+      //   B) titles   — USER turns only, oldest first; the first row per
+      //                 session is the student's opening prompt.
+      const [countResult, firstUserResult] = await Promise.all([
+        supabase
+          .from('foxy_chat_messages')
+          .select('session_id')
+          .eq('student_id', studentId)
+          .in('session_id', sessionIds),
+        supabase
+          .from('foxy_chat_messages')
+          .select('session_id, content, created_at')
+          .eq('student_id', studentId)
+          .eq('role', 'user')
+          .in('session_id', sessionIds)
+          .order('created_at', { ascending: true }),
+      ]);
+
+      if (countResult.error || firstUserResult.error) {
+        logger.error('foxy.sessions.messages_failed', {
+          route: '/api/foxy/sessions',
+          countErrorCode: countResult.error?.code ?? null,
+          titleErrorCode: firstUserResult.error?.code ?? null,
+        });
+        return failure('SESSION_LIST_FAILED', 500);
+      }
+
+      const countBySession = new Map<string, number>();
+      for (const row of (countResult.data ?? []) as Array<{ session_id: string }>) {
+        countBySession.set(row.session_id, (countBySession.get(row.session_id) ?? 0) + 1);
+      }
+
+      const firstUserBySession = new Map<string, string>();
+      for (const row of (firstUserResult.data ?? []) as Array<{
+        session_id: string;
+        content: string | null;
+      }>) {
+        // Rows arrive oldest-first, so the FIRST one seen per session wins.
+        if (!firstUserBySession.has(row.session_id) && row.content) {
+          firstUserBySession.set(row.session_id, row.content);
+        }
+      }
+
+      for (const s of sessionRows) {
+        // Zero-message sessions are unopenable chrome — see the filter note.
+        const messageCount = countBySession.get(s.id) ?? 0;
+        if (messageCount === 0) continue;
+
+        items.push({
+          id: s.id,
+          title: deriveConversationTitle(firstUserBySession.get(s.id)),
+          subject: s.subject,
+          chapter: s.chapter,
+          updatedAt: s.last_active_at ?? new Date().toISOString(),
+          messageCount,
+        });
+        lastIncludedCursor = s.last_active_at ?? lastIncludedCursor;
+
+        if (items.length >= limit) break;
+      }
+
+      // Advance from the last SCANNED row so the next scan cannot re-read rows
+      // this one already rejected.
+      const lastScanned = sessionRows[sessionRows.length - 1];
+      if (lastScanned.last_active_at) {
+        scanCursor = lastScanned.last_active_at;
+      } else {
+        // A null ordering key cannot produce a usable cursor; stop rather than
+        // loop forever on the same page.
+        exhausted = true;
       }
     }
 
-    const items: FoxySessionListItem[] = sessionRows
-      .map((s) => ({
-        id: s.id,
-        title: deriveConversationTitle(firstUserBySession.get(s.id)),
-        subject: s.subject,
-        chapter: s.chapter,
-        updatedAt: s.last_active_at ?? new Date().toISOString(),
-        messageCount: countBySession.get(s.id) ?? 0,
-      }))
-      // Zero-message sessions are unopenable chrome — see the filter note.
-      .filter((s) => s.messageCount > 0);
-
-    // Derived from the last SCANNED session, not the last RETURNED one, so the
-    // post-paging zero-message filter can never strand the cursor.
-    const lastScanned = sessionRows[sessionRows.length - 1];
-    const nextCursor =
-      sessionRows.length === limit && lastScanned.last_active_at
-        ? lastScanned.last_active_at
-        : null;
+    // Cursor semantics:
+    //   - page filled       -> resume strictly older than the last INCLUDED
+    //                          row, so nothing between it and the next page is
+    //                          skipped.
+    //   - history exhausted -> null, the documented end-of-history signal.
+    //   - scan budget spent -> resume from the last SCANNED row.
+    let nextCursor: string | null;
+    if (items.length >= limit) {
+      nextCursor = lastIncludedCursor;
+    } else if (exhausted) {
+      nextCursor = null;
+    } else {
+      nextCursor = scanCursor;
+    }
 
     return NextResponse.json({
       success: true,
