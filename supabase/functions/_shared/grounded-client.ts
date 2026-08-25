@@ -15,6 +15,60 @@
 // this Deno version posts to the same URL so both callers go through the
 // same service code path. Keep the two clients in sync.
 
+import {
+  buildCanonicalInternalRequest,
+  sha256Hex,
+  signInternalRequest,
+} from './security/request-signature.ts';
+
+// grounded-answer canonicalizes the signed path by stripping the
+// `/functions/v1` prefix (canonicalizeInternalPath), so the value signed here
+// must be the FULL gateway path — signing the stripped form produces a
+// mismatch and a 401 that looks identical to a missing secret.
+const GROUNDED_ANSWER_SIGNING_PATH = '/functions/v1/grounded-answer';
+
+/**
+ * Deno port of packages/lib/src/security/internal-caller-signing.ts's
+ * `buildInternalCallerHeaders`. Async here because the Deno crypto helpers
+ * (`sha256Hex`, `signInternalRequest`) are Promise-returning, whereas the Node
+ * mirror is synchronous — that difference is the only intended divergence.
+ *
+ * Returns null when the signing secret is absent so the caller can fail closed
+ * rather than emit a request grounded-answer is certain to reject.
+ */
+async function buildInternalCallerHeaders(
+  method: string,
+  path: string,
+  body: string,
+  caller: string,
+): Promise<Record<string, string> | null> {
+  const secret = Deno.env.get('INTERNAL_CALLER_SIGNING_SECRET');
+  if (!secret) return null;
+
+  const requestId = crypto.randomUUID();
+  // Seconds, not milliseconds: the verifier compares against a 300s skew
+  // window after multiplying by 1000 (auth.ts). Sending millis reads as ~55k
+  // years of skew and is rejected as 'stale internal request timestamp'.
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const bodyHash = await sha256Hex(body);
+  const canonical = buildCanonicalInternalRequest({
+    method,
+    path,
+    requestId,
+    timestamp,
+    bodyHash,
+    caller,
+  });
+  const signature = await signInternalRequest(secret, canonical);
+
+  return {
+    'x-request-id': requestId,
+    'x-internal-caller': caller,
+    'x-internal-timestamp': timestamp,
+    'x-internal-signature': signature,
+  };
+}
+
 // ─── Types (mirror supabase/functions/grounded-answer/types.ts) ──────────────
 
 export type Caller =
@@ -171,6 +225,41 @@ export async function callGroundedAnswer(
 
   const url = `${supabaseUrl}/functions/v1/grounded-answer`;
 
+  // grounded-answer's admission gate (supabase/functions/_shared/security/
+  // auth.ts, resolveSecurityPrincipal) rejects a service-role bearer that
+  // arrives WITHOUT `x-internal-timestamp` + `x-internal-signature`:
+  //   401 { error: 'deny_signature', message: 'missing internal caller signature' }
+  // This client previously sent only the bearer, so every Edge Function that
+  // reached grounded-answer through it 401'd. `callGroundedAnswer` maps that
+  // to `upstream_error`, callers retry, exhaust, and give up silently — which
+  // is why `grounded_ai_traces` contains 1,662 rows and every single one is
+  // caller='foxy'. Foxy reaches the service through the Node mirror
+  // (packages/lib/src/ai/grounded-client.ts), which DOES sign. The two
+  // clients are documented as mirrors at the top of this file; they drifted,
+  // and only the signed one worked.
+  //
+  // The signature must be computed over the EXACT body string that is sent,
+  // so `bodyStr` is built once and reused for both the hash and the request.
+  const bodyStr = JSON.stringify(request);
+  const signingHeaders = await buildInternalCallerHeaders(
+    'POST',
+    GROUNDED_ANSWER_SIGNING_PATH,
+    bodyStr,
+    request.caller,
+  );
+  if (!signingHeaders) {
+    // Fail closed and loudly rather than sending an unsigned request that is
+    // guaranteed to 401. `config-missing` is the existing contract for "this
+    // hop cannot be attempted", so callers refund quota exactly as they do
+    // for a missing SUPABASE_URL.
+    console.error(
+      '[grounded-client] INTERNAL_CALLER_SIGNING_SECRET is not set — ' +
+        'grounded-answer rejects unsigned internal calls. Set it on every ' +
+        'Edge Function that calls grounded-answer.',
+    );
+    return buildHopError('config-missing', Date.now() - startedAt);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), hopTimeoutMs);
 
@@ -181,8 +270,9 @@ export async function callGroundedAnswer(
       headers: {
         Authorization: `Bearer ${serviceKey}`,
         'Content-Type': 'application/json',
+        ...signingHeaders,
       },
-      body: JSON.stringify(request),
+      body: bodyStr,
     });
     clearTimeout(timer);
 
