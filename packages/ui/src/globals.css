@@ -2014,6 +2014,17 @@ body.foxy-body-lock {
   justify-content: center;
   font-size: 9px;
   font-weight: 700;
+  /* The label is clamped to 0–100 in FoxyStudySheet, so at most three glyphs
+     ever land here. These three lines are the containment guarantee, so that a
+     future caller passing something unexpected degrades to a clipped label
+     inside the circle instead of painting digits across the ring and the
+     chapter title — which is exactly what an unrounded float did on mobile
+     (2026-08-25). `line-height: 1` stops a tall glyph box from pushing the
+     text off-centre in a 24px circle; `tabular-nums` keeps 1s and 7s the same
+     width so the label does not shift as mastery changes. */
+  line-height: 1;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ─── Phase 3 — Tools sheet controls (ff_foxy_os_v1, <lg only) ───────────

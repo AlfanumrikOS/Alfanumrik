@@ -263,7 +263,22 @@ export function FoxyStudySheet({
             <div className="space-y-1.5">
               {topics.map((topic) => {
                 const isActive = activeTopicId === topic.id;
-                const pct = topic.masteryPercent ?? 0;
+                // Round AND clamp at the render boundary. `masteryPercent` is
+                // handed straight through from `topic_mastery_rollup
+                // .mastery_percent` (apps/host/src/app/foxy/page.tsx), which is
+                // a FLOAT 0–100 — e.g. 98.77105500426. Rendered raw that is a
+                // 14-character string inside a 24px circle, so the digits
+                // painted straight over the ring on mobile (CEO-reported
+                // 2026-08-25). Defending HERE rather than at the caller keeps
+                // every present and future caller safe; it is the same
+                // defence cosmic/MasteryRing already applies to its own input.
+                // Clamping also bounds the conic sweep below: an out-of-range
+                // value would otherwise rotate past 360deg or go negative.
+                const rawPct = topic.masteryPercent ?? 0;
+                const pct = Math.max(
+                  0,
+                  Math.min(100, Math.round(Number.isFinite(rawPct) ? rawPct : 0)),
+                );
                 const ring = topic.masteryColor ?? 'var(--border)';
                 return (
                   <button
