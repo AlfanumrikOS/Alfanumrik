@@ -69,23 +69,67 @@
 -- usable, `cron.unschedule('verify-question-bank-hourly')` stops it
 -- immediately; nothing else in the platform depends on this job.
 --
--- ── A TRAP WORTH KNOWING ───────────────────────────────────────────────────
--- The function proxies to a Python port when `shouldProxyToPython` returns a
--- target, gated on `ff_python_verify_question_bank_v1` — which is currently
--- is_enabled=true at 100% rollout. That flag is NOT touched here, because the
--- proxy also requires the `PYTHON_AI_BASE_URL` Edge secret and returns
--- should_proxy=false when it is empty (see
--- supabase/functions/_shared/__tests__/python-ai-proxy.test.ts). So today the
--- TS verifier-of-record runs regardless of the flag.
+-- ── PREREQUISITE: THIS JOB DOES NOTHING WITHOUT THE SIGNING FIX ────────────
+-- Scheduling alone does not start verification. Confirmed by invoking the
+-- function against production on 2026-08-25: it claimed ~476 rows, RELEASED
+-- 230 back to legacy_unverified, verified 0, and marked 0 as 'failed'.
 --
--- But that Python path is a Phase 2 STUB: docs/PYTHON_AI_VERIFY_QUESTION_BANK.md
--- states it "releases each claimed row back to legacy_unverified" with no
--- verifier call, and that "Flag default OFF means production traffic still
--- hits the TS verifier". The flag is currently the inverse of that documented
--- default. If anyone sets PYTHON_AI_BASE_URL while the flag stays on, this
--- cron will run every hour, claim rows, release them unverified, and
--- verification will silently stop again with the job still reporting success.
--- Turn the flag off before setting that secret.
+-- Zero 'failed' is the diagnostic. verifyOneRow() returns null — which is what
+-- triggers the release — ONLY when grounded-answer abstains with
+-- `upstream_error` / `circuit_open` and retries are exhausted. A bad question
+-- would have produced a 'failed' row. Every failure was upstream.
+--
+-- Root cause: supabase/functions/_shared/grounded-client.ts sent only
+-- `Authorization: Bearer <service key>`, while grounded-answer's admission gate
+-- (_shared/security/auth.ts, resolveSecurityPrincipal) additionally requires
+-- `x-internal-timestamp` + `x-internal-signature` and answers
+-- `401 deny_signature` without them. Corroborated by the trace table:
+-- public.grounded_ai_traces holds 1,662 rows and EVERY one is caller='foxy' —
+-- the one caller that does not use that file (it goes through the Node mirror
+-- packages/lib/src/ai/grounded-client.ts, which does sign). No
+-- 'quiz-generator' trace has ever existed.
+--
+-- That fix ships separately. Merge it FIRST or this cron will run hourly,
+-- claim rows, release them unverified, and report success every time.
+--
+-- ── A CORRECTION WORTH KEEPING ─────────────────────────────────────────────
+-- An earlier draft of this migration warned that
+-- `ff_python_verify_question_bank_v1` was "on at 100%, the inverse of its
+-- documented default" and would route to the Phase 2 no-op stub. That reading
+-- was WRONG and is recorded here so it is not repeated.
+--
+-- ff_python_* flags are NOT controlled by is_enabled / rollout_percentage.
+-- packages/lib/src/flags/protected-flags.ts (PYTHON_ENVELOPE) states it
+-- outright: "controlled via the metadata jsonb envelope (python-ai-proxy), NOT
+-- via is_enabled/rollout_percentage. Console column edits are
+-- meaningless-to-harmful." The columns read true/100 and mean nothing.
+--
+-- The real control is the envelope, which currently reads:
+--   {"phase":"phase_2_stub","enabled":false,"kill_switch":false,"rollout_pct":0}
+-- The proxy is OFF. The TS verifier-of-record is what runs, which is why the
+-- 401 above is reachable at all. Do not "fix" this flag by editing its
+-- columns.
+--
+-- ── BATCH SIZE IS NOT CALLER-CONTROLLABLE — WATCH THE FIRST TICKS ──────────
+-- The function decides its own batch: BATCH_SIZE_OFF_PEAK = 1000,
+-- BATCH_SIZE_PEAK = 250 (verify-question-bank/shared.ts), via
+-- decideBatchSize(). index.ts passes `bodyText: ''` and reads no override, so
+-- this cron cannot ask for a smaller batch.
+--
+-- Once signing works each row costs a real retrieval + LLM call, so a batch of
+-- 250-1000 will very likely exceed the Edge Function's wall-clock limit and be
+-- cut off part-way. That is survivable — claim_verification_batch reclaims
+-- expired claims (DEFAULT_CLAIM_TTL_SECONDS = 600), so a cut-off run's rows
+-- return to the pool on their own and no manual cleanup is needed. It is
+-- simply wasteful: each hourly tick finishes only as many rows as fit.
+--
+-- Evidence this already happens: 990 rows currently sit in 'pending' with
+-- verification_claimed_by set and claim expiries reaching back to 2026-07-22 —
+-- earlier runs were cut off the same way.
+--
+-- If throughput proves too low after the first few ticks, the fix is to lower
+-- those two constants (a code change to shared.ts), NOT to raise the timeout
+-- below — see the note on it.
 --
 -- Idempotent: unschedules any existing job of the same name first.
 -- Rollback: select cron.unschedule('verify-question-bank-hourly');
@@ -149,7 +193,20 @@ begin
           'Content-Type', 'application/json'
         ),
         body := '{}'::jsonb,
-        timeout_milliseconds := 60000
+        -- pg_net's timeout bounds only how long WE wait for the response; it
+        -- does NOT abort the Edge Function, which keeps running server-side.
+        -- So this value is an observability choice, not a correctness one: too
+        -- low and cron.job_run_details records a timeout for a run that in
+        -- fact did useful work, which reads as "the verifier is broken" when
+        -- it is not. The first manual invocation on 2026-08-25 was issued at
+        -- 60000 and recorded exactly that:
+        --   "Timeout of 60000 ms reached. Total time: 60000.768 ms"
+        -- while the function carried on and touched 531 rows. Raised to 120s
+        -- to capture the summary payload on a normal tick. Do not treat a
+        -- timeout here as a failed run — check
+        -- ops_events(category='grounding.verifier') instead, which the
+        -- function writes only on a completed batch.
+        timeout_milliseconds := 120000
       );
     $cron_cmd$
   );
