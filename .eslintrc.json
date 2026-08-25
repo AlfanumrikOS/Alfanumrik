@@ -22,7 +22,8 @@
     "alfanumrik/no-canonical-write-outside-projector": "warn",
     "alfanumrik/no-direct-ai-calls": "off",
     "alfanumrik/no-direct-rag-rpc": "off",
-    "alfanumrik/no-inline-taxonomy-reads": "warn"
+    "alfanumrik/no-inline-taxonomy-reads": "warn",
+    "alfanumrik/no-unchecked-supabase-error": "warn"
   },
   "overrides": [
     {

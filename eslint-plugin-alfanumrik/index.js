@@ -15,6 +15,8 @@ const noRawSubjectImports = require('./no-raw-subject-imports');
 const noCanonicalWriteOutsideProjector = require('./no-canonical-write-outside-projector');
 // ADR-007 taxonomy boundary (tech-debt register item 9, 2026-07-13)
 const noInlineTaxonomyReads = require('./no-inline-taxonomy-reads');
+// Silent-failure boundary (launch-blocker register step 2, 2026-08-25)
+const noUncheckedSupabaseError = require('./no-unchecked-supabase-error');
 
 // Grounding-boundary rules live at the repo root under eslint-rules/
 // so they can be tested and referenced without mixing with subject rules.
@@ -30,6 +32,8 @@ module.exports = {
     'no-canonical-write-outside-projector':
       noCanonicalWriteOutsideProjector.rules['no-canonical-write-outside-projector'],
     'no-inline-taxonomy-reads': noInlineTaxonomyReads.rules['no-inline-taxonomy-reads'],
+    'no-unchecked-supabase-error':
+      noUncheckedSupabaseError.rules['no-unchecked-supabase-error'],
     // Grounding-boundary rules (Tasks 3.18 / 3.19)
     'no-direct-ai-calls': noDirectAiCalls,
     'no-direct-rag-rpc': noDirectRagRpc,
