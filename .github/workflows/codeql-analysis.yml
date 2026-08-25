@@ -18,6 +18,17 @@ on:
 permissions:
   security-events: write
   contents: read
+  # Required on PRIVATE repositories. The codeql-action analyze step calls the
+  # Actions API ("get a workflow run") while finalising results. On a public
+  # repository that read is implicit in the default GITHUB_TOKEN; on a private
+  # one it is not, and the step fails AFTER a full successful analysis with:
+  #   ##[error]Resource not accessible by integration
+  #   CodeQL job status was configuration error.
+  # This repository went private on 2026-08-24 and every run failed from that
+  # point. "CodeQL Analysis" is a REQUIRED check in the `main-protection`
+  # ruleset, so this blocked every merge to main. Read, not write — the job
+  # only needs to look the run up, never to modify it.
+  actions: read
 
 # Same rationale as ci.yml's concurrency block: "CodeQL Analysis" is a
 # REQUIRED status check in the `main-protection` ruleset, so never cancel an

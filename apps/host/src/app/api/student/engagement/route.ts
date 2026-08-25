@@ -74,7 +74,26 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createSupabaseServerClient();
 
-    // Parallel queries for engagement data
+    // Parallel queries for engagement data.
+    //
+    // 2026-08-25 (launch-blocker P0-4): every one of these three selects named
+    // columns that do not exist, and each `error` was discarded, so PostgREST
+    // returned 42703 three times and the route answered 200 with a fully zeroed
+    // snapshot — every student saw 0 XP / Level 1 / 0 streak / no mastery
+    // regardless of their real data. Corrected sources:
+    //   students          total_xp→xp_total, streak_current→streak_days,
+    //                     last_active_date→last_active (streak_best: see below)
+    //   concept_mastery   has no subject_code; subject only resolves through
+    //                     curriculum_topics→subjects, which is exactly what the
+    //                     existing `topic_mastery_rollup` view does. Reused
+    //                     rather than re-joining here (same view Foxy reads, so
+    //                     both surfaces agree). It is security_invoker=true, so
+    //                     RLS on concept_mastery still applies to the caller.
+    //                     Its `mastery_percent` is 0-100, which is the scale the
+    //                     >= 80 "mastered" threshold below always assumed —
+    //                     `mastery_mean` was 0-1, so that test could never pass.
+    //   quiz_responses    wrong TABLE — it has no score_percent/total_questions.
+    //                     Completed-quiz scores live on `quiz_sessions`.
     const [
       studentRes,
       masteryRes,
@@ -82,35 +101,55 @@ export async function GET(request: NextRequest) {
     ] = await Promise.all([
       supabase
         .from('students')
-        .select('total_xp, streak_current, streak_best, last_active_date')
+        .select('xp_total, streak_days, last_active')
         .eq('id', studentId)
         .single(),
       supabase
-        .from('concept_mastery')
-        .select('subject_code, mastery_mean')
+        .from('topic_mastery_rollup')
+        .select('subject, mastery_percent')
         .eq('student_id', studentId),
       supabase
-        .from('quiz_responses')
+        .from('quiz_sessions')
         .select('created_at, subject, score_percent, total_questions')
         .eq('student_id', studentId)
+        .eq('is_completed', true)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(20),
     ]);
 
+    // supabase-js resolves {data, error} and never throws, so the catch below is
+    // unreachable for query failures — every error must be inspected explicitly
+    // or it becomes a silent zero. Enforced by alfanumrik/no-unchecked-supabase-error.
+    const readErr = studentRes.error ?? masteryRes.error ?? quizzesRes.error;
+    if (readErr) {
+      logger.error('Engagement snapshot query failed', {
+        studentId,
+        code: (readErr as { code?: string }).code,
+        error: readErr.message,
+      });
+      return NextResponse.json(
+        { error: 'Failed to load engagement data' },
+        { status: 500 }
+      );
+    }
+
     const student = studentRes.data;
-    const totalXp = student?.total_xp ?? 0;
+    const totalXp = student?.xp_total ?? 0;
     const level = calculateLevel(totalXp);
     const levelName = LEVEL_NAMES[level] ?? LEVEL_NAMES[1] ?? 'Learner';
     const xpInfo = xpToNextLevel(totalXp);
 
     // Aggregate per-subject mastery
     const masteryBySubject = new Map<string, { sum: number; count: number; mastered: number }>();
-    for (const row of masteryRes.data ?? []) {
-      const existing = masteryBySubject.get(row.subject_code) ?? { sum: 0, count: 0, mastered: 0 };
-      existing.sum += row.mastery_mean ?? 0;
+    for (const row of (masteryRes.data ?? []) as Array<{ subject: string | null; mastery_percent: number | null }>) {
+      if (!row.subject) continue;
+      const existing = masteryBySubject.get(row.subject) ?? { sum: 0, count: 0, mastered: 0 };
+      const pct = row.mastery_percent ?? 0;
+      existing.sum += pct;
       existing.count += 1;
-      if ((row.mastery_mean ?? 0) >= 80) existing.mastered += 1;
-      masteryBySubject.set(row.subject_code, existing);
+      if (pct >= 80) existing.mastered += 1;
+      masteryBySubject.set(row.subject, existing);
     }
 
     const subjectMastery = Array.from(masteryBySubject.entries()).map(
@@ -143,9 +182,16 @@ export async function GET(request: NextRequest) {
         xpToNext: xpInfo.needed - xpInfo.current,
       },
       streak: {
-        current: student?.streak_current ?? 0,
-        best: student?.streak_best ?? 0,
-        lastActiveDate: student?.last_active_date ?? null,
+        current: student?.streak_days ?? 0,
+        // No all-time-best daily streak is tracked anywhere in the schema.
+        // `student_learning_profiles.longest_streak` is a PER-SUBJECT learning
+        // streak (9 of 485 rows populated, max 3) — reporting it here would
+        // render "current 45, best 3". Until a real column exists, report the
+        // current streak, which is a truthful lower bound on the best and can
+        // never contradict it. FOLLOW-UP: add students.longest_streak_days,
+        // maintained wherever streak_days is incremented.
+        best: student?.streak_days ?? 0,
+        lastActiveDate: student?.last_active ?? null,
       },
       subjectMastery,
       recentQuizzes,
