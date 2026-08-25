@@ -10,11 +10,39 @@ name: Sync Edge Functions to Staging
 # is a separate task.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'supabase/functions/**'
-      - '.github/workflows/sync-staging-functions.yml'
+  # ── AUTOMATIC TRIGGER DISABLED 2026-08-25 ─────────────────────────────────
+  # The staging Supabase project is unreachable, so every automatic run of this
+  # workflow fails and produces nothing but red. Last green run: 2026-08-22
+  # (3b81df86c). It has failed on every run since 2026-08-23.
+  #
+  # The failure is a connectivity/tenant error against the IPv4 Supavisor
+  # pooler (aws-1-ap-south-1.pooler.supabase.com:5432), raised BEFORE any
+  # migration or function is applied:
+  #   "Could not reach staging over the IPv4 Supavisor pooler ...
+  #    the wrong shard answers XX000 'tenant or user not found'"
+  # Staging lives in a DIFFERENT Supabase org than production (see the
+  # SUPABASE_STAGING_ACCESS_TOKEN note below), so the project was either
+  # deleted, paused, re-sharded by Supabase, or is refusing the runner egress
+  # IP. It was not diagnosed further here because that needs the staging org's
+  # credentials, which CI does not carry.
+  #
+  # DELIBERATELY NOT re-pointed at production. This workflow runs
+  # `DELETE FROM supabase_migrations.schema_migrations WHERE version = ANY($1)`
+  # and `supabase db push`. Aimed at production those would delete production
+  # ledger rows and apply schema OUTSIDE deploy-production.yml's gates
+  # (quality gate, pre-deploy checklist, migration-parity verification,
+  # rollback-baseline capture) — a second, ungated writer racing the gated one.
+  # Production migrations have exactly one owner: deploy-production.yml's
+  # `Apply Database Migrations` job. Keep it that way.
+  #
+  # `workflow_dispatch` is retained so this can still be run by hand.
+  # TO RESTORE: repair SUPABASE_STAGING_PROJECT_REF / the staging project, then
+  # uncomment the `push:` block below. Nothing else changed.
+  #   push:
+  #     branches: [main]
+  #     paths:
+  #       - 'supabase/functions/**'
+  #       - '.github/workflows/sync-staging-functions.yml'
   workflow_dispatch:
     inputs:
       force_deploy_all_functions:
