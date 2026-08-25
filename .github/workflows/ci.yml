@@ -1744,8 +1744,17 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --quiet origin "$BASE_REF"
-          merge_base="$(git merge-base FETCH_HEAD HEAD)"
+          # Resolve the base from the remote-tracking ref that checkout already
+          # created, NOT via a fresh `git fetch`. This job sets
+          # `persist-credentials: false`, so no token survives into the git
+          # config here; an unauthenticated `git fetch origin` worked only
+          # while this repository was public. It went private on 2026-08-24
+          # and every PR run then died with:
+          #   fatal: could not read Username for 'https://github.com'
+          # `fetch-depth: 0` above already fetches all branches, so
+          # `origin/$BASE_REF` is present locally and needs no network call
+          # and no credentials. Keep it that way.
+          merge_base="$(git merge-base "origin/$BASE_REF" HEAD 2>/dev/null || true)"
           # FAIL CLOSED: if the merge base cannot be resolved we do NOT quietly
           # fall back to "no tests changed" -- an empty selection that reports
           # green is exactly the vacuous-pass failure mode the auth gate and the
