@@ -20,6 +20,12 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@alfanumrik/lib/constants';
 import { SUBJECT_META } from '@alfanumrik/lib/constants';
 import { validatePassword } from '@alfanumrik/lib/sanitize';
 import { cn } from '@alfanumrik/lib/utils';
+import dynamic from 'next/dynamic';
+
+const GoogleOAuthButton = dynamic(
+  () => import('./GoogleOAuthButton').then((m) => m.GoogleOAuthButton),
+  { ssr: false },
+);
 
 const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
@@ -141,20 +147,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     tabs[next]?.focus();
   };
 
-  // Google OAuth
-  const handleGoogleAuth = async () => {
-    setError(''); setLoading(true);
-    try {
-      const { error: authError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: window.location.origin + '/auth/callback?type=login' },
-      });
-      if (authError) { setError(authError.message); setLoading(false); }
-    } catch {
-      setError(t('Connection error. Please try again.', 'कनेक्शन में समस्या। कृपया फिर से प्रयास करें।'));
-      setLoading(false);
-    }
-  };
+  // Google OAuth — lazy-loaded via dynamic import to reduce /login bundle size
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -461,20 +454,14 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             </div>
           )}
 
-                    {/* Google OAuth button */}
+                    {/* Google OAuth button — lazy-loaded */}
           {(mode === 'login' || (mode === 'signup' && signupStep === 'basic')) && (
-            <>
-              <button type="button" onClick={handleGoogleAuth} disabled={loading}
-                className="w-full py-3 rounded-xl text-sm font-bold bg-white border border-surface-3 text-foreground hover:bg-surface-2 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2">
-                <svg className="w-4 h-4" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                {t('Continue with Google', 'Google से जारी रखें')}
-              </button>
-              <div className="flex items-center gap-3 my-4">
-                <div className="flex-1 h-px bg-surface-3" />
-                <span className="text-xs text-muted-foreground font-medium">{t('or', 'या')}</span>
-                <div className="flex-1 h-px bg-surface-3" />
-              </div>
-            </>
+            <GoogleOAuthButton
+              isHi={isHi}
+              loading={loading}
+              onError={setError}
+              onLoading={setLoading}
+            />
           )}
 
           <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' && signupStep === 'basic' ? (e) => { e.preventDefault(); setError(''); if (!name.trim()) { setError('Please enter your name'); return; } const pw = validatePassword(password); if (!pw.valid) { setError(pw.error); return; } setSignupStep('details'); } : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3" aria-describedby={error ? 'auth-error' : undefined}>

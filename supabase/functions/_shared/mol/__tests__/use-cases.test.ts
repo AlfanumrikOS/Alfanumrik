@@ -90,6 +90,8 @@ describe('selectProviderChain with custom use cases', () => {
   // router deterministically keeps OpenAI primary (same convention as
   // router.test.ts). `restoreAllMocks` in afterEach guarantees the spy cannot
   // leak to sibling MOL test files under the parallel `--coverage` pool.
+  // CEO directive 2026-08-26: Anthropic is primary. Math.random < w (0.8)
+  // reorders the chain to put Anthropic first. Pin to 0.1 for determinism.
   beforeEach(() => {
     vi.spyOn(Math, 'random').mockReturnValue(0.1)
   })
@@ -98,7 +100,7 @@ describe('selectProviderChain with custom use cases', () => {
     vi.restoreAllMocks()
   })
 
-  it('routes Hard IIT Math to o3-mini as primary, with o1 and gpt-4o fallbacks', () => {
+  it('routes Hard IIT Math — Anthropic first (probabilistic reorder), with o3-mini and o1 fallbacks', () => {
     const context: StudentContext = {
       student_id: 'student-123',
       grade: '12',
@@ -116,12 +118,13 @@ describe('selectProviderChain with custom use cases', () => {
     })
 
     expect(chain.passes.length).toBe(1)
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'openai', model: 'o3-mini' })
-    expect(chain.passes[0].chain[1]).toEqual({ provider: 'openai', model: 'o1' })
-    expect(chain.passes[0].chain[2]).toEqual({ provider: 'openai', model: 'gpt-4o' })
+    // Math.random=0.1 < w=0.8 → Anthropic (claude-sonnet) reordered to front
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-20250514' })
+    expect(chain.passes[0].chain[1]).toEqual({ provider: 'openai', model: 'o3-mini' })
+    expect(chain.passes[0].chain[2]).toEqual({ provider: 'openai', model: 'o1' })
   })
 
-  it('routes Deep Theory Explanation to OpenAI GPT-4o as primary, Claude Opus and Claude Sonnet as fallbacks', () => {
+  it('routes Deep Theory Explanation — Anthropic claude-sonnet primary with haiku and gpt-4o fallbacks', () => {
     const context: StudentContext = {
       student_id: 'student-123',
       grade: '10',
@@ -139,8 +142,8 @@ describe('selectProviderChain with custom use cases', () => {
     })
 
     expect(chain.passes.length).toBe(1)
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'openai', model: 'gpt-4o' })
-    expect(chain.passes[0].chain[1]).toEqual({ provider: 'anthropic', model: 'claude-3-opus-20240229' })
-    expect(chain.passes[0].chain[2]).toEqual({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-20250514' })
+    expect(chain.passes[0].chain[1]).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' })
+    expect(chain.passes[0].chain[2]).toEqual({ provider: 'openai', model: 'gpt-4o' })
   })
 })

@@ -493,11 +493,14 @@ Deno.test('Anthropic stop_reason absent → stopReason:other (never spuriously m
 });
 
 Deno.test('OpenAI finish_reason=length → stopReason:max_tokens (normalized)', async () => {
-  // gpt-4o-mini is primary for modelPreference='haiku' post the 2026-08-02
-  // OpenAI-primary swap (MODEL_FALLBACK_ORDER.haiku = [openai mini, anthropic
-  // haiku]), so it answers on the FIRST attempt — no forced Anthropic 529
-  // detour is needed to reach it anymore.
+  // CEO directive 2026-08-26: Claude-primary (MODEL_FALLBACK_ORDER.haiku =
+  // [anthropic haiku, openai gpt-4o-mini]). Anthropic Haiku is called first;
+  // on success we verify the OpenAI finish_reason→stopReason normalization
+  // via a second call that stubs an OpenAI-length response.
+  // First stub: Anthropic Haiku returns ok, so OpenAI is never reached.
+  // Override: we force OpenAI by stubbing Anthropic to fail (503).
   installFetchStub([
+    () => Promise.resolve(new Response('upstream', { status: 503 })),
     () => Promise.resolve(mockOpenAIOkResponse('partial from gpt', 'length')),
   ]);
   try {
@@ -534,7 +537,7 @@ function mockFlagRowResponse(row: { is_enabled: boolean; rollout_percentage: num
   });
 }
 
-Deno.test('rollout: callerId + rollout_percentage=100 → resolves CLAUDE_PRIMARY_FALLBACK_ORDER (Haiku first, not gpt-4o-mini)', async () => {
+Deno.test('rollout: callerId + rollout_percentage=100 → resolves CLAUDE_PRIMARY_FALLBACK_ORDER (OpenAI-first rollback, not Anthropic)', async () => {
   __resetModelRolloutCacheForTests();
   Deno.env.set('SUPABASE_URL', 'https://test.supabase.co');
   Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role-key');
@@ -542,7 +545,7 @@ Deno.test('rollout: callerId + rollout_percentage=100 → resolves CLAUDE_PRIMAR
   installFetchStub(
     [
       () => Promise.resolve(mockFlagRowResponse({ is_enabled: true, rollout_percentage: 100 })),
-      () => Promise.resolve(mockAnthropicOkResponse('answer from claude-primary bucket')),
+      () => Promise.resolve(mockOpenAIOkResponse('answer from openai-primary rollback bucket', 'stop')),
     ],
     (c) => calls.push(c),
   );
@@ -560,13 +563,12 @@ Deno.test('rollout: callerId + rollout_percentage=100 → resolves CLAUDE_PRIMAR
     });
     assertEquals(result.ok, true);
     if (result.ok) {
-      assertEquals(result.provider, 'anthropic');
-      assertEquals(result.model, HAIKU_MODEL);
+      // CLAUDE_PRIMARY_FALLBACK_ORDER.haiku = [openai gpt-4o-mini, anthropic haiku]
+      assertEquals(result.provider, 'openai');
+      assertEquals(result.model, 'gpt-4o-mini');
     }
-    // calls[0] is the flag-row fetch (no `model` field); calls[1] is the ONE
-    // model call — Haiku answered first try, no fallback to gpt-4o-mini needed.
     assertEquals(calls.length, 2);
-    assertEquals(calls[1].model, HAIKU_MODEL);
+    assertEquals(calls[1].model, 'gpt-4o-mini');
   } finally {
     restoreFetch();
     Deno.env.delete('SUPABASE_URL');
@@ -575,7 +577,7 @@ Deno.test('rollout: callerId + rollout_percentage=100 → resolves CLAUDE_PRIMAR
   }
 });
 
-Deno.test('rollout: callerId present but flag disabled → still resolves MODEL_FALLBACK_ORDER (OpenAI-primary, unchanged)', async () => {
+Deno.test('rollout: callerId present but flag disabled → resolves MODEL_FALLBACK_ORDER (Anthropic-primary, CEO directive 2026-08-26)', async () => {
   __resetModelRolloutCacheForTests();
   Deno.env.set('SUPABASE_URL', 'https://test.supabase.co');
   Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role-key');
@@ -583,7 +585,7 @@ Deno.test('rollout: callerId present but flag disabled → still resolves MODEL_
   installFetchStub(
     [
       () => Promise.resolve(mockFlagRowResponse({ is_enabled: false, rollout_percentage: 100 })),
-      () => Promise.resolve(mockOpenAIOkResponse('answer from openai-primary', 'stop')),
+      () => Promise.resolve(mockAnthropicOkResponse('answer from anthropic-primary default')),
     ],
     (c) => calls.push(c),
   );
@@ -601,8 +603,9 @@ Deno.test('rollout: callerId present but flag disabled → still resolves MODEL_
     });
     assertEquals(result.ok, true);
     if (result.ok) {
-      assertEquals(result.provider, 'openai');
-      assertEquals(result.model, 'gpt-4o-mini');
+      // MODEL_FALLBACK_ORDER.haiku = [anthropic haiku, openai gpt-4o-mini]
+      assertEquals(result.provider, 'anthropic');
+      assertEquals(result.model, HAIKU_MODEL);
     }
   } finally {
     restoreFetch();
