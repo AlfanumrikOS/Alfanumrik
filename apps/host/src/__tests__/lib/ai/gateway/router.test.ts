@@ -5,10 +5,10 @@
  * function. These tests pin every policy's ordering contract and the two
  * invariants that keep the flag-OFF world a byte-identical no-op:
  *
- *   1. `default` reproduces the legacy fallback chain EXACTLY — OpenAI-primary
- *      as of the 2026-08-02 CEO-directed cost swap (gpt-4o-mini → gpt-4o →
- *      Haiku → Sonnet; Claude retained as the reliability fallback tier, not
- *      deleted); constraints FILTER but never REORDER it.
+ *   1. `default` reproduces the legacy fallback chain EXACTLY — Claude-primary
+ *      as of the 2026-08-26 CEO-directed quality swap back (Haiku → Sonnet →
+ *      gpt-4o-mini → gpt-4o; OpenAI retained as the reliability fallback
+ *      tier, not deleted); constraints FILTER but never REORDER it.
  *   2. NO policy or constraint can ever surface a `configured:false` model
  *      (both Gemini seams stay dormant — P12 provider invariant).
  *
@@ -32,30 +32,22 @@ const ids = (chain: { id: string }[]) => chain.map((m) => m.id);
 const DORMANT = new Set([GEMINI_FLASH_ID, GEMINI_PRO_ID]);
 
 describe('Model Gateway router — policy ordering', () => {
-  it('default reproduces the legacy OpenAI-primary chain byte-for-byte (Claude retained as fallback)', () => {
+  it('default reproduces the legacy Claude-primary chain byte-for-byte (OpenAI retained as fallback)', () => {
     expect(ids(selectModelChain('default'))).toEqual([
-      OPENAI_MINI_ID,
-      OPENAI_FULL_ID,
       ANTHROPIC_HAIKU_ID,
       ANTHROPIC_SONNET_ID,
+      OPENAI_MINI_ID,
+      OPENAI_FULL_ID,
     ]);
   });
 
-  it('default chain is OpenAI-primary post 2026-08 cost directive, Claude retained as fallback', () => {
-    // Regression pin (REG-334, renumbered 2026-08-03 from REG-332 during the
-    // origin/main merge — see .claude/regression/00-header.md's collision
-    // note): the 2026-08-02 CEO-directed cost swap flipped
-    // MODEL_FALLBACK_ORDER / LEGACY_FALLBACK_ORDER from Anthropic-primary to
-    // OpenAI-first, Anthropic-second, for every preference key (Anthropic's
-    // per-token cost does not scale with per-student revenue at current
-    // volume). This test exists so an accidental revert back to
-    // Anthropic-primary is caught immediately, the same way the pre-swap
-    // literal order used to be pinned in the test directly above.
+  it('default chain is Claude-primary post 2026-08-26 quality directive, OpenAI retained as fallback', () => {
+    // Regression pin (REG-334): the 2026-08-26 CEO-directed quality swap
+    // restored LEGACY_FALLBACK_ORDER to Claude-primary (Haiku → Sonnet →
+    // mini → full). This test catches an accidental revert to OpenAI-primary.
     const chain = selectModelChain('default');
-    expect(ids(chain)).toEqual([OPENAI_MINI_ID, OPENAI_FULL_ID, ANTHROPIC_HAIKU_ID, ANTHROPIC_SONNET_ID]);
-    // Assert providers explicitly too, not just ids, so a future id rename
-    // alone couldn't silently flip a provider while keeping this test green.
-    expect(chain.map((m) => m.provider)).toEqual(['openai', 'openai', 'anthropic', 'anthropic']);
+    expect(ids(chain)).toEqual([ANTHROPIC_HAIKU_ID, ANTHROPIC_SONNET_ID, OPENAI_MINI_ID, OPENAI_FULL_ID]);
+    expect(chain.map((m) => m.provider)).toEqual(['anthropic', 'anthropic', 'openai', 'openai']);
   });
 
   it('cost orders by ascending blended (input+output) cost', () => {
@@ -111,30 +103,30 @@ describe('Model Gateway router — policy ordering', () => {
 
 describe('Model Gateway router — constraints filter without reordering default', () => {
   it('minQualityTier drops sub-floor models but preserves default order', () => {
-    // Floor 7 removes Haiku(6) and mini(5); gpt-4o(8) and Sonnet(9) survive in
-    // their legacy (OpenAI-primary) positions — gpt-4o before Sonnet, no reorder.
+    // Floor 7 removes Haiku(6) and mini(5); Sonnet(9) and gpt-4o(8) survive in
+    // their legacy (Claude-primary) positions — Sonnet before gpt-4o, no reorder.
     expect(ids(selectModelChain('default', { minQualityTier: 7 }))).toEqual([
-      OPENAI_FULL_ID,
       ANTHROPIC_SONNET_ID,
+      OPENAI_FULL_ID,
     ]);
   });
 
   it('maxInputCostPer1M drops over-budget models but preserves default order', () => {
-    // Ceiling 1.0 keeps mini(0.15) and Haiku(1.0); drops gpt-4o(2.5), Sonnet(3.0).
-    // Legacy (OpenAI-primary) order has mini before Haiku — filtering must not
+    // Ceiling 1.0 keeps Haiku(1.0) and mini(0.15); drops Sonnet(3.0), gpt-4o(2.5).
+    // Legacy (Claude-primary) order has Haiku before mini — filtering must not
     // reorder them.
     expect(ids(selectModelChain('default', { maxInputCostPer1M: 1.0 }))).toEqual([
-      OPENAI_MINI_ID,
       ANTHROPIC_HAIKU_ID,
+      OPENAI_MINI_ID,
     ]);
   });
 
   it('needsVision keeps every configured model (all four support vision)', () => {
     expect(ids(selectModelChain('default', { needsVision: true }))).toEqual([
-      OPENAI_MINI_ID,
-      OPENAI_FULL_ID,
       ANTHROPIC_HAIKU_ID,
       ANTHROPIC_SONNET_ID,
+      OPENAI_MINI_ID,
+      OPENAI_FULL_ID,
     ]);
   });
 

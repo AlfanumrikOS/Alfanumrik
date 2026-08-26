@@ -153,47 +153,39 @@ export const PROMPT_REV = 3;
 // (owned by the testing agent) asserts equality across the Deno/Node boundary
 // so the two can never silently drift.
 //
-// OpenAI runs FIRST for every preference (CEO-approved cost-driven provider
-// swap, 2026-08-02): Anthropic's per-token cost does not scale with
-// per-student revenue at current volume. Claude is RETAINED as the fallback
-// tier, not deleted — specifically because the Foxy system prompt, JSON
-// output contract, and CBSE pedagogy tree were originally calibrated against
-// Claude's behavior (RCA-FIX CRITICAL-1, 2026-06-26). That calibration
-// history is exactly why an output-quality validation pass (the
-// eval/openai-migration harness) gates how far the canary ramps before
-// GPT-4o/GPT-4o-mini output reaches students at volume — this reorder makes
-// OpenAI primary for cost, it does not certify OpenAI output quality by
-// itself.
+// Claude runs FIRST for every preference (CEO-approved quality-driven provider
+// swap back, 2026-08-26): the Foxy system prompt, JSON output contract, and
+// CBSE pedagogy tree were originally calibrated against Claude's behavior
+// (RCA-FIX CRITICAL-1, 2026-06-26). Restoring Claude as primary ensures the
+// highest answer quality for students. OpenAI is RETAINED as the fallback
+// tier, not deleted — activates on Claude timeout / 5xx / auth failure.
 export const MODEL_FALLBACK_ORDER: Record<
   'haiku' | 'sonnet' | 'auto',
   ReadonlyArray<{ provider: 'anthropic' | 'openai'; model: string }>
 > = {
   haiku: [
-    { provider: 'openai', model: 'gpt-4o-mini' },
     { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+    { provider: 'openai', model: 'gpt-4o-mini' },
   ],
   sonnet: [
-    { provider: 'openai', model: 'gpt-4o' },
     { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    { provider: 'openai', model: 'gpt-4o' },
   ],
   auto: [
-    { provider: 'openai', model: 'gpt-4o-mini' },
-    { provider: 'openai', model: 'gpt-4o' },
     { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
     { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    { provider: 'openai', model: 'gpt-4o-mini' },
+    { provider: 'openai', model: 'gpt-4o' },
   ],
 };
 
-// ── Claude-primary rollback order (percentage-rollout mechanism, 2026-08-03) ─
+// ── OpenAI-primary rollback order (percentage-rollout mechanism, 2026-08-03) ──
 //
-// Reconstructed BYTE-FOR-BYTE from the pre-2026-08-02 order (verified via
-// `git show 5e6ffa9f -- supabase/functions/grounded-answer/config.ts` — the
-// swap commit simply reversed each two-element array and moved the two
-// anthropic entries ahead of the two openai entries in `auto`; nothing else
-// changed). This is the ROLLBACK target for `_model-rollout-flag.ts`'s
-// percentage-based rollout: `ff_foxy_openai_primary_rollout_v1` buckets a
-// caller into this order instead of MODEL_FALLBACK_ORDER when the flag is
-// enabled and the caller's hash falls inside `rollout_percentage`.
+// The pre-2026-08-26 OpenAI-primary order, retained as the ROLLBACK target for
+// `_model-rollout-flag.ts`'s percentage-based rollout:
+// `ff_foxy_openai_primary_rollout_v1` buckets a caller into this order instead
+// of MODEL_FALLBACK_ORDER when the flag is enabled and the caller's hash falls
+// inside `rollout_percentage`.
 //
 // MODEL_FALLBACK_ORDER above is UNCHANGED and stays the fail-safe / seed-state
 // default — see _model-rollout-flag.ts's header for the full precedence.
@@ -202,18 +194,18 @@ export const CLAUDE_PRIMARY_FALLBACK_ORDER: Record<
   ReadonlyArray<{ provider: 'anthropic' | 'openai'; model: string }>
 > = {
   haiku: [
-    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
     { provider: 'openai', model: 'gpt-4o-mini' },
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
   ],
   sonnet: [
-    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     { provider: 'openai', model: 'gpt-4o' },
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
   ],
   auto: [
-    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
-    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     { provider: 'openai', model: 'gpt-4o-mini' },
     { provider: 'openai', model: 'gpt-4o' },
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
   ],
 };
 
@@ -242,4 +234,9 @@ export const CLAUDE_PRIMARY_FALLBACK_ORDER: Record<
 // concern, not a P12 safety violation (both orders produce grounded,
 // safety-railed, curriculum-scoped answers) — flagged here for
 // testing/architect to assess before any ramp beyond the safe 0% seed.
-export const MODEL_ROUTE_REV = 3;
+// MODEL_ROUTE_REV=4 (2026-08-26): Claude-primary provider swap — every
+// model_preference now resolves to a Claude model first (OpenAI second).
+// Reverses the 2026-08-02 OpenAI-primary swap. Cache entries written under
+// rev 3 reflected an OpenAI-primary resolution and must not be served for a
+// request made under this new ordering.
+export const MODEL_ROUTE_REV = 4;
