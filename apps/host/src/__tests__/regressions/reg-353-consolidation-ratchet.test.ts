@@ -102,9 +102,10 @@ describe('REG-353 (2) — retired-table reference baselines (may only DECREASE)'
 
   it('pins the post-consolidation frozen baselines (bump = reviewable two-place diff)', () => {
     // Ratcheted 6 -> 0 during CI merge fix (PR #1465): cme_concept_state readers
-    // fully drained. REG-353's forward-only ratchet still holds (may only DECREASE);
-    // the analyzer allowlist continues to enforce the retirement.
-    expect(analyzer).toContain('cme_concept_state: 0,');
+    // fully drained. 0 -> 1 (2026-08-26): database.types.ts regeneration restored
+    // the auto-generated table name; analyzer now excludes it from the retired count.
+    // REG-353's forward-only ratchet still holds (may only DECREASE).
+    expect(analyzer).toContain('cme_concept_state: 1,');
     expect(analyzer).toContain('topic_mastery: 20,');
   });
 
