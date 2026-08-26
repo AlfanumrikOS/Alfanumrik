@@ -337,15 +337,17 @@ const RETIRED_AFTER = { cme_concept_state: 'E3' };
 const STALENESS_DAYS = 14;
 
 // ── Shared measurement helpers ──────────────────────────────────────────────
-function countBounded(table) {
+function countBounded(table, filterFn) {
   const re = new RegExp(`\\b${table}\\b`, 'g');
   const perFile = [];
   let total = 0;
   for (const abs of codeFiles()) {
     const text = readText(abs);
     if (!text) continue;
+    const rel = toRel(abs);
+    if (filterFn && !filterFn(rel)) continue;
     const n = (text.match(re) || []).length;
-    if (n > 0) { perFile.push({ file: toRel(abs), n }); total += n; }
+    if (n > 0) { perFile.push({ file: rel, n }); total += n; }
   }
   return { total, perFile };
 }
@@ -773,7 +775,12 @@ function check9WriterlessWatch(records) {
     const record = byId.get(reqId);
     if (!record || !atLeast(record, 'built')) continue;
     applicable++;
-    const { total, perFile } = countBounded(table);
+    // Exclude auto-generated type files (database.types.ts) — they mirror
+    // the live schema and will always include retired table names until the
+    // table is actually DROPped from the database.
+    const { total, perFile } = countBounded(table, (rel) =>
+      !rel.endsWith('database.types.ts')
+    );
     if (total > 0) {
       lines.push(`FAIL ${reqId} is ${record.status} but ${total} non-migration references to retired table ${table} remain:`);
       for (const { file, n } of perFile) lines.push(`      ${n}x ${file}`);
