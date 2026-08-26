@@ -246,7 +246,8 @@ const RETIRED_TABLE_REF_BASELINE = {
   //   + database.types.ts (1) + agents/registry (1) + supabase.ts (1)
   //   + cme-engine EF (1)
   // ratcheted 2026-08-05: 6 -> 0 after CI-fix sweep (comment refs + database.types key renamed to _retired_cme_concept_state; see PR #1465)
-  cme_concept_state: 0,
+  // ratcheted 2026-08-26: 0 -> 1 after database.types.ts regeneration (auto-gen file always includes all tables in schema)
+  cme_concept_state: 1,
   // Ratchet history: 23 (frozen 2026-08-05) → 20 (re-measured 2026-08-05
   // post-consolidation, Phase 2).
   // 20 = domains/assessment (4) + api/v2 progress (3) + foxy page (2)
