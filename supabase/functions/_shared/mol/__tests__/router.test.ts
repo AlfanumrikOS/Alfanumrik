@@ -12,15 +12,15 @@ import type { TaskType } from '../types.ts'
 // scripts/gen-mol-matrix.mjs's task-type -> chain mapping and the router's
 // declared behaviour. A drift in either surface fails this test.
 const EXPECTED_PRIMARY: Record<TaskType, { provider: 'openai' | 'anthropic'; model: string }> = {
-  explanation: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
-  concept_explanation: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
-  step_by_step: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
-  reasoning: { provider: 'openai', model: MODEL_IDS.OPENAI_FULL_ID },
-  quiz_generation: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
-  evaluation: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
-  doubt_solving: { provider: 'openai', model: MODEL_IDS.OPENAI_FULL_ID },
-  ocr_extraction: { provider: 'openai', model: MODEL_IDS.OPENAI_FULL_ID },
-  grounding_check: { provider: 'openai', model: MODEL_IDS.OPENAI_MINI_ID },
+  explanation: { provider: 'anthropic', model: MODEL_IDS.ANTHROPIC_HAIKU_ID },
+  concept_explanation: { provider: 'anthropic', model: MODEL_IDS.ANTHROPIC_HAIKU_ID },
+  step_by_step: { provider: 'anthropic', model: MODEL_IDS.ANTHROPIC_HAIKU_ID },
+  reasoning: { provider: 'anthropic', model: MODEL_IDS.ANTHROPIC_SONNET_ID },
+  quiz_generation: { provider: 'anthropic', model: MODEL_IDS.ANTHROPIC_HAIKU_ID },
+  evaluation: { provider: 'anthropic', model: MODEL_IDS.ANTHROPIC_HAIKU_ID },
+  doubt_solving: { provider: 'anthropic', model: MODEL_IDS.ANTHROPIC_SONNET_ID },
+  ocr_extraction: { provider: 'anthropic', model: MODEL_IDS.ANTHROPIC_SONNET_ID },
+  grounding_check: { provider: 'anthropic', model: MODEL_IDS.ANTHROPIC_HAIKU_ID },
 }
 
 describe('generated-matrix parity (R3 consolidation)', () => {
@@ -43,29 +43,29 @@ describe('generated-matrix parity (R3 consolidation)', () => {
 
 describe('selectProviderChain', () => {
   beforeEach(() => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.1) // Ensures OpenAI is primary
+    vi.spyOn(Math, 'random').mockReturnValue(0.1) // Ensures Anthropic is primary (0.1 < 0.8)
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
-  it('routes explanation to openai primary', () => {
+  it('routes explanation to anthropic primary (CEO directive 2026-08-26)', () => {
     const chain = selectProviderChain('explanation', { hybrid_enabled: true, openai_default: false, weights: {} })
     expect(chain.passes.length).toBe(1)
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'openai', model: 'gpt-4o-mini' })
-    expect(chain.passes[0].chain[1]).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' })
+    expect(chain.passes[0].chain[1]).toEqual({ provider: 'openai', model: 'gpt-4o-mini' })
   })
 
-  it('routes reasoning to openai gpt-4o primary', () => {
+  it('routes reasoning to anthropic claude-sonnet primary', () => {
     const chain = selectProviderChain('reasoning', { hybrid_enabled: true, openai_default: false, weights: {} })
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'openai', model: 'gpt-4o' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-20250514' })
   })
 
   it('returns two passes for doubt_solving when hybrid enabled', () => {
     const chain = selectProviderChain('doubt_solving', { hybrid_enabled: true, openai_default: false, weights: {} })
     expect(chain.passes.length).toBe(2)
-    expect(chain.passes[0].chain[0].provider).toBe('openai')
-    expect(chain.passes[1].chain[0].provider).toBe('openai')
+    expect(chain.passes[0].chain[0].provider).toBe('anthropic')
+    expect(chain.passes[1].chain[0].provider).toBe('anthropic')
   })
 
   it('collapses doubt_solving to single pass when hybrid disabled', () => {
@@ -73,13 +73,14 @@ describe('selectProviderChain', () => {
     expect(chain.passes.length).toBe(1)
   })
 
-  it('uses gpt-4o as primary and gpt-4o-mini as fallback for doubt_solving non-hybrid', () => {
+  it('uses claude-sonnet as primary and claude-haiku as fallback for doubt_solving non-hybrid', () => {
     const chain = selectProviderChain('doubt_solving', { hybrid_enabled: false, openai_default: false, weights: {} })
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'openai', model: 'gpt-4o' })
-    expect(chain.passes[0].chain[1]).toEqual({ provider: 'openai', model: 'gpt-4o-mini' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-20250514' })
+    expect(chain.passes[0].chain[1]).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' })
   })
 
   it('forces openai primary when openai_default=true and task is step_by_step', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9) // Math.random >= w means openai wins
     const chain = selectProviderChain('step_by_step', { hybrid_enabled: true, openai_default: true, weights: {} })
     expect(chain.passes[0].chain[0].provider).toBe('openai')
   })
