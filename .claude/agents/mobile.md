@@ -56,7 +56,7 @@ The mobile app hardcodes values that MUST match the web. These are the known div
 The mobile app calls these backend surfaces:
 | Surface | Mobile Location | Web Owner |
 |---|---|---|
-| Supabase tables: students, chapters, topics, question_bank, quiz_attempts, chat_sessions, chat_messages, student_daily_usage, student_subscriptions, student_topic_progress | All repositories | architect (schema) |
+| Supabase tables: students, chapters, topics, question_bank, quiz_attempts, chat_sessions, foxy_chat_messages, student_daily_usage, student_subscriptions, student_topic_progress | All repositories | architect (schema) |
 | RPC: `get_dashboard_data`, `add_xp`, `increment_daily_usage` | dashboard_repository, quiz_repository | architect (schema), assessment (XP rules) |
 | Edge Function: `foxy-tutor` | chat_repository | ai-engineer |
 | REST: `/payments/create-order`, `/payments/verify` | subscription_repository | backend |

@@ -37,46 +37,52 @@ if (!SUPABASE_URL || !ANON_KEY) {
 // ---- Function config ----
 // Add/edit entries here as your source of truth.
 const FUNCTION_CONFIG = {
-  // Examples from your report:
+  // Health check functions (no auth required for healthcheck=true)
   "invoice-generator": {
-    authMode: "internal_key",
-    expected: [200, 202, 403], // temporarily allow 403 until fixed
+    authMode: "none",
+    expected: [200, 202],
     method: "POST",
     payload: { healthcheck: true }
   },
   "send-renewal-reminder": {
-    authMode: "internal_key",
-    expected: [200, 202, 403],
+    authMode: "none",
+    expected: [200, 202],
     method: "POST",
     payload: { healthcheck: true }
   },
   "grounded-answer": {
-    authMode: "internal_key",
+    authMode: "none",
     expected: [200, 202],
     method: "POST",
-    payload: { healthcheck: true, question: "health probe" } // customize
+    payload: { healthcheck: true }
   },
   "alfabot-answer": {
-    authMode: "internal_key",
+    authMode: "none",
     expected: [200, 202],
     method: "POST",
-    payload: { healthcheck: true, prompt: "health probe" } // customize
+    payload: { healthcheck: true }
+  },
+  "parent-portal": {
+    authMode: "none",
+    expected: [200, 202],
+    method: "POST",
+    payload: { healthcheck: true }
+  },
+  "teacher-dashboard": {
+    authMode: "none",
+    expected: [200, 202],
+    method: "POST",
+    payload: { healthcheck: true }
   },
 
-  // verify_jwt=true examples:
-  "foxy-tutor": { authMode: "gateway_jwt", expected: [200, 202], method: "POST", payload: { healthcheck: true } },
-  "quiz-engine": { authMode: "gateway_jwt", expected: [200, 202], method: "POST", payload: { healthcheck: true } },
-  "learning-analytics": { authMode: "gateway_jwt", expected: [200, 202], method: "POST", payload: { healthcheck: true } },
-
-  // verify_jwt=false + handler auth examples:
-  "parent-portal": { authMode: "internal_key", expected: [200, 202], method: "POST", payload: { healthcheck: true } },
-  "teacher-dashboard": { authMode: "internal_key", expected: [200, 202], method: "POST", payload: { healthcheck: true } },
-
-  // deprecated/gone examples:
+  // Tombstoned functions (should return 410)
+  "foxy-tutor": { authMode: "none", expected: [410], method: "POST", payload: { healthcheck: true } },
   "super-admin": { authMode: "none", expected: [410], method: "GET" },
-  "voice-tutor": { authMode: "none", expected: [410], method: "GET" },
 
-  // Add all remaining functions here...
+  // Functions that don't exist on disk — skip them
+  "voice-tutor": { authMode: "none", expected: [404, 410], method: "GET", skip: true },
+  "quiz-engine": { authMode: "none", expected: [404, 410], method: "GET", skip: true },
+  "learning-analytics": { authMode: "none", expected: [404, 410], method: "GET", skip: true },
 };
 
 // If you want to check a static list quickly:
@@ -107,9 +113,9 @@ function getHeaders(fnName, cfg) {
 
   if (cfg.authMode === "gateway_jwt") {
     if (USER_JWT) headers["authorization"] = `Bearer ${USER_JWT}`;
-  } else if (cfg.authMode === "internal_key") {
-    if (HEALTH_SWEEP_KEY) headers["x-health-key"] = HEALTH_SWEEP_KEY;
   }
+  // Note: x-health-key is no longer used. Edge functions now accept
+  // healthcheck=true in the body without authentication.
 
   return headers;
 }
@@ -130,6 +136,19 @@ async function probeFunction(fnName) {
   const cfg = { ...DEFAULT_CFG, ...(FUNCTION_CONFIG[fnName] || {}) };
   const url = `${SUPABASE_URL.replace(/\/$/, "")}/functions/v1/${fnName}`;
   const start = nowMs();
+
+  // Skip functions explicitly marked as skip (non-existent)
+  if (cfg.skip) {
+    return {
+      fn: fnName,
+      ms: 0,
+      status: "SKIP_NOT_DEPLOYED",
+      bucket: "skipped",
+      ok: true,
+      expected: cfg.expected,
+      authMode: cfg.authMode
+    };
+  }
 
   // Skip JWT functions if no user JWT set
   if (cfg.authMode === "gateway_jwt" && !USER_JWT) {

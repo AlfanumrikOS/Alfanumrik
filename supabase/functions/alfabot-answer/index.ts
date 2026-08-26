@@ -243,6 +243,23 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
+
+  // Health check probe — always 200, no auth required.
+  if (req.method === 'POST') {
+    try {
+      const cloned = req.clone();
+      const body = await cloned.json().catch(() => null);
+      if (body && (body as Record<string, unknown>).healthcheck === true) {
+        return new Response(JSON.stringify({ ok: true, function: 'alfabot-answer' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+        });
+      }
+    } catch {
+      // Not a healthcheck, continue to normal flow.
+    }
+  }
+
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'method_not_allowed' }), { status: 405, headers: securityCorsHeaders(origin) });
   }

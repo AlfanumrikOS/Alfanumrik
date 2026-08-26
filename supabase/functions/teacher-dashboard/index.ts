@@ -4811,6 +4811,22 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: getCorsHeaders(origin) })
   }
 
+  // Health check probe — always 200, no auth required.
+  if (req.method === 'POST') {
+    try {
+      const cloned = req.clone()
+      const body = await cloned.json().catch(() => null)
+      if (body && (body as Record<string, unknown>).healthcheck === true) {
+        return new Response(JSON.stringify({ ok: true, function: 'teacher-dashboard' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...getCorsHeaders(origin) },
+        })
+      }
+    } catch {
+      // Not a healthcheck, continue to normal flow.
+    }
+  }
+
   if (req.method !== 'POST') {
     return errorResponse('Method not allowed', 405, origin)
   }

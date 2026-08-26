@@ -4,7 +4,7 @@ Six-step pipeline mirroring TS (skipping the Claude call - template path
 is the Python primary, identical to what students see when Claude fails
 on the TS side):
   1. Bearer JWT - guardian verification.
-  2. Validate parent-student link in parent_student_links.
+  2. Validate parent-student link in guardian_student_links.
   3. Fetch student name + week-window data (quiz, foxy, profile, mastery).
   4. Compute WeeklyStats (pure).
   5. Build report from bilingual template (Phase 2.5 will add MoL variant).

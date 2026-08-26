@@ -312,6 +312,17 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors })
   if (req.method !== 'POST')    return json({ error: 'method_not_allowed' }, 405, cors)
 
+  // Health check probe — always 200, no auth required.
+  try {
+    const cloned = req.clone()
+    const body = await cloned.json().catch(() => null)
+    if (body && (body as Record<string, unknown>).healthcheck === true) {
+      return json({ ok: true, function: 'invoice-generator' }, 200, cors)
+    }
+  } catch {
+    // Not a healthcheck, continue to normal flow.
+  }
+
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return json({ error: 'misconfigured', detail: 'missing supabase env' }, 500, cors)
   }

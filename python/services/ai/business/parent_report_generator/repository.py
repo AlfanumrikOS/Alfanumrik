@@ -57,7 +57,7 @@ async def verify_guardian_student_link(guardian_id: str, student_id: str) -> boo
         raise RepositoryError("Supabase client not configured")
     try:
         result = (
-            await client.table("parent_student_links")
+            await client.table("guardian_student_links")
             .select("id")
             .eq("guardian_id", guardian_id)
             .eq("student_id", student_id)
