@@ -4785,3 +4785,31 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
     padding: 24px;
   }
 }
+
+
+/* ── Subject Roadmaps — horizontal scroll on mobile ─────────── */
+.roadmap-subject-card {
+  scroll-snap-align: start;
+}
+
+@media (max-width: 767px) {
+  [aria-label="Subject roadmaps"] > div:first-child {
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  [aria-label="Subject roadmaps"] > div:first-child::-webkit-scrollbar {
+    display: none;
+  }
+
+  [aria-label="Subject roadmaps"] .roadmap-subject-card {
+    min-width: 260px;
+    flex-shrink: 0;
+  }
+}

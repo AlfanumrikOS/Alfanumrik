@@ -25,62 +25,62 @@ export const MODEL_IDS = {
 export const GENERATED_BASE_MATRIX: Record<TaskType, Pass[]> = {
   explanation: [
     { role: "single", chain: [
-      { provider: "openai", model: "gpt-4o-mini" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "openai", model: "gpt-4o-mini" },
     ] },
   ],
   concept_explanation: [
     { role: "single", chain: [
-      { provider: "openai", model: "gpt-4o-mini" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "openai", model: "gpt-4o-mini" },
     ] },
   ],
   step_by_step: [
     { role: "single", chain: [
-      { provider: "openai", model: "gpt-4o-mini" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "openai", model: "gpt-4o-mini" },
     ] },
   ],
   reasoning: [
     { role: "single", chain: [
-      { provider: "openai", model: "gpt-4o" },
       { provider: "anthropic", model: "claude-sonnet-4-20250514" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "openai", model: "gpt-4o" },
     ] },
   ],
   quiz_generation: [
     { role: "single", chain: [
-      { provider: "openai", model: "gpt-4o-mini" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "openai", model: "gpt-4o-mini" },
     ] },
   ],
   evaluation: [
     { role: "single", chain: [
-      { provider: "openai", model: "gpt-4o-mini" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "openai", model: "gpt-4o-mini" },
     ] },
   ],
   doubt_solving: [
     { role: "reason", chain: [
-      { provider: "openai", model: "gpt-4o" },
       { provider: "anthropic", model: "claude-sonnet-4-20250514" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "openai", model: "gpt-4o" },
     ] },
     { role: "simplify", chain: [
-      { provider: "openai", model: "gpt-4o-mini" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "openai", model: "gpt-4o-mini" },
     ] },
   ],
   ocr_extraction: [
     { role: "vision", chain: [
-      { provider: "openai", model: "gpt-4o" },
       { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      { provider: "openai", model: "gpt-4o" },
     ] },
   ],
   grounding_check: [
     { role: "single", chain: [
-      { provider: "openai", model: "gpt-4o-mini" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      { provider: "openai", model: "gpt-4o-mini" },
     ] },
   ],
 };

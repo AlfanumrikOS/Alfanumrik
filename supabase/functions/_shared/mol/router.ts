@@ -83,16 +83,16 @@ export function selectProviderChain(task: TaskType, opts: RouterOptions): Select
       
       if (Math.random() < w) {
         passes = passes.map((p) => {
-          const openaiTarget = p.chain.find((t) => t.provider === 'openai')
-          if (!openaiTarget) return p
-          const reordered = [openaiTarget, ...p.chain.filter((t) => t !== openaiTarget)]
+          const anthropicTarget = p.chain.find((t) => t.provider === 'anthropic')
+          if (!anthropicTarget) return p
+          const reordered = [anthropicTarget, ...p.chain.filter((t) => t !== anthropicTarget)]
           return { ...p, chain: reordered }
         })
       } else {
         passes = passes.map((p) => {
-          const anthropicTarget = p.chain.find((t) => t.provider === 'anthropic')
-          if (!anthropicTarget) return p
-          const reordered = [anthropicTarget, ...p.chain.filter((t) => t !== anthropicTarget)]
+          const openaiTarget = p.chain.find((t) => t.provider === 'openai')
+          if (!openaiTarget) return p
+          const reordered = [openaiTarget, ...p.chain.filter((t) => t !== openaiTarget)]
           return { ...p, chain: reordered }
         })
       }
@@ -108,15 +108,15 @@ export function selectProviderChain(task: TaskType, opts: RouterOptions): Select
   // Clone so we never mutate BASE_MATRIX
   let passes: Pass[] = BASE_MATRIX[task].map((p) => ({ role: p.role, chain: [...p.chain] }))
 
-  // Hybrid toggle
+  // Hybrid toggle — Anthropic primary (CEO directive 2026-08-26)
   if (task === 'doubt_solving' && !opts.hybrid_enabled) {
     passes = [{
       role: 'single',
       chain: [
-        { provider: 'openai', model: GPT_FULL },
-        { provider: 'openai', model: GPT_MINI },
         { provider: 'anthropic', model: SONNET },
         { provider: 'anthropic', model: HAIKU },
+        { provider: 'openai', model: GPT_FULL },
+        { provider: 'openai', model: GPT_MINI },
       ],
     }]
   }
@@ -132,24 +132,24 @@ export function selectProviderChain(task: TaskType, opts: RouterOptions): Select
     }))
   }
 
-  // Per-task weight: probabilistic routing
+  // Per-task weight: probabilistic routing — Anthropic primary (CEO directive 2026-08-26)
   let w = opts.weights[task]
   if (typeof w !== 'number') {
     w = 0.8
   }
-  
+
   if (Math.random() < w) {
-    passes = passes.map((p) => {
-      const openaiTarget = p.chain.find((t) => t.provider === 'openai')
-      if (!openaiTarget) return p
-      const reordered = [openaiTarget, ...p.chain.filter((t) => t !== openaiTarget)]
-      return { ...p, chain: reordered }
-    })
-  } else {
     passes = passes.map((p) => {
       const anthropicTarget = p.chain.find((t) => t.provider === 'anthropic')
       if (!anthropicTarget) return p
       const reordered = [anthropicTarget, ...p.chain.filter((t) => t !== anthropicTarget)]
+      return { ...p, chain: reordered }
+    })
+  } else {
+    passes = passes.map((p) => {
+      const openaiTarget = p.chain.find((t) => t.provider === 'openai')
+      if (!openaiTarget) return p
+      const reordered = [openaiTarget, ...p.chain.filter((t) => t !== openaiTarget)]
       return { ...p, chain: reordered }
     })
   }

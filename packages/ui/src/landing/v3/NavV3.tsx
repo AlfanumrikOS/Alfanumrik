@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useWelcomeV2 } from '../WelcomeV2Context';
 import { track } from '@alfanumrik/lib/posthog/client';
@@ -46,6 +47,7 @@ export default function NavV3({
   links?: readonly NavV3Link[];
 } = {}) {
   const { isHi, toggleLang, t } = useWelcomeV2();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <header className={s.nav}>
@@ -76,6 +78,10 @@ export default function NavV3({
             ))}
           </ul>
         </nav>
+
+        <button type="button" className={s.hamburger} onClick={() => setMenuOpen(true)} aria-label="Menu">
+          <svg className={s.icon} viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
 
         <div className={s.navActions}>
           <button
@@ -125,6 +131,44 @@ export default function NavV3({
           </Link>
         </div>
       </div>
+      {menuOpen && (
+        <div className={s.mobileOverlay} role="dialog" aria-label="Menu">
+          <div className={s.mobileOverlayBackdrop} onClick={() => setMenuOpen(false)} />
+          <div className={s.mobilePanel}>
+            <div className={s.mobilePanelHeader}>
+              <Link href="/" className={s.navLogo} onClick={() => setMenuOpen(false)}>
+                <FoxyMascot size={28} />
+                <strong>Alfanumrik</strong>
+              </Link>
+              <button type="button" className={s.mobileClose} onClick={() => setMenuOpen(false)} aria-label="Close">
+                <svg className={s.icon} viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <nav>
+              <ul className={s.mobileLinks}>
+                {links.map((link) => (
+                  <li key={link.href}>
+                    <a href={link.href} onClick={() => { track('landing_nav_click', { source: 'mobile_menu', destination: link.href, label: t(link.en, link.hi), active_role: V3_ACTIVE_ROLE }); setMenuOpen(false); }}>
+                      {t(link.en, link.hi)}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+            <div className={s.mobileActions}>
+              <button type="button" className={s.langToggle} onClick={toggleLang} aria-pressed={isHi}>
+                {isHi ? <><span lang="hi">हिं</span> · EN</> : <>EN · <span lang="hi">हिं</span></>}
+              </button>
+              <Link href="/login" className={`${s.btn} ${s.btnGhost}`} onClick={() => setMenuOpen(false)}>
+                {t('Log in', 'लॉग इन')}
+              </Link>
+              <Link href="/login" className={`${s.btn} ${s.btnPrimary}`} onClick={() => setMenuOpen(false)}>
+                {t('Start free', 'मुफ्त शुरू करें')}
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

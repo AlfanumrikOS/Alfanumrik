@@ -38,16 +38,10 @@ describe('MOL integration', () => {
       USD_TO_INR: '83',
     })
     // ── Determinism pin (REG: MOL probabilistic router) ──────────────────────
-    // The router (`router.ts`) does an 80/20 probabilistic split via
-    // `Math.random() < w` (default w = 0.8): ~80% of calls keep OpenAI as the
-    // primary, ~20% reorder the chain to put Anthropic first. That split is the
-    // INTENDED production behaviour (commit f520f708 "route 80% to OpenAI") and
-    // must not change. But it makes provider-order assertions flaky: roughly
-    // 1-in-5 runs these tests would see Anthropic chosen first, failing the
-    // "routes to openai" assertion and the "openaiCalls === 2 / fallback_count
-    // >= 1" assertion (OpenAI is never called when Anthropic is primary). We
-    // pin Math.random() to 0 so the router deterministically keeps OpenAI
-    // primary, exercising the documented happy-path + 503-fallback chain.
+    // CEO directive 2026-08-26: Anthropic is now primary. The router does
+    // `Math.random() < w` (default w = 0.8): ~80% Anthropic primary, ~20% OpenAI.
+    // We pin Math.random() to 0 in beforeEach for deterministic Anthropic-primary.
+    // Individual tests override this mock when they need OpenAI as primary.
     vi.spyOn(Math, 'random').mockReturnValue(0)
     // Reset module caches (force re-import below)
     vi.resetModules()
@@ -63,7 +57,8 @@ describe('MOL integration', () => {
     vi.restoreAllMocks()
   })
 
-  it('routes explanation → openai gpt-4o-mini and computes cost', async () => {
+  it('routes explanation → anthropic claude-haiku and computes cost (CEO directive 2026-08-26)', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9) // >= 0.8 means openai wins
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/feature_flags')) return Promise.resolve(mockFlags([]))
       if (url.includes('mol_routing_weights')) return Promise.resolve(new Response('[]', { status: 200 }))
@@ -86,6 +81,7 @@ describe('MOL integration', () => {
   })
 
   it('falls back to Anthropic when OpenAI returns 503', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9) // >= 0.8 means openai wins
     let openaiCalls = 0
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/feature_flags')) return Promise.resolve(mockFlags([]))
@@ -113,6 +109,7 @@ describe('MOL integration', () => {
   })
 
   it('uses hybrid mode for doubt_solving when flag enabled', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9) // >= 0.8 means openai wins; tests hybrid pass-2 simplify
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/feature_flags')) {
         return Promise.resolve(mockFlags([

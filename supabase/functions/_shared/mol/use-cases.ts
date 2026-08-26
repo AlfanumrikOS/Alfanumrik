@@ -1,4 +1,8 @@
 // supabase/functions/_shared/mol/use-cases.ts
+//
+// Anthropic primary, OpenAI secondary (CEO directive 2026-08-26).
+// Exception: o3-mini / o1 reasoning models have no Claude equivalent —
+// those use-cases keep OpenAI primary with Claude fallback.
 
 import type { TaskType, StudentContext } from './types.ts'
 
@@ -19,7 +23,7 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
     primary: { provider: 'openai', model: 'o3-mini' },
     fallbacks: [
       { provider: 'openai', model: 'o1' },
-      { provider: 'openai', model: 'gpt-4o' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     ],
   },
   physics_derivations: {
@@ -27,7 +31,7 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
     primary: { provider: 'openai', model: 'o3-mini' },
     fallbacks: [
       { provider: 'openai', model: 'o1' },
-      { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     ],
   },
   numerical_problem_solving: {
@@ -35,68 +39,69 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
     primary: { provider: 'openai', model: 'o3-mini' },
     fallbacks: [
       { provider: 'openai', model: 'o1' },
-      { provider: 'openai', model: 'gpt-4o' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     ],
   },
   fast_practice_solving: {
     name: 'Fast Practice Solving',
-    primary: { provider: 'openai', model: 'gpt-4o-mini' },
+    primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+      { provider: 'openai', model: 'gpt-4o-mini' },
     ],
   },
   doubt_solving_students: {
     name: 'Doubt Solving for Students',
-    primary: { provider: 'openai', model: 'gpt-4o' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
-      { provider: 'openai', model: 'gpt-4o-mini' },
+      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+      { provider: 'openai', model: 'gpt-4o' },
     ],
   },
   content_generation_coaching: {
     name: 'Content Generation for Coaching',
     primary: { provider: 'openai', model: 'o1' },
     fallbacks: [
+      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
       { provider: 'openai', model: 'gpt-4o' },
     ],
   },
   deep_theory_explanation: {
     name: 'Deep Theory Explanation',
-    primary: { provider: 'openai', model: 'gpt-4o' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-3-opus-20240229' },
-      { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
+      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+      { provider: 'openai', model: 'gpt-4o' },
     ],
   },
   student_tutoring: {
     name: 'Student Tutoring',
-    primary: { provider: 'openai', model: 'gpt-4o' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+      { provider: 'openai', model: 'gpt-4o' },
     ],
   },
   creating_question_banks: {
     name: 'Creating Question Banks',
-    primary: { provider: 'openai', model: 'gpt-4o' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-3-opus-20240229' },
-      { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
+      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+      { provider: 'openai', model: 'gpt-4o' },
     ],
   },
   generating_hints: {
     name: 'Generating Hints',
-    primary: { provider: 'openai', model: 'gpt-4o-mini' },
+    primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
-      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+      { provider: 'openai', model: 'gpt-4o-mini' },
     ],
   },
   long_pdf_analysis: {
     name: 'Long PDF/Book Analysis',
-    primary: { provider: 'openai', model: 'gpt-4o' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-3-opus-20240229' },
+      { provider: 'openai', model: 'gpt-4o' },
     ],
   },
 }
@@ -155,7 +160,6 @@ export function determineUseCase(
 
   // 5. Creating question banks
   if (task === 'quiz_generation') {
-    // If there's no student_id, or student_id matches anon/coaching pattern
     const isCoaching = !context?.student_id || context.student_id.startsWith('anon')
     if (isCoaching) {
       return 'creating_question_banks'
