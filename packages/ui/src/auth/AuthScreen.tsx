@@ -19,13 +19,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@alfanumrik/lib/constants';
 // eslint-disable-next-line alfanumrik/no-raw-subject-imports -- AuthScreen is pre-login: no session yet, so neither useAllowedSubjects (student) nor useTeacherAllowedSubjects can run. Static SUBJECT_META is the correct data source for signup subject selection.
 import { SUBJECT_META } from '@alfanumrik/lib/constants';
 import { validatePassword } from '@alfanumrik/lib/sanitize';
-import { cn } from '@alfanumrik/lib/utils';
-import dynamic from 'next/dynamic';
 
-const GoogleOAuthButton = dynamic(
-  () => import('./GoogleOAuthButton').then((m) => m.GoogleOAuthButton),
-  { ssr: false },
-);
 
 const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
@@ -146,8 +140,6 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     else if (e.key === 'End') next = tabs.length - 1;
     tabs[next]?.focus();
   };
-
-  // Google OAuth — lazy-loaded via dynamic import to reduce /login bundle size
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -454,15 +446,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             </div>
           )}
 
-                    {/* Google OAuth button — lazy-loaded */}
-          {(mode === 'login' || (mode === 'signup' && signupStep === 'basic')) && (
-            <GoogleOAuthButton
-              isHi={isHi}
-              loading={loading}
-              onError={setError}
-              onLoading={setLoading}
-            />
-          )}
+
 
           <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' && signupStep === 'basic' ? (e) => { e.preventDefault(); setError(''); if (!name.trim()) { setError('Please enter your name'); return; } const pw = validatePassword(password); if (!pw.valid) { setError(pw.error); return; } setSignupStep('details'); } : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3" aria-describedby={error ? 'auth-error' : undefined}>
             {mode === 'check-email' && (
@@ -501,17 +485,17 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             {mode === 'signup' && signupStep === 'details' && roleTab === 'student' && (
               <>
                 <div className="flex gap-2">
-                  <select id="auth-grade" name="grade" value={grade} onChange={e => setGrade(e.target.value)} className={cn(inputCls, "flex-1 cursor-pointer")} aria-label={t('Select your grade', 'अपनी कक्षा चुनें')}>
+                  <select id="auth-grade" name="grade" value={grade} onChange={e => setGrade(e.target.value)} className={`${inputCls} flex-1 cursor-pointer`} aria-label={t('Select your grade', 'अपनी कक्षा चुनें')}>
                     {AUTH_GRADES.map(g => <option key={g} value={g}>{t('Grade', 'कक्षा')} {g}</option>)}
                   </select>
-                  <select id="auth-board" name="board" value={board} onChange={e => setBoard(e.target.value)} className={cn(inputCls, "flex-1 cursor-pointer")} aria-label={t('Select your board', 'अपना बोर्ड चुनें')}>
+                  <select id="auth-board" name="board" value={board} onChange={e => setBoard(e.target.value)} className={`${inputCls} flex-1 cursor-pointer`} aria-label={t('Select your board', 'अपना बोर्ड चुनें')}>
                     {AUTH_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold mb-1.5" htmlFor="age-range" style={{ color: 'var(--text-2)' }}>{t('Age Range', 'आयु सीमा')}</label>
-                  <select id="age-range" name="age-range" value={studentAgeRange} onChange={e => { setStudentAgeRange(e.target.value as '13-18' | '10-12'); if (e.target.value === '13-18') { setParentEmail(''); setParentConsent(false); } }} className={cn(inputCls, "cursor-pointer")}>
+                  <select id="age-range" name="age-range" value={studentAgeRange} onChange={e => { setStudentAgeRange(e.target.value as '13-18' | '10-12'); if (e.target.value === '13-18') { setParentEmail(''); setParentConsent(false); } }} className={`${inputCls} cursor-pointer`}>
                     <option value="13-18">{t('13 – 18 years', '13 – 18 वर्ष')}</option>
                     <option value="10-12">{t('10 – 12 years', '10 – 12 वर्ष')}</option>
                   </select>
@@ -577,13 +561,13 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               <>
                 <input id="auth-inst-school" name="school-name" type="text" placeholder={t('School Name *', 'स्कूल का नाम *')} value={instSchoolName} onChange={e => setInstSchoolName(e.target.value)} className={inputCls} required aria-label={t('School name', 'स्कूल का नाम')} autoComplete="organization" />
                 <div className="flex gap-2">
-                  <input id="auth-inst-city" name="city" type="text" placeholder={t('City *', 'शहर *')} value={instCity} onChange={e => setInstCity(e.target.value)} className={cn(inputCls, "flex-1")} required aria-label={t('City', 'शहर')} autoComplete="address-level2" />
-                  <select id="auth-inst-state" name="state" value={instState} onChange={e => setInstState(e.target.value)} className={cn(inputCls, "flex-1 cursor-pointer")} aria-label={t('State', 'राज्य')} required>
+                  <input id="auth-inst-city" name="city" type="text" placeholder={t('City *', 'शहर *')} value={instCity} onChange={e => setInstCity(e.target.value)} className={`${inputCls} flex-1`} required aria-label={t('City', 'शहर')} autoComplete="address-level2" />
+                  <select id="auth-inst-state" name="state" value={instState} onChange={e => setInstState(e.target.value)} className={`${inputCls} flex-1 cursor-pointer`} aria-label={t('State', 'राज्य')} required>
                     <option value="">{t('State *', 'राज्य *')}</option>
                     {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <select id="auth-inst-board" name="board-affiliation" value={instBoard} onChange={e => setInstBoard(e.target.value)} className={cn(inputCls, "cursor-pointer")} aria-label={t('Board affiliation', 'बोर्ड संबद्धता')}>
+                <select id="auth-inst-board" name="board-affiliation" value={instBoard} onChange={e => setInstBoard(e.target.value)} className={`${inputCls} cursor-pointer`} aria-label={t('Board affiliation', 'बोर्ड संबद्धता')}>
                   {SCHOOL_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
                 <input id="auth-principal-name" name="principal-name" type="text" placeholder={t('Principal Name (optional)', 'प्रधानाचार्य का नाम (वैकल्पिक)')} value={principalName} onChange={e => setPrincipalName(e.target.value)} className={inputCls} aria-label={t('Principal name', 'प्रधानाचार्य का नाम')} autoComplete="name" />
