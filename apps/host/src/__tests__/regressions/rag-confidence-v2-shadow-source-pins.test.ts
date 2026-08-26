@@ -180,8 +180,20 @@ const SHADOW_TOUCHING_FILES = [
  */
 const SHADOW_OFFLINE_TOOLING = ['scripts/rag/replay-cosine-distribution.ts'];
 
+/**
+ * AUTO-GENERATED files that mirror the live schema and always include column
+ * names like `confidence_v2` until the column is actually DROPped from the DB.
+ * These are excluded from the exact-equality mentioning check but remain under
+ * the shipped source root (unlike SHADOW_OFFLINE_TOOLING).
+ */
+const SHADOW_AUTO_GENERATED = ['apps/host/src/types/database.types.ts'];
+
 // Every file permitted to mention the shadow identifier at all.
-const SHADOW_MENTIONING_FILES = [...SHADOW_TOUCHING_FILES, ...SHADOW_OFFLINE_TOOLING];
+const SHADOW_MENTIONING_FILES = [
+  ...SHADOW_TOUCHING_FILES,
+  ...SHADOW_OFFLINE_TOOLING,
+  ...SHADOW_AUTO_GENERATED,
+];
 
 // ───────────────────────────────────────────────────────────────────────────
 // The comparison detector. Module-scoped and exported so the table-driven
