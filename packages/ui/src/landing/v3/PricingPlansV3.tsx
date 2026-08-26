@@ -211,8 +211,8 @@ export default function PricingPlansV3({ cycle }: { cycle: BillingCycle }) {
           </div>
           <p className={s.valueCompareNote}>
             {t(
-              'All subjects, all features, one subscription.',
-              'सभी विषय, सभी सुविधाएँ, एक सब्सक्रिप्शन।',
+              'Maths & Science, all features, one subscription.',
+              'गणित और विज्ञान, सभी सुविधाएँ, एक सब्सक्रिप्शन।',
             )}
           </p>
         </div>
