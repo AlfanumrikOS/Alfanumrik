@@ -79,18 +79,19 @@ function buildMatrix(ids) {
   const GPT_MINI = ids.OPENAI_MINI_ID;
   const GPT_FULL = ids.OPENAI_FULL_ID;
 
+  // Anthropic primary, OpenAI fallback (CEO directive 2026-08-26).
   const smallChain = [
-    { provider: 'openai', model: GPT_MINI },
     { provider: 'anthropic', model: HAIKU },
+    { provider: 'openai', model: GPT_MINI },
   ];
   const largeChain = [
-    { provider: 'openai', model: GPT_FULL },
     { provider: 'anthropic', model: SONNET },
     { provider: 'anthropic', model: HAIKU },
+    { provider: 'openai', model: GPT_FULL },
   ];
   const visionChain = [
-    { provider: 'openai', model: GPT_FULL },
     { provider: 'anthropic', model: SONNET },
+    { provider: 'openai', model: GPT_FULL },
   ];
 
   return {
