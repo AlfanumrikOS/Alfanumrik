@@ -58,6 +58,7 @@ import { useExamSchedule } from '@alfanumrik/lib/exams/use-exam-schedule';
 import { deepLinkToHref, todayCopy } from '@alfanumrik/lib/today/copy';
 import { track } from '@alfanumrik/lib/analytics';
 import { EmptyState, Skeleton } from '@alfanumrik/ui/ui/primitives';
+import DashboardGreeting from '@alfanumrik/ui/dashboard/os/DashboardGreeting';
 import { Touchable } from '@alfanumrik/ui/responsive/Touchable';
 
 // The loaded-state presentation is split out of first paint — the page chrome
@@ -404,6 +405,12 @@ export default function TodayPage() {
   //    TodayHomeV2 shows the notice rather than silently serving an old plan.
   return (
     <main className="app-container py-6" data-testid="today-loaded">
+      <DashboardGreeting
+        studentName={student?.name ?? ''}
+        streak={snapshot?.current_streak ?? 0}
+        totalXp={snapshot?.total_xp ?? 0}
+        isHi={isHi}
+      />
       <TodayHomeV2
         data={data}
         subjects={subjects}

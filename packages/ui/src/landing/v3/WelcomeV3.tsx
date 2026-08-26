@@ -6,7 +6,7 @@ import { WelcomeV2Provider, useWelcomeV2 } from '../WelcomeV2Context';
 import { THEME_BOOTSTRAP_SCRIPT } from '../theme-bootstrap';
 import NavV3 from './NavV3';
 import HeroV3 from './HeroV3';
-import TrustStripV3 from './TrustStripV3';
+import TrustStripV3, { TrustStats } from './TrustStripV3';
 import FeaturesV3 from './FeaturesV3';
 import HowFoxyThinksV3 from './HowFoxyThinksV3';
 import LadderV3 from './LadderV3';
@@ -88,6 +88,7 @@ function ThemedShell() {
       <main>
         <HeroV3 />
         <TrustStripV3 />
+        <TrustStats />
         <FeaturesV3 />
         <HowFoxyThinksV3 />
         <LadderV3 />

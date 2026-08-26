@@ -174,6 +174,49 @@ export default function PricingPlansV3({ cycle }: { cycle: BillingCycle }) {
         {t('Plans', 'योजनाएँ')}
       </h2>
       <div className={s.wrap} ref={revealRef as React.RefObject<HTMLDivElement>}>
+        {/* Value comparison — anchors the price to real alternatives */}
+        <div className={`${s.valueCompare} ${s.revealUp}`} data-reveal>
+          <h3 className={s.valueCompareTitle}>
+            {t('What ₹500/month replaces', '₹500/माह में क्या बदलता है')}
+          </h3>
+          <div className={s.valueCompareGrid}>
+            <div className={s.valueCompareItem}>
+              <span className={s.valueCompareIcon}>👩‍🏫</span>
+              <div>
+                <p className={s.valueCompareLabel}>{t('One tutoring session', 'एक ट्यूटरिंग सत्र')}</p>
+                <p className={s.valueComparePrice}>₹300–500</p>
+              </div>
+            </div>
+            <div className={s.valueCompareItem}>
+              <span className={s.valueCompareIcon}>📖</span>
+              <div>
+                <p className={s.valueCompareLabel}>{t('NCERT guide book', 'NCERT गाइड बुक')}</p>
+                <p className={s.valueComparePrice}>₹200–400</p>
+              </div>
+            </div>
+            <div className={s.valueCompareItem}>
+              <span className={s.valueCompareIcon}>📱</span>
+              <div>
+                <p className={s.valueCompareLabel}>{t('Exam prep app', 'एग्ज़ाम प्रेप ऐप')}</p>
+                <p className={s.valueComparePrice}>₹200–300</p>
+              </div>
+            </div>
+            <div className={`${s.valueCompareItem} ${s.valueCompareHighlight}`}>
+              <span className={s.valueCompareIcon}>🦊</span>
+              <div>
+                <p className={s.valueCompareLabel}>{t('Alfanumrik Pro', 'Alfanumrik प्रो')}</p>
+                <p className={s.valueComparePrice}>₹149{t('/mo', '/माह')}</p>
+              </div>
+            </div>
+          </div>
+          <p className={s.valueCompareNote}>
+            {t(
+              'All subjects, all features, one subscription.',
+              'सभी विषय, सभी सुविधाएँ, एक सब्सक्रिप्शन।',
+            )}
+          </p>
+        </div>
+
         <div className={s.pricingGrid}>
           {PLANS.map((plan) => {
             const price = plan.code ? PRICING[plan.code] : null;

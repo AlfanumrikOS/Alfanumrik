@@ -19,6 +19,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@alfanumrik/lib/constants';
 // eslint-disable-next-line alfanumrik/no-raw-subject-imports -- AuthScreen is pre-login: no session yet, so neither useAllowedSubjects (student) nor useTeacherAllowedSubjects can run. Static SUBJECT_META is the correct data source for signup subject selection.
 import { SUBJECT_META } from '@alfanumrik/lib/constants';
 import { validatePassword } from '@alfanumrik/lib/sanitize';
+import { cn } from '@alfanumrik/lib/utils';
 
 const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
@@ -59,6 +60,8 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
   const t = (en: string, hi: string) => (isHi ? hi : en);
 
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'check-email'>('login');
+  // Progressive disclosure: Step 1 = basic info, Step 2 = role details
+  const [signupStep, setSignupStep] = useState<'basic' | 'details'>('basic');
   const [roleTab, setRoleTab] = useState<'student' | 'teacher' | 'parent' | 'institution_admin'>(initialRole);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -136,6 +139,21 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     else if (e.key === 'Home') next = 0;
     else if (e.key === 'End') next = tabs.length - 1;
     tabs[next]?.focus();
+  };
+
+  // Google OAuth
+  const handleGoogleAuth = async () => {
+    setError(''); setLoading(true);
+    try {
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin + '/auth/callback?type=login' },
+      });
+      if (authError) { setError(authError.message); setLoading(false); }
+    } catch {
+      setError(t('Connection error. Please try again.', 'कनेक्शन में समस्या। कृपया फिर से प्रयास करें।'));
+      setLoading(false);
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -307,20 +325,13 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     } catch { setError(t('Connection error.', 'कनेक्शन में समस्या।')); setLoading(false); }
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '12px 16px', borderRadius: 12,
-    border: '1.5px solid var(--border)', background: 'var(--surface-2)',
-    fontSize: 14, outline: 'none', fontFamily: 'var(--font-body)',
-    color: 'var(--text-1)',
-  };
+  // Design-system token classes (replaces inline inputStyle)
+  const inputCls = 'w-full px-4 py-3 rounded-xl border-[1.5px] border-surface-3 bg-surface-2 text-sm text-foreground outline-none transition-colors duration-150 placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/10';
 
-  const chipStyle = (selected: boolean, color: string): React.CSSProperties => ({
-    padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-    border: `1.5px solid ${selected ? color : 'var(--border)'}`,
-    background: selected ? `${color}18` : 'var(--surface-2)',
-    color: selected ? color : 'var(--text-3)',
-    cursor: 'pointer', transition: 'all 0.15s ease',
-  });
+  // Chip class helper (replaces inline chipStyle)
+  const chipCls = (selected: boolean, color: string) =>
+    'px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all duration-150 ' +
+    (selected ? 'border-[1.5px]' : 'border-[1.5px] border-surface-3 bg-surface-2 text-muted-foreground hover:border-surface-3');
 
   const subtitle = roleTab === 'teacher'
     ? t('Empower your classroom with AI', 'AI के साथ अपनी कक्षा को सशक्त बनाएं')
@@ -338,13 +349,8 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
         ? t('Register Your School', 'अपने स्कूल को पंजीकृत करें')
         : t('Start Learning Now', 'अभी सीखना शुरू करें');
 
-  const buttonGradient = roleTab === 'teacher'
-    ? 'linear-gradient(135deg, #2563EB, #3B82F6)'
-    : roleTab === 'parent'
-      ? 'linear-gradient(135deg, #16A34A, #22C55E)'
-      : roleTab === 'institution_admin'
-        ? 'linear-gradient(135deg, #7C3AED, #A855F7)'
-        : 'linear-gradient(135deg, #E8590C, #F59E0B)';
+  // Button gradient (replaces inline buttonGradient) - uses AA-verified --btn-primary-from/to tokens
+  const buttonCls = 'w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50';
 
   return (
     <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-4 py-8">
@@ -402,7 +408,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                   aria-controls="auth-form-panel"
                   tabIndex={isActive ? 0 : -1}
                   onKeyDown={handleTabKeyDown}
-                  onClick={() => { setRoleTab(tab.key); setError(''); setSuccess(''); }}
+                  onClick={() => { setRoleTab(tab.key); setError(''); setSuccess(''); setSignupStep('basic'); }}
                   className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all"
                   style={{
                     background: isActive ? `${tab.color}15` : 'transparent',
@@ -430,6 +436,20 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             {mode === 'login' ? t('Welcome Back!', 'फिर से स्वागत है!') : mode === 'signup' ? signupTitle : mode === 'check-email' ? t('Check Your Email', 'अपना ईमेल जाँचें') : t('Reset Password', 'पासवर्ड रीसेट करें')}
           </h2>
 
+          {mode === 'signup' && signupStep === 'details' && (
+            <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
+              <button type="button" onClick={() => setSignupStep('basic')} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                <span className="w-5 h-5 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center">✓</span>
+                {t('Account', 'खाता')}
+              </button>
+              <span className="text-surface-3">→</span>
+              <span className="flex items-center gap-1 text-foreground font-semibold">
+                <span className="w-5 h-5 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center">2</span>
+                {t('Details', 'विवरण')}
+              </span>
+            </div>
+          )}
+
           {error && (
             <div id="auth-error" role="alert" className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)' }}>
               {error}
@@ -441,7 +461,23 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             </div>
           )}
 
-          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3" aria-describedby={error ? 'auth-error' : undefined}>
+                    {/* Google OAuth button */}
+          {(mode === 'login' || (mode === 'signup' && signupStep === 'basic')) && (
+            <>
+              <button type="button" onClick={handleGoogleAuth} disabled={loading}
+                className="w-full py-3 rounded-xl text-sm font-bold bg-white border border-surface-3 text-foreground hover:bg-surface-2 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                {t('Continue with Google', 'Google से जारी रखें')}
+              </button>
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-px bg-surface-3" />
+                <span className="text-xs text-muted-foreground font-medium">{t('or', 'या')}</span>
+                <div className="flex-1 h-px bg-surface-3" />
+              </div>
+            </>
+          )}
+
+          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' && signupStep === 'basic' ? (e) => { e.preventDefault(); setError(''); if (!name.trim()) { setError('Please enter your name'); return; } const pw = validatePassword(password); if (!pw.valid) { setError(pw.error); return; } setSignupStep('details'); } : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3" aria-describedby={error ? 'auth-error' : undefined}>
             {mode === 'check-email' && (
               <div className="text-center space-y-4 py-2">
                 <div className="text-4xl" aria-hidden="true">📧</div>
@@ -458,37 +494,37 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             )}
 
             {mode === 'signup' && (
-              <input id="auth-name" name="name" type="text" placeholder={t('Your Name', 'आपका नाम')} value={name} onChange={e => setName(e.target.value)} style={inputStyle} required aria-label={t('Your name', 'आपका नाम')} autoComplete="name" />
+              <input id="auth-name" name="name" type="text" placeholder={t('Your Name', 'आपका नाम')} value={name} onChange={e => setName(e.target.value)} className={inputCls} required aria-label={t('Your name', 'आपका नाम')} autoComplete="name" />
             )}
 
             {mode !== 'check-email' && (
-              <input id="auth-email" name="email" type="email" placeholder={t('Email address', 'ईमेल पता')} value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} required aria-label={t('Email address', 'ईमेल पता')} autoComplete="email" />
+              <input id="auth-email" name="email" type="email" placeholder={t('Email address', 'ईमेल पता')} value={email} onChange={e => setEmail(e.target.value)} className={inputCls} required aria-label={t('Email address', 'ईमेल पता')} autoComplete="email" />
             )}
 
             {mode !== 'forgot' && mode !== 'check-email' && (
               <div className="relative">
-                <input id="auth-password" name="password" type={showPassword ? 'text' : 'password'} placeholder={t('Password (min 8 chars, A-z, 0-9)', 'पासवर्ड (कम से कम 8 अक्षर, A-z, 0-9)')} value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: 44 }} required minLength={8} aria-label={t('Password', 'पासवर्ड')} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
+                <input id="auth-password" name="password" type={showPassword ? 'text' : 'password'} placeholder={t('Password (min 8 chars, A-z, 0-9)', 'पासवर्ड (कम से कम 8 अक्षर, A-z, 0-9)')} value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 44 }} required minLength={8} aria-label={t('Password', 'पासवर्ड')} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }} aria-label={showPassword ? t('Hide password', 'पासवर्ड छिपाएं') : t('Show password', 'पासवर्ड दिखाएं')}>
                   {showPassword ? '🙈' : '👁️'}
                 </button>
               </div>
             )}
 
-            {/* Student signup fields */}
-            {mode === 'signup' && roleTab === 'student' && (
+            {/* Student signup fields (Step 2 only) */}
+            {mode === 'signup' && signupStep === 'details' && roleTab === 'student' && (
               <>
                 <div className="flex gap-2">
-                  <select id="auth-grade" name="grade" value={grade} onChange={e => setGrade(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label={t('Select your grade', 'अपनी कक्षा चुनें')}>
+                  <select id="auth-grade" name="grade" value={grade} onChange={e => setGrade(e.target.value)} className={cn(inputCls, "flex-1 cursor-pointer")} aria-label={t('Select your grade', 'अपनी कक्षा चुनें')}>
                     {AUTH_GRADES.map(g => <option key={g} value={g}>{t('Grade', 'कक्षा')} {g}</option>)}
                   </select>
-                  <select id="auth-board" name="board" value={board} onChange={e => setBoard(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label={t('Select your board', 'अपना बोर्ड चुनें')}>
+                  <select id="auth-board" name="board" value={board} onChange={e => setBoard(e.target.value)} className={cn(inputCls, "flex-1 cursor-pointer")} aria-label={t('Select your board', 'अपना बोर्ड चुनें')}>
                     {AUTH_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold mb-1.5" htmlFor="age-range" style={{ color: 'var(--text-2)' }}>{t('Age Range', 'आयु सीमा')}</label>
-                  <select id="age-range" name="age-range" value={studentAgeRange} onChange={e => { setStudentAgeRange(e.target.value as '13-18' | '10-12'); if (e.target.value === '13-18') { setParentEmail(''); setParentConsent(false); } }} style={{ ...inputStyle, cursor: 'pointer' }}>
+                  <select id="age-range" name="age-range" value={studentAgeRange} onChange={e => { setStudentAgeRange(e.target.value as '13-18' | '10-12'); if (e.target.value === '13-18') { setParentEmail(''); setParentConsent(false); } }} className={cn(inputCls, "cursor-pointer")}>
                     <option value="13-18">{t('13 – 18 years', '13 – 18 वर्ष')}</option>
                     <option value="10-12">{t('10 – 12 years', '10 – 12 वर्ष')}</option>
                   </select>
@@ -497,7 +533,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                 {studentAgeRange === '10-12' && (
                   <div className="space-y-2 p-3 rounded-xl" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)' }}>
                     <p className="text-xs font-semibold" style={{ color: '#F59E0B' }}>{t('Parental consent required for students under 13', '13 वर्ष से कम उम्र के विद्यार्थियों के लिए अभिभावक की सहमति आवश्यक है')}</p>
-                    <input id="auth-parent-email" name="parent-email" type="email" placeholder={t('Parent/Guardian Email', 'अभिभावक का ईमेल')} value={parentEmail} onChange={e => setParentEmail(e.target.value)} style={inputStyle} required aria-label={t('Parent or guardian email', 'अभिभावक का ईमेल')} autoComplete="email" />
+                    <input id="auth-parent-email" name="parent-email" type="email" placeholder={t('Parent/Guardian Email', 'अभिभावक का ईमेल')} value={parentEmail} onChange={e => setParentEmail(e.target.value)} className={inputCls} required aria-label={t('Parent or guardian email', 'अभिभावक का ईमेल')} autoComplete="email" />
                     <label className="flex items-start gap-2 cursor-pointer">
                       <input id="auth-parent-consent" name="parent-consent" type="checkbox" checked={parentConsent} onChange={e => setParentConsent(e.target.checked)} className="mt-0.5" style={{ accentColor: '#E8590C' }} />
                       <span className="text-xs" style={{ color: 'var(--text-2)' }}>
@@ -509,15 +545,15 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               </>
             )}
 
-            {/* Teacher signup fields */}
-            {mode === 'signup' && roleTab === 'teacher' && (
+            {/* Teacher signup fields (Step 2 only) */}
+            {mode === 'signup' && signupStep === 'details' && roleTab === 'teacher' && (
               <>
-                <input id="auth-school-name" name="school-name" type="text" placeholder={t('School Name', 'स्कूल का नाम')} value={schoolName} onChange={e => setSchoolName(e.target.value)} style={inputStyle} required aria-label={t('School name', 'स्कूल का नाम')} autoComplete="organization" />
+                <input id="auth-school-name" name="school-name" type="text" placeholder={t('School Name', 'स्कूल का नाम')} value={schoolName} onChange={e => setSchoolName(e.target.value)} className={inputCls} required aria-label={t('School name', 'स्कूल का नाम')} autoComplete="organization" />
                 <fieldset>
                   <legend className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>{t('Subjects You Teach', 'आप कौन से विषय पढ़ाते हैं')}</legend>
                   <div className="flex flex-wrap gap-1.5" role="group">
                     {TEACHER_SUBJECTS.map(s => (
-                      <button key={s.code} type="button" onClick={() => toggleSubject(s.code)} aria-pressed={subjectsTaught.includes(s.code)} style={chipStyle(subjectsTaught.includes(s.code), '#2563EB')}>
+                      <button key={s.code} type="button" onClick={() => toggleSubject(s.code)} aria-pressed={subjectsTaught.includes(s.code)} className={chipCls(subjectsTaught.includes(s.code), '#2563EB')} style={{ color: subjectsTaught.includes(s.code) ? '#2563EB' : undefined, borderColor: subjectsTaught.includes(s.code) ? '#2563EB' : undefined, background: subjectsTaught.includes(s.code) ? 'rgba(37,99,235,0.1)' : undefined }}>
                         {s.icon} {s.name}
                       </button>
                     ))}
@@ -527,7 +563,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                   <legend className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>{t('Grades You Teach', 'आप कौन सी कक्षाएँ पढ़ाते हैं')}</legend>
                   <div className="flex flex-wrap gap-1.5" role="group">
                     {TEACHER_GRADES.map(g => (
-                      <button key={g} type="button" onClick={() => toggleGradeTaught(g)} aria-pressed={gradesTaught.includes(g)} style={chipStyle(gradesTaught.includes(g), '#2563EB')}>
+                      <button key={g} type="button" onClick={() => toggleGradeTaught(g)} aria-pressed={gradesTaught.includes(g)} className={chipCls(gradesTaught.includes(g), '#2563EB')} style={{ color: gradesTaught.includes(g) ? '#2563EB' : undefined, borderColor: gradesTaught.includes(g) ? '#2563EB' : undefined, background: gradesTaught.includes(g) ? 'rgba(37,99,235,0.1)' : undefined }}>
                         {g}
                       </button>
                     ))}
@@ -536,12 +572,12 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               </>
             )}
 
-            {/* Parent signup fields */}
-            {mode === 'signup' && roleTab === 'parent' && (
+            {/* Parent signup fields (Step 2 only) */}
+            {mode === 'signup' && signupStep === 'details' && roleTab === 'parent' && (
               <>
-                <input id="auth-phone" name="phone" type="tel" placeholder={t('Phone Number (optional)', 'फ़ोन नंबर (वैकल्पिक)')} value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} aria-label={t('Phone number', 'फ़ोन नंबर')} autoComplete="tel" />
+                <input id="auth-phone" name="phone" type="tel" placeholder={t('Phone Number (optional)', 'फ़ोन नंबर (वैकल्पिक)')} value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} aria-label={t('Phone number', 'फ़ोन नंबर')} autoComplete="tel" />
                 <div>
-                  <input id="auth-link-code" name="link-code" type="text" placeholder={t('Child Link Code (optional)', 'बच्चे का लिंक कोड (वैकल्पिक)')} value={linkCode} onChange={e => setLinkCode(e.target.value)} style={inputStyle} maxLength={8} aria-label={t('Child link code', 'बच्चे का लिंक कोड')} />
+                  <input id="auth-link-code" name="link-code" type="text" placeholder={t('Child Link Code (optional)', 'बच्चे का लिंक कोड (वैकल्पिक)')} value={linkCode} onChange={e => setLinkCode(e.target.value)} className={inputCls} maxLength={8} aria-label={t('Child link code', 'बच्चे का लिंक कोड')} />
                   <p className="text-[10px] mt-1 px-1" style={{ color: 'var(--text-3)' }}>
                     {t("Have a link code from your child's school? Enter it to connect!", 'अपने बच्चे के स्कूल से लिंक कोड मिला है? जुड़ने के लिए इसे दर्ज करें!')}
                   </p>
@@ -549,27 +585,27 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               </>
             )}
 
-            {/* Institution admin signup fields */}
-            {mode === 'signup' && roleTab === 'institution_admin' && (
+            {/* Institution admin signup fields (Step 2 only) */}
+            {mode === 'signup' && signupStep === 'details' && roleTab === 'institution_admin' && (
               <>
-                <input id="auth-inst-school" name="school-name" type="text" placeholder={t('School Name *', 'स्कूल का नाम *')} value={instSchoolName} onChange={e => setInstSchoolName(e.target.value)} style={inputStyle} required aria-label={t('School name', 'स्कूल का नाम')} autoComplete="organization" />
+                <input id="auth-inst-school" name="school-name" type="text" placeholder={t('School Name *', 'स्कूल का नाम *')} value={instSchoolName} onChange={e => setInstSchoolName(e.target.value)} className={inputCls} required aria-label={t('School name', 'स्कूल का नाम')} autoComplete="organization" />
                 <div className="flex gap-2">
-                  <input id="auth-inst-city" name="city" type="text" placeholder={t('City *', 'शहर *')} value={instCity} onChange={e => setInstCity(e.target.value)} style={{ ...inputStyle, flex: 1 }} required aria-label={t('City', 'शहर')} autoComplete="address-level2" />
-                  <select id="auth-inst-state" name="state" value={instState} onChange={e => setInstState(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label={t('State', 'राज्य')} required>
+                  <input id="auth-inst-city" name="city" type="text" placeholder={t('City *', 'शहर *')} value={instCity} onChange={e => setInstCity(e.target.value)} className={cn(inputCls, "flex-1")} required aria-label={t('City', 'शहर')} autoComplete="address-level2" />
+                  <select id="auth-inst-state" name="state" value={instState} onChange={e => setInstState(e.target.value)} className={cn(inputCls, "flex-1 cursor-pointer")} aria-label={t('State', 'राज्य')} required>
                     <option value="">{t('State *', 'राज्य *')}</option>
                     {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <select id="auth-inst-board" name="board-affiliation" value={instBoard} onChange={e => setInstBoard(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }} aria-label={t('Board affiliation', 'बोर्ड संबद्धता')}>
+                <select id="auth-inst-board" name="board-affiliation" value={instBoard} onChange={e => setInstBoard(e.target.value)} className={cn(inputCls, "cursor-pointer")} aria-label={t('Board affiliation', 'बोर्ड संबद्धता')}>
                   {SCHOOL_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
-                <input id="auth-principal-name" name="principal-name" type="text" placeholder={t('Principal Name (optional)', 'प्रधानाचार्य का नाम (वैकल्पिक)')} value={principalName} onChange={e => setPrincipalName(e.target.value)} style={inputStyle} aria-label={t('Principal name', 'प्रधानाचार्य का नाम')} autoComplete="name" />
-                <input id="auth-school-phone" name="school-phone" type="tel" placeholder={t('School Phone (optional)', 'स्कूल फ़ोन (वैकल्पिक)')} value={instPhone} onChange={e => setInstPhone(e.target.value)} style={inputStyle} aria-label={t('School phone', 'स्कूल फ़ोन')} autoComplete="tel" />
+                <input id="auth-principal-name" name="principal-name" type="text" placeholder={t('Principal Name (optional)', 'प्रधानाचार्य का नाम (वैकल्पिक)')} value={principalName} onChange={e => setPrincipalName(e.target.value)} className={inputCls} aria-label={t('Principal name', 'प्रधानाचार्य का नाम')} autoComplete="name" />
+                <input id="auth-school-phone" name="school-phone" type="tel" placeholder={t('School Phone (optional)', 'स्कूल फ़ोन (वैकल्पिक)')} value={instPhone} onChange={e => setInstPhone(e.target.value)} className={inputCls} aria-label={t('School phone', 'स्कूल फ़ोन')} autoComplete="tel" />
               </>
             )}
 
-            {/* DPDPA Consent Checkboxes */}
-            {mode === 'signup' && (
+            {/* DPDPA Consent Checkboxes (Step 2 only) */}
+            {mode === 'signup' && signupStep === 'details' && (
               <div className="space-y-2">
                 <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12, color: 'var(--text-2)' }}>
                   <input id="auth-consent-data" name="consent-data" type="checkbox" checked={consentData} onChange={e => setConsentData(e.target.checked)} className="mt-0.5 shrink-0" style={{ accentColor: activeRoleColor, width: 16, height: 16 }} />
@@ -587,8 +623,8 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             )}
 
             {mode !== 'check-email' && (
-              <button type="submit" disabled={loading} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50" style={{ background: buttonGradient }}>
-                {loading ? '...' : mode === 'login' ? t('Log In', 'लॉग इन करें') : mode === 'signup' ? t('Create Account', 'खाता बनाएं') : t('Send Reset Link', 'रीसेट लिंक भेजें')}
+              <button type="submit" disabled={loading} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50" style={{ backgroundImage: 'linear-gradient(155deg, var(--btn-primary-from), var(--btn-primary-to))' }}>
+                {loading ? '...' : mode === 'login' ? t('Log In', 'लॉग इन करें') : mode === 'signup' ? (signupStep === 'basic' ? t('Continue →', 'जारी रखें →') : t('Create Account', 'खाता बनाएं')) : t('Send Reset Link', 'रीसेट लिंक भेजें')}
               </button>
             )}
           </form>
@@ -601,7 +637,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
 
           <div className="mt-4 pt-4 text-center text-xs" style={{ borderTop: '1px solid var(--border)' }}>
             {mode === 'login' ? (
-              <span style={{ color: 'var(--text-3)' }}>{t('New here?', 'यहाँ नए हैं?')} <button onClick={() => { setMode('signup'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>{t('Create Account', 'खाता बनाएं')}</button></span>
+              <span style={{ color: 'var(--text-3)' }}>{t('New here?', 'यहाँ नए हैं?')} <button onClick={() => { setMode('signup'); setError(''); setSuccess(''); setSignupStep('basic'); }} className="font-bold" style={{ color: activeRoleColor }}>{t('Create Account', 'खाता बनाएं')}</button></span>
             ) : (
               <span style={{ color: 'var(--text-3)' }}>{t('Already have an account?', 'पहले से खाता है?')} <button onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>{t('Log In', 'लॉग इन करें')}</button></span>
             )}

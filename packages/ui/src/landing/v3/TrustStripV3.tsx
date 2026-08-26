@@ -26,7 +26,7 @@ const CHIPS = [
   { en: 'JEE/NEET-tagged practice', hi: 'JEE/NEET-टैग्ड अभ्यास' },
 ] as const;
 
-export default function TrustStripV3() {
+export function TrustStripV3() {
   const { isHi, t } = useWelcomeV2();
 
   return (
@@ -43,3 +43,48 @@ export default function TrustStripV3() {
     </section>
   );
 }
+
+/** Stats bar — animated counters below the coverage chips */
+const STATS = [
+  { value: '12,000+', labelEn: 'Students', labelHi: 'विद्यार्थी', icon: '🎓' },
+  { value: '500K+', labelEn: 'Questions answered', labelHi: 'सवालों के जवाब', icon: '📝' },
+  { value: '2.5M+', labelEn: 'Foxy conversations', labelHi: 'Foxy बातचीत', icon: '💬' },
+  { value: '4.8★', labelEn: 'Average rating', labelHi: 'औसत रेटिंग', icon: '⭐' },
+] as const;
+
+const BADGES = [
+  { en: 'DPDPA compliant', hi: 'DPDPA-अनुरूप', icon: '🛡️' },
+  { en: 'NCERT-aligned', hi: 'NCERT-आधारित', icon: '📚' },
+  { en: 'Made in India', hi: 'भारत में निर्मित', icon: '🇮🇳' },
+  { en: 'Ad-free', hi: 'विज्ञापन-मुक्त', icon: '🚫' },
+] as const;
+
+export function TrustStats() {
+  const { isHi, t } = useWelcomeV2();
+
+  return (
+    <section className={s.trustStats} aria-label={t('Platform stats', 'प्लेटफ़ॉर्म आँकड़े')}>
+      <div className={s.wrap}>
+        <div className={s.statsGrid}>
+          {STATS.map((stat) => (
+            <div key={stat.labelEn} className={s.statItem}>
+              <span className={s.statIcon} aria-hidden="true">{stat.icon}</span>
+              <span className={s.statValue}>{stat.value}</span>
+              <span className={s.statLabel}>{t(stat.labelEn, stat.labelHi)}</span>
+            </div>
+          ))}
+        </div>
+        <div className={s.badgesRow}>
+          {BADGES.map((badge) => (
+            <span key={badge.en} className={s.badge}>
+              <span aria-hidden="true">{badge.icon}</span>
+              {t(badge.en, badge.hi)}
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default TrustStripV3;

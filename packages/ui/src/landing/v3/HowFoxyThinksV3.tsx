@@ -93,7 +93,7 @@ export default function HowFoxyThinksV3() {
 
   return (
     <section
-      className={`${s.section} ${s.pipe}`}
+      className={`${s.section} ${s.pipe} ${s.sectionDark}`}
       id="how-foxy-thinks"
       aria-labelledby="how-foxy-thinks-title"
     >

@@ -171,9 +171,15 @@
 }
 
 .navActions {
-  display: flex;
+  display: none; /* hidden on mobile — hamburger menu handles it */
   align-items: center;
   gap: 8px;
+}
+
+@media (min-width: 1024px) {
+  .navActions {
+    display: flex;
+  }
 }
 
 .langToggle {
@@ -2312,4 +2318,372 @@
   .faqItem summary .icon {
     transition: none;
   }
+}
+
+/* ── Hamburger button (mobile nav, < 1024px) ─────────────── */
+.hamburger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--ink);
+  border-radius: var(--r-btn);
+  flex-shrink: 0;
+}
+
+.hamburger:hover {
+  background: rgba(26, 29, 33, 0.04);
+}
+
+@media (min-width: 1024px) {
+  .hamburger {
+    display: none;
+  }
+}
+
+/* ── Mobile overlay menu ────────────────────────────────── */
+.mobileOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mobileOverlayBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(26, 29, 33, 0.4);
+  animation: fadeIn 0.2s ease;
+}
+
+.mobilePanel {
+  position: relative;
+  width: min(320px, 85vw);
+  height: 100%;
+  background: #fff;
+  box-shadow: -4px 0 24px rgba(26, 29, 33, 0.12);
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow-y: auto;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.mobilePanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 64px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.mobileClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--ink);
+  border-radius: var(--r-btn);
+}
+
+.mobileClose:hover {
+  background: rgba(26, 29, 33, 0.04);
+}
+
+.mobileLinks {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0;
+}
+
+.mobileLinks a {
+  display: block;
+  padding: 14px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+}
+
+.mobileLinks a:hover {
+  background: var(--cream-soft);
+}
+
+.mobileActions {
+  margin-top: auto;
+  padding: 16px 24px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobileActions .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.mobileActions .langToggle {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+
+/* ── Dark contrast section variant ─────────────────────────── */
+.sectionDark {
+  background: var(--surface-inverse);
+  color: var(--on-surface-inverse);
+}
+
+.sectionDark .eyebrow {
+  color: var(--accent-warm);
+}
+
+.sectionDark h2,
+.sectionDark h3 {
+  color: var(--on-surface-inverse);
+}
+
+.sectionDark p {
+  color: var(--on-surface-inverse-muted);
+}
+
+.sectionDark .iconTile {
+  background: rgba(244, 236, 219, 0.08);
+  border: 1px solid rgba(244, 236, 219, 0.12);
+}
+
+.sectionDark .pipeNode {
+  background: rgba(244, 236, 219, 0.05);
+  border: 1px solid rgba(244, 236, 219, 0.1);
+}
+
+.sectionDark .pipeNode:hover {
+  background: rgba(244, 236, 219, 0.08);
+  border-color: rgba(244, 236, 219, 0.15);
+}
+
+.sectionDark .pipeLink {
+  border-color: rgba(244, 236, 219, 0.15);
+}
+
+.sectionDark .pipeDot {
+  background: var(--accent-warm);
+}
+
+
+/* ── Pricing value comparison ─────────────────────────────── */
+.valueCompare {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.valueCompareTitle {
+  font-size: clamp(18px, 0.4vw + 16px, 22px);
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: var(--ink);
+}
+
+.valueCompareGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+@media (min-width: 640px) {
+  .valueCompareGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.valueCompareItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 8px;
+  border-radius: var(--r-card);
+  background: var(--cream-soft);
+  border: 1px solid var(--line);
+}
+
+.valueCompareHighlight {
+  background: linear-gradient(135deg, rgba(232,88,28,0.08), rgba(245,166,35,0.06));
+  border-color: var(--orange);
+  box-shadow: 0 0 0 1px var(--orange);
+}
+
+.valueCompareIcon {
+  font-size: 24px;
+}
+
+.valueCompareLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sec);
+  margin: 0;
+}
+
+.valueCompareHighlight .valueCompareLabel {
+  color: var(--ink);
+}
+
+.valueComparePrice {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.valueCompareHighlight .valueComparePrice {
+  color: var(--orange);
+}
+
+.valueCompareNote {
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--sec);
+}
+
+
+/* ── Trust stats strip ──────────────────────────────────── */
+.trustStats {
+  padding: 40px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (min-width: 640px) {
+  .statsGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.statIcon {
+  font-size: 24px;
+}
+
+.statValue {
+  font-size: clamp(20px, 0.5vw + 18px, 28px);
+  font-weight: 800;
+  color: var(--ink);
+  font-family: var(--font-display);
+}
+
+.statLabel {
+  font-size: 13px;
+  color: var(--sec);
+  font-weight: 500;
+}
+
+.badgesRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--cream-soft);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sec);
+}
+
+.badge:hover {
+  border-color: var(--sec);
+  color: var(--ink);
+}
+
+
+/* ── FAQ category tabs ──────────────────────────────────── */
+.faqTabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 4px;
+}
+
+.faqTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.faqTab {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sec);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.faqTab:hover {
+  border-color: var(--sec);
+  color: var(--ink);
+}
+
+.faqTabActive {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #fff;
+}
+
+.faqTabActive:hover {
+  background: var(--orange-hover);
+  border-color: var(--orange-hover);
+  color: #fff;
 }
