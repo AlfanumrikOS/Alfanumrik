@@ -1,16 +1,16 @@
 /**
- * Model Gateway — Deno ↔ TS MODEL_FALLBACK_ORDER parity (Phase 1).
+ * Model Gateway — Deno / TS MODEL_FALLBACK_ORDER parity (Phase 1).
  *
- * The legacy fallback ordering (OpenAI-primary, Claude retained as fallback
- * per the 2026-08-02 CEO-directed cost swap) exists TWICE:
+ * The legacy fallback ordering (Claude-primary, OpenAI retained as fallback
+ * per the 2026-08-26 quality swap back) exists TWICE:
  *   - TS (Node graph):  packages/lib/src/ai/gateway/registry.ts
- *                       → `LEGACY_FALLBACK_ORDER`
+ *                       -> `LEGACY_FALLBACK_ORDER`
  *   - Deno (Edge graph): supabase/functions/grounded-answer/config.ts
- *                       → `MODEL_FALLBACK_ORDER` (read by `resolveModelOrder`)
+ *                       -> `MODEL_FALLBACK_ORDER` (read by `resolveModelOrder`)
  *
  * Deno cannot import from packages/lib, so the ordering is duplicated. If the two
  * drift, the browser/Node path and the Edge path could route the SAME
- * model_preference to different providers — a silent provider-routing bug (P12).
+ * model_preference to different providers -- a silent provider-routing bug (P12).
  *
  * Following the established cross-runtime parity convention (see
  * grounding/config-parity.test.ts and output-screen-deno-parity.test.ts): import
@@ -87,20 +87,15 @@ describe('MODEL_FALLBACK_ORDER Deno ↔ TS parity (P12)', () => {
     expect(Object.keys(LEGACY_FALLBACK_ORDER).sort()).toEqual(['auto', 'haiku', 'sonnet']);
   });
 
-  it('auto chain is OpenAI-primary on both sides (mini → full → Haiku → Sonnet), Claude retained as fallback', () => {
+  it('auto chain is Claude-primary on both sides (Haiku -> Sonnet -> mini -> full), OpenAI retained as fallback', () => {
     // Anchor the specific current order so a reordering on EITHER side fails
-    // here, not just a drift between the two. Updated 2026-08-02: the
-    // CEO-directed cost swap flipped this from Anthropic-primary to
-    // OpenAI-primary — see registry.ts's LEGACY_FALLBACK_ORDER header and
-    // router.test.ts's dedicated "OpenAI-primary post 2026-08 cost directive"
-    // regression pin (REG-334, renumbered 2026-08-03 from REG-332 — see
-    // .claude/regression/00-header.md's collision note) for the companion
-    // assertion on the TS side.
+    // here, not just a drift between the two. Updated 2026-08-26: the
+    // quality swap back restored Claude-primary ordering.
     expect(deno.auto.map((t) => `${t.provider}:${t.model}`)).toEqual([
-      'openai:gpt-4o-mini',
-      'openai:gpt-4o',
       'anthropic:claude-haiku-4-5-20251001',
       'anthropic:claude-sonnet-4-20250514',
+      'openai:gpt-4o-mini',
+      'openai:gpt-4o',
     ]);
     expect(tsAsPlain(LEGACY_FALLBACK_ORDER.auto).map((t) => `${t.provider}:${t.model}`)).toEqual(
       deno.auto.map((t) => `${t.provider}:${t.model}`),
@@ -128,15 +123,14 @@ describe('CLAUDE_PRIMARY_FALLBACK_ORDER Deno ↔ TS parity (P12)', () => {
     expect(Object.keys(CLAUDE_PRIMARY_FALLBACK_ORDER).sort()).toEqual(['auto', 'haiku', 'sonnet']);
   });
 
-  it('auto chain is Claude-primary on both sides (Haiku → Sonnet → mini → full) — the exact pre-2026-08-02 order', () => {
-    // Anchor the reconstructed order explicitly, verified via
-    // `git show 5e6ffa9f -- supabase/functions/grounded-answer/config.ts`
-    // (the swap commit's diff shows this is precisely what was reversed).
+  it('auto chain is OpenAI-primary on both sides (mini -> full -> Haiku -> Sonnet) -- the rollback target', () => {
+    // CLAUDE_PRIMARY_FALLBACK_ORDER is now the OpenAI-primary rollback target
+    // (swapped 2026-08-26 when Claude was restored as the default primary).
     expect(deno.auto.map((t) => `${t.provider}:${t.model}`)).toEqual([
-      'anthropic:claude-haiku-4-5-20251001',
-      'anthropic:claude-sonnet-4-20250514',
       'openai:gpt-4o-mini',
       'openai:gpt-4o',
+      'anthropic:claude-haiku-4-5-20251001',
+      'anthropic:claude-sonnet-4-20250514',
     ]);
     expect(tsAsPlain(CLAUDE_PRIMARY_FALLBACK_ORDER.auto).map((t) => `${t.provider}:${t.model}`)).toEqual(
       deno.auto.map((t) => `${t.provider}:${t.model}`),
