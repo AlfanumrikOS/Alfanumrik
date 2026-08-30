@@ -4,17 +4,28 @@ on:
   workflow_dispatch:
   push:
     branches: [main, master, develop]
-  # ── Merge queue tier (added 2026-08-19) ──────────────────────────────────
-  # The heavy jobs below (full 4-shard unit suite + coverage merge, Production
-  # Build, Edge Deno tests, live-DB integration tests, blocking E2E) no longer
-  # run on `pull_request`. They run HERE, once, on the exact commit GitHub will
-  # land on main. Nothing was deleted -- every check was RELOCATED to a tier
-  # where it still blocks the merge, and `ci-gate`'s event matrix asserts
-  # per-event that each one either succeeded or is an EXPECTED skip.
+  # ── Merge queue tier (added 2026-08-19, DISABLED 2026-08-30) ─────────────
+  # This event still exists for workflow_dispatch-style completeness and in
+  # case an Organization transfer ever makes merge_group available, but it
+  # currently never fires: `merge_queue` is not an available ruleset rule on
+  # this repo (owner is a GitHub User, not an Organization — confirmed via
+  # the rulesets API). The 2026-08-19 design moved the heavy jobs (full
+  # 4-shard unit suite, Production Build, Edge Deno tests, live-DB
+  # integration, blocking E2E) OFF `pull_request` on the explicit documented
+  # prerequisite that this trigger would gate them before a commit could
+  # land main-protection (docs/ci.md sec 0). That prerequisite was never
+  # met, and per that doc's own words this "fails OPEN, not closed": every
+  # PR merged with those ruleset-required checks silently skipped (which
+  # GitHub counts as satisfied), so no PR ever had a full test run or a
+  # production build behind its green state.
   #
-  # REQUIRED: the `main-protection` ruleset must have "Require merge queue"
-  # enabled, or the required contexts produced only here never report and PRs
-  # become unmergeable. See docs/runbooks/branch-protection-required-checks.md.
+  # RESTORED 2026-08-30: unit-tests (4 shards), edge-function-tests, and
+  # build now run on `pull_request` directly instead (see each job's own
+  # comment and the ci-gate event-matrix comment below). This event trigger
+  # and the merge_group column in ci-gate's matrix are left in place,
+  # unused, rather than removed — so re-enabling the queue later (post an
+  # Organization transfer) is a revert of this comment plus re-adding the
+  # `if:` guards, not a redesign.
   merge_group:
     types: [checks_requested]
   pull_request:
@@ -36,12 +47,15 @@ on:
     # ci-gate/unit-tests-merge run under `if: always()`. Only the advisory
     # label-gated `e2e` job reads the label list.
     #
-    # (The live `main-protection` ruleset requires exactly four contexts:
-    # "Secret Scanning", "Lint, Type-check & Test", "Production Build" and
-    # "CodeQL Analysis". "CI Gate" is NOT ruleset-required — it is the
-    # aggregate gate that deploy-production.yml / deploy-staging.yml poll
-    # before deploying, so it must stay green for a different reason. Keep
-    # this list in sync with the note above the `ci-gate` job.)
+    # (The live `main-protection` ruleset requires FIVE contexts as of
+    # 2026-08-24: "Secret Scanning", "Lint, Type-check & Test", "Production
+    # Build", "CodeQL Analysis", AND "CI Gate" — confirmed live via the
+    # rulesets API 2026-08-30. This comment previously said CI Gate was not
+    # ruleset-required, which was accurate when written but is stale; the
+    # ruleset changed without this comment being updated. CI Gate is ALSO
+    # the aggregate gate that deploy-production.yml / deploy-staging.yml
+    # poll before deploying, so it matters for both reasons now. Keep this
+    # list in sync with the note above the `ci-gate` job.)
     types: [opened, synchronize, reopened, labeled]
 
 permissions:
@@ -1616,9 +1630,22 @@ jobs:
     name: Unit Tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    # TIER: merge_group / push / workflow_dispatch only. Relocated off the
-    # `pull_request` event 2026-08-19 -- see the merge_group note in `on:`.
-    if: ${{ github.event_name != 'pull_request' }}
+    # TIER: every event, including pull_request. Restored 2026-08-30 —
+    # the 2026-08-19 split moved this to merge_group/push only on the
+    # documented prerequisite (docs/ci.md sec 0) that the merge queue would
+    # be enabled on main-protection, gating the full suite before a commit
+    # could land. That prerequisite was never fulfilled: `merge_queue` isn't
+    # available on this repo (owner is a GitHub User, not an Organization —
+    # confirmed via the rulesets API), and merge_group fired 0 times across
+    # the repo's history. Per docs/ci.md's own words, that left every
+    # ruleset-required check that only ran here (this job, Production Build,
+    # Edge Function Deno Tests) silently SKIPPED on every PR — and GitHub
+    # counts a skipped required check as satisfied, so PRs merged "green"
+    # with no full test run and no production build ever behind them. See
+    # incident 2026-08-30 (PR #1650 -> main 43654b97, PR #1653): the full
+    # suite only caught a real regression AFTER merge, on the post-merge
+    # push run, which blocked Deploy Production's Quality Gate as designed
+    # but is not a substitute for pre-merge validation.
     strategy:
       fail-fast: false
       matrix:
@@ -1799,10 +1826,23 @@ jobs:
     # fails — a skipped job would otherwise satisfy the required status check.
     # The first step re-asserts success explicitly instead (same node-script
     # pattern as ci-gate).
-    # `always()` is preserved so a failed/cancelled upstream still turns this
-    # required context RED rather than skipping it. The added event clause is
-    # what moves the job to the merge-queue tier.
-    if: ${{ always() && github.event_name != 'pull_request' }}
+    #
+    # This is THE ruleset-required "Lint, Type-check & Test" context — the
+    # `&& github.event_name != 'pull_request'` clause that used to sit here
+    # was the actual mechanism behind the 2026-08-19 to 2026-08-30 gap
+    # documented in docs/ci.md sec 0: it made this exact required check
+    # SKIP on every PR (a skip GitHub counts as satisfied), on the same
+    # never-fulfilled merge-queue prerequisite as the unit-tests/build/
+    # edge-function-tests job-level gates. Missed in the first pass of that
+    # 2026-08-30 fix because it's a compound condition, not the standalone
+    # `if: github.event_name != 'pull_request'` pattern those three jobs
+    # used — caught immediately afterward because ci-gate's updated matrix
+    # (this job is now unconditionally `required`) correctly failed loud
+    # the moment this job reported `skipped` instead of `success` on a PR.
+    # Removed 2026-08-30. `always()` alone is preserved so a failed/
+    # cancelled upstream still turns this required context RED rather than
+    # skipping it.
+    if: ${{ always() }}
     needs: [quality, unit-tests]
     steps:
       - name: Enforce upstream lint/type-check and shard success
@@ -2038,9 +2078,10 @@ jobs:
     name: Edge Function Deno Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # TIER: merge_group / push / workflow_dispatch only. Relocated off the
-    # `pull_request` event 2026-08-19 -- see the merge_group note in `on:`.
-    if: ${{ github.event_name != 'pull_request' }}
+    # TIER: every event, including pull_request. See the `unit-tests` job's
+    # comment (2026-08-30) for why — the merge_group prerequisite this was
+    # relocated behind on 2026-08-19 was never fulfilled and isn't available
+    # on this repo (user-owned, not an Organization).
     env:
       # ════════════════════════════════════════════════════════════════════════
       #  SINGLE SOURCE OF TRUTH for the Deno test target set.
@@ -2723,9 +2764,10 @@ jobs:
     name: Production Build
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # TIER: merge_group / push / workflow_dispatch only. Relocated off the
-    # `pull_request` event 2026-08-19 -- see the merge_group note in `on:`.
-    if: ${{ github.event_name != 'pull_request' }}
+    # TIER: every event, including pull_request. See the `unit-tests` job's
+    # comment (2026-08-30) for why — the merge_group prerequisite this was
+    # relocated behind on 2026-08-19 was never fulfilled and isn't available
+    # on this repo (user-owned, not an Organization).
     steps:
       - uses: actions/checkout@v7
 
@@ -3086,11 +3128,12 @@ jobs:
   # aggregates the SAME job set on a PR and on the push that merges it, which
   # is the only way a green PR is evidence that main will stay green.
   #
-  # NOTE FOR THE REPO OWNER: running here makes the failure VISIBLE on the PR;
-  # it does not by itself make it BLOCKING. The `main-protection` ruleset
-  # currently requires only: "Secret Scanning", "Lint, Type-check & Test",
-  # "Production Build", "CodeQL Analysis". Add "CI Gate" to that list to make
-  # this aggregate gate merge-blocking (repo setting, not a workflow change).
+  # STATUS (2026-08-30, confirmed live via the rulesets API): "CI Gate" IS in
+  # the `main-protection` required-status-checks list, alongside "Secret
+  # Scanning", "Lint, Type-check & Test", "Production Build", "CodeQL
+  # Analysis" — five contexts total, added 2026-08-24. This comment
+  # previously said CI Gate was advisory-only; that was accurate when
+  # written but the ruleset changed without the comment being updated.
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
@@ -3131,12 +3174,27 @@ jobs:
           // for failing: a job that RAN and FAILED is never 'skipped', so it
           // fails the gate on every event.
           //
-          // The heavy jobs moved from the PR tier to the merge-queue tier on
-          // 2026-08-19. They are NOT dropped — on `pull_request` they are
-          // asserted to be EXACTLY 'skipped', so an `if:` drift that lets one
-          // run (or a rename that makes it 'missing') fails this gate loudly,
-          // and on merge_group/push they are asserted 'success' exactly as
-          // before.
+          // The heavy jobs were moved from the PR tier to a merge-queue-only
+          // tier on 2026-08-19, on the explicit documented prerequisite
+          // (commit 44e46e31, docs/ci.md sec 0) that a GitHub merge queue
+          // would be enabled on main-protection to gate them before a commit
+          // could land. That prerequisite was never fulfilled — merge_group
+          // fired 0 times across this repo's history, and `merge_queue` is
+          // not an available ruleset rule here at all (owner is a GitHub
+          // User, not an Organization; confirmed via the rulesets API
+          // returning "Invalid rule 'merge_queue'" regardless of parameters).
+          // Per docs/ci.md's own words: "the merge queue is load-bearing, and
+          // its absence fails OPEN — not closed" — every PR merged with these
+          // ruleset-required checks silently SKIPPED (which GitHub counts as
+          // satisfied), so no PR ever actually had a full test run or a
+          // production build behind its "Ready to merge" state.
+          //
+          // RESTORED 2026-08-30 (incident: PR #1650 -> main 43654b97, then
+          // PR #1653 — a regression only the post-merge push run caught,
+          // after it had already landed on main). The heavy jobs now run,
+          // and are required, on EVERY event. `unit-tests-changed` is kept
+          // as an ADDITIONAL fast-feedback job on pull_request only (not a
+          // replacement) — its own `if:` gate is unchanged.
           //
           //                    | PR tier            | merge_group / push
           //   secret-scan      | required           | required
@@ -3146,10 +3204,10 @@ jobs:
           //   gen-mol-matrix   | required           | required
           //   quality          | required           | required
           //   unit-tests-changed| required          | expected skip
-          //   unit-tests (x4)  | expected skip      | required
-          //   unit-tests-merge | expected skip      | required
-          //   edge-function    | expected skip      | required
-          //   build            | expected skip      | required
+          //   unit-tests (x4)  | required           | required
+          //   unit-tests-merge | required           | required
+          //   edge-function    | required           | required
+          //   build            | required           | required
           //   integration-tests| expected skip      | required (push/merge_group,
           //                    |                    |  non-Dependabot); else skip
           //   e2e-critical     | expected skip      | required on merge_group only
@@ -3163,14 +3221,12 @@ jobs:
           const isPullRequest = eventName === 'pull_request';
           const heavyTier = ['unit-tests','unit-tests-merge','edge-function-tests','build'];
 
-          const required = ['secret-scan','selected-school-rpc-integration','protected-flag-migration-guard','foxy-alignment','gen-mol-matrix','quality'];
+          const required = ['secret-scan','selected-school-rpc-integration','protected-flag-migration-guard','foxy-alignment','gen-mol-matrix','quality', ...heavyTier];
           const expectedSkips = [];
 
           if (isPullRequest) {
             required.push('unit-tests-changed');
-            expectedSkips.push(...heavyTier);
           } else {
-            required.push(...heavyTier);
             expectedSkips.push('unit-tests-changed');
           }
 

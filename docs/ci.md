@@ -10,40 +10,60 @@ Main workflow: `.github/workflows/ci.yml` (`name: CI — Alfanumrik`). Triggers:
 `cancel-in-progress` disabled on `main` and on `merge_group` so neither a deploy polling a specific SHA nor a
 queue entry awaiting its checks is ever stranded by a supersede.
 
-## 0. The two tiers (2026-08-19)
+## 0. History: the two-tier design (2026-08-19), and why it's OFF (2026-08-30)
 
-`ci.yml` is one workflow running at two tiers. **No check was deleted; several were relocated.**
+`ci.yml` was redesigned on 2026-08-19 to run at two tiers: a light PR tier and a heavy merge-queue tier, with the
+heavy tier's checks (4 unit shards, Production Build, Edge Function Deno Tests, live-DB integration, blocking
+E2E) relocated off `pull_request` on the explicit, documented prerequisite that GitHub's merge queue (`merge_group`)
+would be enabled on the `main-protection` ruleset to gate them before a commit could land — see commit `44e46e31`
+("REQUIRES Require merge queue on main before merging").
 
-| Tier | Event | Jobs | Measured wall clock |
-|---|---|---|---|
-| **PR tier** | `pull_request` | Secret Scanning, Selected-School RPC, Protected Flag Migration Guard, Foxy North-Star Alignment, MOL Matrix Drift Check, Lint & Type-check, **Unit Tests (changed)**, CI Gate | ~2.5–3 min (was 5m24s–7m08s) |
-| **Merge-queue tier** | `merge_group` | everything above except `Unit Tests (changed)`, **plus** the 4 unit shards + `Lint, Type-check & Test` (coverage thresholds), Production Build, Edge Function Deno Tests, Integration Tests (live DB), E2E Critical Paths, CI Gate | ~6–7 min, off the author's critical path |
-| **Post-merge** | `push` to `main` | same as merge-queue tier minus E2E Critical Paths | unchanged — this is the run `deploy-production.yml` polls for `CI Gate` |
+**That prerequisite was never fulfilled, and it turns out it cannot be, on this repo.** Confirmed 2026-08-30:
+`merge_queue` is not an available ruleset rule here — the repository is owned by a GitHub **User** account
+(`AlfanumrikOS`), not an Organization, and GitHub's merge queue is an organization-only feature. Every attempt to
+add a `merge_queue` rule via the rulesets API failed with `"Invalid rule 'merge_queue'"` regardless of parameters.
+Across the repo's full recorded Actions history, `merge_group` fired **0 times**.
 
-Two rules keep this honest:
+The section below (originally written 2026-08-19) documents exactly what that absence meant while it stood, since
+it's the reason the design changed again:
+
+> **The merge queue is load-bearing, and its absence fails OPEN — not closed.** `Lint, Type-check & Test` and
+> `Production Build` are ruleset-required but do not report on the `pull_request` event when gated to
+> `merge_group`/`push` only: they are *skipped*, and **GitHub counts a skipped required check as satisfied.** This
+> was observed directly on PR #1572, the change that introduced this section — with the full suite and the
+> production build both skipped, the PR read **"Ready to merge"**, green, with no build and no full test run
+> behind it.
+>
+> The consequence is the opposite of the usual failure mode, and worse:
+>
+> - With the queue **ON**, the heavy tier runs in the queue and genuinely gates the merge. Correct.
+> - With the queue **OFF**, PRs merge with those contexts vacuously green. Nothing blocks. Nothing warns.
+
+That silent-open state is exactly what happened, unnoticed, for every PR merged between 2026-08-19 and 2026-08-30
+— confirmed by the fact that PR #1650's merge to `main` (commit `43654b97`) carried a real regression (a
+source-text-pinning test broken by an intentional code change) that no PR-tier check caught, and that only
+surfaced on the post-merge `push` run, after landing, blocking Deploy Production's Quality Gate as designed but
+not preventing the broken state from reaching `main` first.
+
+**RESOLUTION (2026-08-30):** `unit-tests` (4 shards), `edge-function-tests`, and `build` now run on `pull_request`
+directly — see each job's own comment in `ci.yml` and the `ci-gate` event-matrix comment. `Unit Tests (changed)`
+is kept as an *additional* fast-feedback job on PRs, not a replacement. `Integration Tests (live DB)` and
+`E2E Critical Paths (blocking)` remain merge_group/push-only (the former needs real staging secrets Dependabot
+can't read; the latter is deliberately the slowest, last-line gate) — since `merge_group` never fires here, in
+practice this means those two checks currently only run post-merge, which is a smaller, understood, and
+pre-existing gap (not one introduced or hidden by this change) rather than the "vacuously green" failure mode
+above. Re-enabling a merge-queue design remains possible only if this repository is ever transferred to a GitHub
+Organization; until then, do not relocate any check back off `pull_request` without re-verifying `merge_group`
+actually fires.
+
+Two rules keep the gate itself honest, unchanged since 2026-08-19:
 
 1. `ci-gate` classifies **every** job per event as either `required` (must be `success`) or an **expected skip**
    (must be exactly `skipped`). A relocated job that unexpectedly runs, is renamed, or goes missing fails the
    gate loudly. Nothing is silently unchecked.
-2. `Unit Tests (changed)` is `vitest --changed <merge-base>`. It is a **subset**, not a substitute — a test
-   reached only via a dynamic import is not selected, and coverage thresholds are deliberately not enforced on
-   a partial run. The full suite and the thresholds run in the merge queue before the commit can land.
-
-**The merge queue is load-bearing, and its absence fails OPEN — not closed.** `Lint, Type-check & Test` and
-`Production Build` are ruleset-required but no longer report on the `pull_request` event: they are *skipped*, and
-**GitHub counts a skipped required check as satisfied.** This was observed directly on PR #1572, the change that
-introduced this section — with the full suite and the production build both skipped, the PR read **"Ready to
-merge"**, green, with no build and no full test run behind it.
-
-The consequence is the opposite of the usual failure mode, and worse:
-
-- With the queue **ON**, the heavy tier runs in the queue and genuinely gates the merge. Correct.
-- With the queue **OFF**, PRs merge with those contexts vacuously green. Nothing blocks. Nothing warns.
-
-So "Require merge queue" is not a convenience setting here — it is the only thing standing between a PR and an
-unvalidated merge to `main`. It must be enabled immediately after this workflow change lands, and it must never
-be disabled without reverting the workflow change in the same action. There is no safe intermediate state, and
-the unsafe state is silent.
+2. `Unit Tests (changed)` is `vitest --changed <merge-base>`. It is a **subset**, not a substitute for the full
+   suite that now also runs directly on `pull_request` — a test reached only via a dynamic import is not selected
+   by the changed-subset run, and coverage thresholds are enforced only by the full-suite run.
 
 ---
 
@@ -93,25 +113,27 @@ The live `main-protection` ruleset (id 20528052) requires **exactly four** statu
 3. `Production Build`
 4. `CodeQL Analysis`
 
-**`CI Gate` is NOT ruleset-required.** It aggregates 12 jobs and is polled fail-closed by
-`deploy-production.yml` and `deploy-staging.yml` before they deploy. The consequence is concrete: a PR can
-merge with, say, `integration-tests` or `e2e-critical-paths` red, and that failure then surfaces later as a
-**stranded deploy** rather than as a blocked PR.
+**`CI Gate` IS ruleset-required** as of 2026-08-24 (confirmed live via the rulesets API 2026-08-30). It
+aggregates 12 jobs and is also polled fail-closed by `deploy-production.yml` and `deploy-staging.yml` before
+they deploy. Previously — and this is now historical, kept for context — it was not ruleset-required, so a PR
+could merge with e.g. `integration-tests` or `e2e-critical-paths` red, surfacing later as a stranded deploy
+rather than a blocked PR. The fix recommended below was applied.
 
-> **Recommendation (repo-settings change, requires the CEO):** add `CI Gate` to the `main-protection`
-> required-contexts list. This is a GitHub ruleset edit, not a workflow edit.
+> **Resolved 2026-08-24:** `CI Gate` was added to the `main-protection` required-contexts list.
 >
-> **This became more important on 2026-08-19.** `E2E Critical Paths`, `Integration Tests (live DB)` and
-> `Edge Function Deno Tests` now run in the merge queue rather than on the PR. They were never
-> ruleset-required and still are not, so today a red one of them blocks nothing. Adding `CI Gate` to the
-> required list is the single settings change that makes the merge-queue tier actually gate the merge.
+> **Separately, as of 2026-08-30:** `Edge Function Deno Tests` (and `Unit Tests` 4-shard, `Production Build`)
+> now run directly on `pull_request` again, not merge-queue-only — see §0 above for why the 2026-08-19
+> merge-queue relocation was reverted (the queue was never actually available on this repo). `Integration Tests
+> (live DB)` and `E2E Critical Paths (blocking)` remain merge_group/push-only and are still not individually
+> ruleset-required; `CI Gate` being required is what makes a red one of them block a deploy, though not (on its
+> own) block the PR merge itself, since `CI Gate` is not among the four legacy-required contexts it aggregates.
 
 ### Names that must never be renamed
 
 Deploy polling and pipeline alerting match these strings **byte-exactly**, including the U+2014 em dash in
 `CI — Alfanumrik`. A rename fails open — the watcher silently stops matching.
 
-- The four required contexts: `Secret Scanning`, `Lint, Type-check & Test`, `Production Build`, `CodeQL Analysis`
+- The five required contexts: `Secret Scanning`, `Lint, Type-check & Test`, `Production Build`, `CodeQL Analysis`, `CI Gate`
 - `CI Gate`
 - `CI — Alfanumrik` (workflow name)
 - `E2E Nightly — Alfanumrik` (workflow name, watched by `pipeline-alert.yml`)

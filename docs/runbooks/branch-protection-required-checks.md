@@ -31,6 +31,24 @@
 > **Open action:** add `CI Gate` to the required contexts (and consider
 > `strict: true`) to make the aggregate gate merge-blocking.
 
+> **CORRECTION 2026-08-30 — the 2026-08-11 status line above is now also stale.** Re-probed
+> live against ruleset `main-protection` (same command as above): required contexts are now
+> **`CI Gate`, `Secret Scanning`, `Lint, Type-check & Test`, `Production Build`,
+> `CodeQL Analysis`** — five checks, `CI Gate` included, added 2026-08-24. The "open action"
+> above is done. This is the fourth recorded drift of this status line — the maintenance rule
+> below ("do not restate from memory or prose — run the probe") applies to this correction
+> too; re-probe before trusting it in turn.
+>
+> Separately, unrelated to this file's required-contexts claim but relevant to the same
+> release-integrity concern this runbook exists for: the 2026-08-19 CI redesign (`docs/ci.md`
+> §0) moved the full 4-shard unit suite, `Production Build`, and `Edge Function Deno Tests`
+> off `pull_request` onto a documented merge-queue prerequisite that was never fulfilled and
+> is not achievable on this repo — `merge_queue` is not an available ruleset rule for a
+> User-owned repository. That gap silently left those checks (two of which ARE
+> ruleset-required) reporting as *skipped* — which GitHub counts as satisfied — on every PR
+> from 2026-08-19 to 2026-08-30. Reverted 2026-08-30: those three jobs now run directly on
+> `pull_request` again. See `docs/ci.md` §0 for full detail.
+
 This runbook captures a verified architect finding from the 2026-06-27 release-integrity
 audit so it is durably actionable. It documents why `main` is currently unprotected, the
 one-time (paid) prerequisite the user must action, and the exact remediation + verification
