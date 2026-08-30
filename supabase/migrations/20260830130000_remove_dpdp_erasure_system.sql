@@ -31,12 +31,16 @@ DROP FUNCTION IF EXISTS public.parent_request_child_erasure(p_student_id uuid, p
 DROP FUNCTION IF EXISTS public.parent_child_erasure_status(p_student_id uuid);
 DROP FUNCTION IF EXISTS public.parent_cancel_child_erasure(p_student_id uuid);
 
--- Drop data_erasure_requests' policies explicitly (rather than relying only
--- on the table-drop CASCADE below) so the static RLS-recursion-risk parser
--- (src/__tests__/rls-no-cross-table-recursion.test.ts, which replays
--- migrations textually and does not simulate CASCADE) sees them removed.
+-- Drop data_erasure_requests' policies and disable RLS on both tables
+-- explicitly (rather than relying only on the table-drop CASCADE below) so
+-- the static migration-replay parsers (src/__tests__/rls-no-cross-table-
+-- recursion.test.ts and src/__tests__/rls-inventory.test.ts, neither of
+-- which simulates CASCADE) see the policies and RLS state removed, not left
+-- orphaned against a dropped table.
 DROP POLICY IF EXISTS "guardian_sees_own_erasure_requests" ON public.data_erasure_requests;
 DROP POLICY IF EXISTS "school_admin_sees_school_erasure_requests" ON public.data_erasure_requests;
+ALTER TABLE public.account_deletion_log DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.data_erasure_requests DISABLE ROW LEVEL SECURITY;
 
 -- Drop the tables. CASCADE removes their own triggers (which in turn drops
 -- update_account_deletion_log_updated_at / set_data_erasure_requests_updated_at
