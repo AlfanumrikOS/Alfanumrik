@@ -111,6 +111,7 @@ vi.mock('@alfanumrik/lib/razorpay', () => ({
 import { POST as createOrder } from '@/app/api/payments/create-order/route';
 import { POST as verify } from '@/app/api/payments/verify/route';
 import { POST as subscribe } from '@/app/api/payments/subscribe/route';
+import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
 
 const USER = { id: 'auth-user-123', email: 'student@test.example' };
 
@@ -299,5 +300,51 @@ describe('POST /api/payments/subscribe — payments.subscribe RBAC gate (PAY-1)'
     expect(mockCreateSub).not.toHaveBeenCalled();
     expect(mockCreateOrder).not.toHaveBeenCalled();
     expect(adminAccess.called).toBe(false);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// VULN-D2 (43654b97) — rate limiting on all three routes. Packet 10's own
+// acceptance criterion: the (N+1)th request within the window is refused
+// with the documented headers, keyed per-user, gated AFTER the RBAC check
+// (an unauthorized caller is rejected by authorizeRequest, not by hitting
+// their own or someone else's rate-limit bucket first).
+// ═════════════════════════════════════════════════════════════════════════════
+describe('payments routes — rate limiting (VULN-D2)', () => {
+  beforeEach(() => {
+    mockAuthorizeRequest.mockResolvedValue(allowed());
+  });
+
+  it('create-order: 429 with Retry-After + X-RateLimit-Remaining when the limiter denies, keyed 10/hour per user', async () => {
+    vi.mocked(checkApiRateLimit).mockResolvedValueOnce({ allowed: false, remaining: 0, resetAt: Math.ceil(Date.now() / 1000) + 55 });
+    const res = await createOrder(orderReq() as never);
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('55');
+    expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(vi.mocked(checkApiRateLimit)).toHaveBeenCalledWith(`payments:${USER.id}`, 10, 60 * 60 * 1000);
+  });
+
+  it('subscribe: 429 when the limiter denies, and never mints a Razorpay subscription', async () => {
+    vi.mocked(checkApiRateLimit).mockResolvedValueOnce({ allowed: false, remaining: 0, resetAt: Math.ceil(Date.now() / 1000) + 55 });
+    const res = await subscribe(subscribeReq() as never);
+    expect(res.status).toBe(429);
+    expect(mockCreateSub).not.toHaveBeenCalled();
+    expect(vi.mocked(checkApiRateLimit)).toHaveBeenCalledWith(`payments:${USER.id}`, 10, 60 * 60 * 1000);
+  });
+
+  it('verify: 429 when the limiter denies, keyed 20/hour per user, before any service-role DB access', async () => {
+    vi.mocked(checkApiRateLimit).mockResolvedValueOnce({ allowed: false, remaining: 0, resetAt: Math.ceil(Date.now() / 1000) + 55 });
+    const res = await verify(verifyReq() as never);
+    expect(res.status).toBe(429);
+    expect(adminAccess.called).toBe(false);
+    expect(vi.mocked(checkApiRateLimit)).toHaveBeenCalledWith(`payments:${USER.id}`, 20, 60 * 60 * 1000);
+  });
+
+  it('an unauthorized caller is rejected by the RBAC gate, never reaching the rate limiter', async () => {
+    mockAuthorizeRequest.mockResolvedValue(denied(403));
+    const res = await createOrder(orderReq() as never);
+    expect(res.status).toBe(403);
+    expect(checkApiRateLimit).not.toHaveBeenCalled();
   });
 });
