@@ -57,6 +57,7 @@ import {
 } from '@alfanumrik/lib/identity';
 import { acquireIdempotencyLock, releaseIdempotencyLock } from '@alfanumrik/lib/redis';
 import { resolveIdentity } from '@alfanumrik/lib/identity/onboarding';
+import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
 
 // Dedup guard: prevent concurrent bootstrap calls for the same user.
 // The bootstrap_user_profile RPC is idempotent (ON CONFLICT), but concurrent
@@ -140,6 +141,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Authentication required', code: 'AUTH_REQUIRED' },
         { status: 401 }
+      );
+    }
+
+    // Anti-abuse: this route is post-authentication (a valid session/Bearer
+    // JWT is already required above), so this throttles an authenticated
+    // caller hammering the bootstrap RPC, not credential brute-force. Keyed
+    // by user.id, not IP. Placed after auth resolution and before the
+    // idempotency-lock/body-parse work this route already does.
+    const rateCheck = await checkApiRateLimit(`bootstrap:${user.id}`, 30, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Too many attempts. Please try again later.', code: 'RATE_LIMITED' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.max(0, rateCheck.resetAt - Math.ceil(Date.now() / 1000))),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
       );
     }
 

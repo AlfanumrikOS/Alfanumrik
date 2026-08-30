@@ -36,7 +36,19 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
 
     const table = role === 'teacher' ? 'teachers' : role === 'guardian' || role === 'parent' ? 'guardians' : 'students';
-    let query = `select=*&order=created_at.desc&offset=${offset}&limit=${limit}`;
+    // P-01 fix: explicit column projections instead of `select=*`, which
+    // returned every column on the target table — including DOB, phone,
+    // parent_phone, emergency_contact, and other PII on `students` — to any
+    // support-level operator. Columns match the UserRecord shape actually
+    // consumed by apps/host/src/app/super-admin/users/page.tsx, verified
+    // against each table's real schema (per-table since students/teachers/
+    // guardians don't share a column set).
+    const COLUMNS_BY_TABLE: Record<string, string> = {
+      students: 'id,auth_user_id,name,email,grade,board,xp_total,streak_days,school_name,is_active,account_status,subscription_plan,created_at',
+      teachers: 'id,auth_user_id,name,email,school_name,board,is_active,created_at',
+      guardians: 'id,auth_user_id,name,email,created_at',
+    };
+    let query = `select=${COLUMNS_BY_TABLE[table]}&order=created_at.desc&offset=${offset}&limit=${limit}`;
     if (search) query += `&name=ilike.*${encodeURIComponent(search)}*`;
     if (plan && table === 'students') query += `&subscription_plan=eq.${encodeURIComponent(plan)}`;
 

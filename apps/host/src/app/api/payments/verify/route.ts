@@ -10,6 +10,7 @@ import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { computeGst, gstSubscriptionColumns, supplierStateCode } from '@alfanumrik/lib/gst';
 import { isFeatureEnabled, PAYMENT_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { getRazorpayOrder, getRazorpaySubscription } from '@alfanumrik/lib/razorpay';
+import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
 
 /** Strip billing-cycle suffix and map legacy aliases to canonical plan code.
  *  Keep in sync with the same helper in subscribe/route.ts and webhook/route.ts. */
@@ -64,6 +65,23 @@ export async function POST(request: NextRequest) {
     // RBAC permission gate (P11): authorize first, then get user for metadata.
     const auth = await authorizeRequest(request, 'payments.subscribe');
     if (!auth.authorized) return auth.errorResponse!;
+
+    // Anti-abuse: cap verify-spam per authenticated user (retry storms against
+    // the Razorpay API). Higher than create-order/subscribe since a legitimate
+    // checkout can retry verification a few times on transient failure.
+    const rateCheck = await checkApiRateLimit(`payments:${auth.userId}`, 20, 60 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Please try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.max(0, rateCheck.resetAt - Math.ceil(Date.now() / 1000))),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
+    }
 
     // Get user email for Razorpay metadata (auth.userId already available).
     const supabase = createServerClient(supabaseUrl, supabaseKey, {

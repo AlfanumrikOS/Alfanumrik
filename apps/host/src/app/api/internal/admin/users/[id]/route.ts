@@ -15,8 +15,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
 
   try {
+    // P-01 fix: explicit projection instead of `select('*')`. Matches the
+    // fields actually read by
+    // apps/host/src/app/internal/admin/_components/UserDrawer.tsx.
+    const STUDENT_DETAIL_COLUMNS =
+      'id,name,email,grade,board,xp_total,streak_days,subscription_plan,is_active,created_at';
     const [studentRes, quizRes, chatRes, masteryRes, activityRes] = await Promise.all([
-      supabase.from('students').select('*').eq('id', id).single(),
+      supabase.from('students').select(STUDENT_DETAIL_COLUMNS).eq('id', id).single(),
       supabase.from('quiz_sessions').select('id,subject,score_percent,total_questions,correct_answers,is_completed,created_at').eq('student_id', id).order('created_at', { ascending: false }).limit(10),
       supabase.from('chat_sessions').select('id,subject,message_count,created_at').eq('student_id', id).order('created_at', { ascending: false }).limit(10),
       supabase.from('concept_mastery').select('subject,topic_id,mastery_score,last_reviewed_at').eq('student_id', id).order('mastery_score', { ascending: false }).limit(20),

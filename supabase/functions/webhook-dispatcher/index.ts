@@ -7,7 +7,8 @@
 // daily-cron Edge Function, and can be invoked ad-hoc by an operator with the
 // CRON_SECRET. Fail-safe + idempotent: one bad delivery never aborts the batch.
 //
-//   POST (auth: x-cron-secret | Authorization: Bearer | ?token=)
+//   POST (auth: x-cron-secret matching CRON_SECRET, OR Authorization: Bearer
+//   matching SUPABASE_SERVICE_ROLE_KEY — independent checks, either suffices)
 //   → returns { picked, delivered, retried, dead_lettered, blocked }
 //
 // ── SELECTION ────────────────────────────────────────────────────────────────
@@ -83,16 +84,23 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 function isAuthorized(req: Request): boolean {
-  const secret = Deno.env.get('CRON_SECRET') ?? '';
-  if (!secret) return false; // fail closed on missing config
-  const auth = req.headers.get('authorization') ?? '';
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
-  const headerSecret = req.headers.get('x-cron-secret') ?? '';
-  const url = new URL(req.url);
-  const token = url.searchParams.get('token') ?? '';
-  const provided = bearer || headerSecret || token;
-  if (!provided) return false;
-  return constantTimeEqual(provided, secret);
+  // Two independent checks, either sufficient — matches the established
+  // coverage-audit/index.ts pattern. Previously this fell back through a
+  // single `bearer || headerSecret || token` chain and compared whichever
+  // was truthy against CRON_SECRET only, so a bearer service-role key (sent
+  // for platform gateway admission, e.g. by daily-cron's triggerWebhookDispatcher)
+  // was checked against the wrong secret and always failed, silently masking
+  // whatever the caller's actual x-cron-secret credential had validated.
+  // Query-parameter auth (?token=) removed — secrets in URLs are logged in
+  // server access logs, Vercel/CDN edge logs. No caller in this codebase
+  // relies on it (only known caller, daily-cron, already sends both headers).
+  const cronSecret = Deno.env.get('CRON_SECRET') ?? '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const providedCron = req.headers.get('x-cron-secret') ?? '';
+  const providedAuth = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
+  const cronOk = cronSecret.length > 0 && constantTimeEqual(providedCron, cronSecret);
+  const serviceOk = serviceRoleKey.length > 0 && constantTimeEqual(providedAuth, serviceRoleKey);
+  return cronOk || serviceOk;
 }
 
 // ── HMAC-SHA256 hex over the body, keyed by secret_hash ──────────────────────

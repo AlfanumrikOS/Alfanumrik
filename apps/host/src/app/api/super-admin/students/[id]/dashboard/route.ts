@@ -7,6 +7,14 @@ import {
   recordPageView,
 } from '../../_lib/validate-session';
 
+// P-01 fix: explicit projection instead of `select('*')`, which returned
+// every column on `students` (DOB, phone, parent_phone, emergency_contact,
+// etc.) into a dashboard-proxy payload. Matches the fields actually read by
+// apps/host/src/app/super-admin/students/[id]/_components/LiveViewFrame.tsx
+// and apps/host/src/app/super-admin/view-as/[studentId]/dashboard/page.tsx.
+const STUDENT_DASHBOARD_COLUMNS =
+  'id,name,grade,board,preferred_language,xp_total,streak_days,is_active';
+
 // GET /api/super-admin/students/[id]/dashboard — proxy dashboard data via impersonation
 export async function GET(
   request: NextRequest,
@@ -39,7 +47,7 @@ export async function GET(
   try {
     // Fetch student profile and dashboard data in parallel
     const [studentRes, dashboardRes] = await Promise.all([
-      supabaseAdmin.from('students').select('*').eq('id', studentId).single(),
+      supabaseAdmin.from('students').select(STUDENT_DASHBOARD_COLUMNS).eq('id', studentId).single(),
       supabaseAdmin.rpc('get_dashboard_data', { p_student_id: studentId }),
     ]);
 
@@ -60,7 +68,7 @@ export async function GET(
       const [studentRes, quizTodayRes, masteryRes] = await Promise.all([
         supabaseAdmin
           .from('students')
-          .select('*')
+          .select(STUDENT_DASHBOARD_COLUMNS)
           .eq('id', studentId)
           .single(),
         supabaseAdmin

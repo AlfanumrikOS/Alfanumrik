@@ -13,6 +13,7 @@ import {
   resolveEffectiveEntitlement,
   isRedundantPurchase,
 } from '@alfanumrik/lib/entitlements/effective-plan';
+import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
 
 /**
  * Fail-CLOSED GST gate (Track A.3 launch-safety).
@@ -72,6 +73,23 @@ export async function POST(request: NextRequest) {
     // RBAC permission gate (P11): authorize first, then get user for metadata.
     const auth = await authorizeRequest(request, 'payments.subscribe');
     if (!auth.authorized) return auth.errorResponse!;
+
+    // Anti-abuse: cap order/subscription creation per authenticated user — a
+    // compromised session should not be able to create unlimited Razorpay
+    // subscriptions/orders.
+    const rateCheck = await checkApiRateLimit(`payments:${auth.userId}`, 10, 60 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Please try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.max(0, rateCheck.resetAt - Math.ceil(Date.now() / 1000))),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
+    }
 
     // Get user email for Razorpay metadata (auth.userId already available).
     const supabase = createServerClient(supabaseUrl, supabaseKey, {

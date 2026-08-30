@@ -22,6 +22,7 @@ import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { createHash, randomBytes } from 'crypto';
 import { logger } from '@alfanumrik/lib/logger';
 import { secureEqual } from '@alfanumrik/lib/secure-compare';
+import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
 
 // OAuth2 error response per RFC 6749 Section 5.2
 function tokenError(
@@ -282,6 +283,30 @@ async function handleRefreshTokenGrant(
 
 export async function POST(request: NextRequest) {
   try {
+    // Anti-brute-force: client_secret is only known post-body-parse, so this
+    // is IP-keyed rather than client_id-keyed. 20 attempts / 5 min matches
+    // the established convention (super-admin login's own limiter uses the
+    // same window/count for credential-guessing protection).
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') ||
+      'unknown';
+    const rateCheck = await checkApiRateLimit(`oauth-token:${ip}`, 20, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'invalid_request', error_description: 'Too many attempts. Please try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Cache-Control': 'no-store',
+            'Pragma': 'no-cache',
+            'Retry-After': String(Math.max(0, rateCheck.resetAt - Math.ceil(Date.now() / 1000))),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
+    }
+
     const body = await parseBody(request);
     const grantType = body.grant_type;
 

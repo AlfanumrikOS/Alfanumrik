@@ -81,6 +81,15 @@ export async function POST(request: NextRequest): Promise<Response> {
       return NextResponse.json({ count: 0 });
     }
 
+    // idempotency_key per student × day prevents duplicate streak_at_risk rows
+    // on cron re-run (Vercel retry, manual re-trigger). Matches the daily-cron
+    // Edge Function's todayUtcSlug() convention (supabase/functions/daily-cron/
+    // index.ts:41-43) — same YYYY_MM_DD-in-UTC slug format, kept in sync
+    // manually since that helper isn't in a module this Next.js route can
+    // import from. Column + partial unique index already exist from migration
+    // 20260505100100_notifications_idempotency_key.sql.
+    const daySlug = new Date().toISOString().slice(0, 10).replace(/-/g, '_');
+
     // Build notification rows — counts only in the response body (P13).
     const notifications = rows.map((row) => ({
       recipient_type: 'student',
@@ -92,11 +101,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       body_hi: `आपकी ${row.current_streak} दिन की स्ट्रीक है। इसे बचाने के लिए आज कुछ पढ़ें!`,
       is_read: false,
       data: { trigger: 'streak_at_risk', streak_days: row.current_streak },
+      idempotency_key: `streak_at_risk_${daySlug}_${row.student_id}`,
     }));
 
     const { error: insertErr } = await supabaseAdmin
       .from('notifications')
-      .insert(notifications);
+      .upsert(notifications, { onConflict: 'recipient_id,type,idempotency_key', ignoreDuplicates: true });
 
     if (insertErr) {
       return NextResponse.json({ error: GENERIC_500_BODY }, { status: 500 });

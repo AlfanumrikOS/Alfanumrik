@@ -3,6 +3,17 @@ import { authorizeAdmin, isValidUUID } from '@alfanumrik/lib/admin-auth';
 import { auditPiiReadThrottled } from '@alfanumrik/lib/admin-audit-throttle';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 
+// P-01 fix: explicit projections instead of `select('*')`. Every other join
+// in this file's Promise.all already uses explicit column lists — these were
+// the two outliers, returning full unfiltered rows (students: DOB, phone,
+// parent_phone, emergency_contact, etc.; student_subscriptions: full billing
+// row) into an aggregated profile payload. Matches the fields actually read
+// by apps/host/src/app/super-admin/students/[id]/page.tsx (StudentProfile)
+// and DataPanel.tsx's `data.subscription.*` usage.
+const STUDENT_PROFILE_COLUMNS =
+  'id,name,email,grade,board,stream,subscription_plan,selected_subjects,preferred_subject,is_active,created_at';
+const SUBSCRIPTION_SUMMARY_COLUMNS = 'plan_id,status,expires_at';
+
 // GET /api/super-admin/students/[id]/profile — aggregated student data for Data Panel
 export async function GET(
   request: NextRequest,
@@ -37,7 +48,7 @@ export async function GET(
       opsRes,
     ] = await Promise.all([
       // 1. Student record
-      supabaseAdmin.from('students').select('*').eq('id', studentId).single(),
+      supabaseAdmin.from('students').select(STUDENT_PROFILE_COLUMNS).eq('id', studentId).single(),
 
       // 2. Concept mastery — join via curriculum_topics for subject info
       supabaseAdmin
@@ -99,7 +110,7 @@ export async function GET(
       // 9. Subscription
       supabaseAdmin
         .from('student_subscriptions')
-        .select('*')
+        .select(SUBSCRIPTION_SUMMARY_COLUMNS)
         .eq('student_id', studentId)
         .order('created_at', { ascending: false })
         .limit(1),
