@@ -44,9 +44,22 @@ export async function GET(
       );
     }
 
+    // P-01 fix: explicit projection instead of `select('*')`. Every column on
+    // `monthly_reports` is either an identifier needed to scope the row or
+    // genuine report content this download endpoint exists to return (no
+    // name/DOB/contact PII lives on this table) — so the full column list is
+    // named here to close the schema-drift/blast-radius risk of a bare `*`
+    // without narrowing what the feature returns.
+    const REPORT_COLUMNS =
+      'id, student_id, report_month, concept_mastery_pct, retention_score, ' +
+      'weak_chapters, strong_chapters, test_scores, accuracy_trend, ' +
+      'time_efficiency, predicted_score, syllabus_completion_pct, ' +
+      'study_consistency_pct, total_study_minutes, total_questions_attempted, ' +
+      'report_data, generated_at';
+
     const { data: report } = await supabaseAdmin
       .from('monthly_reports')
-      .select('*')
+      .select(REPORT_COLUMNS)
       .eq('student_id', childId)
       .eq('report_month', month)
       .single();

@@ -2159,6 +2159,7 @@ jobs:
         supabase/functions/send-auth-email/__tests__/always-200.test.ts
         supabase/functions/_shared/__tests__/gmail-transport.test.ts
         supabase/functions/_shared/security/__tests__/internal-cron-auth.test.ts
+        supabase/functions/_shared/security/__tests__/grounded-client-internal-signing.test.ts
         supabase/functions/_shared/quiz-oracle.test.ts
         supabase/functions/alert-deliverer/index_test.ts
         supabase/functions/bulk-question-gen/__tests__/actions.contract.test.ts

@@ -36,7 +36,7 @@ const GROUNDED_ANSWER_SIGNING_PATH = '/functions/v1/grounded-answer';
  * Returns null when the signing secret is absent so the caller can fail closed
  * rather than emit a request grounded-answer is certain to reject.
  */
-async function buildInternalCallerHeaders(
+export async function buildInternalCallerHeaders(
   method: string,
   path: string,
   body: string,
