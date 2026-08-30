@@ -177,8 +177,6 @@ describe('PP-5 enumeration — every parent child-data route references a link b
   const ROUTES = [
     'src/app/api/parent/children/[student_id]/chat/route.ts',
     'src/app/api/parent/children/[student_id]/export/route.ts',
-    'src/app/api/parent/children/[student_id]/erasure-status/route.ts',
-    'src/app/api/parent/children/[student_id]/request-erasure/route.ts',
     'src/app/api/parent/report/route.ts',
     'src/app/api/parent/billing/route.ts',
     'src/app/api/parent/calendar/route.ts',
@@ -192,8 +190,6 @@ describe('PP-5 enumeration — every parent child-data route references a link b
       /canAccessStudent/.test(src) ||
       /isGuardianLinkedToStudent/.test(src) ||
       /listChildrenForGuardian/.test(src) ||
-      /parent_(request|cancel)_child_erasure/.test(src) ||
-      /parent_child_erasure_status/.test(src) ||
       // Inline guardian_student_links link check that 403s on "not linked".
       (/guardian_student_links/.test(src) && /403/.test(src));
     expect(usesHelper).toBe(true);

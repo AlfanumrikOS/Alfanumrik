@@ -3,23 +3,23 @@
 /**
  * /memory — "What Foxy remembers about me" (Foxy North-Star Phase 1).
  *
- * Student-facing transparency + control surface over Foxy's learner memory.
+ * Student-facing transparency surface over Foxy's learner memory (read-only —
+ * the per-layer erase control was removed 2026-08-30 along with the DPDP
+ * erasure subsystem it was built on; see
+ * supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql).
  *
  * Data: GET /api/learner/memory?subject=<code> →
  *   { cognitive: { weakTopics, strongTopics, revisionDue, recentErrors },
  *     longMemory: { summary, highConcepts, lowConcepts, topMisconceptions },
  *     preferences: { learningStyle, preferredExplanationDepth },
- *     twin: null, erasurePending: boolean }
- * Erase: DELETE /api/learner/memory { scope: { layer, subject? } } → { accepted: true }
- *   where layer is the canonical wire enum 'preferences'|'long_memory'|'twin'|'cognitive'
- *   (snake_case long_memory — UI layer keys are mapped via WIRE_LAYER below).
+ *     twin: null }
  *
  * Vocabulary rule (assessment-owned): topic lists use the growth-mindset
  * mastery-band labels (packages/lib/src/dashboard/mastery-band-labels.ts) —
  * "Building it" / "Strong" — NEVER "weak" framing on any student surface.
  *
  * Subject picker mirrors the house pattern from /library (useAllowedSubjects
- * chip tabs). Loading / error / empty / erasurePending states per house style.
+ * chip tabs). Loading / error / empty states per house style.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -30,7 +30,6 @@ import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { MASTERY_BAND_LABELS } from '@alfanumrik/lib/dashboard/mastery-band-labels';
 import MemoryLayerCard, { MemoryChip } from '@alfanumrik/ui/memory/MemoryLayerCard';
-import ErasePanel, { type MemoryLayer } from '@alfanumrik/ui/memory/ErasePanel';
 
 // ─── Wire types (fixed API contract) ─────────────────────────────────────────
 
@@ -52,19 +51,7 @@ interface LearnerMemoryPayload {
     preferredExplanationDepth: string | null;
   } | null;
   twin: null;
-  erasurePending: boolean;
 }
-
-/** Canonical DELETE scope.layer wire enum (fixed API contract). */
-type WireMemoryLayer = 'preferences' | 'long_memory' | 'twin' | 'cognitive';
-
-/** Explicit UI layer key → wire value map (GET keys are camelCase; the DELETE
- *  wire contract uses snake_case long_memory). */
-const WIRE_LAYER: Record<MemoryLayer, WireMemoryLayer> = {
-  cognitive: 'cognitive',
-  longMemory: 'long_memory',
-  preferences: 'preferences',
-};
 
 function asList(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length > 0) : [];
@@ -81,8 +68,6 @@ export default function MemoryPage() {
   const [memory, setMemory] = useState<LearnerMemoryPayload | null>(null);
   const [loadingMemory, setLoadingMemory] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [erasingLayer, setErasingLayer] = useState<MemoryLayer | null>(null);
-  const [eraseError, setEraseError] = useState<string | null>(null);
 
   // Auth guard (house pattern)
   useEffect(() => {
@@ -132,43 +117,6 @@ export default function MemoryPage() {
     if (!authLoading && isLoggedIn && selectedSubject) fetchMemory();
   }, [authLoading, isLoggedIn, selectedSubject, fetchMemory]);
 
-  const handleErase = useCallback(async (layer: MemoryLayer) => {
-    setErasingLayer(layer);
-    setEraseError(null);
-    try {
-      const token = await getToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      // Subject-scoped layers carry the selected subject; preferences are global.
-      // The wire carries the canonical enum value (WIRE_LAYER), not the UI key.
-      const wireLayer = WIRE_LAYER[layer];
-      const scope: { layer: WireMemoryLayer; subject?: string } =
-        layer === 'preferences'
-          ? { layer: wireLayer }
-          : { layer: wireLayer, ...(selectedSubject ? { subject: selectedSubject } : {}) };
-      const res = await fetch('/api/learner/memory', {
-        method: 'DELETE',
-        headers,
-        body: JSON.stringify({ scope }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Request failed (${res.status})`);
-      }
-      const json = await res.json().catch(() => ({}));
-      if (json?.accepted !== true && json?.data?.accepted !== true) {
-        throw new Error(isHi ? 'अनुरोध स्वीकार नहीं हुआ' : 'Request was not accepted');
-      }
-      // Erasure accepted → the memory is blanked immediately; refetch to show
-      // the erasurePending state from the server.
-      await fetchMemory();
-    } catch (err: any) {
-      setEraseError(err.message || (isHi ? 'मिटाने में समस्या हुई' : 'Could not erase'));
-    } finally {
-      setErasingLayer(null);
-    }
-  }, [getToken, selectedSubject, fetchMemory, isHi]);
-
   // ── Loading state ──────────────────────────────────────────────────────────
   if (authLoading || subjectsLoading || (!memory && loadingMemory && !apiError)) {
     return (
@@ -179,36 +127,6 @@ export default function MemoryPage() {
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-32 rounded-2xl" style={{ background: 'var(--surface-2)' }} />
           ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Erasure-pending full-screen state ─────────────────────────────────────
-  if (memory?.erasurePending) {
-    return (
-      <div
-        className="min-h-screen flex items-center justify-center px-6"
-        style={{ background: 'var(--bg)' }}
-        data-testid="erasure-pending-state"
-      >
-        <div className="text-center max-w-sm">
-          <div className="text-6xl mb-4 animate-float" aria-hidden="true">🌫️</div>
-          <h1 className="text-lg font-bold mb-2" style={{ color: 'var(--text-1)', fontFamily: 'var(--font-display)' }}>
-            {isHi ? 'फॉक्सी भूल रहा है…' : 'Foxy is forgetting…'}
-          </h1>
-          <p className="text-sm leading-relaxed mb-6" style={{ color: 'var(--text-2)' }}>
-            {isHi
-              ? 'तुम्हारा मिटाने का अनुरोध स्वीकार हो गया है। फॉक्सी की याददाश्त अभी खाली है, और चुनी गई मेमोरी 30 दिनों के भीतर हमारे सिस्टम से हटा दी जाएगी। तुम्हारी फॉक्सी के साथ पूरी बातचीत का इतिहास इसमें शामिल नहीं है — वह सिर्फ़ अकाउंट पूरी तरह हटाने पर मिटता है।'
-              : "Your erase request has been accepted. Foxy's memory here is blank now, and the memory you erased will be removed from our systems within 30 days. Your full conversation history with Foxy isn't included in this — that's removed only if you delete your account."}
-          </p>
-          <Link
-            href="/dashboard"
-            className="inline-block px-5 py-3 min-h-[44px] rounded-xl text-sm font-bold text-on-accent"
-            style={{ background: 'var(--accent-warm-strong)' }}
-          >
-            {isHi ? 'डैशबोर्ड पर जाओ' : 'Back to dashboard'}
-          </Link>
         </div>
       </div>
     );
@@ -451,20 +369,6 @@ export default function MemoryPage() {
         </>
       )}
 
-      {/* Erase controls — always available once memory has loaded */}
-      {!apiError && memory && (
-        <>
-          {eraseError && (
-            <p className="text-xs mb-2" style={{ color: '#DC2626' }} role="alert">{eraseError}</p>
-          )}
-          <ErasePanel
-            isHi={isHi}
-            erasingLayer={erasingLayer}
-            onErase={handleErase}
-            subjectLabel={subjectLabel}
-          />
-        </>
-      )}
     </div>
   );
 }

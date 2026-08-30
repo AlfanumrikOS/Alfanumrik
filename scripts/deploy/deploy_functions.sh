@@ -50,10 +50,9 @@ GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 LOG_FILE="$(dirname "$0")/.last_functions_deploy.log"
 
 # ---------------------------------------------------------------------------
-# All 45 active Edge Functions
+# All 43 active Edge Functions
 # ---------------------------------------------------------------------------
 ALL_FUNCTIONS=(
-  account-purge
   alert-deliverer
   alfabot-answer
   alfabot-send-inquiry
@@ -64,7 +63,6 @@ ALL_FUNCTIONS=(
   cme-engine
   coverage-audit
   daily-cron
-  data-erasure-purger
   embed-diagrams
   embed-ncert-qa
   embed-questions

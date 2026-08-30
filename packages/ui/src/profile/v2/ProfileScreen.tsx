@@ -73,7 +73,6 @@ export interface ProfileScreenProps {
   onExportData: () => void;
   onSignOut: () => void;
   editProfileHref: string;
-  deleteAccountHref: string;
   pricingHref: string;
   /**
    * ff_plan_v2 resolved ON — when true AND `onOpenPlan` is provided, the Plan
@@ -172,7 +171,6 @@ export default function ProfileScreen({
   onExportData,
   onSignOut,
   editProfileHref,
-  deleteAccountHref,
   pricingHref,
   planModalEnabled,
   onOpenPlan,
@@ -474,8 +472,8 @@ export default function ProfileScreen({
         </p>
         <p className="text-xs mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
           {isHi
-            ? "भारत के डेटा सुरक्षा नियमों (DPDP) के तहत, आप कभी भी अपना डेटा डाउनलोड या हटा सकते हैं।"
-            : "Under India's data protection rules (DPDP), you can download or delete your data at any time."}
+            ? "आप कभी भी अपना डेटा डाउनलोड कर सकते हैं।"
+            : "You can download your data at any time."}
         </p>
         <div className="flex flex-col sm:flex-row gap-2">
           <button
@@ -488,14 +486,6 @@ export default function ProfileScreen({
           >
             {exporting ? (isHi ? 'डाउनलोड हो रहा है...' : 'Downloading...') : isHi ? 'मेरा डेटा डाउनलोड करो' : 'Download my data'}
           </button>
-          <Link
-            href={deleteAccountHref}
-            className="flex-1 rounded-xl text-sm font-bold flex items-center justify-center"
-            style={{ minHeight: 44, background: 'rgba(220,38,38,0.06)', color: '#DC2626', border: '1px solid rgba(220,38,38,0.15)' }}
-            data-testid="me-delete-account"
-          >
-            {isHi ? 'खाता हटाओ' : 'Delete account'}
-          </Link>
         </div>
       </section>
 

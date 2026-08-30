@@ -154,7 +154,6 @@ function isProvableTombstone(fn: string): boolean {
  * is what's pinned).
  */
 const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
-  'account-purge': ['jwt-user', 'shared-secret'],
   // H1 fix (2026-07-29, P11-adjacent): removed the client-controlled
   // `x-cron-source: pg_cron` bare-header bypass and replaced it with
   // verifyInternalCronRequest() — the same fail-closed internal-cron
@@ -183,7 +182,6 @@ const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   'cme-engine': ['jwt-user'],
   'coverage-audit': ['jwt-user', 'shared-secret'],
   'daily-cron': ['internal-cron', 'jwt-user', 'shared-secret'],
-  'data-erasure-purger': ['internal-cron'],
   'embed-diagrams': ['ai-admission', 'admin-key'],
   'embed-ncert-qa': ['ai-admission', 'admin-key'],
   'embed-questions': ['ai-admission', 'admin-key'],

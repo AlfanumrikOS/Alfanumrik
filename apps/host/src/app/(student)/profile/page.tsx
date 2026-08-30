@@ -559,25 +559,6 @@ export default function ProfilePage() {
     setExporting(false);
   };
 
-  /* ── GDPR: Delete account ── */
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const handleDeleteAccount = async () => {
-    if (!student) return;
-    setDeleting(true);
-    try {
-      // Delete student data via RPC (cascades to profiles, mastery, quiz sessions, etc.)
-      const { error } = await supabase.rpc('delete_student_account', { p_student_id: student.id });
-      if (error) throw error;
-      await signOut();
-      router.replace('/login');
-    } catch (e) {
-      console.error('Delete error:', e);
-      toast.error(isHi ? 'खाता हटाने में त्रुटि। सपोर्ट से संपर्क करें।' : 'Error deleting account. Please contact support.');
-      setDeleting(false);
-    }
-  };
-
   if (isLoading || !student) return <LoadingFoxy />;
 
   const totalXp = snapshot?.total_xp ?? student.xp_total ?? 0;
@@ -829,56 +810,16 @@ export default function ProfilePage() {
               </button>
             </div>
 
-            {/* Danger Zone at very bottom */}
-            <div className="rounded-2xl p-4 border" style={{ background: 'rgba(220,38,38,0.02)', borderColor: 'rgba(220,38,38,0.12)' }}>
-              <p className="text-[11px] font-black uppercase tracking-wider mb-1.5" style={{ color: '#DC2626', fontFamily: 'var(--font-display)' }}>
-                ⚠️ {isHi ? 'खतरे का क्षेत्र' : 'Danger Zone'}
-              </p>
-              <p className="text-[10px] mb-3 leading-normal" style={{ color: 'var(--text-3)' }}>
-                {isHi ? 'यह क्रिया स्थायी है और वापस नहीं होगी।' : 'This action is permanent and cannot be undone.'}
-              </p>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  onClick={handleSignOut}
-                  className="flex-1 py-2.5 px-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all hover:bg-gray-100/50 active:scale-[0.98]"
-                  style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
-                >
-                  <span>🚪</span>
-                  {isHi ? 'लॉग आउट' : 'Sign Out'}
-                </button>
-                <button
-                  onClick={() => router.push('/settings/account/delete')}
-                  data-testid="profile-delete-account-link"
-                  className="flex-1 py-2.5 px-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98]"
-                  style={{ background: 'rgba(220,38,38,0.06)', color: '#DC2626', border: '1px solid rgba(220,38,38,0.15)' }}
-                >
-                  <span>🗑️</span>
-                  {isHi ? 'खाता हटाओ' : 'Delete Account'}
-                </button>
-              </div>
+            <div className="rounded-2xl p-4 border" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
+              <button
+                onClick={handleSignOut}
+                className="w-full py-2.5 px-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all hover:bg-gray-100/50 active:scale-[0.98]"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+              >
+                <span>🚪</span>
+                {isHi ? 'लॉग आउट' : 'Sign Out'}
+              </button>
             </div>
-
-            {/* Delete confirm modal (legacy defensive fallback) */}
-            {showDeleteConfirm && (
-              <>
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100 }} onClick={() => setShowDeleteConfirm(false)} />
-                <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 101, background: 'var(--surface-1, #fff)', borderRadius: 16, padding: 24, maxWidth: 360, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-                  <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, fontFamily: 'var(--font-display)' }}>{isHi ? '⚠️ खाता हटाना' : '⚠️ Delete Account'}</h3>
-                  <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 16 }}>
-                    {isHi ? 'यह आपका सारा डेटा — XP, प्रगति, बैज, और क्विज़ इतिहास — स्थायी रूप से हटा देगा। यह कार्य वापस नहीं किया जा सकता।' : 'This will permanently delete all your data — XP, progress, badges, and quiz history. This action cannot be undone.'}
-                  </p>
-                  <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16 }}>
-                    {isHi ? 'पहले "मेरा डेटा डाउनलोड करो" से बैकअप ले लो।' : 'We recommend downloading your data first using "Download My Data".'}
-                  </p>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Button fullWidth variant="ghost" onClick={() => setShowDeleteConfirm(false)}>{isHi ? 'रद्द करो' : 'Cancel'}</Button>
-                    <Button fullWidth onClick={handleDeleteAccount} disabled={deleting} style={{ background: '#DC2626', color: '#fff' }}>
-                      {deleting ? (isHi ? 'हटा रहे हैं...' : 'Deleting...') : (isHi ? 'हाँ, हटाओ' : 'Yes, Delete')}
-                    </Button>
-                  </div>
-                </div>
-              </>
-            )}
           </div>
         )}
 

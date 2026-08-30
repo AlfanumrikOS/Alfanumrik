@@ -23,40 +23,6 @@
       ]
     },
     {
-      "id": "parent-child-erasure",
-      "route": "/api/parent/children/[student_id]/request-erasure",
-      "file": "apps/host/src/app/api/parent/children/[student_id]/request-erasure/route.ts",
-      "sensitivity": "critical",
-      "status": "migrated_scoped_rpc",
-      "migrationTarget": "canonical_domain_helper",
-      "owner": "parent-portal-backend",
-      "rationale": "Guardian erasure request/cancel ownership checks and `data_erasure_requests` mutations now run through scoped authenticated RPCs. The route also publishes `parent.child_erasure_requested` and `parent.child_erasure_cancelled` through `parent_publish_child_state_event`, so event-bus writes are guardian-bound, flag-gated, idempotent, and no longer require route-level service-role access.",
-      "evidence": [
-        "POST /api/parent/children/[student_id]/request-erasure",
-        "Both routes are guardian-ownership-strict",
-        "createServerClient",
-        "parent_request_child_erasure",
-        "parent_cancel_child_erasure",
-        "parent_publish_child_state_event"
-      ]
-    },
-    {
-      "id": "parent-child-erasure-status",
-      "route": "/api/parent/children/[student_id]/erasure-status",
-      "file": "apps/host/src/app/api/parent/children/[student_id]/erasure-status/route.ts",
-      "sensitivity": "critical",
-      "status": "migrated_scoped_rpc",
-      "migrationTarget": "canonical_domain_helper",
-      "owner": "parent-portal-backend",
-      "rationale": "Guardian erasure status ownership checks and `data_erasure_requests` latest-row reads now run through the scoped authenticated `parent_child_erasure_status` RPC. The route keeps the app-layer permission gate, but no longer imports the route-level service-role client for guardian/link/status table reads.",
-      "evidence": [
-        "GET /api/parent/children/[student_id]/erasure-status",
-        "createServerClient",
-        "parent_child_erasure_status",
-        "Child not linked to your account"
-      ]
-    },
-    {
       "id": "parent-report",
       "route": "/api/parent/report",
       "file": "apps/host/src/app/api/parent/report/route.ts",

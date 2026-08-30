@@ -52,9 +52,8 @@ if (!IS_INTEGRATION_LANE) {
   // throw-before-network path when the variable is ABSENT (verified in source
   // 2026-08-08):
   //   UPSTASH_*  → getRedis() returns null in packages/lib/src/redis.ts:21,
-  //                rbac.ts:59, middleware-helpers.ts:84,
-  //                deletion-cache-invalidation.ts:32, api-rate-limit.ts:30 and
-  //                the ensureUpstash() guard in apps/host/src/proxy.ts:216 —
+  //                rbac.ts:59, middleware-helpers.ts:84, api-rate-limit.ts:30
+  //                and the ensureUpstash() guard in apps/host/src/proxy.ts:216 —
   //                all fall back to the in-memory limiter/cache, and
   //                acquireIdempotencyLock() returns true (allow) rather than
   //                dedupe.

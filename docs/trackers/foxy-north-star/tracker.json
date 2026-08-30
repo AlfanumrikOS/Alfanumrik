@@ -1241,7 +1241,7 @@
     },
     {
       "reqId": "T2",
-      "title": "What-Foxy-remembers screen (view / correct / remove) — student memory page + /api/learner/memory + per-item erasure via erasure-guard + DPDP flow (RBAC addition A3 granted)",
+      "title": "What-Foxy-remembers screen (view) — student memory page + GET /api/learner/memory (per-item erasure removed 2026-08-30 with the DPDP erasure subsystem)",
       "specSection": "§1.2",
       "phase": "1",
       "status": "verified",
@@ -1253,8 +1253,7 @@
           "supabase/migrations/20260806000700_execute_data_erasure_purge_scoped.sql"
         ],
         "backend": [
-          "apps/host/src/app/api/learner/memory/route.ts",
-          "supabase/functions/data-erasure-purger/index.ts"
+          "apps/host/src/app/api/learner/memory/route.ts"
         ],
         "middleware": "inherit",
         "frontend": [
@@ -1267,9 +1266,7 @@
       "prs": [],
       "tests": [
         "apps/host/src/__tests__/api/learner-memory.test.ts",
-        "apps/host/src/__tests__/components/memory/memory-page.test.tsx — 10 tests",
-        "apps/host/src/__tests__/lib/data-erasure-purger.test.ts",
-        "apps/host/src/__tests__/lib/data-erasure-purger-scoped-skip.test.ts"
+        "apps/host/src/__tests__/components/memory/memory-page.test.tsx — 10 tests"
       ],
       "regressionIds": [
         "REG-350"
@@ -1296,18 +1293,17 @@
       },
       "lastVerified": "2026-08-05",
       "evidence": [
-        "apps/host/src/app/api/learner/memory/route.ts — what-Foxy-remembers read + per-item erasure API",
+        "apps/host/src/app/api/learner/memory/route.ts — what-Foxy-remembers read API",
         "apps/host/src/app/(student)/memory/page.tsx — memory transparency screen",
         "packages/ui/src/memory/MemoryLayerCard.tsx — layer cards",
-        "packages/ui/src/memory/ErasePanel.tsx — per-item erasure UI",
-        "supabase/migrations/20260806000300_data_erasure_requests_scope.sql — erasure scope",
+        "supabase/migrations/20260806000300_data_erasure_requests_scope.sql — erasure scope (historical; subsystem removed)",
         "supabase/migrations/20260806000400_seed_memory_self_access_permissions.sql — memory self-access permissions",
-        "supabase/migrations/20260806000600_data_erasure_requests_student_initiated.sql — student-initiated requests",
-        "supabase/migrations/20260806000700_execute_data_erasure_purge_scoped.sql — scoped purge RPC",
-        "supabase/functions/data-erasure-purger/index.ts — scoped purge routing"
+        "supabase/migrations/20260806000600_data_erasure_requests_student_initiated.sql — student-initiated requests (historical; subsystem removed)",
+        "supabase/migrations/20260806000700_execute_data_erasure_purge_scoped.sql — scoped purge RPC (historical; subsystem removed)"
       ],
       "notes": [
-        "Band labels + evidence-language copy on the memory screen also serve T1"
+        "Band labels + evidence-language copy on the memory screen also serve T1",
+        "2026-08-30: per-item erasure (ErasePanel.tsx, the DELETE handler on /api/learner/memory, and the data-erasure-purger Edge Function) removed along with the whole DPDP erasure subsystem — CEO decision, not required by the schools. See supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql and docs/audit/launch-readiness/dpdp-erasure-removal.md. The view-only memory screen (GET /api/learner/memory) is unaffected."
       ]
     },
     {

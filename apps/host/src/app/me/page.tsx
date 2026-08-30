@@ -26,10 +26,7 @@
  *     single column would duplicate a working path rather than fix a gap.
  *   - Export: same read-only Promise.all over students/learning
  *     profiles/quiz_sessions/concept_mastery/achievements the legacy profile
- *     page already performs (GDPR/DPDP §17 export) — no new tables touched.
- *   - Delete: links to the existing, more mature `/settings/account/delete`
- *     cooling-off flow (GET/POST/DELETE `/api/v1/account/delete`) rather
- *     than the legacy page's direct `delete_student_account` RPC call.
+ *     page already performs — no new tables touched.
  *
  *   - Plan modal (ff_plan_v2): the Plan settings row opens
  *     `@alfanumrik/ui/billing/v2/PlanModal` (screen 15) instead of navigating
@@ -297,7 +294,6 @@ function MePageInner() {
         onExportData={handleExportData}
         onSignOut={handleSignOut}
         editProfileHref="/profile"
-        deleteAccountHref="/settings/account/delete"
         pricingHref="/pricing"
         planModalEnabled={planModalEnabled}
         onOpenPlan={() => setPlanModalOpen(true)}

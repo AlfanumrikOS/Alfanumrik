@@ -2,18 +2,21 @@
  * Unified Student Memory — orchestrator + renderer unit tests (GenAI arch Phase 2).
  *
  * Covers:
- *  1. DPDP erasure short-circuit — guard TRUE ⇒ fully-empty memory AND zero
- *     sub-reads; guard FALSE ⇒ sub-reads run and their outputs pass through.
- *  2. Fail-soft composition — a rejecting sub-reader degrades ONLY its slice to
+ *  1. Fail-soft composition — a rejecting sub-reader degrades ONLY its slice to
  *     the canonical empty value; other slices still populate; never throws.
- *  3. Passthrough / byte-identity basis — for a non-erased student the composed
- *     StudentMemory embeds the EXACT sub-context objects (reference identity).
- *     This is the parity guarantee that flag-ON == flag-OFF at the route.
- *  4. Renderer — empty ⇒ ''; populated ⇒ exactly the composition of the three
+ *  2. Passthrough / byte-identity basis — the composed StudentMemory embeds the
+ *     EXACT sub-context objects (reference identity). This is the parity
+ *     guarantee that flag-ON == flag-OFF at the route.
+ *  3. Renderer — empty ⇒ ''; populated ⇒ exactly the composition of the three
  *     EXISTING per-slice renderers; PII-clean output.
  *
- * Fully hermetic — every sub-read + the erasure check is injected via
- * StudentMemoryDeps; no Supabase client, no network.
+ * Fully hermetic — every sub-read is injected via StudentMemoryDeps; no
+ * Supabase client, no network.
+ *
+ * (This file used to also cover a DPDP erasure short-circuit — guard TRUE ⇒
+ * fully-empty memory AND zero sub-reads. Removed 2026-08-30 along with the
+ * DPDP erasure subsystem — see
+ * supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
  */
 import { describe, it, expect, vi } from 'vitest';
 
@@ -81,7 +84,7 @@ const fakePrefs: StudentPreferences = {
 const OPTS = { subject: 'science', grade: '8', chapter: 'nutrition' } as const;
 const STUDENT_ID = 'student-1';
 
-// Build a full injectable dep-set of spies. `erasure` toggles the guard.
+// Build a full injectable dep-set of spies.
 function makeDeps(overrides: Partial<StudentMemoryDeps> = {}): {
   deps: StudentMemoryDeps;
 } {
@@ -90,49 +93,13 @@ function makeDeps(overrides: Partial<StudentMemoryDeps> = {}): {
     loadTwin: vi.fn(async () => fakeTwin),
     loadLongMemory: vi.fn(async () => fakeLong),
     loadPreferences: vi.fn(async () => fakePrefs),
-    erasurePending: vi.fn(async () => false),
     ...overrides,
   };
   return { deps };
 }
 
-describe('getStudentMemory — DPDP erasure short-circuit', () => {
-  it('returns fully-EMPTY memory and skips ALL sub-reads when erasure is pending', async () => {
-    const { deps } = makeDeps({ erasurePending: vi.fn(async () => true) });
-    const result = await getStudentMemory(STUDENT_ID, OPTS, deps);
-
-    // fully empty
-    expect(result.isEmpty).toBe(true);
-    expect(result.cognitive).toBe(EMPTY_COGNITIVE_CONTEXT);
-    expect(result.twin).toBeNull();
-    expect(result.longMemory).toBe(EMPTY_LONG_MEMORY);
-    expect(result.preferences).toBe(EMPTY_PREFERENCES);
-    // identity keys still echoed
-    expect(result.studentId).toBe(STUDENT_ID);
-    expect(result.subject).toBe(OPTS.subject);
-    expect(result.grade).toBe(OPTS.grade);
-    expect(result.chapter).toBe(OPTS.chapter);
-
-    // NONE of the learner-state tables were touched
-    expect(deps.loadCognitive).toHaveBeenCalledTimes(0);
-    expect(deps.loadTwin).toHaveBeenCalledTimes(0);
-    expect(deps.loadLongMemory).toHaveBeenCalledTimes(0);
-    expect(deps.loadPreferences).toHaveBeenCalledTimes(0);
-  });
-
-  it('trips the guard (empty memory) when the injected erasure check itself throws', async () => {
-    const { deps } = makeDeps({
-      erasurePending: vi.fn(async () => {
-        throw new Error('guard exploded');
-      }),
-    });
-    const result = await getStudentMemory(STUDENT_ID, OPTS, deps);
-    expect(result.isEmpty).toBe(true);
-    expect(result.cognitive).toBe(EMPTY_COGNITIVE_CONTEXT);
-    expect(deps.loadCognitive).toHaveBeenCalledTimes(0);
-  });
-
-  it('runs the sub-reads and passes their outputs through when erasure is NOT pending', async () => {
+describe('getStudentMemory — runs the sub-reads and passes their outputs through', () => {
+  it('runs every sub-read exactly once and passes their outputs through', async () => {
     const { deps } = makeDeps();
     const result = await getStudentMemory(STUDENT_ID, OPTS, deps);
 
@@ -282,9 +249,16 @@ function populatedMemory(): StudentMemory {
 
 describe('renderStudentMemoryPromptSection', () => {
   it('returns "" for empty memory', async () => {
-    // Source an empty memory through the real short-circuit path.
-    const { deps } = makeDeps({ erasurePending: vi.fn(async () => true) });
+    // Source an empty memory through the real path — every sub-read
+    // resolves to its own canonical empty value.
+    const { deps } = makeDeps({
+      loadCognitive: vi.fn(async () => EMPTY_COGNITIVE_CONTEXT),
+      loadTwin: vi.fn(async () => null),
+      loadLongMemory: vi.fn(async () => EMPTY_LONG_MEMORY),
+      loadPreferences: vi.fn(async () => EMPTY_PREFERENCES),
+    });
     const empty = await getStudentMemory(STUDENT_ID, OPTS, deps);
+    expect(empty.isEmpty).toBe(true);
     expect(renderStudentMemoryPromptSection(empty)).toBe('');
   });
 

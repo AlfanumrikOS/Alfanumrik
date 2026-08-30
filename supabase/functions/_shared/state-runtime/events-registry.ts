@@ -341,38 +341,6 @@ export const ParentChildDataExportedSchema = EventBaseSchema.extend({
   }),
 })
 
-// Phase D.3 — DPDP §15 right-to-erasure events.
-export const ParentChildErasureRequestedSchema = EventBaseSchema.extend({
-  kind: z.literal('parent.child_erasure_requested'),
-  payload: z.object({
-    requestId: uuidLike(),
-    guardianId: uuidLike(),
-    studentId: uuidLike(),
-    purgeAt: isoDatetime(),
-    hasReason: z.boolean(),
-  }),
-})
-
-export const ParentChildErasureCancelledSchema = EventBaseSchema.extend({
-  kind: z.literal('parent.child_erasure_cancelled'),
-  payload: z.object({
-    requestId: uuidLike(),
-    guardianId: uuidLike(),
-    studentId: uuidLike(),
-    elapsedSec: z.number().int().nonnegative().nullable(),
-  }),
-})
-
-export const ParentChildErasureCompletedSchema = EventBaseSchema.extend({
-  kind: z.literal('parent.child_erasure_completed'),
-  payload: z.object({
-    requestId: uuidLike(),
-    guardianId: uuidLike(),
-    studentId: uuidLike(),
-    rowsDeleted: z.record(z.string(), z.number().int().nonnegative()),
-  }),
-})
-
 // ── Teacher events ───────────────────────────────────────────────────
 
 export const TeacherAssignmentCreatedSchema = EventBaseSchema.extend({
@@ -711,9 +679,6 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   ParentConsentGrantedSchema,
   ParentConsentRevokedSchema,
   ParentChildDataExportedSchema,
-  ParentChildErasureRequestedSchema,
-  ParentChildErasureCancelledSchema,
-  ParentChildErasureCompletedSchema,
   TeacherAssignmentCreatedSchema,
   TeacherClassroomCreatedSchema,
   TeacherClassroomUpdatedSchema,
@@ -765,9 +730,6 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'parent.consent_granted',
   'parent.consent_revoked',
   'parent.child_data_exported',
-  'parent.child_erasure_requested',
-  'parent.child_erasure_cancelled',
-  'parent.child_erasure_completed',
   'teacher.assignment_created',
   'teacher.classroom_created',
   'teacher.classroom_updated',

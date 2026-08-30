@@ -1,9 +1,9 @@
 /**
- * Money + destructive cron secret/idempotency guards.
+ * Money-moving cron secret/idempotency guards.
  *
- * Three CRON_SECRET-gated routes that either move money or hard-delete data.
- * Each MUST refuse to do any work without a valid CRON_SECRET (constant-time
- * compare), and each MUST be safe to re-run.
+ * Two CRON_SECRET-gated routes that move money. Each MUST refuse to do any
+ * work without a valid CRON_SECRET (constant-time compare), and each MUST be
+ * safe to re-run.
  *
  *   1. /api/cron/reconcile-payments (POST)
  *        - rejects without CRON_SECRET (401), no DB scan.
@@ -19,10 +19,10 @@
  *          implement the grace period — a past_due sub inside its grace window
  *          is not halted (we assert the route reports the RPC's own counts and
  *          does not itself cut access).
- *   3. /api/cron/account-purge (GET + POST) — DESTRUCTIVE
- *        - refuses without CRON_SECRET (401) on BOTH verbs, no rows queried,
- *          no Edge Function invoked.
- *        - with a valid secret but nothing due → processes 0 (scope guard).
+ *
+ * (The third route this file used to cover, /api/cron/account-purge, was
+ * removed 2026-08-30 with the DPDP erasure subsystem — see
+ * supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
  *
  * Mirrors the constant-time-secret + supabase-admin mocking style in
  * src/__tests__/api/cron/reverify-domains.test.ts and the quiz-submit route
@@ -40,7 +40,6 @@ vi.mock('@alfanumrik/lib/ops-events', () => ({ logOpsEvent: vi.fn().mockResolved
 
 // ── supabaseAdmin / getSupabaseAdmin shared mock ────────────────────────────
 // reconcile-payments + expired-subscriptions import getSupabaseAdmin().
-// account-purge imports the eager supabaseAdmin singleton.
 //
 // Tables/chains we model:
 //   payment_history:        .select(...).eq('status','captured').order(...).limit(N)   → _capturedPayments
@@ -48,13 +47,11 @@ vi.mock('@alfanumrik/lib/ops-events', () => ({ logOpsEvent: vi.fn().mockResolved
 //   students (update):      .update({...}).eq('id', x)                                 → records updateStudentCalls
 //   subscription_plans:     .select('id').eq('plan_code', x).limit(1).maybeSingle()    → { id }
 //   student_subscriptions:  .upsert({...}, {...})                                      → records upsertCalls
-//   account_deletion_log:   .select(...).in('status',...).lte(...).order(...).limit(N) → _purgeDueRows
 //   admin.rpc('check_expired_subscriptions')                                           → _expiredRpc
 
 let _capturedPayments: any = { data: [], error: null };
 let _studentsByIds: any = { data: [], error: null };
 let _planIdRow: any = { data: { id: 'plan-1' }, error: null };
-let _purgeDueRows: any = { data: [], error: null };
 let _expiredRpc: any = { data: { marked_past_due: 0, halted: 0, checked_at: '2026-06-11T00:00:00Z' }, error: null };
 // C2 fix (2026-07-29): findStuckPayments()'s terminal-state guard reads each
 // stuck student's student_subscriptions row. Empty by default (no row → no
@@ -72,7 +69,6 @@ function fromMock(table: string) {
   chain.in = () => {
     if (table === 'students') return Promise.resolve(_studentsByIds);
     if (table === 'student_subscriptions') return Promise.resolve(_subsByStudentId);
-    if (table === 'account_deletion_log') return chain; // followed by .lte().order().limit()
     return chain;
   };
   chain.gt = () => chain;
@@ -82,7 +78,6 @@ function fromMock(table: string) {
   chain.order = () => chain;
   chain.limit = () => {
     if (table === 'payment_history') return Promise.resolve(_capturedPayments);
-    if (table === 'account_deletion_log') return Promise.resolve(_purgeDueRows);
     return chain;
   };
   chain.maybeSingle = () => Promise.resolve(_planIdRow);
@@ -134,7 +129,6 @@ beforeEach(() => {
   _studentsByIds = { data: [], error: null };
   _subsByStudentId = { data: [], error: null };
   _planIdRow = { data: { id: 'plan-1' }, error: null };
-  _purgeDueRows = { data: [], error: null };
   _expiredRpc = { data: { marked_past_due: 0, halted: 0, checked_at: '2026-06-11T00:00:00Z' }, error: null };
   // Fetch stub so an accidental Edge invocation is observable, not a network call.
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
@@ -260,42 +254,5 @@ describe('POST /api/cron/expired-subscriptions — CRON_SECRET gate + grace peri
     expect(rpcCalls).toHaveLength(1);
     expect(rpcCalls[0]).toEqual(['check_expired_subscriptions']);
     expect(updateStudentCalls).toHaveLength(0);
-  });
-});
-
-// ── 3. account-purge (DESTRUCTIVE) ──────────────────────────────────────────
-
-describe('account-purge — refuses to run unauthenticated on BOTH verbs', () => {
-  it('POST without CRON_SECRET → 401, no rows queried, no Edge Function invoked', async () => {
-    const { POST } = await import('@/app/api/cron/account-purge/route');
-    const res = await POST(req('/api/cron/account-purge', 'POST'));
-    expect(res.status).toBe(401);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('GET without CRON_SECRET → 401, no Edge Function invoked', async () => {
-    const { GET } = await import('@/app/api/cron/account-purge/route');
-    const res = await GET(req('/api/cron/account-purge', 'GET'));
-    expect(res.status).toBe(401);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('GET with a wrong-length secret → 401 (constant-time reject)', async () => {
-    const { GET } = await import('@/app/api/cron/account-purge/route');
-    const res = await GET(req('/api/cron/account-purge', 'GET', { 'x-cron-secret': 'short' }));
-    expect(res.status).toBe(401);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('with a valid secret but nothing due → processes 0, no Edge Function invoked (scope guard)', async () => {
-    _purgeDueRows = { data: [], error: null };
-    const { POST } = await import('@/app/api/cron/account-purge/route');
-    const res = await POST(req('/api/cron/account-purge', 'POST', { 'x-cron-secret': SECRET }));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.processed).toBe(0);
-    // No due rows → no destructive Edge invocation.
-    expect(fetch).not.toHaveBeenCalled();
   });
 });

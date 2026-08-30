@@ -753,19 +753,6 @@ export default function SettingsPage() {
             </div>
           )}
           <SettingsRow
-            label={isHi ? 'खाता हटाएं' : 'Delete Account'}
-            sublabel={isHi ? 'स्थायी रूप से डेटा मिटाएं' : 'Permanently erase your data'}
-            right={
-              <Link
-                href="/settings/account/delete"
-                className="text-[var(--text-3)] text-sm"
-                aria-label={isHi ? 'खाता हटाएं' : 'Delete account'}
-              >
-                →
-              </Link>
-            }
-          />
-          <SettingsRow
             label={signOutLoading ? (isHi ? 'Sign out हो रहा है…' : 'Signing out…') : (isHi ? 'Sign Out' : 'Sign Out')}
             danger
             right={

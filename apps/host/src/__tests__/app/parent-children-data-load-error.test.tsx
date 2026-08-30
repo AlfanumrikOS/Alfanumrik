@@ -97,7 +97,6 @@ vi.mock('@alfanumrik/lib/supabase', () => ({
   },
 }));
 
-vi.mock('@alfanumrik/ui/parent/ChildDataErasureSection', () => ({ default: () => null }));
 vi.mock('@alfanumrik/ui/parent/ParentChildChat', () => ({ default: () => null }));
 vi.mock('@alfanumrik/ui/pulse', () => ({ StudentPulse: () => null }));
 

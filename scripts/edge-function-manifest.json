@@ -1,7 +1,6 @@
 {
   "_comment": "RCA-08 deploy/secrets manifest for active Supabase Edge Functions. Keep in exact sync with supabase/functions/*/index.ts; src/__tests__/edge-functions/edge-function-manifest.test.ts enforces function coverage and direct Deno.env.get secret declarations.",
   "functions": [
-    { "name": "account-purge", "deploy": true, "class": "identity-privacy", "requiredSecrets": ["CRON_SECRET", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:account-purge", "owner": "identity-privacy" },
     { "name": "alert-deliverer", "deploy": true, "class": "ops-job", "requiredSecrets": ["CRON_SECRET", "SITE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:alert-deliverer", "owner": "platform-ops" },
     { "name": "alfabot-answer", "deploy": true, "class": "ai-data-processing", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:alfabot-answer", "owner": "ai-content" },
     { "name": "alfabot-send-inquiry", "deploy": true, "class": "ai-data-processing", "requiredSecrets": ["GMAIL_SENDER", "GOOGLE_SA_CLIENT_EMAIL", "GOOGLE_SA_PRIVATE_KEY", "MAILGUN_API_KEY", "MAILGUN_DOMAIN"], "healthCheck": "invoke:alfabot-send-inquiry", "owner": "ai-content" },
@@ -13,7 +12,6 @@
     { "name": "cme-engine", "deploy": true, "class": "ai-data-processing", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:cme-engine", "owner": "ai-content" },
     { "name": "coverage-audit", "deploy": true, "class": "ops-job", "requiredSecrets": ["CRON_SECRET", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:coverage-audit", "owner": "platform-ops" },
     { "name": "daily-cron", "deploy": true, "class": "ops-job", "requiredSecrets": ["ANTHROPIC_API_KEY", "CRON_SECRET", "SITE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:daily-cron", "owner": "platform-ops" },
-    { "name": "data-erasure-purger", "deploy": true, "class": "identity-privacy", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:data-erasure-purger", "owner": "identity-privacy" },
     { "name": "embed-diagrams", "deploy": true, "class": "ai-data-processing", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:embed-diagrams", "owner": "ai-content" },
     { "name": "embed-ncert-qa", "deploy": true, "class": "ai-data-processing", "requiredSecrets": ["ANTHROPIC_API_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:embed-ncert-qa", "owner": "ai-content" },
     { "name": "embed-questions", "deploy": true, "class": "ai-data-processing", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:embed-questions", "owner": "ai-content" },

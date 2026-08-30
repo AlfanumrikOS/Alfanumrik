@@ -38,7 +38,11 @@ function crons(rel: string): VercelCron[] {
 const CANARY_PATH = '/api/cron/flag-posture-canary';
 const CANARY_SCHEDULE = '25 3 * * *';
 
-/** The 13 cron entries that existed BEFORE the canary — pinned verbatim. */
+/**
+ * The 12 cron entries that existed BEFORE the canary — pinned verbatim.
+ * (Was 13; /api/cron/account-purge removed 2026-08-30 with the DPDP erasure
+ * subsystem — see supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
+ */
 const PRE_EXISTING: Record<string, string> = {
   '/api/cron/school-operations': '0 2 * * *',
   '/api/cron/daily-cron': '30 2 * * *',
@@ -46,7 +50,6 @@ const PRE_EXISTING: Record<string, string> = {
   '/api/cron/reconcile-payments': '*/30 * * * *',
   '/api/cron/payments-health': '*/10 * * * *',
   '/api/cron/expired-subscriptions': '15 */6 * * *',
-  '/api/cron/account-purge': '0 4 * * *',
   '/api/cron/pre-debit-notice': '0 */6 * * *',
   '/api/cron/board-score': '0 3 * * *',
   '/api/cron/reverify-domains': '45 3 * * *',

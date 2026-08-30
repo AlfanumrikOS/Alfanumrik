@@ -113,7 +113,7 @@
     },
     {
       "id": "parent-data-rights",
-      "workflow": "Parent child profile, data export, and erasure request flow",
+      "workflow": "Parent child profile and data export flow",
       "audience": "parent",
       "page": "apps/host/src/app/parent/children/page.tsx",
       "primaryCta": {
@@ -122,16 +122,13 @@
       },
       "apis": [
         "apps/host/src/app/api/v2/parent/children/route.ts",
-        "apps/host/src/app/api/parent/children/[student_id]/export/route.ts",
-        "apps/host/src/app/api/parent/children/[student_id]/request-erasure/route.ts",
-        "apps/host/src/app/api/parent/children/[student_id]/erasure-status/route.ts"
+        "apps/host/src/app/api/parent/children/[student_id]/export/route.ts"
       ],
       "featureFlags": ["ff_parent_unified_auth_v1"],
-      "dbWrites": ["parent child link state, export audit rows, erasure request state"],
+      "dbWrites": ["parent child link state, export audit rows"],
       "tests": [
         "apps/host/src/__tests__/api/v2/parent/children/route.test.ts",
-        "apps/host/src/__tests__/api/parent-child-export.test.ts",
-        "apps/host/src/__tests__/api/parent-child-erasure.test.ts"
+        "apps/host/src/__tests__/api/parent-child-export.test.ts"
       ],
       "docs": [
         "engineering-audit/feature-inventory/parent.md",

@@ -11,11 +11,10 @@ import { NextRequest, NextResponse } from 'next/server';
  *     {summary,highConcepts,lowConcepts,topMisconceptions}, preferences,
  *     twin: null. Twin/cohort internals, loSkills, knowledgeGaps, nextAction
  *     must NEVER leak.
- *   - Erasure guard tripped → empty layers + erasurePending:true, and
- *     getStudentMemory is never called.
- * DELETE:
- *   - authorizeRequest('memory.erase_own') gates it; zod-validates the scope;
- *   - inserts a scoped data_erasure_requests row (status pending, scope jsonb).
+ *
+ * (The DELETE endpoint this file used to also cover was removed 2026-08-30
+ * along with the DPDP erasure subsystem it was built on — see
+ * supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
  */
 
 let _authResult: Record<string, unknown>;
@@ -33,18 +32,12 @@ vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-let _erasurePending = false;
-vi.mock('@alfanumrik/lib/memory/erasure-guard', () => ({
-  isErasurePending: vi.fn(() => Promise.resolve(_erasurePending)),
-}));
-
 const _getStudentMemory = vi.fn();
 vi.mock('@/lib/memory/student-memory', () => ({
   getStudentMemory: (...args: unknown[]) => _getStudentMemory(...args),
 }));
 
 let _studentRow: Record<string, unknown> | null = { subscription_plan: 'free', grade: '8' };
-let _erasureInsertPayload: Record<string, unknown> | null = null;
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   supabaseAdmin: {
     from: (table: string) => {
@@ -55,18 +48,6 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
               maybeSingle: () => Promise.resolve({ data: _studentRow, error: null }),
             }),
           }),
-        };
-      }
-      if (table === 'data_erasure_requests') {
-        return {
-          insert: (payload: Record<string, unknown>) => {
-            _erasureInsertPayload = payload;
-            return {
-              select: () => ({
-                single: () => Promise.resolve({ data: { id: 'req-uuid-1' }, error: null }),
-              }),
-            };
-          },
         };
       }
       throw new Error(`unexpected table ${table}`);
@@ -113,19 +94,10 @@ const FULL_MEMORY = {
 function makeGet(query = '?subject=science'): NextRequest {
   return new NextRequest(`http://localhost/api/learner/memory${query}`);
 }
-function makeDelete(body: unknown): NextRequest {
-  return new NextRequest('http://localhost/api/learner/memory', {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
   _authorizeCalls.length = 0;
-  _erasurePending = false;
-  _erasureInsertPayload = null;
   _studentRow = { subscription_plan: 'free', grade: '8' };
   _authResult = {
     authorized: true,
@@ -170,7 +142,7 @@ describe('GET — auth + whitelisted projection', () => {
 
     const data = body.data;
     expect(Object.keys(data).sort()).toEqual(
-      ['cognitive', 'erasurePending', 'longMemory', 'preferences', 'twin'].sort(),
+      ['cognitive', 'longMemory', 'preferences', 'twin'].sort(),
     );
     expect(data.twin).toBeNull();
     expect(Object.keys(data.cognitive as Record<string, unknown>).sort()).toEqual(
@@ -183,7 +155,6 @@ describe('GET — auth + whitelisted projection', () => {
       topMisconceptions: ['Plants eat soil'],
     });
     expect(data.preferences).toEqual({ learningStyle: 'visual', preferredExplanationDepth: 'medium' });
-    expect(data.erasurePending).toBe(false);
 
     // Never-disclose internals must not appear anywhere in the payload.
     const serialized = JSON.stringify(body);
@@ -198,61 +169,5 @@ describe('GET — auth + whitelisted projection', () => {
     const res = await GET(makeGet());
     expect(res.status).toBe(409);
     expect(_getStudentMemory).not.toHaveBeenCalled();
-  });
-
-  it('erasure guard tripped → empty layers + erasurePending:true, no memory read', async () => {
-    _erasurePending = true;
-    const { GET } = await import('@/app/api/learner/memory/route');
-    const res = await GET(makeGet());
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: Record<string, unknown> };
-    expect(body.data.erasurePending).toBe(true);
-    expect(body.data.twin).toBeNull();
-    expect(body.data.cognitive).toEqual({
-      weakTopics: [],
-      strongTopics: [],
-      revisionDue: [],
-      recentErrors: [],
-    });
-    expect(_getStudentMemory).not.toHaveBeenCalled();
-  });
-});
-
-describe('DELETE — scoped erasure request', () => {
-  it('gates with memory.erase_own and inserts a pending scoped row', async () => {
-    const { DELETE } = await import('@/app/api/learner/memory/route');
-    const res = await DELETE(makeDelete({ scope: { layer: 'long_memory', subject: 'science' } }));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body).toEqual({
-      accepted: true,
-      note: 'memory blanked immediately; purge within 30 days',
-    });
-    expect(_authorizeCalls[0]?.[1]).toBe('memory.erase_own');
-    expect(_erasureInsertPayload).toMatchObject({
-      student_id: 'student-uuid-1',
-      status: 'pending',
-      scope: { layer: 'long_memory', subject: 'science' },
-    });
-    // purge_at ≈ now + 30 days.
-    const purgeAt = new Date(_erasureInsertPayload!.purge_at as string).getTime();
-    const expected = Date.now() + 30 * 86_400_000;
-    expect(Math.abs(purgeAt - expected)).toBeLessThan(60_000);
-  });
-
-  it('rejects an unknown scope layer with 400 and inserts nothing', async () => {
-    const { DELETE } = await import('@/app/api/learner/memory/route');
-    const res = await DELETE(makeDelete({ scope: { layer: 'everything' } }));
-    expect(res.status).toBe(400);
-    expect(_erasureInsertPayload).toBeNull();
-  });
-
-  it('audits metadata only (layer + has_subject, never memory content)', async () => {
-    const { DELETE } = await import('@/app/api/learner/memory/route');
-    await DELETE(makeDelete({ scope: { layer: 'preferences' } }));
-    expect(_logAudit).toHaveBeenCalledTimes(1);
-    const payload = _logAudit.mock.calls[0][1] as Record<string, unknown>;
-    expect(payload.action).toBe('memory.erase_own');
-    expect((payload.details as Record<string, unknown>).layer).toBe('preferences');
   });
 });
