@@ -28,7 +28,7 @@ data-migration step.
 
 ## Database changes
 
-Migration: `supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql`
+Migration: `supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql`
 (applied to `shktyoxqhundlvkiwguu`).
 
 Dropped:

@@ -1088,7 +1088,7 @@ export const PERMISSIONS = {
   // remembers about their own account. Seed migration: 20260806000400.
   // (The sibling erase_own permission, for per-item erasure via the DPDP
   // flow, was removed 2026-08-30 along with that flow — see
-  // supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
+  // supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql.)
   MEMORY_VIEW_OWN: 'memory.view_own',
 } as const;
 

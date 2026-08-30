@@ -16,7 +16,7 @@
  * (This file used to also cover a DPDP erasure short-circuit — guard TRUE ⇒
  * fully-empty memory AND zero sub-reads. Removed 2026-08-30 along with the
  * DPDP erasure subsystem — see
- * supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
+ * supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql.)
  */
 import { describe, it, expect, vi } from 'vitest';
 
