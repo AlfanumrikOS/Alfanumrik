@@ -404,6 +404,47 @@ jobs:
             supabase functions deploy "$fn" --project-ref ${{ secrets.SUPABASE_STAGING_PROJECT_REF }} --no-verify-jwt
           done <<< "${{ steps.changed.outputs.functions }}"
 
+      - name: Detect removed Edge Functions
+        id: removed
+        run: |
+          # See the matching step in deploy-production.yml for the full rationale:
+          # the deploy loop above has no delete path, so removing a function's
+          # source otherwise leaves it live and deployed forever.
+          REMOVED=$(git diff --name-only --diff-filter=D HEAD~1 HEAD -- 'supabase/functions/' \
+            | grep -vE '(_archive|_shared|__tests__)' \
+            | awk -F/ 'NF>=3 {print $3}' | sort -u | grep -v '^$' || true)
+          PRUNE=""
+          for fn in $REMOVED; do
+            if [ ! -d "supabase/functions/$fn" ]; then
+              PRUNE="$PRUNE $fn"
+            fi
+          done
+          PRUNE=$(echo "$PRUNE" | tr ' ' '\n' | sed '/^$/d' | sort -u)
+          echo "Removed functions:"
+          echo "$PRUNE"
+          {
+            echo 'functions<<EOF'
+            echo "$PRUNE"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: supabase/setup-cli@v2
+        if: steps.removed.outputs.functions != ''
+        with:
+          version: latest
+
+      - name: Prune removed functions
+        if: steps.removed.outputs.functions != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_STAGING_ACCESS_TOKEN }}
+        run: |
+          while IFS= read -r fn; do
+            [ -z "$fn" ] && continue
+            echo "Deleting removed function: $fn"
+            supabase functions delete "$fn" --project-ref ${{ secrets.SUPABASE_STAGING_PROJECT_REF }} \
+              || echo "::warning::Could not delete Edge Function '$fn' (already removed, or a transient API error) — verify manually if this persists."
+          done <<< "${{ steps.removed.outputs.functions }}"
+
   # ── Step 3: Health Check ──
   health-check:
     name: Post-Deploy Health Check

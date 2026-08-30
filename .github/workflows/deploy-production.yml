@@ -1316,6 +1316,57 @@ jobs:
             supabase functions deploy "$fn" --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --no-verify-jwt
           done <<< "${{ steps.changed.outputs.functions }}"
 
+      - name: Detect removed Edge Functions
+        id: removed
+        run: |
+          # Directories deleted in this push whose source no longer exists locally.
+          # Deliberately independent of the "changed" detection above — a function
+          # can be entirely removed (no CREATE, no MODIFY) in a push, and the loop
+          # above has no delete path: `supabase functions deploy` on a nonexistent
+          # local dir just fails, it does not undeploy anything. Without this step,
+          # removing a function's source permanently leaves it live and deployed.
+          REMOVED=$(git diff --name-only --diff-filter=D HEAD~1 HEAD -- 'supabase/functions/' \
+            | grep -vE '(_archive|_shared|__tests__)' \
+            | awk -F/ 'NF>=3 {print $3}' | sort -u | grep -v '^$' || true)
+          # A directory only counts as removed if NONE of its files survive at HEAD
+          # (a partial file deletion inside a still-present function is a normal
+          # edit, not a removal).
+          PRUNE=""
+          for fn in $REMOVED; do
+            if [ ! -d "supabase/functions/$fn" ]; then
+              PRUNE="$PRUNE $fn"
+            fi
+          done
+          PRUNE=$(echo "$PRUNE" | tr ' ' '\n' | sed '/^$/d' | sort -u)
+          echo "Removed functions:"
+          echo "$PRUNE"
+          {
+            echo 'functions<<EOF'
+            echo "$PRUNE"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: supabase/setup-cli@v2
+        if: steps.removed.outputs.functions != ''
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Prune removed functions
+        if: steps.removed.outputs.functions != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # Best-effort: a function already absent from the project (e.g. this
+          # step re-running, or manual cleanup already happened) is not a deploy
+          # failure — `functions delete` on a nonexistent slug is logged and
+          # skipped, not fatal, so a genuinely stale entry never blocks a release.
+          while IFS= read -r fn; do
+            [ -z "$fn" ] && continue
+            echo "Deleting removed function: $fn"
+            supabase functions delete "$fn" --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
+              || echo "::warning::Could not delete Edge Function '$fn' (already removed, or a transient API error) — verify manually if this persists."
+          done <<< "${{ steps.removed.outputs.functions }}"
+
   # ── Step 3b: Post-Deploy Verification ──
   # Probes the canonical production domain (PRODUCTION_DOMAIN) for the same
   # reasons as the Health Check job above (deployment-protection auth wall).

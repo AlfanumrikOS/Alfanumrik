@@ -1,0 +1,26 @@
+-- H5 (schema review finding): public.schools had a buggy public-read RLS
+-- policy "Anyone can read active schools" with
+--   USING ((is_active = true) OR (deleted_at IS NULL))
+-- instead of AND — since deleted_at IS NULL is true for virtually every
+-- non-deleted school, this made the is_active check meaningless and let
+-- ANY anonymous/public caller (grantee 'public', which includes anon) read
+-- every non-deleted school row, including gstin, billing_address,
+-- billing_email, principal_name, phone, email, and domain_verification_token
+-- (a secret token) — regardless of is_active.
+--
+-- Verified before writing this migration:
+--   - The only legitimate public/anon tenant-config consumer,
+--     apps/host/src/app/api/tenant/config/route.ts, deliberately uses the
+--     service-role client (bypasses RLS) with an explicit column whitelist
+--     ("Auth: none. ... Sensitive values ... never flow through here" —
+--     the route's own header comment). Nothing in the app relies on this
+--     RLS policy for legitimate public reads.
+--   - "Anyone can view active schools" (role: authenticated, USING
+--     (is_active = true)) already covers the correct, narrower,
+--     authenticated-only case and is unaffected by this change.
+--   - "Service role full access schools" and "Service role manages
+--     schools" are byte-identical duplicate ALL/service_role policies
+--     (USING true, WITH CHECK true) — dropping one is a no-op for
+--     behavior.
+DROP POLICY IF EXISTS "Anyone can read active schools" ON public.schools;
+DROP POLICY IF EXISTS "Service role full access schools" ON public.schools;
