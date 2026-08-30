@@ -536,33 +536,56 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
     }
   }, [children, childListSettled, initialStudent.id, requestedChildId, router, searchParams, selectedChildIdx]);
 
-  const load = useCallback(async () => {
+  // `silent` distinguishes a foreground load (initial mount, explicit child
+  // switch, retry button) from a background revalidation (tab focus,
+  // visibilitychange, realtime onChange — see the two effects below). A
+  // background revalidation must never blank an already-rendered dashboard:
+  // a transient failure right after the tab/phone screen comes back (network
+  // reconnecting after resume is common on mobile) used to call setDash(null)
+  // unconditionally, which tore down the whole glance-home UI and replaced it
+  // with the error screen even though the previous data was still perfectly
+  // good to show. That is the "screen stable / no activity / screen flipped →
+  // erased everything" behavior the CEO reported. Silent calls now keep the
+  // last-known-good `dash` on screen and skip the intrusive loading skeleton;
+  // only a true foreground load (or a foreground load that never had data to
+  // begin with) is allowed to clear the view.
+  const load = useCallback(async (opts: { silent?: boolean } = {}) => {
+    const { silent = false } = opts;
     const sequence = ++loadSequence.current;
-    setLoading(true);
-    setLoadError(null);
+    if (!silent) {
+      setLoading(true);
+      setLoadError(null);
+    }
     try {
       const d = await withParentRequestTimeout(
         api('get_child_dashboard', { student_id: student.id, guardian_id: guardian.id }),
       );
       if (sequence !== loadSequence.current) return;
       if (!d || d.error) {
+        if (!silent) {
+          setDash(null);
+          setLoadError(t(
+            isHi,
+            `We couldn't load ${student.name}'s progress. Please try again.`,
+            `${student.name} की प्रगति लोड नहीं हो सकी। कृपया फिर से कोशिश करें।`,
+          ));
+        }
+        // Silent background refresh that failed: leave the last-known-good
+        // dashboard exactly as it was. The next successful silent/foreground
+        // load will replace it.
+        return;
+      }
+      setDash(d);
+    } catch {
+      if (sequence !== loadSequence.current) return;
+      if (!silent) {
         setDash(null);
         setLoadError(t(
           isHi,
           `We couldn't load ${student.name}'s progress. Please try again.`,
           `${student.name} की प्रगति लोड नहीं हो सकी। कृपया फिर से कोशिश करें।`,
         ));
-        return;
       }
-      setDash(d);
-    } catch {
-      if (sequence !== loadSequence.current) return;
-      setDash(null);
-      setLoadError(t(
-        isHi,
-        `We couldn't load ${student.name}'s progress. Please try again.`,
-        `${student.name} की प्रगति लोड नहीं हो सकी। कृपया फिर से कोशिश करें।`,
-      ));
       return;
     } finally {
       // The primary dashboard request owns the full-page loading state. The
@@ -649,7 +672,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
     event: 'UPDATE',
     filter: childIdsKey ? `student_id=in.(${childIdsKey})` : null,
     debounceMs: 5000,
-    onChange: load,
+    onChange: () => load({ silent: true }),
   });
 
   // Bug fix (2026-04-29 IST timezone): refetch when the tab regains focus or
@@ -657,11 +680,16 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
   // the morning and returns hours later sees stale "today" stats — the chart
   // still shows the previous IST day as the rightmost cell because no
   // re-fetch was triggered.
+  //
+  // `silent: true` — this fires on every tab switch / screen unlock / app
+  // resume, so it must behave as a best-effort background revalidation, not
+  // a full reload: no loading skeleton, and (per `load()` above) no clearing
+  // of already-rendered data if the refetch itself fails.
   useEffect(() => {
-    const onFocus = () => { load(); };
+    const onFocus = () => { load({ silent: true }); };
     const onVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        load();
+        load({ silent: true });
       }
     };
     if (typeof window !== 'undefined') {
