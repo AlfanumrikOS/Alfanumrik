@@ -7,7 +7,6 @@ import { supabase } from '@alfanumrik/lib/supabase';
 import { logger } from '@alfanumrik/lib/logger';
 import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { track } from '@alfanumrik/lib/analytics';
-import ChildDataErasureSection from '@alfanumrik/ui/parent/ChildDataErasureSection';
 import ParentChildChat from '@alfanumrik/ui/parent/ParentChildChat';
 import { usePermissions } from '@alfanumrik/lib/usePermissions';
 import { usePulse } from '@alfanumrik/lib/pulse/use-pulse';
@@ -457,14 +456,6 @@ function ChildCard({
             >
               &#x1F517; {t(isHi, 'Remove Link', 'लिंक हटाएं')}
             </button>
-          </div>
-
-          {/* Phase D.3 — DPDP §15 right-to-erasure (parent-initiated). */}
-          <div onClick={(e) => e.stopPropagation()}>
-            <ChildDataErasureSection
-              studentId={child.id}
-              studentName={child.name}
-            />
           </div>
         </div>
       </div>

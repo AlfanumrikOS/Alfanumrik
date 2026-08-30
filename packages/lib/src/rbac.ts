@@ -1039,18 +1039,6 @@ export const PERMISSIONS = {
   TUTOR_CREATE_WORKSHEET: 'tutor.create_worksheet',
   TUTOR_ASSIGN_WORKSHEET: 'tutor.assign_worksheet',
 
-  // ── Account self-deletion (DPDP Act 2023 Section 17) ─────
-  // Granted to: student, parent, teacher. Lets the owner initiate, cancel,
-  // or check the status of a deletion request for THEIR OWN account.
-  // Routes: /api/v1/account/delete (POST/DELETE/GET).
-  // Seed migration: 20260505120000_account_deletion_flow.sql.
-  // Architect review flag: a self-scope permission for the account owner is
-  // a regulatory floor (DPDP Section 17), not an authorization expansion.
-  // Server-side ownership checks in the route layer are the actual security
-  // boundary; this code just exists so the existing authorizeRequest pattern
-  // doesn't reject the call.
-  ACCOUNT_DELETE: 'account.delete',
-
   // ── Super-admin subject governance (Phase E) ─────────────
   // Granted to: super_admin (and admin, defensively).  Gates the 7 routes
   // under /api/super-admin/subjects/** and /api/super-admin/students/[id]/subjects.
@@ -1094,16 +1082,14 @@ export const PERMISSIONS = {
   SUPPORT_VIEW_TICKETS: 'support.view_tickets',
   SUPPORT_MANAGE_TICKETS: 'support.manage_tickets',
 
-  // ── Student memory self-access (DPDP transparency, T2 screen) ──
-  // Granted to: student. Self-scope codes like account.delete above — a
-  // regulatory/transparency floor, not an authorization expansion; route-layer
-  // ownership checks remain the security boundary. view_own = read/annotate
-  // what Foxy remembers about YOUR account; erase_own = per-item/per-layer
-  // erasure via the DPDP flow (data_erasure_requests.scope, migration
-  // 20260806000300), never a direct delete. Seed migration: 20260806000400.
-  // RBAC addition approved 2026-08-05 under A3 (read + per-item erase only).
+  // ── Student memory self-access (T2 screen) ──
+  // Granted to: student. Self-scope permission — route-layer ownership checks
+  // remain the security boundary. Lets a student read/annotate what Foxy
+  // remembers about their own account. Seed migration: 20260806000400.
+  // (The sibling erase_own permission, for per-item erasure via the DPDP
+  // flow, was removed 2026-08-30 along with that flow — see
+  // supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
   MEMORY_VIEW_OWN: 'memory.view_own',
-  MEMORY_ERASE_OWN: 'memory.erase_own',
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

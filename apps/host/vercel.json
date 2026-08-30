@@ -61,10 +61,6 @@
       "schedule": "15 */6 * * *"
     },
     {
-      "path": "/api/cron/account-purge",
-      "schedule": "0 4 * * *"
-    },
-    {
       "path": "/api/cron/pre-debit-notice",
       "schedule": "0 */6 * * *"
     },

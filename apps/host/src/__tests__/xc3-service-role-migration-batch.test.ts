@@ -51,8 +51,6 @@ const repoPath = (relativePath: string) => path.join(repoRoot, relativePath);
 
 const requiredIds = [
   'parent-child-export',
-  'parent-child-erasure',
-  'parent-child-erasure-status',
   'parent-report',
   'school-admin-students',
   'teacher-join-class',

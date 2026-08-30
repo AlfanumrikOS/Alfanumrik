@@ -3,19 +3,17 @@
  *
  * A single `getStudentMemory(...)` that WRAPS the three existing Foxy-family
  * learner-state readers into one typed `StudentMemory`, plus a PII-safe prompt
- * renderer and the DPDP erasure guard. Gated by `ff_unified_memory_v1` (default
- * OFF). OFF = today's per-reader behavior, byte-identical; this module is not on
- * any hot path when OFF.
+ * renderer. Gated by `ff_unified_memory_v1` (default OFF). OFF = today's
+ * per-reader behavior, byte-identical; this module is not on any hot path
+ * when OFF.
  *
  * ── PLACEMENT ────────────────────────────────────────────────────────────────
  * This orchestrator lives in the APP layer (apps/host/src/lib/memory) — NOT in
  * packages/lib — because it composes the APP-LAYER `CognitiveContext` type and
  * `loadCognitiveContext` reader (apps/host/src/app/api/foxy/_lib/*), which are
  * deliberately out of scope for packages/lib (task: do NOT force
- * loadCognitiveContext into packages/lib). The two cleanly app-independent
- * pieces live in packages/lib/src/memory/*:
- *   - the DPDP erasure guard    → @alfanumrik/lib/memory/erasure-guard
- *   - the preferences reader    → @alfanumrik/lib/memory/preferences
+ * loadCognitiveContext into packages/lib). The one cleanly app-independent
+ * piece lives in packages/lib/src/memory/preferences (the preferences reader).
  * The renderer reuses the EXISTING per-slice renderers (buildCognitivePromptSection,
  * renderTwinPromptSection, buildLongMemoryPromptSection) so output is identical
  * to today's per-reader assembly for the same inputs.
@@ -37,10 +35,9 @@
  * authUserId — it reads with the service-role client. Passing an unauthorized
  * studentId is a caller bug, not something this function guards.
  *
- * ── DPDP ERASURE GUARD (spec §3, the one new behavior) ───────────────────────
- * The erasure-pending check runs BEFORE any sub-read. If the student has an
- * in-flight erasure row (status pending|purging) — or if the check itself errors
- * (FAIL-CLOSED) — the sub-reads are SKIPPED and fully-empty memory is returned.
+ * (The DPDP erasure guard that used to run before every sub-read here was
+ * removed 2026-08-30 along with the DPDP erasure subsystem — see
+ * supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
  */
 import {
   type CognitiveContext,
@@ -66,7 +63,6 @@ import {
   EMPTY_PREFERENCES,
   loadStudentPreferences,
 } from '@alfanumrik/lib/memory/preferences';
-import { isErasurePending } from '@alfanumrik/lib/memory/erasure-guard';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 
@@ -118,7 +114,6 @@ export interface StudentMemoryDeps {
     misconceptionLabels: string[],
   ) => Promise<LongMemorySnapshot>;
   loadPreferences: (studentId: string) => Promise<StudentPreferences>;
-  erasurePending: (studentId: string) => Promise<boolean>;
 }
 
 // Production defaults. Twin + long-memory preserve their EXISTING flag gating
@@ -161,8 +156,6 @@ const defaultDeps: StudentMemoryDeps = {
   },
 
   loadPreferences: (studentId) => loadStudentPreferences(studentId),
-
-  erasurePending: (studentId) => isErasurePending(studentId),
 };
 
 // ─── Emptiness predicates (structural equality to the canonical EMPTY values) ─
@@ -195,31 +188,12 @@ function preferencesIsEmpty(p: StudentPreferences): boolean {
   return p.learningStyle === null && p.preferredExplanationDepth === null;
 }
 
-function emptyMemory(
-  studentId: string,
-  subject: string,
-  grade: string,
-  chapter: string | null,
-): StudentMemory {
-  return {
-    studentId,
-    subject,
-    grade,
-    chapter,
-    cognitive: EMPTY_COGNITIVE_CONTEXT,
-    twin: null,
-    longMemory: EMPTY_LONG_MEMORY,
-    preferences: EMPTY_PREFERENCES,
-    isEmpty: true,
-  };
-}
-
 // ─── Orchestrator ────────────────────────────────────────────────────────────
 
 /**
  * Compose the three existing learner-state readers into one `StudentMemory`.
  * Service-role read (see PRECONDITION in the file header — authorize upstream).
- * Fail-soft on every sub-read; fail-CLOSED on the DPDP erasure guard.
+ * Fail-soft on every sub-read.
  *
  * @param studentId students.id (the Foxy-family key — spec §5)
  * @param opts      { subject, grade (STRING, P5), chapter? }
@@ -233,20 +207,6 @@ export async function getStudentMemory(
   const { subject, grade } = opts;
   const chapter = opts.chapter ?? null;
   const d: StudentMemoryDeps = { ...defaultDeps, ...deps };
-
-  // ── DPDP erasure guard (spec §3) — BEFORE any sub-read; FAIL-CLOSED ──
-  let erasurePending: boolean;
-  try {
-    erasurePending = await d.erasurePending(studentId);
-  } catch {
-    // Defense-in-depth: the guard itself already fails closed, but if the
-    // injected check throws we still trip the guard.
-    erasurePending = true;
-  }
-  if (erasurePending) {
-    // Skip ALL sub-reads — do not even query the learner-state tables.
-    return emptyMemory(studentId, subject, grade, chapter);
-  }
 
   // ── Fail-soft sub-reads (spec §2.2) ──
   // cognitive + twin + preferences are independent → parallel fan-out.

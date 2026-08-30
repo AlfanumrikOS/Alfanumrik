@@ -398,7 +398,14 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // response is counts/averages/enum-like keys only, never message text,
 // `reason` free text, or student identifiers (P13). See
 // scripts/admin-client-allowlist.json for the full note.
-const EXPECTED_COUNT = 275;
+// 275 -> 273 (2026-08-30): src/app/api/cron/account-purge/route.ts and
+// src/app/api/v1/account/delete/route.ts DELETED — the DPDP erasure
+// subsystem they belonged to was removed entirely (not required by the
+// schools; see supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql
+// and docs/audit/launch-readiness/dpdp-erasure-removal.md). Their ledger
+// entries are pruned in the SAME change so the guard ratchets DOWN, not
+// drifts.
+const EXPECTED_COUNT = 273;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

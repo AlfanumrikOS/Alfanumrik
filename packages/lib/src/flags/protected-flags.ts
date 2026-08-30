@@ -301,9 +301,9 @@ export const PROTECTED_FLAGS: Record<string, FlagProtection> = {
   ff_unified_memory_v1: {
     tier: 'staged_rollout',
     reason:
-      "Blocked on an unresolved DPDP erasure-pending interlock (seeded OFF by migration 20260724130000, never enabled; design spec docs/superpowers/specs/2026-07-24-unified-student-memory-design.md Sec 2.3/3). Enabling before Foxy's teachingDirectorSection is brought under the erasure-pending guard would let a mid-erasure student's teaching directive leak into a prompt. That interlock is still open — no getStudentMemory composer exists yet (only the erasure-guard and preferences sub-reads, under packages/lib/src/memory/).",
+      "Seeded OFF by migration 20260724130000, not yet enabled (design spec docs/superpowers/specs/2026-07-24-unified-student-memory-design.md Sec 2.3/3). The DPDP erasure-pending interlock this flag used to be blocked on was removed 2026-08-30 along with the DPDP erasure subsystem (see supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql), and the getStudentMemory composer now exists at apps/host/src/lib/memory/student-memory.ts. Remains staged_rollout pending an explicit rollout decision, not a known blocker.",
     reasonHi:
-      'एक अनसुलझे DPDP erasure-pending इंटरलॉक पर अवरुद्ध (माइग्रेशन 20260724130000 द्वारा सीड किया गया OFF, कभी सक्षम नहीं हुआ; डिज़ाइन स्पेक docs/superpowers/specs/2026-07-24-unified-student-memory-design.md खंड 2.3/3)। Foxy के teachingDirectorSection को erasure-pending गार्ड के दायरे में लाए बिना सक्षम करने से मिड-इरेज़र छात्र का टीचिंग डायरेक्टिव प्रॉम्प्ट में लीक हो सकता है। यह इंटरलॉक अभी भी खुला है — कोई getStudentMemory कंपोज़र अभी मौजूद नहीं है (केवल erasure-guard और preferences सब-रीड, packages/lib/src/memory/ के अंतर्गत)।',
+      'माइग्रेशन 20260724130000 द्वारा सीड किया गया OFF, अभी सक्षम नहीं हुआ (डिज़ाइन स्पेक docs/superpowers/specs/2026-07-24-unified-student-memory-design.md खंड 2.3/3)। यह फ़्लैग पहले जिस DPDP erasure-pending इंटरलॉक पर अवरुद्ध था, उसे 2026-08-30 को DPDP erasure सबसिस्टम के साथ हटा दिया गया (देखें supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql), और getStudentMemory कंपोज़र अब apps/host/src/lib/memory/student-memory.ts पर मौजूद है। किसी ज्ञात अवरोधक के बजाय, स्पष्ट रोलआउट निर्णय की प्रतीक्षा में staged_rollout बना हुआ है।',
   },
   ff_outcome_prediction_v1: {
     tier: 'staged_rollout',

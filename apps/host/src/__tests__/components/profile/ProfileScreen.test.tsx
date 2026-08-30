@@ -9,8 +9,8 @@
  *     standalone hero (SCREENS.md 16: "the streak lives here, small").
  *   - language switching calls onChangeLanguage with the OTHER language and
  *     never renders untranslated (isHi) English/Hindi mixed copy.
- *   - the "your data" card wires Export to a callback and Delete to a real
- *     href (no dead link, no reinvented delete flow).
+ *   - the "your data" card wires Export to a callback; there is no
+ *     self-service account-deletion entry point here.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -60,7 +60,6 @@ function baseProps(overrides: Partial<ProfileScreenProps> = {}): ProfileScreenPr
     onExportData: vi.fn(),
     onSignOut: vi.fn(),
     editProfileHref: '/profile',
-    deleteAccountHref: '/settings/account/delete',
     pricingHref: '/pricing',
     ...overrides,
   };
@@ -141,11 +140,6 @@ describe('ProfileScreen — your data (DPDP)', () => {
 
     rerender(<ProfileScreen {...baseProps({ onExportData, exporting: true })} />);
     expect(screen.getByTestId('me-export-data')).toHaveTextContent('Downloading...');
-  });
-
-  it('Delete account links to the existing DPDP erasure flow, not a reinvented one', () => {
-    render(<ProfileScreen {...baseProps()} />);
-    expect(screen.getByTestId('me-delete-account')).toHaveAttribute('href', '/settings/account/delete');
   });
 });
 

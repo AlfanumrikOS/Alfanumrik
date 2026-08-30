@@ -373,8 +373,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'content_requests::content_requests_insert_own',
   'content_requests::content_requests_read_own',
   'coverage_audit_snapshots::coverage_audit_snapshots_read_admin',
-  'data_erasure_requests::guardian_sees_own_erasure_requests',
-  'data_erasure_requests::school_admin_sees_school_erasure_requests',
   'deployment_history::deploy_history_admin',
   'domain_events::domain_events_super_admin_select',
   'exam_chapters::students_own_exam_chapters',
@@ -883,8 +881,11 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // policy) and adds 6 new entries (the auth.users.id-to-students.id
     // translation subquery on student_ncert_attempts, mock_test_attempts, and
     // learning_events). Ledger: 223 - 1 + 6 = 228.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(228);
-    expect(detectedRiskKeys().length).toBe(228);
+    // 2026-08-30: data_erasure_requests dropped entirely (DPDP erasure
+    // subsystem removed — supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql),
+    // taking its 2 policies with it. Ledger: 228 - 2 = 226.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(226);
+    expect(detectedRiskKeys().length).toBe(226);
   });
 });
 

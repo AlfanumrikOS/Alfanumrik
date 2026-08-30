@@ -48,10 +48,6 @@
     "bucket": "SAFE"
   },
   {
-    "routePath": "/api/cron/account-purge",
-    "bucket": "SAFE"
-  },
-  {
     "routePath": "/api/cron/adaptive-remediation",
     "bucket": "SAFE"
   },
@@ -344,15 +340,7 @@
     "bucket": "REVIEW"
   },
   {
-    "routePath": "/api/parent/children/[student_id]/erasure-status",
-    "bucket": "REVIEW"
-  },
-  {
     "routePath": "/api/parent/children/[student_id]/export",
-    "bucket": "SAFE"
-  },
-  {
-    "routePath": "/api/parent/children/[student_id]/request-erasure",
     "bucket": "SAFE"
   },
   {
@@ -1325,10 +1313,6 @@
   },
   {
     "routePath": "/api/tutor/next",
-    "bucket": "REVIEW"
-  },
-  {
-    "routePath": "/api/v1/account/delete",
     "bucket": "REVIEW"
   },
   {

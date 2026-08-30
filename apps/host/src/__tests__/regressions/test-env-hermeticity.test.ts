@@ -80,9 +80,8 @@ describe('unit-test environment is hermetic (runtime)', () => {
 
   it('has NO Upstash Redis credentials, so callers take their in-memory path', () => {
     // getRedis() returns null when either is absent (packages/lib/src/redis.ts,
-    // rbac.ts, middleware-helpers.ts, api-rate-limit.ts,
-    // deletion-cache-invalidation.ts, and proxy.ts's ensureUpstash()), which
-    // makes acquireIdempotencyLock() return true (allow) instead of deduping
+    // rbac.ts, middleware-helpers.ts, api-rate-limit.ts, and proxy.ts's
+    // ensureUpstash()), which makes acquireIdempotencyLock() return true (allow) instead of deduping
     // against a shared production key space.
     expect(process.env.UPSTASH_REDIS_REST_URL).toBeUndefined();
     expect(process.env.UPSTASH_REDIS_REST_TOKEN).toBeUndefined();
