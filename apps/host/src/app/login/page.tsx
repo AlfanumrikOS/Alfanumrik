@@ -51,19 +51,31 @@ function LoginPageContent() {
     }
   }, [isLoggedIn, isLoading, activeRole, router, redirectTo]);
 
-  // Role-aware onSuccess handler: after login, navigate to the correct portal.
-  // We use the roleParam hint from the URL since activeRole may not be updated yet.
+  // onSuccess handler: after login, trigger AuthContext to pick up the new
+  // session. Deliberately does NOT navigate itself.
+  //
+  // SECURITY FIX (2026-08-30): this used to redirect immediately using
+  // `roleParam` — the URL/tab hint the user clicked BEFORE logging in — via
+  // `router.replace(getRoleDestination(roleParam || 'student'))`. That hint
+  // is entirely client-controlled and has no relationship to the account
+  // that actually authenticated: a student logging in with the "Teacher"
+  // tab selected was sent straight to /teacher's URL before the server had
+  // verified anything. The destination page's own role guard (e.g.
+  // TeacherShell, gated on the server-verified `activeRole` from
+  // `get_user_role`) stopped real data from leaking, but the browser still
+  // navigated to the wrong portal on a client-only hint — confusing at
+  // best, and the wrong kind of thing to get in the habit of trusting.
+  //
+  // Fix: let the `isLoggedIn && activeRole !== 'none'` effect above do the
+  // ONLY navigation after a fresh login — it already computes the
+  // destination from the server-verified `activeRole`, not a client hint,
+  // and already carries the same open-redirect guard. AuthScreen keeps its
+  // loading spinner active after onSuccess() (it never calls
+  // setLoading(false) on the success path), so the user sees a continued
+  // loading state, not a flash of the wrong portal, until that effect fires.
   const handleSuccess = useCallback(() => {
-    // After successful auth, trigger a client-side refresh then navigate.
-    // AuthContext's onAuthStateChange will detect the new session.
     router.refresh();
-    // M1: same open-redirect guard as the already-logged-in effect above.
-    const roleDestination = getRoleDestination(roleParam || 'student');
-    const destination = redirectTo
-      ? validateRedirectTarget(redirectTo, roleDestination)
-      : roleDestination;
-    router.replace(destination);
-  }, [router, roleParam, redirectTo]);
+  }, [router]);
 
   // Always show the login form — never block on loading state.
   // If the user is already logged in, the useEffect redirect will fire.

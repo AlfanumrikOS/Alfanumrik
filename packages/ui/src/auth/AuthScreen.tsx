@@ -141,10 +141,38 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     tabs[next]?.focus();
   };
 
+  // Brute-force / abuse guard (2026-08-30): every one of signInWithPassword,
+  // signUp, and resetPasswordForEmail below calls Supabase directly from the
+  // browser, bypassing every app-level rate limiter — this pre-flight check
+  // against /api/auth/pre-check is the only thing standing between these
+  // forms and unlimited password-guessing / bulk-signup / email-bombing.
+  // Fails open (network error → allowed) rather than blocking legitimate use
+  // when the check itself is unreachable, matching that route's own
+  // fail-open posture. Does NOT replace GoTrue's own limits — adds the
+  // missing app-level bound on top of them. Returns false (and sets the
+  // error message) when the action should be aborted.
+  const checkAuthRateLimit = async (action: 'login' | 'signup' | 'forgot', emailValue: string): Promise<boolean> => {
+    try {
+      const rl = await fetch('/api/auth/pre-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, email: emailValue.trim() }),
+      });
+      if (rl.status === 429) {
+        const rlBody = await rl.json().catch(() => ({}));
+        setError(rlBody.error || t('Too many attempts. Please wait a few minutes.', 'बहुत अधिक प्रयास। कृपया कुछ मिनट प्रतीक्षा करें।'));
+        return false;
+      }
+    } catch { /* fail open — see comment above */ }
+    return true;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(''); setLoading(true);
     try {
+      if (!(await checkAuthRateLimit('login', email))) { setLoading(false); return; }
+
       // Defensive: clear any stale local session before a fresh signin.
       // The Supabase SDK persists tokens to localStorage; if a previous
       // project state, key rotation, or partial deploy left invalid tokens
@@ -191,6 +219,8 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
 
     setError(''); setLoading(true);
     try {
+      if (!(await checkAuthRateLimit('signup', email))) { setLoading(false); return; }
+
       const metaData: Record<string, string> = { name: name.trim(), role: roleTab, consent_data: 'true', consent_analytics: consentAnalytics ? 'true' : 'false' };
       if (roleTab === 'student') {
         metaData.grade = grade;
@@ -278,6 +308,8 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     if (!email.trim()) { setError(t('Please enter your email', 'कृपया अपना ईमेल दर्ज करें')); return; }
     setError(''); setLoading(true);
     try {
+      if (!(await checkAuthRateLimit('forgot', email))) { setLoading(false); return; }
+
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
       });
@@ -473,11 +505,25 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
             )}
 
             {mode !== 'forgot' && mode !== 'check-email' && (
-              <div className="relative">
-                <input id="auth-password" name="password" type={showPassword ? 'text' : 'password'} placeholder={t('Password (min 8 chars, A-z, 0-9)', 'पासवर्ड (कम से कम 8 अक्षर, A-z, 0-9)')} value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 44 }} required minLength={8} aria-label={t('Password', 'पासवर्ड')} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }} aria-label={showPassword ? t('Hide password', 'पासवर्ड छिपाएं') : t('Show password', 'पासवर्ड दिखाएं')}>
-                  {showPassword ? '🙈' : '👁️'}
-                </button>
+              <div>
+                <div className="relative">
+                  {/* UI FIX (2026-08-30): this input was missing `className={inputCls}`
+                      entirely (unlike the name/email inputs above it) — it rendered with
+                      none of the shared padding/border/background styling, just a bare
+                      inline paddingRight. Combined with a placeholder too long for an
+                      unstyled field, the requirement text visually overlapped the
+                      show/hide icon. Fixed both: apply inputCls like its siblings, and
+                      move the requirement text out of the placeholder (which disappears
+                      the moment the user starts typing) into persistent helper text
+                      below, matching /auth/reset's pattern. */}
+                  <input id="auth-password" name="password" type={showPassword ? 'text' : 'password'} placeholder={t('Password', 'पासवर्ड')} value={password} onChange={e => setPassword(e.target.value)} className={inputCls} style={{ paddingRight: 44 }} required minLength={8} aria-label={t('Password', 'पासवर्ड')} aria-describedby="auth-password-requirements" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }} aria-label={showPassword ? t('Hide password', 'पासवर्ड छिपाएं') : t('Show password', 'पासवर्ड दिखाएं')}>
+                    {showPassword ? '🙈' : '👁️'}
+                  </button>
+                </div>
+                <p id="auth-password-requirements" className="mt-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                  {t('Min 8 characters, with uppercase, lowercase, and a number', 'कम से कम 8 अक्षर, बड़े-छोटे अक्षर और एक अंक सहित')}
+                </p>
               </div>
             )}
 
