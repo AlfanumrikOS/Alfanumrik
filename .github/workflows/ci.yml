@@ -76,6 +76,29 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
+  # Two flake sources found 2026-08-30 on PR #1655's own CI run (Selected-School
+  # RPC Migration Integration, Unit Tests (changed)) — neither related to any
+  # code change, both external network calls no job actually needs the result
+  # of, so both are eliminated outright rather than retried/cached:
+  #   1. `supabase init`/`supabase stop` phone home to PostHog for anonymous
+  #      CLI usage telemetry; that network call timing out fails the CLI
+  #      command with exit 1 even after the actual operation already
+  #      succeeded ("Finished supabase init." prints BEFORE the error).
+  #      SUPABASE_TELEMETRY_DISABLED is the documented opt-out; DO_NOT_TRACK
+  #      is the broader cross-CLI convention Supabase's CLI also respects —
+  #      both set as belt-and-suspenders.
+  #   2. `npm ci`/`npm install` downloads a full Chromium binary for
+  #      `puppeteer` as a postinstall side effect, on every job, in every
+  #      workspace — even though exactly one file in this entire repo
+  #      (`scrape_perf.js`, a standalone script never invoked by CI) actually
+  #      imports puppeteer. Skipping the download removes a large, flaky,
+  #      unnecessary network dependency from every job's install step. If a
+  #      future CI job needs a real Chrome binary (e.g. a genuine Puppeteer-
+  #      based test), override PUPPETEER_SKIP_DOWNLOAD back to 'false' for
+  #      that job specifically rather than removing this default.
+  SUPABASE_TELEMETRY_DISABLED: '1'
+  DO_NOT_TRACK: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
   NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder'
   # Distinct placeholder (NOT equal to anon key) so src/lib/env.ts
