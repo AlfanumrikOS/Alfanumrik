@@ -42,6 +42,13 @@
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work."
     },
     {
+      "path": "/api/auth/pre-check",
+      "file": "apps/host/src/app/api/auth/pre-check/route.ts",
+      "access": "public",
+      "owner": "core-backend",
+      "rationale": "Public-by-design endpoint; called by AuthScreen before login/signup succeeds, so no session exists yet. Only checks/increments a rate-limit counter — no auth call is proxied and no session or PII data is read or returned."
+    },
+    {
       "path": "/api/auth/repair",
       "file": "apps/host/src/app/api/auth/repair/route.ts",
       "access": "auth",

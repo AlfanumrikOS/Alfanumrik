@@ -51,31 +51,44 @@ function LoginPageContent() {
     }
   }, [isLoggedIn, isLoading, activeRole, router, redirectTo]);
 
-  // onSuccess handler: after login, trigger AuthContext to pick up the new
-  // session. Deliberately does NOT navigate itself.
+  // onSuccess handler: after login, navigate immediately (commit #892 —
+  // "restore immediate redirect on login to prevent stuck '...' button" —
+  // dashboard-institution-admin-redirect.test.ts pins this as load-bearing:
+  // blocking navigation on activeRole resolving previously left the login
+  // button stuck showing "..." indefinitely whenever that resolution was
+  // slow or failed. That constraint is still real and this fix does not
+  // remove it.
   //
-  // SECURITY FIX (2026-08-30): this used to redirect immediately using
-  // `roleParam` — the URL/tab hint the user clicked BEFORE logging in — via
-  // `router.replace(getRoleDestination(roleParam || 'student'))`. That hint
-  // is entirely client-controlled and has no relationship to the account
-  // that actually authenticated: a student logging in with the "Teacher"
-  // tab selected was sent straight to /teacher's URL before the server had
-  // verified anything. The destination page's own role guard (e.g.
-  // TeacherShell, gated on the server-verified `activeRole` from
-  // `get_user_role`) stopped real data from leaking, but the browser still
-  // navigated to the wrong portal on a client-only hint — confusing at
-  // best, and the wrong kind of thing to get in the habit of trusting.
+  // SECURITY FIX (2026-08-30): what DOES change is the destination on the
+  // no-redirect-param fallback path. This used to be
+  // `getRoleDestination(roleParam || 'student')` — the URL/tab hint the user
+  // clicked BEFORE logging in, entirely client-controlled and unrelated to
+  // the account that actually authenticated. A student logging in with the
+  // "Teacher" tab selected was sent straight to /teacher's URL before the
+  // server had verified anything. TeacherShell's own role guard (verified
+  // server-side via get_user_role) stopped real data from rendering there,
+  // but /parent's and /school-admin's shells were checked and have NO
+  // equivalent client-side role guard at all — they rely entirely on
+  // backend RLS/RBAC on the data calls, so the shell itself (nav, layout)
+  // would have rendered for a wrong-role user landing there.
   //
-  // Fix: let the `isLoggedIn && activeRole !== 'none'` effect above do the
-  // ONLY navigation after a fresh login — it already computes the
-  // destination from the server-verified `activeRole`, not a client hint,
-  // and already carries the same open-redirect guard. AuthScreen keeps its
-  // loading spinner active after onSuccess() (it never calls
-  // setLoading(false) on the success path), so the user sees a continued
-  // loading state, not a flash of the wrong portal, until that effect fires.
+  // Fix: the fallback destination is now unconditionally '/dashboard',
+  // never a role-hint-derived guess. /dashboard (StudentOSDashboard.tsx) is
+  // the one destination proven safe as a universal immediate landing target
+  // — its `if (!student) return <DashboardSkeleton/>` early-return means a
+  // non-student role can NEVER see real content there, and its own
+  // activeRole-driven effect already redirects teacher/guardian/
+  // institution_admin to their real portal once the verified role resolves
+  // (pinned by the "orders teacher/guardian/institution_admin redirects
+  // before the no-student skeleton early-return" test in the same file as
+  // this test). A legitimate `?redirect=` deep link is still honored
+  // immediately and is unaffected — this only changes the ROLE-hint
+  // fallback, not deep-link returns.
   const handleSuccess = useCallback(() => {
     router.refresh();
-  }, [router]);
+    const destination = redirectTo ? validateRedirectTarget(redirectTo, '/dashboard') : '/dashboard';
+    router.replace(destination);
+  }, [router, redirectTo]);
 
   // Always show the login form — never block on loading state.
   // If the user is already logged in, the useEffect redirect will fire.

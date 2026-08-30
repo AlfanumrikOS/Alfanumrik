@@ -143,62 +143,68 @@ describe('login page — already-logged-in effect (M1 guard)', () => {
 
 // ── Call site 2: handleSuccess (post-login) ──────────────────────
 //
-// SECURITY FIX (2026-08-30): handleSuccess used to navigate IMMEDIATELY using
-// the `?role=` URL hint — the tab the user clicked BEFORE authenticating —
-// via getRoleDestination(roleParam || 'student'), with zero dependency on the
-// server-verified activeRole. A student logging in with the "Teacher" tab
-// selected (?role=teacher) was sent straight to /teacher's URL before the
-// server had confirmed anything. The tests below used to pin exactly that
-// behavior (asserting replaceMock was called with the role-hint destination
-// the instant handleSuccess fired, while isLoggedIn was still false). That
-// was the bug, not a contract to protect.
+// SECURITY FIX (2026-08-30), REVISED: the first pass at this fix made
+// handleSuccess stop navigating itself entirely, relying only on the
+// activeRole-driven effect from call site 1. That reintroduced exactly the
+// bug commit #892 fixed (see dashboard-institution-admin-redirect.test.ts,
+// "login/page.tsx handleSuccess does an immediate redirect (#892
+// stuck-button fix)") — blocking navigation on activeRole resolving leaves
+// the login button stuck showing "..." indefinitely whenever that
+// resolution is slow or fails. That test still requires handleSuccess to
+// call router.replace immediately, and correctly so.
 //
-// Fixed behavior: handleSuccess only triggers a refresh; the SAME
-// `isLoggedIn && activeRole !== 'none'` effect from call site 1 (already
-// covered above, open-redirect guard included) is now the ONLY place
-// navigation happens, driven by the server-verified activeRole — never the
-// URL's role hint.
-describe('login page — handleSuccess no longer self-navigates on a client role hint (2026-08-30 fix)', () => {
-  it('triggers a refresh but does NOT navigate immediately, even with ?role=teacher in the URL', async () => {
+// What's actually fixed here is narrower: the FALLBACK destination (no
+// `?redirect=` param) is no longer derived from `?role=` — the tab the user
+// clicked BEFORE authenticating, entirely client-controlled. A student
+// logging in with the "Teacher" tab selected (?role=teacher) used to be
+// sent straight to /teacher's URL on that hint alone. The fallback is now
+// unconditionally '/dashboard' — the one destination verified safe as an
+// immediate landing target regardless of role (its own
+// `if (!student) return <DashboardSkeleton/>` means a non-student can never
+// see real content there, and it already redirects teacher/guardian/
+// institution_admin to their real portal once activeRole resolves). A
+// legitimate `?redirect=` deep link is untouched — still honored
+// immediately, still through the same M1 open-redirect guard.
+describe('login page — handleSuccess (2026-08-30 fix: fallback destination, not immediacy)', () => {
+  it('still navigates immediately on success (commit #892 — never a stuck button)', async () => {
+    authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
+
+    render(<LoginPage />);
+    fireEvent.click(screen.getByTestId('trigger-login-success'));
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalled());
+    expect(refreshMock).toHaveBeenCalled();
+  });
+
+  it('ignores the ?role= hint entirely and always falls back to /dashboard', async () => {
+    // Attacker/user angle: clicked "Teacher" before logging in with a
+    // student (or any) account. The URL still says role=teacher.
     searchParams = { role: 'teacher' };
     authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
 
     render(<LoginPage />);
     fireEvent.click(screen.getByTestId('trigger-login-success'));
 
-    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
-    expect(replaceMock).not.toHaveBeenCalled();
-  });
-
-  it('navigates to the SERVER-VERIFIED role destination once activeRole resolves — not the ?role= hint', async () => {
-    // Attacker/user angle: clicked "Teacher" before logging in with a
-    // student account. The URL still says role=teacher throughout.
-    searchParams = { role: 'teacher' };
-    authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
-
-    const { rerender } = render(<LoginPage />);
-    fireEvent.click(screen.getByTestId('trigger-login-success'));
-    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
-    expect(replaceMock).not.toHaveBeenCalled();
-
-    // AuthContext resolves the REAL role server-side (get_user_role) and
-    // isLoggedIn flips true — simulate that state landing.
-    authState = { isLoggedIn: true, isLoading: false, activeRole: 'student', isHi: false };
-    rerender(<LoginPage />);
-
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/dashboard'));
     expect(replaceMock).not.toHaveBeenCalledWith('/teacher');
   });
 
-  it('still applies the M1 open-redirect guard once navigation happens via the verified-role effect', async () => {
+  it('still honors a legitimate ?redirect=/foxy deep link immediately', async () => {
+    searchParams = { redirect: '/foxy', role: 'parent' };
+    authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
+
+    render(<LoginPage />);
+    fireEvent.click(screen.getByTestId('trigger-login-success'));
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/foxy'));
+  });
+
+  it('still applies the M1 open-redirect guard on this path', async () => {
     searchParams = { redirect: '//evil.com', role: 'teacher' };
     authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
 
-    const { rerender } = render(<LoginPage />);
+    render(<LoginPage />);
     fireEvent.click(screen.getByTestId('trigger-login-success'));
-
-    authState = { isLoggedIn: true, isLoading: false, activeRole: 'student', isHi: false };
-    rerender(<LoginPage />);
 
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/dashboard'));
     expect(replaceMock).not.toHaveBeenCalledWith(expect.stringContaining('evil.com'));
