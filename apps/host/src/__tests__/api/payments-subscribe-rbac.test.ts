@@ -89,6 +89,13 @@ vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock('@alfanumrik/lib/ops-events', () => ({ logOpsEvent: vi.fn() }));
+// Rate limiter (always-allow) — payments/create-order and /verify now
+// rate-limit per user (VULN-D2, 10-20/hour — 43654b97); mock keeps this
+// file's tests off the real in-memory fallback (Upstash absent in tests),
+// matching the fix already applied once in auth-bootstrap.test.ts.
+vi.mock('@alfanumrik/lib/api-rate-limit', () => ({
+  checkApiRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 999, resetAt: Math.ceil(Date.now() / 1000) + 3600 }),
+}));
 
 // ── Razorpay lib seam (subscribe route). `subscribe` creates Razorpay objects via
 //    @alfanumrik/lib/razorpay (createRazorpaySubscription / createRazorpayOrder), not a raw

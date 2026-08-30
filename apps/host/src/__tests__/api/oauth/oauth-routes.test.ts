@@ -52,9 +52,19 @@ vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+// ── mock: rate limiter (always-allow) ───────────────────────────────────────
+// oauth/token now rate-limits (VULN-D1, 20/5min per IP — 43654b97). This file
+// has 26 tests that can share the fallback IP, which would exceed the limit
+// against the real in-memory fallback (Upstash absent in tests) — same class
+// of bug already found and fixed in auth-bootstrap.test.ts.
+vi.mock('@alfanumrik/lib/api-rate-limit', () => ({
+  checkApiRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 999, resetAt: Math.ceil(Date.now() / 1000) + 3600 }),
+}));
+
 // ── lazy imports after mocks ──────────────────────────────────────────────────
 import { GET  } from '@/app/api/oauth/authorize/route';
 import { POST } from '@/app/api/oauth/token/route';
+import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 const CLIENT_ID       = 'test-client-id';
@@ -612,5 +622,57 @@ describe('POST /api/oauth/token', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.token_type).toBe('Bearer');
+  });
+});
+
+// ── VULN-D1 (43654b97): oauth/token rate limiting, 20 attempts / 5min per IP ──
+// This is the packet's own acceptance criterion — assert the (N+1)th request
+// within the window is refused with the documented headers, and that a
+// refusal short-circuits BEFORE any body parsing or DB lookup (the anti-
+// brute-force check has to gate ahead of client_secret comparison to be
+// worth anything).
+describe('POST /api/oauth/token — rate limiting (VULN-D1)', () => {
+  it('returns 429 with Retry-After + X-RateLimit-Remaining when the limiter denies, without touching the DB', async () => {
+    // No per-test mock reset in this file (call history is cumulative across
+    // all 26+ earlier tests) — assert the DB call COUNT is unchanged by this
+    // request, not that it was "never called" across the whole file's run.
+    const dbCallsBefore = holders.mockFrom.mock.calls.length;
+    vi.mocked(checkApiRateLimit).mockResolvedValueOnce({
+      allowed: false,
+      remaining: 0,
+      resetAt: Math.ceil(Date.now() / 1000) + 137,
+    });
+
+    const req = makeTokenRequest({
+      grant_type: 'authorization_code',
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      code: 'irrelevant-should-never-be-read',
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('137');
+    expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
+    const json = await res.json();
+    expect(json.error).toBe('invalid_request');
+    expect(holders.mockFrom.mock.calls.length).toBe(dbCallsBefore);
+  });
+
+  it('keys the limiter by client IP (x-forwarded-for), not a fixed string', async () => {
+    vi.mocked(checkApiRateLimit).mockResolvedValueOnce({ allowed: true, remaining: 19, resetAt: Math.ceil(Date.now() / 1000) + 300 });
+    setupDb({ app: null });
+
+    const req = new NextRequest('http://localhost/api/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.9' },
+      body: JSON.stringify({ grant_type: 'authorization_code', client_id: CLIENT_ID, client_secret: CLIENT_SECRET, code: 'x' }),
+    });
+    await POST(req);
+
+    // Cumulative call history again — the call THIS request made is the last
+    // one recorded, not calls[0].
+    const key = String(vi.mocked(checkApiRateLimit).mock.calls.at(-1)?.[0]);
+    expect(key).toContain('198.51.100.9');
   });
 });
