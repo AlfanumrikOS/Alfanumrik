@@ -211,8 +211,41 @@ async function processBatch(
   let failed = 0;
   let released = 0;
 
+  // Time-based progress checkpoint (not count-based): pg_net's 120s
+  // client-side HTTP timeout has been observed to make a run that completes
+  // fine SERVER-SIDE look like a failure from the caller's perspective
+  // (cron.job's own scheduling migration documents this). A large batch can
+  // run well past 120s, so the SINGLE `batch_complete` event below (fired
+  // only after the whole loop finishes) can end up never written even though
+  // real per-row DB work is completing. Emitting a lightweight progress
+  // event every ~60s guarantees at least one row of telemetry lands inside
+  // the window pg_net actually waits, regardless of batch size or per-row
+  // latency variance.
+  let lastCheckpointAt = Date.now();
+  let processedSinceCheckpoint = 0;
+
   for (const row of rows) {
     const result = await verifyOneRow(row);
+    processedSinceCheckpoint++;
+
+    if (Date.now() - lastCheckpointAt >= 60_000) {
+      await logOpsEvent({
+        category: 'grounding.verifier',
+        source: 'verify-question-bank',
+        severity: 'info',
+        message: 'batch_progress',
+        context: {
+          claimed_by: claimedBy,
+          processed_since_last_checkpoint: processedSinceCheckpoint,
+          verified_so_far: verified,
+          failed_so_far: failed,
+          released_so_far: released,
+          total_claimed: rows.length,
+        },
+      });
+      lastCheckpointAt = Date.now();
+      processedSinceCheckpoint = 0;
+    }
 
     // Null → retries exhausted → release the claim (revert state so next
     // run picks it up again). We do NOT mark failed because the upstream
