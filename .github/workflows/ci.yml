@@ -1826,10 +1826,23 @@ jobs:
     # fails — a skipped job would otherwise satisfy the required status check.
     # The first step re-asserts success explicitly instead (same node-script
     # pattern as ci-gate).
-    # `always()` is preserved so a failed/cancelled upstream still turns this
-    # required context RED rather than skipping it. The added event clause is
-    # what moves the job to the merge-queue tier.
-    if: ${{ always() && github.event_name != 'pull_request' }}
+    #
+    # This is THE ruleset-required "Lint, Type-check & Test" context — the
+    # `&& github.event_name != 'pull_request'` clause that used to sit here
+    # was the actual mechanism behind the 2026-08-19 to 2026-08-30 gap
+    # documented in docs/ci.md sec 0: it made this exact required check
+    # SKIP on every PR (a skip GitHub counts as satisfied), on the same
+    # never-fulfilled merge-queue prerequisite as the unit-tests/build/
+    # edge-function-tests job-level gates. Missed in the first pass of that
+    # 2026-08-30 fix because it's a compound condition, not the standalone
+    # `if: github.event_name != 'pull_request'` pattern those three jobs
+    # used — caught immediately afterward because ci-gate's updated matrix
+    # (this job is now unconditionally `required`) correctly failed loud
+    # the moment this job reported `skipped` instead of `success` on a PR.
+    # Removed 2026-08-30. `always()` alone is preserved so a failed/
+    # cancelled upstream still turns this required context RED rather than
+    # skipping it.
+    if: ${{ always() }}
     needs: [quality, unit-tests]
     steps:
       - name: Enforce upstream lint/type-check and shard success
