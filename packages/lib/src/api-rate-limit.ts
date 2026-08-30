@@ -61,6 +61,28 @@ function getRedisLimiter(limit: number, windowMs: number): Ratelimit | null {
 const MAX_MAP_SIZE = 5_000;
 const memStore = new Map<string, { count: number; resetAt: number }>();
 
+// TEST HAZARD: in CI/local unit tests, Upstash env vars are deliberately
+// absent (apps/host/src/__tests__/setup.ts scrubs them for hermeticity), so
+// EVERY call to checkApiRateLimit() in that environment hits this real
+// in-memory Map — never a mock, by design, so rate-limit logic itself gets
+// genuine behavioral coverage. The Map is process-lifetime, not per-test or
+// per-file: a route's test file that exercises the SAME key (e.g. the same
+// mocked user.id) more times than the route's configured `limit` within one
+// file's run WILL start seeing `allowed: false` on later cases, unrelated to
+// what those cases are actually asserting. This bit auth-bootstrap.test.ts's
+// 48 cases in incident 2026-08-30 (PR #1650 → main 43654b97): passed locally
+// pre-change, failed in CI post-change, because the file's volume of same-key
+// calls crossed the route's 30-req/5-min budget partway through.
+// Two supported fixes, pick whichever fits the test file:
+//   1. Call resetRateLimitStoreForTests() in beforeEach — keeps the real
+//      limiter exercised per-test, just not accumulated across tests.
+//   2. Mock this module outright (see api/school-admin/claim-admin-route.test.ts
+//      for the established vi.mock pattern) when the test needs to control
+//      allowed/denied explicitly rather than exercise the real counter.
+export function resetRateLimitStoreForTests(): void {
+  memStore.clear();
+}
+
 function checkLocal(key: string, limit: number, windowMs: number): ApiRateLimitResult {
   const now = Date.now();
   const entry = memStore.get(key);
