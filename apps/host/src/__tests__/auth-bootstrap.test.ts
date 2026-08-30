@@ -92,6 +92,19 @@ vi.mock('@alfanumrik/lib/redis', () => ({
   releaseIdempotencyLock: (key: string) => mockReleaseLock(key),
 }));
 
+// Mock the rate limiter — this file's real handler calls checkApiRateLimit
+// (30 req / 5 min per user.id) right after auth resolution. Left unmocked,
+// the real in-memory fallback (Upstash env vars are deliberately absent in
+// tests, see setup.ts) is shared process-wide across this file's 48 tests,
+// many of which reuse the same mock user id — the shared window exhausts
+// well before the file finishes and later tests see 429 instead of their
+// expected 200/400. Default: always allowed, matching the established
+// pattern in api/school-admin/claim-admin-route.test.ts.
+const mockRateLimit = vi.fn(() => Promise.resolve({ allowed: true, remaining: 29, resetAt: 0 }));
+vi.mock('@alfanumrik/lib/api-rate-limit', () => ({
+  checkApiRateLimit: (...a: unknown[]) => mockRateLimit(...a),
+}));
+
 // Mock createSupabaseServerClient (session-based, respects RLS)
 vi.mock('@alfanumrik/lib/supabase-server', () => ({
   createSupabaseServerClient: vi.fn().mockResolvedValue({
