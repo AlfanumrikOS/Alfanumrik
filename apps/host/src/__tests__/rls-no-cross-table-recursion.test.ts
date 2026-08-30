@@ -236,6 +236,33 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // read teacher_assignment_drafts back, so no live recursion cycle can form. Frozen here
   // as defensive debt. Ledger: 222 -> 223.
   'teacher_assignment_drafts::teacher_assignment_drafts_teacher_own_all',
+  // 2026-08-29/30 activity-reporting reconciliation (migration
+  // 20260829164102_activity_rls_policies.sql, applied out-of-band 2026-08-29,
+  // committed 2026-08-30 to restore migration-ledger parity — this migration
+  // was already live in production before this ledger update; it is not new
+  // application behavior). Three tables (student_ncert_attempts,
+  // mock_test_attempts, learning_events) key student ownership by
+  // auth.users.id rather than students.id, so their teacher/guardian SELECT
+  // policies translate via `student_id IN (SELECT s.auth_user_id FROM
+  // public.students s WHERE public.is_teacher_of(s.id))` (and the
+  // is_guardian_of equivalent). This is the first time this exact
+  // auth.users.id-to-students.id translation shape is committed, but it
+  // mirrors the general "child table keyed by auth.users.id, translate via
+  // students" pattern documented throughout this ledger (e.g.
+  // teacher_remediation_assignments' teacher-ownership subquery above). The
+  // inline `FROM public.students s` is the identity-translation step itself,
+  // not an avoidable join — is_teacher_of/is_guardian_of are SECURITY
+  // DEFINER and bypass RLS internally, but the wrapping `IN (SELECT
+  // s.auth_user_id FROM students s WHERE ...)` is still inline SQL in the
+  // policy body, so the static detector correctly flags it. No live
+  // recursion is possible: no `students` policy reads any of these three
+  // tables back. Ledger: 223 - 1 (product_events drain, above) + 6 = 228.
+  'student_ncert_attempts::sna_teacher_select',
+  'student_ncert_attempts::sna_guardian_select',
+  'mock_test_attempts::mta_teacher_select',
+  'mock_test_attempts::mta_guardian_select',
+  'learning_events::learning_events_teacher_select',
+  'learning_events::learning_events_guardian_select',
   // ── original quoted-name baseline (214) ──
   'academic_terms::academic_terms_authenticated_select',
   'academic_terms::academic_terms_school_admin_insert',
@@ -417,7 +444,12 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'permissions::permissions_admin',
   'platform_health_snapshots::Admin read health snapshots',
   'practice_session_log::Students see own practice sessions',
-  'product_events::product_events_admin_select',
+  // (2026-08-29/30 activity-reporting reconciliation, migration
+  // 20260829164102_activity_rls_policies.sql) removed
+  // 'product_events::product_events_admin_select' from here: that migration
+  // DROPs and re-CREATEs the policy with a clean `USING (public.is_admin())`
+  // predicate (no FROM/JOIN of its own), superseding whatever earlier inline
+  // shape put it on this ledger. No longer detected — stale entry pruned.
   'question_misconceptions::qm_super_admin_write',
   'question_responses::qr_own_insert',
   'question_responses::qr_own_select',
@@ -843,8 +875,16 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // `student_id IN (SELECT id FROM public.students WHERE auth_user_id = auth.uid())`
     // shape as the already-grandfathered sibling foxy_message_feedback_read_self (see
     // the ledger comment above) — not a new risk class. Ledger: 222 -> 223.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(223);
-    expect(detectedRiskKeys().length).toBe(223);
+    // 2026-08-29/30 activity-reporting reconciliation (migration
+    // 20260829164102_activity_rls_policies.sql, applied out-of-band 2026-08-29,
+    // committed 2026-08-30 to restore migration-ledger parity — see the ledger
+    // comment above for the full breakdown): drains 1 stale entry
+    // (product_events::product_events_admin_select, now a clean is_admin()
+    // policy) and adds 6 new entries (the auth.users.id-to-students.id
+    // translation subquery on student_ncert_attempts, mock_test_attempts, and
+    // learning_events). Ledger: 223 - 1 + 6 = 228.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(228);
+    expect(detectedRiskKeys().length).toBe(228);
   });
 });
 

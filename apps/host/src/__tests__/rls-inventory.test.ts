@@ -200,6 +200,12 @@ const AUDIT_DENY_ALL = ['mass_gen_log', 'school_subscriptions'];
 // CAVEAT: this bucket rests on service_role carrying BYPASSRLS (Supabase default).
 // The zero-client-ref claims come from static analysis of apps/, packages/ and
 // mobile/ at the time of the migration; they were not independently re-audited.
+// 2026-08-29/30 activity-reporting reconciliation (migration
+// 20260829164102_activity_rls_policies.sql, applied out-of-band 2026-08-29,
+// committed 2026-08-30 to restore migration-ledger parity): `mock_test_attempts`
+// gained real teacher/guardian/admin/service SELECT+ALL policies as part of the
+// unified analytics activity-reporting feature. It is no longer RLS-on-but-
+// ZERO-policy, so its ledger entry is pruned.
 // 2026-08-20 coupon-catalogue lockdown (migration
 // 20260820152908_lock_down_coupons_read_and_bound_discount.sql): `coupons` became
 // RLS-on-but-ZERO-policy when its sole policy `coupons_read` was dropped and deliberately
@@ -246,7 +252,6 @@ const SERVICE_ROLE_ONLY_TABLES = [
   'lessons_learned',
   'link_code_otp_challenges',
   'mass_gen_log',
-  'mock_test_attempts',
   'mock_test_responses',
   'model_pricing',
   'mol_routing_weights',
