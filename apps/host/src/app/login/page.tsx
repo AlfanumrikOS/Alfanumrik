@@ -51,19 +51,44 @@ function LoginPageContent() {
     }
   }, [isLoggedIn, isLoading, activeRole, router, redirectTo]);
 
-  // Role-aware onSuccess handler: after login, navigate to the correct portal.
-  // We use the roleParam hint from the URL since activeRole may not be updated yet.
+  // onSuccess handler: after login, navigate immediately (commit #892 —
+  // "restore immediate redirect on login to prevent stuck '...' button" —
+  // dashboard-institution-admin-redirect.test.ts pins this as load-bearing:
+  // blocking navigation on activeRole resolving previously left the login
+  // button stuck showing "..." indefinitely whenever that resolution was
+  // slow or failed. That constraint is still real and this fix does not
+  // remove it.
+  //
+  // SECURITY FIX (2026-08-30): what DOES change is the destination on the
+  // no-redirect-param fallback path. This used to be
+  // `getRoleDestination(roleParam || 'student')` — the URL/tab hint the user
+  // clicked BEFORE logging in, entirely client-controlled and unrelated to
+  // the account that actually authenticated. A student logging in with the
+  // "Teacher" tab selected was sent straight to /teacher's URL before the
+  // server had verified anything. TeacherShell's own role guard (verified
+  // server-side via get_user_role) stopped real data from rendering there,
+  // but /parent's and /school-admin's shells were checked and have NO
+  // equivalent client-side role guard at all — they rely entirely on
+  // backend RLS/RBAC on the data calls, so the shell itself (nav, layout)
+  // would have rendered for a wrong-role user landing there.
+  //
+  // Fix: the fallback destination is now unconditionally '/dashboard',
+  // never a role-hint-derived guess. /dashboard (StudentOSDashboard.tsx) is
+  // the one destination proven safe as a universal immediate landing target
+  // — its `if (!student) return <DashboardSkeleton/>` early-return means a
+  // non-student role can NEVER see real content there, and its own
+  // activeRole-driven effect already redirects teacher/guardian/
+  // institution_admin to their real portal once the verified role resolves
+  // (pinned by the "orders teacher/guardian/institution_admin redirects
+  // before the no-student skeleton early-return" test in the same file as
+  // this test). A legitimate `?redirect=` deep link is still honored
+  // immediately and is unaffected — this only changes the ROLE-hint
+  // fallback, not deep-link returns.
   const handleSuccess = useCallback(() => {
-    // After successful auth, trigger a client-side refresh then navigate.
-    // AuthContext's onAuthStateChange will detect the new session.
     router.refresh();
-    // M1: same open-redirect guard as the already-logged-in effect above.
-    const roleDestination = getRoleDestination(roleParam || 'student');
-    const destination = redirectTo
-      ? validateRedirectTarget(redirectTo, roleDestination)
-      : roleDestination;
+    const destination = redirectTo ? validateRedirectTarget(redirectTo, '/dashboard') : '/dashboard';
     router.replace(destination);
-  }, [router, roleParam, redirectTo]);
+  }, [router, redirectTo]);
 
   // Always show the login form — never block on loading state.
   // If the user is already logged in, the useEffect redirect will fire.

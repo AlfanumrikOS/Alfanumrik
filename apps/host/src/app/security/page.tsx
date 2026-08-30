@@ -43,7 +43,7 @@ const ACCESS_CONTROL = [
   { icon: '👤', title: 'Role-Based Access', desc: 'Strict role separation: students, teachers, parents, and admins each see only what they need. No role escalation possible.' },
   { icon: '🏷️', title: 'Resource-Level Ownership', desc: 'Every resource has an owner. Ownership is checked on every read, write, and delete operation at both API and database levels.' },
   { icon: '⏱️', title: 'Rate Limiting (Redis)', desc: 'Distributed rate limiting via Redis protects against abuse. Per-user, per-endpoint, and global rate limits with sliding windows.' },
-  { icon: '🤖', title: 'Bot Protection', desc: 'Automated bot detection and CAPTCHA challenges for suspicious activity. Protects sign-up, login, and API endpoints.' },
+  { icon: '🤖', title: 'Attempt Throttling', desc: 'Sign-up, login, and password-reset requests are throttled per IP and per account to bound automated abuse and credential-guessing attempts.' },
 ];
 
 const AI_SAFETY = [

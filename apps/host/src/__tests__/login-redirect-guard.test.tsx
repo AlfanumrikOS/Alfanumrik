@@ -142,11 +142,31 @@ describe('login page — already-logged-in effect (M1 guard)', () => {
 });
 
 // ── Call site 2: handleSuccess (post-login) ──────────────────────
-
-describe('login page — handleSuccess (M1 guard)', () => {
-  it('blocks ?redirect=//evil.com after login and routes to the role destination from ?role=teacher', async () => {
-    searchParams = { redirect: '//evil.com', role: 'teacher' };
-    // Not logged in yet — effect call site stays quiet; only handleSuccess fires.
+//
+// SECURITY FIX (2026-08-30), REVISED: the first pass at this fix made
+// handleSuccess stop navigating itself entirely, relying only on the
+// activeRole-driven effect from call site 1. That reintroduced exactly the
+// bug commit #892 fixed (see dashboard-institution-admin-redirect.test.ts,
+// "login/page.tsx handleSuccess does an immediate redirect (#892
+// stuck-button fix)") — blocking navigation on activeRole resolving leaves
+// the login button stuck showing "..." indefinitely whenever that
+// resolution is slow or fails. That test still requires handleSuccess to
+// call router.replace immediately, and correctly so.
+//
+// What's actually fixed here is narrower: the FALLBACK destination (no
+// `?redirect=` param) is no longer derived from `?role=` — the tab the user
+// clicked BEFORE authenticating, entirely client-controlled. A student
+// logging in with the "Teacher" tab selected (?role=teacher) used to be
+// sent straight to /teacher's URL on that hint alone. The fallback is now
+// unconditionally '/dashboard' — the one destination verified safe as an
+// immediate landing target regardless of role (its own
+// `if (!student) return <DashboardSkeleton/>` means a non-student can never
+// see real content there, and it already redirects teacher/guardian/
+// institution_admin to their real portal once activeRole resolves). A
+// legitimate `?redirect=` deep link is untouched — still honored
+// immediately, still through the same M1 open-redirect guard.
+describe('login page — handleSuccess (2026-08-30 fix: fallback destination, not immediacy)', () => {
+  it('still navigates immediately on success (commit #892 — never a stuck button)', async () => {
     authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
 
     render(<LoginPage />);
@@ -154,39 +174,39 @@ describe('login page — handleSuccess (M1 guard)', () => {
 
     await waitFor(() => expect(replaceMock).toHaveBeenCalled());
     expect(refreshMock).toHaveBeenCalled();
-    expect(replaceMock).toHaveBeenCalledWith('/teacher');
+  });
+
+  it('ignores the ?role= hint entirely and always falls back to /dashboard', async () => {
+    // Attacker/user angle: clicked "Teacher" before logging in with a
+    // student (or any) account. The URL still says role=teacher.
+    searchParams = { role: 'teacher' };
+    authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
+
+    render(<LoginPage />);
+    fireEvent.click(screen.getByTestId('trigger-login-success'));
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/dashboard'));
+    expect(replaceMock).not.toHaveBeenCalledWith('/teacher');
+  });
+
+  it('still honors a legitimate ?redirect=/foxy deep link immediately', async () => {
+    searchParams = { redirect: '/foxy', role: 'parent' };
+    authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
+
+    render(<LoginPage />);
+    fireEvent.click(screen.getByTestId('trigger-login-success'));
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/foxy'));
+  });
+
+  it('still applies the M1 open-redirect guard on this path', async () => {
+    searchParams = { redirect: '//evil.com', role: 'teacher' };
+    authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
+
+    render(<LoginPage />);
+    fireEvent.click(screen.getByTestId('trigger-login-success'));
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/dashboard'));
     expect(replaceMock).not.toHaveBeenCalledWith(expect.stringContaining('evil.com'));
-  });
-
-  it('preserves a legitimate ?redirect=/foxy after login', async () => {
-    searchParams = { redirect: '/foxy' };
-    authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
-
-    render(<LoginPage />);
-    fireEvent.click(screen.getByTestId('trigger-login-success'));
-
-    await waitFor(() => expect(replaceMock).toHaveBeenCalled());
-    expect(replaceMock).toHaveBeenCalledWith('/foxy');
-  });
-
-  it('falls back to the student destination when no redirect and no role hint', async () => {
-    authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
-
-    render(<LoginPage />);
-    fireEvent.click(screen.getByTestId('trigger-login-success'));
-
-    await waitFor(() => expect(replaceMock).toHaveBeenCalled());
-    expect(replaceMock).toHaveBeenCalledWith('/dashboard');
-  });
-
-  it('blocks backslash-path traversal ?redirect=/foo\\bar after login (parent role hint)', async () => {
-    searchParams = { redirect: '/foo\\bar', role: 'parent' };
-    authState = { isLoggedIn: false, isLoading: false, activeRole: 'none', isHi: false };
-
-    render(<LoginPage />);
-    fireEvent.click(screen.getByTestId('trigger-login-success'));
-
-    await waitFor(() => expect(replaceMock).toHaveBeenCalled());
-    expect(replaceMock).toHaveBeenCalledWith('/parent');
   });
 });
