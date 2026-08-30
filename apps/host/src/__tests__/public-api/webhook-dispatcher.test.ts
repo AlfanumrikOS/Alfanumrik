@@ -101,8 +101,13 @@ describe('webhook-dispatcher — fail-closed auth before any DB I/O', () => {
     const clientIdx = SRC.indexOf('createClient(');
     expect(authIdx).toBeGreaterThan(-1);
     expect(clientIdx).toBeGreaterThan(authIdx);
-    // Missing CRON_SECRET fails closed.
-    expect(SRC).toMatch(/if \(!secret\) return false/);
+    // Fail-closed auth: two independent checks (x-cron-secret vs CRON_SECRET,
+    // OR bearer vs SUPABASE_SERVICE_ROLE_KEY), each requiring its own secret
+    // be non-empty before the constant-time comparison runs — an empty env
+    // var can never match an empty header. Matches the coverage-audit
+    // Edge Function's established pattern.
+    expect(SRC).toMatch(/cronSecret\.length > 0 && constantTimeEqual/);
+    expect(SRC).toMatch(/serviceRoleKey\.length > 0 && constantTimeEqual/);
     expect(SRC).toMatch(/constantTimeEqual/);
   });
 });
