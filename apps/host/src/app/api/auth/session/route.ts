@@ -26,6 +26,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
 
 const MAX_SESSIONS = 2;
 const SESSION_COOKIE = 'alfanumrik_sid';
@@ -88,6 +89,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { status: 'no_session_yet', session_id: null },
         { status: 200 }
+      );
+    }
+
+    // Anti-abuse: throttle authenticated session-registration calls per user.
+    // Deliberately scoped to ONLY the authenticated branch (this line is
+    // unreachable when `user` is null) — the fail-open `no_session_yet` 200
+    // above is untouched, preserving the 2026-05-20 CEO directive that an
+    // unauthenticated call must stay silent, not start returning 429s.
+    const rateCheck = await checkApiRateLimit(`session:${user.id}`, 30, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Too many attempts. Please try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.max(0, rateCheck.resetAt - Math.ceil(Date.now() / 1000))),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
       );
     }
 
