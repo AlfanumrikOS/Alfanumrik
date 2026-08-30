@@ -5,8 +5,28 @@
 --          that depend on the current grant surface.
 --
 -- ============================================================================
--- *** THIS FILE HAS NOT BEEN APPLIED TO ANY ENVIRONMENT. DO NOT `supabase db push` THIS. ***
+-- *** UPDATE (2026-08-31): THIS FILE WAS APPLIED — TO PRODUCTION, IN FULL. ***
 -- ============================================================================
+-- This is exactly the risk the paragraph below warned about, and it happened: a routine
+-- `supabase db push --linked --include-all` on 2026-08-23 18:11 UTC swept this file up in
+-- version order and applied every section of it to production (`shktyoxqhundlvkiwguu`), because
+-- the "DO NOT APPLY" instruction below is prose, not a mechanism the CLI reads. Do not trust the
+-- "has not been run against production" claim two paragraphs down — it was true when written and
+-- has been false since 2026-08-23. `supabase/migrations/20260824010000_restore_default_privileges_template.sql`
+-- is the incident-response follow-up: a deliberate, partial, forward-only reversal that restored
+-- what an accidental blanket revoke would otherwise have broken (future-table INSERT/UPDATE/DELETE
+-- via the default-privileges template) while keeping the two things from this file that actually
+-- mattered (TRUNCATE revoked schema-wide on ~420 existing tables; INSERT/UPDATE/DELETE revoked on
+-- the 4 money tables). Read that file's header for the full reasoning. Both files stay in this
+-- directory, unmodified in their executable SQL, because the migration ledger has both versions
+-- recorded as applied — removing either would desync any fresh environment from what production
+-- actually is. Independently re-verified live 2026-08-31 (docs/audits/FIX-LEDGER.md, DB-12 row):
+-- current state matches the intended end-state exactly. DB-12 is CLOSED. Everything below this
+-- point is left as-authored, as the historical record of what was assessed and why — it no longer
+-- describes an unapplied proposal.
+--
+-- Original design-artifact framing (now historical, kept verbatim):
+-- ----------------------------------------------------------------------------
 -- This is a DESIGN ARTIFACT produced by an architect-agent assessment session on 2026-08-23,
 -- requested explicitly as "assessment and design only, do not apply to production." It has not
 -- been run against production (`shktyoxqhundlvkiwguu`), staging (`gzpxqklxwzishrkiaatd`), or any

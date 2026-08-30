@@ -50,7 +50,7 @@ trusting it.
 | **DB-9** — Grade encoding split: 14 peripheral tables store `"Grade 11"`, canonical tables store `"11"`; joins return empty silently | P0 | — | NOT-STARTED | `students ⋈ content_media ON grade` | 0 rows (6,061 assets unreachable) | — | — | — |
 | **DB-10** — `user_roles.auth_user_id` orphaned against `auth.users`, no FK | P0 | — | NOT-STARTED | LEFT JOIN `user_roles` → `auth.users` | 31 of 65 (48%) | — | — | — |
 | **DB-11** — Notifications addressed to recipients present in no table | P0 | — | NOT-STARTED | recipient LEFT JOIN students/guardians/teachers | 259 of 806 (32%) | — | — | — |
-| **DB-12** — `anon`+`authenticated` hold INSERT/UPDATE/DELETE/**TRUNCATE** on nearly all public tables | P0 | — | NOT-STARTED | `information_schema.role_table_grants` / `pg_class.relacl` | anon 419, authenticated 427 tables | — | — | — |
+| **DB-12** — `anon`+`authenticated` hold INSERT/UPDATE/DELETE/**TRUNCATE** on nearly all public tables | P0 | — | VERIFIED | `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND has_table_privilege('anon', c.oid, 'TRUNCATE')` (and same for `authenticated`); `relacl` on the 4 money tables; `pg_default_acl` for grantor `postgres` | anon 419, authenticated 427 tables held write/TRUNCATE (2026-08-20) | Closed via an unplanned path, not the DESIGN_ONLY file's intended review cycle: `20260823154500` was accidentally applied in full by a routine `db push` sweeping up a file parked in `supabase/migrations/` (incident, 2026-08-23 18:11 UTC), then `20260824010000` partially, deliberately reversed it — restoring INSERT/UPDATE/DELETE in the default-privileges template (so future tables keep working) while **keeping** the two things that actually mattered: TRUNCATE revoked schema-wide on all ~420 existing tables (`anon`/`authenticated` TRUNCATE-holding table count now **0**), and INSERT/UPDATE/DELETE revoked on the 4 money tables (`relacl` now `rxtm`, no `awd`/`D`). Re-verified live 2026-08-31: 0 tables hold anon/authenticated TRUNCATE; the 3 SECURITY INVOKER RPC carve-outs (`record_learning_event`/`update_mastery_bkt`, `mark_notification_read`, `teacher_create_class`) all still resolve their required grants; `pg_default_acl` for grantor `postgres` shows `arwdxtm` (no `D`) for both roles | independently verified 2026-08-31 (this session did not author either the incident-apply or the recovery migration) | `supabase/migrations/20260823154500_db12_narrow_default_grants_and_money_table_write_revoke_DESIGN_ONLY.sql` (incident-applied whole) + `supabase/migrations/20260824010000_restore_default_privileges_template.sql` (partial forward-only reversal); incident record: `docs/runbooks/20260823154500_db12_narrow_default_grants_and_money_table_write_revoke.DOWN.sql` |
 | **DB-13** — `concept_mastery` live counter pair never written: `total_attempts`/`total_correct` stay 0 while `attempts`/`correct_attempts` accumulate | P0 | — | NOT-STARTED | `count(*) FILTER (WHERE attempts IS DISTINCT FROM total_attempts)` | 36 of 90 (40%); live cohort sum(attempts)=430 vs sum(total_attempts)=0 | — | — | — |
 | **DB-14** — XP diverges between `students.xp_total` and Σ `student_learning_profiles.xp`, in both directions | P0 | — | NOT-STARTED | sum comparison + per-student diff | 24,765 vs 17,155 (gap 7,610 = 30.7%), 6 of 68 mismatched | — | — | — |
 | **DB-15** — 3 flags documented OFF are ON in production with NULL `rollout_percentage`, changed 2026-08-18 | P0 | — | NOT-STARTED | `SELECT flag_name,is_enabled,rollout_percentage FROM feature_flags WHERE flag_name IN (...)` | `ff_adaptive_remediation_v1`, `ff_adaptive_loops_bc_v1`, `ff_school_pulse_v1` all true/NULL | — | — | — |
@@ -151,18 +151,13 @@ trusting it.
 
 ## Known gaps in this ledger
 
-- **DB-12 is the parent of DB-40 and remains open.** DB-40 removed the client-write *policies*
-  on the four money tables, but the underlying table *grants* are untouched: `anon` and
-  `authenticated` still hold INSERT/UPDATE/DELETE/**TRUNCATE** on nearly all public tables.
-  **`TRUNCATE` is not subject to RLS.** A role holding `TRUNCATE` on `payment_history` or
-  `student_subscriptions` can empty the table regardless of any policy, and no exploit attempt
-  in the DB-40 verification covered that path. Treat the money tables as hardened against
-  row-level forgery but **not** against grant-level destruction until DB-12 closes.
-- **A blanket grant revoke breaks three SECURITY INVOKER RPCs.** `record_learning_event`,
-  `mark_notification_read`, and `teacher_create_class` execute with the caller's privileges and
-  depend on the current `authenticated` table grants. Revoking grants wholesale will break
-  them. DB-12's fix must either convert these to SECURITY DEFINER with a pinned `search_path`
-  or carve out targeted grants — decide that before writing the revoke migration, not after.
+- **DB-12 closed 2026-08-31 (see the DB-12 row) — not via a planned fix.** The DESIGN_ONLY file
+  this note used to warn about was accidentally applied whole by a routine `db push` on
+  2026-08-23, then partially reversed by a hand-written recovery migration on 2026-08-24 that
+  kept the two things that mattered (TRUNCATE closed schema-wide, money-table writes revoked)
+  while restoring what an accidental blanket revoke would otherwise have broken (future-table
+  writes). Re-verified independently 2026-08-31. This paragraph is kept as the incident record;
+  the risk it originally described no longer exists in production.
 - **No forward wave plan exists.** The four rows carrying `Wave = 1` — DB-1, DB-2, DB-22 and
   DB-40 — were labelled retrospectively after being fixed on 2026-08-20 (DB-2, DB-22, DB-40)
   and 2026-08-21 (DB-1); every other row carries `Wave = —` because no wave has been assigned
