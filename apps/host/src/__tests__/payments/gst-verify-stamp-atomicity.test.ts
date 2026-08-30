@@ -80,6 +80,13 @@ vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: (...a: unknown[]) => warnSpy(...a), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('@alfanumrik/lib/ops-events', () => ({ logOpsEvent: vi.fn().mockResolvedValue(undefined) }));
+// Rate limiter (always-allow) — payments/verify now rate-limits per user
+// (VULN-D2, 20/hour — 43654b97); mock keeps this file's tests off the real
+// in-memory fallback (Upstash absent in tests), matching the fix already
+// applied once in auth-bootstrap.test.ts for the same bug.
+vi.mock('@alfanumrik/lib/api-rate-limit', () => ({
+  checkApiRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 999, resetAt: Math.ceil(Date.now() / 1000) + 3600 }),
+}));
 
 // ── C1 (P11 CRITICAL, 2026-07-29) — verify/route.ts now re-derives the
 // authoritative plan_code/billing_cycle from Razorpay's own order/

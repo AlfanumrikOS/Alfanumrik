@@ -66,6 +66,13 @@ vi.mock('@alfanumrik/lib/gst', () => ({
 vi.mock('@alfanumrik/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('@alfanumrik/lib/ops-events', () => ({ logOpsEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@alfanumrik/lib/posthog/server', () => ({ capture: vi.fn().mockResolvedValue(undefined) }));
+// Rate limiter (always-allow) — payments/create-order and /subscribe now
+// rate-limit per user (VULN-D2, 10/hour — 43654b97); mock keeps this file's
+// tests off the real in-memory fallback (Upstash absent in tests), matching
+// the fix already applied once in auth-bootstrap.test.ts for the same bug.
+vi.mock('@alfanumrik/lib/api-rate-limit', () => ({
+  checkApiRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 999, resetAt: Math.ceil(Date.now() / 1000) + 3600 }),
+}));
 
 // ─── Validation passthrough (accepts the canonical plan codes) ───────────────
 vi.mock('@alfanumrik/lib/validation', () => {

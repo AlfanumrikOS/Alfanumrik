@@ -97,6 +97,13 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 }));
 vi.mock('@alfanumrik/lib/ops-events', () => ({ logOpsEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@alfanumrik/lib/posthog/server', () => ({ capture: vi.fn().mockResolvedValue(undefined) }));
+// Rate limiter (always-allow) — payments/subscribe now rate-limits per user
+// (VULN-D2, 10/hour — 43654b97); mock keeps this file's tests off the real
+// in-memory fallback (Upstash absent in tests), matching the fix already
+// applied once in auth-bootstrap.test.ts for the same bug.
+vi.mock('@alfanumrik/lib/api-rate-limit', () => ({
+  checkApiRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 999, resetAt: Math.ceil(Date.now() / 1000) + 3600 }),
+}));
 
 // ── supabaseAdmin chain (subscribe plan lookup, students, existing sub) ──────
 let _planRow: any = { data: null, error: null };
