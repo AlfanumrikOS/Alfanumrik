@@ -24,7 +24,7 @@
  *
  * (The "forget it" DELETE endpoint that used to live here was removed
  * 2026-08-30 along with the DPDP erasure subsystem it was built on — see
- * supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
+ * supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql.)
  */
 
 import { NextRequest, NextResponse } from 'next/server';

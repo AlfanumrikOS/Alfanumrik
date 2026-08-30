@@ -882,7 +882,7 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // translation subquery on student_ncert_attempts, mock_test_attempts, and
     // learning_events). Ledger: 223 - 1 + 6 = 228.
     // 2026-08-30: data_erasure_requests dropped entirely (DPDP erasure
-    // subsystem removed — supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql),
+    // subsystem removed — supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql),
     // taking its 2 policies with it. Ledger: 228 - 2 = 226.
     expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(226);
     expect(detectedRiskKeys().length).toBe(226);

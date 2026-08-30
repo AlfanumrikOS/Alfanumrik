@@ -1303,7 +1303,7 @@
       ],
       "notes": [
         "Band labels + evidence-language copy on the memory screen also serve T1",
-        "2026-08-30: per-item erasure (ErasePanel.tsx, the DELETE handler on /api/learner/memory, and the data-erasure-purger Edge Function) removed along with the whole DPDP erasure subsystem — CEO decision, not required by the schools. See supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql and docs/audit/launch-readiness/dpdp-erasure-removal.md. The view-only memory screen (GET /api/learner/memory) is unaffected."
+        "2026-08-30: per-item erasure (ErasePanel.tsx, the DELETE handler on /api/learner/memory, and the data-erasure-purger Edge Function) removed along with the whole DPDP erasure subsystem — CEO decision, not required by the schools. See supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql and docs/audit/launch-readiness/dpdp-erasure-removal.md. The view-only memory screen (GET /api/learner/memory) is unaffected."
       ]
     },
     {

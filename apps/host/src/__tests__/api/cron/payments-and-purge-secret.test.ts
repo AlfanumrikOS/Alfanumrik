@@ -22,7 +22,7 @@
  *
  * (The third route this file used to cover, /api/cron/account-purge, was
  * removed 2026-08-30 with the DPDP erasure subsystem — see
- * supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
+ * supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql.)
  *
  * Mirrors the constant-time-secret + supabase-admin mocking style in
  * src/__tests__/api/cron/reverify-domains.test.ts and the quiz-submit route

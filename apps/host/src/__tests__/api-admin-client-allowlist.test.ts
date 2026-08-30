@@ -401,7 +401,7 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // 275 -> 273 (2026-08-30): src/app/api/cron/account-purge/route.ts and
 // src/app/api/v1/account/delete/route.ts DELETED — the DPDP erasure
 // subsystem they belonged to was removed entirely (not required by the
-// schools; see supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql
+// schools; see supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql
 // and docs/audit/launch-readiness/dpdp-erasure-removal.md). Their ledger
 // entries are pruned in the SAME change so the guard ratchets DOWN, not
 // drifts.

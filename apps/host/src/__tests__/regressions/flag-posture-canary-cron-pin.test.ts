@@ -41,7 +41,7 @@ const CANARY_SCHEDULE = '25 3 * * *';
 /**
  * The 12 cron entries that existed BEFORE the canary — pinned verbatim.
  * (Was 13; /api/cron/account-purge removed 2026-08-30 with the DPDP erasure
- * subsystem — see supabase/migrations/20260830130000_remove_dpdp_erasure_system.sql.)
+ * subsystem — see supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql.)
  */
 const PRE_EXISTING: Record<string, string> = {
   '/api/cron/school-operations': '0 2 * * *',
