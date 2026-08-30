@@ -55,6 +55,41 @@ npm run build
   If the per-page report shows every page at 0.0 kB, or reports zero pages
   measured, the gate is broken and this is a FAIL.
 
+## Gate 4.5: Workflow/CI Config Changes (conditional — `.github/workflows/*.yml` touched)
+
+**Incident this pins (2026-08-30):** a fix to `ci.yml`'s event-gating removed the standalone pattern
+`if: ${{ github.event_name != 'pull_request' }}` from three jobs via exact-string grep, and missed a
+fourth instance because it was a compound condition: `if: ${{ always() && github.event_name != 'pull_request' }}`.
+Grep found what it was told to look for and nothing else. The gap was only caught because a downstream
+consistency check (ci-gate's classification script) happened to fail loudly — that's not something every
+workflow change has, so it cannot be relied on as the safety net.
+
+**The rule: never grep a workflow file for a known pattern and call it audited. Parse it.**
+
+```bash
+node -e "
+const yaml = require('yaml');
+const fs = require('fs');
+const doc = yaml.parse(fs.readFileSync('.github/workflows/<FILE>.yml', 'utf8'));
+for (const [id, job] of Object.entries(doc.jobs)) {
+  console.log(id + ' | if: ' + (job.if || '(none)'));
+}
+"
+```
+- Read every job's actual `if:` condition from the parsed structure, not from a text search for a specific
+  string you expect to find. A compound condition, a differently-worded equivalent, or a condition on a
+  step rather than the job will all silently evade a grep for one exact pattern.
+- If the file has a classification/fan-in script (e.g. `ci-gate`'s per-event required/expected-skip
+  matrix), diff every job's actual `if:` against what that script expects for every job it references —
+  by hand, one by one. A mismatch here is exactly the "green PR, nothing actually ran" failure mode.
+- Also check step-level `if:` conditions inside any job you changed — a job that runs can still no-op if
+  a step inside it is separately gated.
+- Validate the YAML parses after editing (the snippet above throws on invalid YAML — that alone is not
+  sufficient, but its absence is disqualifying).
+- Run whatever test suite already exercises the workflow file's structure (search for tests that
+  `readFileSync`/parse `.github/workflows/*.yml` — e.g. this repo's `reg-317` and `devops-policy-contract`
+  suites) before pushing, not after a failure prompts it.
+
 ## Gate 5: Domain Review
 Conditional. Required when change touches a domain agent's files.
 
@@ -107,6 +142,40 @@ git diff --cached --name-only | grep -iE '\.env|secret|credential' && echo "BLOC
 - [ ] No hardcoded secrets (grep for `sk_`, `rzp_live_`, `eyJ`, `service_role`)
 - [ ] Commit message: `type(scope): description`
 
+## Gate 7: Post-Push Verification
+
+**Incident this pins (2026-08-30):** across five PRs pushed in one session, local Gates 1-4 passing was
+repeatedly treated as "done." Two real classes of failure only exist in the actual CI/deploy environment
+and cannot be fully replicated locally: (a) genuine bugs in workflow/CI config itself (Gate 4.5 above
+narrows but does not eliminate this — the fix is the audit discipline, not a guarantee), and (b) external
+network calls CI makes that local runs don't (a CLI's telemetry ping, a binary download) — real,
+occasional, and not a code defect, but still a red check if left unaddressed.
+
+**The rule: a push is not done until its CI run reaches a terminal state you have actually read.**
+"I pushed and the diff looks right" is not verification. Do not report a task complete, ask the user to
+review, or move to unrelated work while a run triggered by your own push is still in progress.
+
+- After every push, check the actual run status (`gh pr checks <N>` or the equivalent), not just that the
+  push command exited 0.
+- If a check fails, read its log before deciding what to do — do not guess at a fix from the check name
+  alone. Distinguish a genuine defect (fix the code) from infrastructure flakiness (verify via the log that
+  the failure is in a step your diff could not have touched — an external network call, a dependency
+  download, a telemetry ping — before concluding it's a flake and not a bug).
+- If it's a genuine, recurring flake source (not a one-off), fix the source (pin/cache/disable the flaky
+  step) rather than only rerunning — a rerun clears today's symptom, not the recurrence.
+- **Every PR is required to reach a real green before you consider it done. Silence or a merge in
+  progress is not evidence of green** — check.
+- If a check fails for a reason your diff plausibly could not have caused (verify this from evidence — the
+  failing step's log — not from convenience), say so explicitly and explain the evidence, rather than
+  silently reworking unrelated code to make a flake go away.
+
+**What this gate does NOT and cannot guarantee:** zero CI failures ever. Infra flakiness happens.
+Pre-existing drift unrelated to your change (e.g. a production/repo migration-ledger mismatch — see
+`supabase-patterns`) can surface in a deploy pipeline your PR triggers without your PR being the cause.
+The gate's job is to make sure YOU know the real state before calling something done, and that YOUR
+changes are never the reason a check is red — not to make the underlying infrastructure or environment
+perfectly reliable, which is outside what a pre-push code gate can control.
+
 ## Gate Summary (copy for PR descriptions)
 ```
 ## Release Gates
@@ -115,6 +184,7 @@ git diff --cached --name-only | grep -iE '\.env|secret|credential' && echo "BLOC
 - [ ] Gate 2: lint -- PASS
 - [ ] Gate 3: tests -- PASS ([n]/[n]) | Catalog: [n] exist, gaps: [list areas]
 - [ ] Gate 4: build -- PASS (shared: [n] kB)
+- [ ] Gate 4.5: workflow/CI config audit -- PASS / N/A (parsed, not grepped; classification script diffed)
 - [ ] Gate 5a: assessment review -- PASS / N/A
 - [ ] Gate 5b: architect review -- PASS / N/A (security detail: see supabase-patterns)
 - [ ] Gate 5c: ai-engineer review -- PASS / N/A
@@ -123,6 +193,7 @@ git diff --cached --name-only | grep -iE '\.env|secret|credential' && echo "BLOC
 - [ ] Gate 5f: testing review -- PASS / N/A
 - [ ] Gate 5g: student-data review -- PASS / N/A
 - [ ] Gate 6: pre-push -- PASS
+- [ ] Gate 7: post-push CI verification -- GREEN (checked, not assumed) / FLAKE (log-confirmed, source fixed or noted) / FAIL (fixed, re-verified)
 ```
 
 ## Deployment Pipeline
