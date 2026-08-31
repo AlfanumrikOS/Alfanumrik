@@ -6,14 +6,22 @@ column-set drifts apart. On a correct tree it is GREEN and changes nothing.
 
 Two golden cassettes are pinned here:
 
-1. ``ROUTING_CASSETTE`` — the head-of-chain ``(provider, model)`` the TS router
-   produces for each task under the LIVE deterministic policy
-   (``shadow_priority=False`` ⇒ OpenAI is always the primary rung; this shipped
-   in Phase 1 / A2). The TS expectations are hand-derived golden values; the
-   Python side runs live via :func:`select_provider_chain` and MUST match.
-   If the parametrized routing test goes RED, Phase 1's deterministic flip has
-   regressed in router.py — STOP and review (do NOT edit this cassette to
-   paper over it).
+1. ``ROUTING_CASSETTE`` — the head-of-chain ``(provider, model)`` Anthropic
+   primary/OpenAI fallback policy produces for each task (CEO-approved
+   quality-driven provider swap back to Claude, 2026-08-26 — see
+   ``generated-matrix.ts``'s ``GENERATED_BASE_MATRIX`` and
+   ``router.ts``'s hybrid/openai_default/weighted-random reorder, all
+   anthropic-favored). router.ts no longer has a pure "no-randomness
+   deterministic" mode of its own — it always runs the weighted-random
+   reorder (default weight 0.8, anthropic-favored). The Python router keeps
+   a ``shadow_priority=False`` deterministic shortcut (anthropic always
+   primary, no randomness) specifically so this cassette — and the
+   circuit-breaker/fallback tests — don't depend on ``random.random()``
+   luck; that shortcut is what's exercised here. The TS expectations are
+   hand-derived golden values; the Python side runs live via
+   :func:`select_provider_chain` and MUST match. If the parametrized routing
+   test goes RED, the anthropic-primary policy has regressed in router.py —
+   STOP and review (do NOT edit this cassette to paper over it).
 
 2. ``TELEMETRY_COLUMNS`` — the exact key-set the Python telemetry writer
    (``telemetry._row_from_payload``) inserts into ``public.mol_request_logs``.
@@ -36,8 +44,8 @@ from fastapi.testclient import TestClient
 from services.ai.api.auth import require_active_student
 from services.ai.api.main import create_app
 from services.ai.mol.router import (
-    GPT_FULL,
-    GPT_MINI,
+    HAIKU,
+    SONNET,
     RouterOptions,
     select_provider_chain,
 )
@@ -53,24 +61,28 @@ def client(matching_student_dependency) -> TestClient:
 
 # ─── Cassette 1: routing decision (TS golden ↔ Python live) ──────────────────
 #
-# Hand-derived from the TS router's deterministic policy: with
-# shadow_priority=False, OpenAI is the primary rung for every task. For the
-# teaching tasks (explanation/step_by_step/quiz_generation) the OpenAI rung is
-# gpt-4o-mini; for reasoning the only OpenAI rung is gpt-4o.
+# Hand-derived from GENERATED_BASE_MATRIX (anthropic-first for every task) and
+# router.ts's weighted-random reorder, which favors anthropic by default
+# (weight 0.8). Pinned here via the Python-only deterministic shortcut
+# (shadow_priority=False) so the cassette doesn't depend on random.random().
+# Anthropic is the primary rung for every task. For the teaching tasks
+# (explanation/step_by_step/quiz_generation) the anthropic rung is
+# claude-haiku; for reasoning the primary rung is claude-sonnet.
 ROUTING_CASSETTE: dict[str, tuple[str, str]] = {
-    "explanation": ("openai", GPT_MINI),
-    "step_by_step": ("openai", GPT_MINI),
-    "quiz_generation": ("openai", GPT_MINI),
-    "reasoning": ("openai", GPT_FULL),
+    "explanation": ("anthropic", HAIKU),
+    "step_by_step": ("anthropic", HAIKU),
+    "quiz_generation": ("anthropic", HAIKU),
+    "reasoning": ("anthropic", SONNET),
 }
 
 
 @pytest.mark.parametrize(("task", "expected"), list(ROUTING_CASSETTE.items()))
 def test_routing_decision_matches_ts_cassette(task: str, expected: tuple[str, str]):
-    """Python live routing head == TS golden cassette under deterministic policy.
+    """Python live routing head == TS golden cassette under the anthropic-primary
+    policy (CEO directive 2026-08-26).
 
-    RED here means Phase 1's deterministic OpenAI-primary flip regressed in
-    router.py. STOP and review — do NOT edit the cassette.
+    RED here means the anthropic-primary flip regressed in router.py. STOP and
+    review — do NOT edit the cassette.
     """
     chain = select_provider_chain(task, RouterOptions(shadow_priority=False))
     head = chain.passes[0].chain[0]
@@ -108,7 +120,10 @@ TELEMETRY_COLUMNS: set[str] = {
 
 @pytest.fixture()
 def openai_default_route(respx_mock):
-    """Pre-loaded 200 for the deterministic explanation chain's OpenAI head."""
+    """Pre-loaded 200 for the OpenAI rung of the explanation chain. Anthropic is
+    now primary, so this request may hit Anthropic first (unmocked here) and
+    fall through to this OpenAI mock — fine, since this cassette only pins the
+    telemetry row's key-set, not which provider ultimately answers."""
     return respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(
             200,

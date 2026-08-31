@@ -23,7 +23,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 
-const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+const CLAUDE_MODEL = 'claude-sonnet-4-5-20250929';
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const QUESTIONS_PER_CHAPTER = 25; // Must exceed max quiz length (20) for pool variety
 const MIN_EXISTING_QUESTIONS = 25; // Skip chapters with this many+ questions

@@ -132,8 +132,17 @@ export interface ShadowFireArgs {
   /** Classified task type (drives allow-list gate + MOL router behavior). */
   task_type: TaskType;
 
-  /** MOL surface tag. Mirrors the baseline call's surface. */
-  surface: 'foxy' | 'quiz' | 'solver' | 'ocr' | null;
+  /**
+   * MOL surface tag. Mirrors the baseline call's surface.
+   *
+   * MUST stay a superset of `mapCallerToSurface()`'s return type
+   * (mol-telemetry-adapter.ts) — that function is the only producer of this
+   * field. 'lesson' was added there for the Lesson Agent (GenAI Phase 5b) but
+   * not here, so `deno check pipeline-stream.ts` failed with TS2322 at the
+   * fireShadowCompare call site. The underlying `mol_request_logs.surface`
+   * column is free-text (no CHECK), so this is a type-level fix only.
+   */
+  surface: 'foxy' | 'quiz' | 'solver' | 'ocr' | 'lesson' | null;
 
   /** What model the baseline actually used. Recorded on the shadow row for analyst convenience. */
   baseline_provider: 'openai' | 'anthropic';
@@ -408,7 +417,15 @@ export async function shadowFireOpenAI(args: ShadowFireArgs): Promise<void> {
       config: {
         preferred_provider: 'openai',
         request_id: args.request_id,
-        surface: args.surface ?? undefined,
+        // MOL's own GenerateRequest.config.surface union
+        // (_shared/mol/types.ts) has no 'lesson' member, and it has a Python
+        // twin (python/services/ai/mol/types.py) that a parity test pins —
+        // widening it is an ai-engineer call, not a side effect of this fix.
+        // Degrade to undefined here (MOL treats it as "unspecified surface",
+        // which is what it did before 'lesson' existed). Attribution is NOT
+        // lost: the two log paths above/below take `args.surface` verbatim,
+        // and mol_request_logs.surface is free-text.
+        surface: args.surface === 'lesson' ? undefined : (args.surface ?? undefined),
         max_tokens_override: args.maxTokens,
         // ── C4.2a fixes ──
         // Prompt-parity (HIGH severity in C4.1 review): hand MOL the

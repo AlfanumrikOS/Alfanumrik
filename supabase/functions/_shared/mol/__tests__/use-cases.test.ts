@@ -119,7 +119,7 @@ describe('selectProviderChain with custom use cases', () => {
 
     expect(chain.passes.length).toBe(1)
     // Math.random=0.1 < w=0.8 → Anthropic (claude-sonnet) reordered to front
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-20250514' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' })
     expect(chain.passes[0].chain[1]).toEqual({ provider: 'openai', model: 'o3-mini' })
     expect(chain.passes[0].chain[2]).toEqual({ provider: 'openai', model: 'o1' })
   })
@@ -142,7 +142,7 @@ describe('selectProviderChain with custom use cases', () => {
     })
 
     expect(chain.passes.length).toBe(1)
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-20250514' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' })
     expect(chain.passes[0].chain[1]).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' })
     expect(chain.passes[0].chain[2]).toEqual({ provider: 'openai', model: 'gpt-4o' })
   })

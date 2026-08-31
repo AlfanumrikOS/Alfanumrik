@@ -63,6 +63,24 @@ subscribers directory.
   The rule governs the production write path; scoping it out of tests at
   the config layer mirrors every other src-scoped rule in the config.
 
+  **CORRECTION 2026-08-31 — that exemption needs to exist in BOTH configs.**
+  ESLint applies an extending config's top-level `rules` *after* the extended
+  config's `overrides`. `.eslintrc.ai-boundary.json` extends `.eslintrc.json`
+  and re-declares this rule at `"error"` in its top-level `rules`, which
+  silently **reversed** the `.eslintrc.json` test exemption above:
+
+  ```
+  eslint --print-config <any test file>
+    .eslintrc.json             -> ["off"]    <- intended
+    .eslintrc.ai-boundary.json -> ["error"]  <- the bug
+  ```
+
+  That produced 13 spurious errors on E2E seed/teardown code. The exemption is
+  now re-asserted in `.eslintrc.ai-boundary.json`'s own `overrides` (which are
+  applied last), with the `files` list copied verbatim from `.eslintrc.json`.
+  **If you change the test globs in `.eslintrc.json`, change them in
+  `.eslintrc.ai-boundary.json` too** — or the two will drift apart again.
+
 - **Severity:**
   - `warn` in `.eslintrc.json` (default lint config — ratcheting in).
   - `error` in `.eslintrc.ai-boundary.json` (stricter parity config).

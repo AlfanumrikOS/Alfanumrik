@@ -257,6 +257,18 @@ Logged by ops during the math-rendering consolidation; found by architect. **Fol
 
 Net effect: `packages/lib/src/grounding-config.ts` and `supabase/functions/grounded-answer/config.ts` can drift with no mechanical detection — this includes the `PROMPT_REV`-adjacent constants this runbook's invalidation contract depends on. Fix (architect): repoint the script's `WEB` path to `packages/lib/src/grounding-config.ts`, move/redeclare the npm script so cwd and file locations agree, add an error message to the missing-file branch, and wire it into a CI job.
 
+#### CLOSED 2026-08-31 (architect) — resolved by DELETION, not repair
+
+The proposed fix above was **not** taken. `scripts/check-config-parity.sh` is deleted. Reason: even fully repaired it compares constant **NAMES** only (`grep -E '^export const [A-Z_]+'`), so it could never have detected the drift that actually happened — `MODEL_ROUTE_REV` and `PROMPT_REV` sitting at stale *values* with identical names on both sides. `apps/host/src/__tests__/grounding/config-parity-values.test.ts` (REG-433, added 2026-08-31) parses and compares the **value** of every constant the two mirrors share, and already runs in CI's `unit-tests` shards. Repairing the script would have meant maintaining a strictly weaker second mechanism whose passing green would keep implying more coverage than it has — the exact failure this register entry describes.
+
+Drift detection for this runbook's invalidation contract is therefore now: `npx vitest run apps/host/src/__tests__/grounding/config-parity-values.test.ts`.
+
+**Two things this uncovered, both now fixed, one still open:**
+
+- **Fixed — a second dead gate was hiding behind the first.** `lint:ai-boundary` was declared as `bash scripts/check-config-parity.sh && eslint …`. Because the script exited 1 unconditionally, the `&&` meant the AI-boundary ESLint **never executed, in any invocation, ever**. Three architectural rules (`no-direct-ai-calls`, `no-direct-rag-rpc`, `no-canonical-write-outside-projector`) were configured at `error` and enforcing nothing — and `lint:ai-boundary` appeared in no workflow either. Coupling an unrelated parity check into a lint chain with `&&` is what turned one dead script into two dead gates; they are now decoupled.
+- **Fixed — the gate is in CI.** `quality` job → "AI boundary gate (P12 / ADR-005, baseline-ratcheted)", blocking, no `if:`. Runs `node scripts/check-ai-boundary.mjs`, which diffs live ESLint errors against the checked-in ceiling in `scripts/ai-boundary-baseline.json` (8 recorded pre-existing violations, each documented with its owner and fix). A 9th violation fails the build; fixing one and shrinking the baseline never does.
+- **Still open (ai-engineer, NOT fixable from this runbook):** line 3 of both `packages/lib/src/grounding-config.ts` and `supabase/functions/grounded-answer/config.ts` still reads `// CI parity check enforces via scripts/check-config-parity.sh.` — naming a file that no longer exists. Both are ai-engineer-owned and were being edited concurrently. They should be repointed at `config-parity-values.test.ts`.
+
 ## References
 
 - Regression catalog: `.claude/regression-catalog.md` (REG-264..REG-269)

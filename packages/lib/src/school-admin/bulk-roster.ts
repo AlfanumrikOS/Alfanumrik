@@ -397,11 +397,21 @@ export async function loadClassIndex(
   schoolId: string,
 ): Promise<{ bySection: Map<string, string>; byCode: Map<string, string> }> {
   const supabase = getSupabaseAdmin();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('classes')
     .select('id, section, class_code, grade, academic_year')
     .eq('school_id', schoolId)
     .is('deleted_at', null);
+
+  // An empty index makes every roster row look like it references an unknown
+  // class, so a bulk import would silently mis-file (or reject) the entire
+  // upload. That must not be indistinguishable from "this school has no
+  // classes yet". P13: school id + error metadata only, no roster rows.
+  if (error) {
+    throw new Error(
+      `loadClassIndex: classes lookup failed for school ${schoolId} (${error.code}): ${error.message}`,
+    );
+  }
 
   const bySection = new Map<string, string>();
   const byCode = new Map<string, string>();

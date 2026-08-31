@@ -1,0 +1,109 @@
+{
+  "_README": [
+    "AI-boundary violation baseline. Read by scripts/check-ai-boundary.mjs.",
+    "",
+    "This is a CEILING, not a target. Each key is `<repo-relative path>::<ruleId>`",
+    "and each value is how many occurrences of that rule are KNOWN in that file.",
+    "A pair not listed here, or listed with a lower count than reality, FAILS CI.",
+    "",
+    "These 8 entries pre-date the gate being wired into CI (2026-08-31). They are",
+    "recorded, not exempted: the rules stay at `error`, and every one of these is a",
+    "real violation with a real fix, described in `_entries` below. Fixing one is a",
+    "3-step change: fix the code, run `node scripts/check-ai-boundary.mjs --update`,",
+    "commit the shrunken baseline in the same PR. `--update` can only SHRINK this",
+    "file; adding an entry requires `--accept-new`, which prints a loud warning and",
+    "shows up as a reviewable diff hunk here.",
+    "",
+    "Do NOT add an entry to make a red build green. If a violation is genuinely",
+    "sanctioned it belongs in docs/architecture/EXCEPTIONS.md with an inline",
+    "eslint-disable carrying a `-- see EXCEPTIONS.md E<n>` reason (that is how the",
+    "existing /api/tutor/answer exception E5 is handled), not in here.",
+    "",
+    "NOT in this baseline, deliberately: 27 further reports that this config",
+    "produced before 2026-08-31 were config bugs, not code violations, and were",
+    "fixed at the config layer instead of being baselined. See the two commented",
+    "override blocks in .eslintrc.ai-boundary.json for the per-file evidence."
+  ],
+  "generated": "2026-08-31",
+  "_entries": {
+    "supabase/functions/queue-consumer/index.ts::alfanumrik/no-canonical-write-outside-projector": [
+      "HIGHEST VALUE ENTRY. Line ~323: a select-then-upsert of `concept_mastery`",
+      "(mastery_probability / p_know / mastery_level) inside the queue consumer.",
+      "This is a SECOND, non-projector canonical writer of the mastery posterior,",
+      "which is exactly what ADR-005 forbids, and it is NOT in EXCEPTIONS.md (the",
+      "only sanctioned inline mastery write there is E5, /api/tutor/answer).",
+      "It also carries a lost-update race: the read and the upsert are separate",
+      "round trips, so two concurrent signals for the same (student, topic) can",
+      "silently clobber each other's delta.",
+      "FIX (owner: ai-engineer + assessment): emit a durable state_events row and",
+      "let the concept-mastery projector own the write —",
+      "supabase/functions/_shared/state-runtime/concept-mastery-projector.ts is the",
+      "already-allowlisted Deno-side canonical writer with attemptId idempotency."
+    ],
+    "supabase/functions/grade-written-answer/index.ts::alfanumrik/no-direct-ai-calls": [
+      "Line ~139: `fetch('https://api.anthropic.com/v1/messages')` in callClaude().",
+      "Grades a student's free-text SA/LA answer and returns score + feedback TO",
+      "THE STUDENT, bypassing the grounding/citation/PII-redaction choke point.",
+      "This is a P12 surface (unfiltered LLM output reaching a student), so it is",
+      "one of the two most load-bearing entries here.",
+      "FIX (owner: ai-engineer): route via supabase/functions/_shared/grounded-client.ts."
+    ],
+    "supabase/functions/grade-experiment-conclusion/index.ts::alfanumrik/no-direct-ai-calls": [
+      "Line ~239: same pattern as grade-written-answer. Grades a free-text",
+      "guided-experiment conclusion against a rubric and awards coins. Student-facing",
+      "LLM output outside the choke point — same P12 exposure, same fix."
+    ],
+    "supabase/functions/alfabot-answer/retrieval.ts::alfanumrik/no-direct-ai-calls": [
+      "Line ~16: `const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings'`.",
+      "CHEAPEST FIX IN THE LIST. supabase/functions/_shared/embeddings.ts is already",
+      "allowlisted by the rule, hits the identical endpoint with the identical",
+      "`voyage-3` model, and exports generateEmbedding(). This file is a duplicate",
+      "of a blessed module, so the fix is an import swap — it also picks up the",
+      "shared module's embedding cache for free."
+    ],
+    "supabase/functions/_shared/mol/grader.ts::alfanumrik/no-direct-ai-calls": [
+      "Line ~52: `const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'`.",
+      "NOT a student-facing path (nightly shadow-pair judge; its own header argues",
+      "it is out of scope on those grounds). But the rule's author already",
+      "considered and REJECTED that argument in writing: the rule allowlists",
+      "`_shared/mol/providers/**` and says 'the rest of _shared/mol/ (e.g.",
+      "grader.ts) stays governed by this rule'. Exempting it here would silently",
+      "reverse a documented rule-owner decision, which is why it is baselined",
+      "instead.",
+      "FIX (owner: ai-engineer): call through the blessed MOL provider adapters in",
+      "_shared/mol/providers/, which grader.ts already sits next to. If instead the",
+      "owner decides the grader should be permanently blessed, that is an",
+      "EXCEPTIONS.md entry + an allowlist change in eslint-rules/no-direct-ai-calls.js",
+      "— a deliberate decision, not a baseline line."
+    ],
+    "packages/lib/src/foxy/quality-eval.ts::alfanumrik/no-direct-ai-calls": [
+      "Line ~51: ANTHROPIC_ENDPOINT const. Nightly LLM-as-judge for Foxy turns.",
+      "Node-side, so packages/lib/src/ai/gateway/ IS importable here — the gateway",
+      "design doc explicitly requires callers to delegate rather than raw-fetch.",
+      "The in-file comment ('same pattern the production Edge Function uses') was",
+      "written before that gateway existed.",
+      "FIX (owner: ai-engineer): route through packages/lib/src/ai/gateway/."
+    ],
+    "packages/lib/src/ai/validation/synthesis-quality-eval.ts::alfanumrik/no-direct-ai-calls": [
+      "Line ~42: ANTHROPIC_ENDPOINT const. The monthly-synthesis twin of",
+      "foxy/quality-eval.ts. Same reasoning, same fix, same owner."
+    ],
+    "packages/lib/src/rag/pack-quality-oracle.ts::alfanumrik/no-direct-ai-calls": [
+      "Line ~142: raw fetch inside gradeWithClaude(). Offline pack-generation",
+      "grader used by scripts/generate-rag-pack.ts. Already takes an injectable",
+      "`fetch`, so routing it through packages/lib/src/ai/gateway/ is a small",
+      "change. Lowest urgency of the three packages/lib entries (build-time only,",
+      "never in a request path), but the same boundary."
+    ]
+  },
+  "violations": {
+    "packages/lib/src/ai/validation/synthesis-quality-eval.ts::alfanumrik/no-direct-ai-calls": 1,
+    "packages/lib/src/foxy/quality-eval.ts::alfanumrik/no-direct-ai-calls": 1,
+    "packages/lib/src/rag/pack-quality-oracle.ts::alfanumrik/no-direct-ai-calls": 1,
+    "supabase/functions/_shared/mol/grader.ts::alfanumrik/no-direct-ai-calls": 1,
+    "supabase/functions/alfabot-answer/retrieval.ts::alfanumrik/no-direct-ai-calls": 1,
+    "supabase/functions/grade-experiment-conclusion/index.ts::alfanumrik/no-direct-ai-calls": 1,
+    "supabase/functions/grade-written-answer/index.ts::alfanumrik/no-direct-ai-calls": 1,
+    "supabase/functions/queue-consumer/index.ts::alfanumrik/no-canonical-write-outside-projector": 1
+  }
+}

@@ -40,12 +40,22 @@ export const conceptMasteryProjector: Subscriber<'learner.concept_check_answered
   async handle(event, ctx: SubscriberContext) {
     const p = event.payload;
 
-    const { data: existing } = await ctx.sb
+    const { data: existing, error: existingErr } = await ctx.sb
       .from('concept_mastery')
       .select('last_attempt_id, total_correct, streak_current')
       .eq('student_id', p.studentId)
       .eq('concept_id', p.conceptId)
       .maybeSingle();
+
+    // This read IS the idempotency guard. Treating a failed read as "no prior
+    // row" defeats it: the same attempt would be projected twice, permanently
+    // inflating total_correct / streak_current. Throwing routes the event
+    // through the runtime's normal retry → dead-letter path instead.
+    if (existingErr) {
+      throw new Error(
+        `concept_mastery idempotency read failed (${existingErr.code}): ${existingErr.message}`,
+      );
+    }
 
     if (existing?.last_attempt_id === p.attemptId) {
       ctx.log({

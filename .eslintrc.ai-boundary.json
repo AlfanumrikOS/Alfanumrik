@@ -13,6 +13,133 @@
         "project": null,
         "sourceType": "module"
       }
+    },
+
+    {
+      // ==================================================================
+      // BLOCK 1 — CONFIG-LAYERING REPAIR. Gives up ZERO enforcement.
+      // ==================================================================
+      // This block restores an exemption that ALREADY EXISTS in the base
+      // config and that this file was silently reversing.
+      //
+      // `.eslintrc.json` deliberately turns
+      // `alfanumrik/no-canonical-write-outside-projector` OFF for test files
+      // ("Test files may write canonical state directly"), and the RULE'S OWN
+      // header documents the same decision and the same mechanism:
+      //
+      //   "Test fixtures (src/__tests__/**, *.test.*, *.spec.*) are turned OFF
+      //    for this rule via an .eslintrc.json override [...] tests legitimately
+      //    seed/clean canonical tables as E2E setup (there is no projector in a
+      //    test). The rule governs the production write path."
+      //
+      // But ESLint applies an extending config's TOP-LEVEL `rules` AFTER the
+      // extended config's `overrides`. So the `"error"` above clobbered the
+      // base config's `"off"`, and this file re-enabled the rule on exactly
+      // the files the base config had exempted. Measured 2026-08-31:
+      //
+      //   eslint --print-config apps/host/src/__tests__/migrations/canonical-mastery-e2e.test.ts
+      //     base .eslintrc.json          -> ["off"]      <- intended
+      //     .eslintrc.ai-boundary.json   -> ["error"]    <- the bug
+      //
+      // That accounted for 13 of the 35 errors this config reported. They are
+      // all `.delete()` / `.insert()` E2E seed+teardown of `concept_mastery`
+      // in migration tests — the exact case the base config already blessed.
+      //
+      // The `files` list is a VERBATIM copy of the base config's block, so the
+      // enforced scope is byte-identical to what the base config already
+      // intends. Do not widen it here — widen it in `.eslintrc.json` and copy
+      // the change across, or the two will drift again.
+      //
+      // DURABLE FIX (owner: whoever owns this file): move the three strict
+      // severities out of the top-level `rules` above and into an override
+      // scoped to production paths, so the base config's test exemptions are
+      // never re-armed by layering order. Not done here because it changes the
+      // resolution order for every rule at once and wants its own review.
+      "files": [
+        "apps/*/src/__tests__/**",
+        "apps/*/src/**/*.test.{ts,tsx}",
+        "apps/*/src/**/*.spec.{ts,tsx}",
+        "packages/*/src/__tests__/**",
+        "packages/*/src/**/*.test.{ts,tsx}",
+        "packages/*/src/**/*.spec.{ts,tsx}"
+      ],
+      "rules": {
+        "alfanumrik/no-canonical-write-outside-projector": "off"
+      }
+    },
+
+    {
+      // ==================================================================
+      // BLOCK 2 — NEW, NARROW EXEMPTION: no-direct-ai-calls in TEST FILES.
+      // This one DOES give up enforcement. Read the justification.
+      // ==================================================================
+      // `alfanumrik/no-direct-ai-calls` fires on any string literal matching
+      // /api\.(anthropic|voyageai)\.com/ ANYWHERE in a file — it does not and
+      // cannot distinguish a live `fetch()` from a mock, a fixture, a recorded
+      // cassette key, a simulated DNS error, or an assertion ABOUT the
+      // boundary. In a test file it is only ever the latter: nothing in this
+      // repo's suite makes a live provider call (vitest + Deno tests run
+      // offline; the edge-function CI job is explicitly "deterministic,
+      // offline"). The rule's purpose — one choke point for grounding,
+      // citation, PII redaction and circuit-breaker policy on the PRODUCTION
+      // call path — has no test-file surface to protect.
+      //
+      // This was verified PER FILE, not assumed. All 11 test hits as of
+      // 2026-08-31, and what each actually is:
+      //
+      //   apps/host/src/__tests__/foxy-remediation-oracle-shape.test.ts:215,331
+      //   apps/host/src/__tests__/foxy-remediation-output-safety.test.ts:150,469
+      //     -> `fetchSpy.mock.calls.filter(url => url.includes('api.anthropic.com'))`
+      //        NEGATIVE ASSERTIONS that Anthropic is NOT called (or called
+      //        exactly once via the sanctioned path). :469 even carries the
+      //        comment "that is what the alfanumrik/no-direct-ai-calls rule
+      //        enforces". The rule was failing the tests that enforce it.
+      //
+      //   apps/host/src/__tests__/foxy-rerank-fallback.test.ts:68
+      //     -> rerank call driven by an INJECTED `fetchImpl` (a `vi.fn()`),
+      //        never global fetch.
+      //   apps/host/src/__tests__/foxy-rerank-fallback.test.ts:167
+      //     -> the string "ENOTFOUND api.voyageai.com" inside
+      //        `mockRejectedValue(new Error(...))` — a simulated DNS failure.
+      //
+      //   apps/host/src/__tests__/regressions/rag-confidence-v2-shadow-source-pins.test.ts:389
+      //     -> a SOURCE-PIN assertion: reads supabase/functions/_shared/
+      //        reranking.ts (an ALLOWLISTED file) and asserts its text still
+      //        contains `const RERANK_ENDPOINT = '...'`. The URL is quoted
+      //        evidence about blessed production source.
+      //
+      //   supabase/functions/_shared/mol/__tests__/cassette-helper.test.ts:51,130,385
+      //     -> :51 a fixture request object for the VCR-style cassette
+      //        recorder; :130 two URL strings compared to prove the request
+      //        hash changes; :385 a call made after `globalThis.fetch` is
+      //        replaced by a stub on the preceding lines.
+      //
+      //   supabase/functions/alfabot-answer/__tests__/integration.test.ts:52
+      //     -> `if (url.includes('api.voyageai.com'))` inside a fetch
+      //        INTERCEPTOR that returns a canned embedding.
+      //
+      // SCOPE IS TEST PATHS ONLY — never a directory. In particular this does
+      // NOT exempt `supabase/functions/**`: that directory is the rule's
+      // PRIMARY jurisdiction, and the seven production violations there and in
+      // packages/lib are tracked in scripts/ai-boundary-baseline.json, not
+      // exempted. See that file's header.
+      //
+      // The supabase globs are additive relative to Block 1 (the base config's
+      // test globs only cover apps/* and packages/*, because .eslintrc.json's
+      // lint scope never reached supabase/functions until this gate did).
+      "files": [
+        "apps/*/src/__tests__/**",
+        "apps/*/src/**/*.test.{ts,tsx}",
+        "apps/*/src/**/*.spec.{ts,tsx}",
+        "packages/*/src/__tests__/**",
+        "packages/*/src/**/*.test.{ts,tsx}",
+        "packages/*/src/**/*.spec.{ts,tsx}",
+        "supabase/functions/**/__tests__/**",
+        "supabase/functions/**/*.test.ts"
+      ],
+      "rules": {
+        "alfanumrik/no-direct-ai-calls": "off"
+      }
     }
   ]
 }

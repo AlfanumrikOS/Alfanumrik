@@ -100,11 +100,19 @@ Deno.serve(async (req: Request) => {
 
   if (studentError || !student) {
     // May be a teacher or parent — check those tables
-    const { data: teacher } = await admin
+    const { data: teacher, error: teacherError } = await admin
       .from('teachers')
       .select('id, school_id')
       .eq('auth_user_id', user.id)
       .single();
+
+    // PGRST116 ("no rows") is the expected "not a teacher" outcome and is
+    // deliberately not logged — this is an identity probe, absence is normal.
+    // Any other code means the probe itself failed, which previously read as
+    // "not a teacher" and silently mis-resolved the caller's role.
+    if (teacherError && teacherError.code !== 'PGRST116') {
+      console.error('[identity] teacher probe failed:', teacherError.code, teacherError.message);
+    }
 
     if (teacher) {
       return jsonResponse({
@@ -131,10 +139,19 @@ Deno.serve(async (req: Request) => {
   // back null and EVERY user resolved with all flags OFF. Plan targeting was
   // never a real column; it has been removed from both the select and the
   // evaluation below.
-  const { data: flags } = await admin
+  const { data: flags, error: flagsError } = await admin
     .from('feature_flags')
     .select('flag_name, is_enabled, target_grades, rollout_percentage, target_institutions')
     .eq('is_enabled', true);
+
+  // This is the exact defect the comment above documents: the discarded error
+  // is why a bad column list made `flags` null and resolved EVERY user with all
+  // flags OFF, undetectably. Behaviour is unchanged (all-flags-off remains the
+  // safe default) but the cause is now visible instead of being reconstructed
+  // from a production incident.
+  if (flagsError) {
+    console.error('[identity] feature flag read failed:', flagsError.code, flagsError.message);
+  }
 
   const features: Record<string, boolean> = {};
   for (const flag of (flags ?? [])) {

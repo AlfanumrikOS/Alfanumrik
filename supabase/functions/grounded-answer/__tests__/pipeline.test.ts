@@ -38,13 +38,29 @@ import { __resetL2CacheFlagCacheForTests } from '../_l2-cache-flags.ts';
 // computes so seeded L2 entries are findable + servable.
 import { buildGenCtx, genCtxKeyFragment, hashGenCtx } from '../gen-ctx.ts';
 import { __resetContentVersionCacheForTests } from '../_content-version.ts';
+import { __resetEverydayFlagCacheForTests } from '../_everyday-flag.ts';
+import { signedRequest, withSecurityRpcs } from './_security-harness.ts';
 import type { GroundedRequest } from '../types.ts';
 import { MIN_CHUNKS_FOR_READY } from '../config.ts';
 
 // Fixture content version used by buildSbStub's rag_content_versions table.
 const STUB_CONTENT_VERSION = 0;
 
-/** v2 helper: derive the L2 key + tuple exactly as the pipeline does. */
+/**
+ * v2 helper: derive the L2 key + tuple exactly as the pipeline does.
+ *
+ * CONTRACT: buildGenCtx's 3rd/4th params default to ('openai_primary', false).
+ * A test whose fixtures make the pipeline resolve anything else — a
+ * claude_primary rollout bucket, or ff_foxy_everyday_examples_v1 ON — derives a
+ * DIFFERENT gen_ctx hash than the pipeline uses, so the key it looks up can
+ * never match the key the pipeline wrote. That is exactly how the two L2 tests
+ * in this file broke: the everyday-examples flag is memoised for 60s at module
+ * scope, so whichever test read it FIRST pinned `true` for the rest of the
+ * process, silently shifting the pipeline's gen_ctx away from this helper's.
+ * Hence `__resetEverydayFlagCacheForTests()` beside every feature-flag reset
+ * below, and an explicit `ff_foxy_everyday_examples_v1: false` in the fixtures
+ * of any test that compares keys.
+ */
 async function deriveV2KeyAndTuple(req: GroundedRequest) {
   const genCtxHash = await hashGenCtx(buildGenCtx(req, STUB_CONTENT_VERSION));
   const redisKey = await buildRedisCacheKey(
@@ -374,6 +390,7 @@ Deno.test('chapter_not_ready → trace written, abstain returned', async () => {
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -398,6 +415,7 @@ Deno.test('strict happy path → grounded:true with citations', async () => {
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
   installFetchStub({
@@ -451,12 +469,19 @@ Deno.test('L2 write occurs when shadow flag is ON and serving flag is OFF (write
         ff_grounded_ai_enabled: true,
         ff_foxy_response_cache_l2_v1: false, // real serving OFF
         ff_foxy_response_cache_l2_shadow_v1: true, // shadow ON
+        // Production default, and REQUIRED here: this test compares the key the
+        // pipeline wrote against one derived by deriveV2KeyAndTuple, whose
+        // gen_ctx assumes the directive is OFF. Without this the stub's blanket
+        // `flag_enabled !== false` default would turn it ON and the two keys
+        // would diverge. See deriveV2KeyAndTuple's CONTRACT note.
+        ff_foxy_everyday_examples_v1: false,
       },
       chunks: fiveChunks(),
       trace_insert_id: 'trace-l2-shadow-write',
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __resetL2CacheFlagCacheForTests();
   __resetContentVersionCacheForTests();
   __clearCacheForTests();
@@ -533,6 +558,7 @@ Deno.test('cache_scope absent → fail-closed: no L2 write even with serving + s
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __resetL2CacheFlagCacheForTests();
   __resetContentVersionCacheForTests();
   __clearCacheForTests();
@@ -644,6 +670,7 @@ Deno.test('safe-merge pin: all four cache flags OFF + cache_scope absent → zer
   };
   __setSupabaseClientForTests(sb);
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __resetL2CacheFlagCacheForTests();
   __resetContentVersionCacheForTests();
   __clearCacheForTests();
@@ -797,6 +824,7 @@ Deno.test('content-version read ERROR → request is cache-INELIGIBLE: no cache 
   };
   __setSupabaseClientForTests(sb);
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __resetL2CacheFlagCacheForTests();
   __resetContentVersionCacheForTests();
   __clearCacheForTests();
@@ -948,6 +976,7 @@ Deno.test('L2 hit (serving flag ON) → served without retrieveChunks call or ne
   };
   __setSupabaseClientForTests(sb);
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __resetL2CacheFlagCacheForTests();
   __resetContentVersionCacheForTests();
   __clearCacheForTests(); // ensure L1 is empty so the pipeline actually reaches the L2 lookup
@@ -988,6 +1017,7 @@ Deno.test('strict grounding check fail → abstain no_supporting_chunks', async 
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
   installFetchStub({
@@ -1026,6 +1056,7 @@ Deno.test('retrieve_only=true → skips Claude, returns grounded with citations 
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -1058,6 +1089,7 @@ Deno.test('soft mode with 2 chunks → grounded, no grounding check, confidence 
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
   installFetchStub({
@@ -1097,6 +1129,7 @@ Deno.test('feature flag disabled → abstain upstream_error, no upstream calls',
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -1118,6 +1151,7 @@ Deno.test('retrieve_only with 0 chunks → abstain no_chunks_retrieved', async (
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -1159,6 +1193,7 @@ Deno.test('scope_mismatch: all retrieved chunks dropped for wrong chapter → ab
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -1180,25 +1215,29 @@ Deno.test('scope_mismatch: all retrieved chunks dropped for wrong chapter → ab
 // handleRequest must return a structured upstream_error abstain with
 // HTTP 500 — NOT a Deno default error page.
 Deno.test('handleRequest: pipeline throws → 500 with structured upstream_error abstain', async () => {
+  // The failure being simulated is a PIPELINE failure, which means the request
+  // has to be ADMITTED first — handleRequest runs resolveSecurityPrincipal
+  // before it ever calls runPipeline. So: a genuinely signed internal-service
+  // request (./_security-harness.ts), and a stub whose security_* RPCs answer
+  // like a provisioned database while every table read and every pipeline RPC
+  // still throws. Previously this test sent an unsigned Request and asserted
+  // 500 against an actual 401 — it never reached the try/catch it exists to pin.
   // deno-lint-ignore no-explicit-any
-  const throwingSb: any = {
+  const throwingSb: any = withSecurityRpcs({
     from() {
       throw new Error('simulated: loadTemplate threw (e.g. missing .txt file)');
     },
     rpc() {
-      throw new Error('simulated: RPC layer dead');
+      throw new Error('simulated: pipeline RPC layer dead');
     },
-  };
+  });
   __setSupabaseClientForTests(throwingSb);
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
-  const req = new Request('http://test/grounded-answer', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(makeRequest()),
-  });
+  const req = await signedRequest('http://test/grounded-answer', makeRequest());
   const resp = await handleRequest(req);
 
   assertEquals(resp.status, 500);
@@ -1248,6 +1287,7 @@ Deno.test('retrieve_only respects scope verification (wrong-chapter chunks dropp
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -1295,6 +1335,7 @@ Deno.test('Win 4: chunk with prompt-injection prefix is sanitized in system prom
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -1384,6 +1425,7 @@ Deno.test('Win 2: MMR-enabled pipeline returns grounded:true with diversified ci
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
   installFetchStub({
@@ -1429,6 +1471,7 @@ Deno.test('soft mode + chapter_not_ready coverage → pipeline proceeds (no abst
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
   installFetchStub({
@@ -1471,6 +1514,7 @@ Deno.test('soft mode + zero retrieved chunks + chapter_not_ready → Claude is s
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -1538,6 +1582,7 @@ Deno.test('strict mode + chapter_not_ready coverage → still abstains at covera
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -1569,6 +1614,7 @@ Deno.test('strict mode + chapter_not_ready coverage → abstain reason is chapte
     }),
   );
   __resetFeatureFlagCacheForTests();
+  __resetEverydayFlagCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 

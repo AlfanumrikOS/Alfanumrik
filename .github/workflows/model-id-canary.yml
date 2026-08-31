@@ -1,0 +1,266 @@
+name: Model ID Canary — pinned models still resolve
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHY THIS IS A SCHEDULE AND NOT A PR GATE
+#
+# Incident, 2026-08-31. `claude-sonnet-4-20250514` was pinned as Foxy's Sonnet
+# tier. Anthropic retired it; the live API started answering HTTP 404
+# not_found_error. Every Sonnet-tier student request then burned a
+# guaranteed-failing round trip and silently degraded to OpenAI — a model the
+# Foxy prompts are not calibrated for. It was found by a manual audit.
+#
+# A PR gate could not have caught it, and adding one would be theatre. The
+# change that broke us happened at Anthropic, not in this repo: there was no
+# commit, no PR, no push on the day the pin died. type-check, lint, unit tests
+# and the build were all green throughout and always would have been — the
+# string is still a perfectly valid string. The ONLY thing that can see an
+# external retirement is a live probe that runs whether or not anyone commits.
+# So: cron.
+#
+# DAILY, not weekly. The blast radius is every Sonnet-tier answer served to a
+# student, degraded silently, for the whole detection window. Weekly means up
+# to 7 days of that. The probe is two catalogue GETs plus a handful of per-id
+# GETs — read-only, free, and nowhere near any completions endpoint. There is
+# no cost argument for being slower. 05:20 UTC = 10:50 IST, ahead of the Indian
+# after-school traffic peak, and clear of every other cron in this repo
+# (04:00 content-quality, 06:00 MON branch-sweep, 07:00 pr-health,
+# 21:30 e2e-nightly, 22:00 rag-eval, 22:30 edge-auth-sweep).
+#
+# NOT on pull_request / push, deliberately:
+#   * it needs live provider credentials, which must not be handed to a run
+#     triggered by an arbitrary branch or fork;
+#   * it would burn provider calls on every PR to re-answer a question whose
+#     answer only changes on the provider's timetable;
+#   * a red PR check for "Anthropic retired a model overnight" blocks an
+#     unrelated author who cannot fix it, which is how gates get bypassed.
+# `workflow_dispatch` is provided for on-demand runs (e.g. right after
+# repinning a model, or when auditing).
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHY THIS IS TWO JOBS AND NOT ONE  (measured 2026-08-31, not inferred)
+#
+# The earlier single `probe` job asked for both provider keys at once. It could
+# never have worked, because of how this repo's secrets are actually laid out:
+#
+#   secret ANTHROPIC_API_KEY  lives ONLY in a GitHub Environment
+#                             literally NAMED "ANTHROPIC_API_KEY"
+#   secret OPENAI_API_KEY     lives ONLY in a GitHub Environment
+#                             literally NAMED "OPENAI_API_KEY"
+#
+# (Yes — the secret names were pasted into the environment-NAME field. Of the
+# 21 environments on this repo, roughly nine are that mistake. Neither key
+# exists at repo level: `gh secret list` shows VOYAGE_API_KEY and no AI
+# provider key. `Production` holds ANDROID_*/GCP_*/SUPABASE_* and no AI key.
+# `agent-mesh-break-glass` holds no secrets at all.)
+#
+# A GitHub Actions JOB can declare exactly ONE `environment:`. So no single job
+# can ever see both keys. One job per provider is the only shape that works
+# against this layout — hence `probe-anthropic` and `probe-openai`, each
+# declaring the environment that holds its own key and each running the canary
+# scoped with `--provider=`.
+#
+# TWO RED CHECKS INSTEAD OF ONE IS THE BETTER OUTCOME, not a consolation. A
+# single aggregated red says "a model moved"; two separate checks say WHICH
+# PROVIDER moved before anyone opens a log. Both jobs are in the alert path:
+# pipeline-alert.yml watches this workflow by `name:`, and a run concludes
+# `failure` if EITHER job fails, so neither provider can fail quietly.
+#
+# THE FALSE-GREEN HAZARD THIS SPLIT CREATES, AND HOW IT IS CLOSED. Scoping a
+# checker normally means the un-checked half starts reporting as fine. It does
+# not here:
+#   * discovery is NOT scoped — the whole tree is still walked and every id of
+#     every provider is still inventoried, so the vacuity floors
+#     (MIN_FILES_SCANNED / MIN_IDS_DISCOVERED) bite exactly as hard per job;
+#   * an out-of-scope id is stamped NOT-PROBED, never ALIVE, and the scoped
+#     PASS line names the scope and counts what it did not look at;
+#   * a scope matching zero enforced ids exits 3 rather than passing vacuously;
+#   * each scoped run prints a COVERAGE HANDOFF line naming every other
+#     provider that has fail-capable pins, so a provider with no job of its own
+#     is stated in the log instead of being silently uncovered.
+# THE STANDING RULE: every probeable provider with enforced pins needs its own
+# job here. Gemini today has none — its ids are `configured: false` and
+# allowlisted, so nothing can fail for them. If that seam is ever activated,
+# the handoff line will start naming `gemini` in BOTH jobs' logs, and that is
+# the signal to add a third job (with whatever environment ends up holding
+# GEMINI_API_KEY). Do not let that line go unread.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# SECRETS — WHAT EACH JOB NEEDS, AND WHERE IT COMES FROM
+#
+#   probe-anthropic  environment: ANTHROPIC_API_KEY  ->  secret ANTHROPIC_API_KEY
+#   probe-openai     environment: OPENAI_API_KEY     ->  secret OPENAI_API_KEY
+#
+# Both are read-only use: GET /v1/models and GET /v1/models/{id}. Never a
+# completions endpoint, no token spend. Values are never printed.
+#
+# GEMINI_API_KEY is deliberately NOT passed to either job. It is not in either
+# environment so it could not resolve anyway, and gemini is out of scope in
+# both scoped runs, so passing it would only create the impression that gemini
+# is covered. See the standing rule above.
+#
+# !! IF A FIRST RUN GOES RED, CHECK THIS BEFORE ANYTHING ELSE !!
+# An environment can silently neuter a scheduled canary in two ways that the
+# GitHub UI still renders as "configured and enabled":
+#   1. REQUIRED REVIEWERS park every unattended run in "Waiting for approval"
+#      until it expires — content-quality-nightly.yml:35-46 records exactly
+#      that. The detector then goes permanently SILENT while looking healthy,
+#      which for a canary is the precise failure being defended against.
+#   2. A deployment-branch policy that excludes `main` blocks the run outright.
+# Neither of the two environments used here should carry required reviewers or
+# a non-main branch policy. After merging any change to this file, dispatch it
+# once on main and confirm BOTH jobs reach a terminal state — a job stuck in
+# "Waiting for approval" is a failed canary, not a pending one. Procedure:
+# docs/runbooks/model-id-canary.md §6.
+#
+# The durable fix for all of this is to stop having one environment per secret
+# name — consolidate the AI provider keys into a single environment (or promote
+# them to repo level) and delete the secret-name-shaped environments. Until
+# then, any future workflow needing both providers in ONE job hits this same
+# wall. Commands: docs/runbooks/model-id-canary.md §11.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# EXIT-CODE CONTRACT (scripts/check-model-ids.mjs)
+#   0  every enforced pinned model id IN THIS JOB'S SCOPE resolves.
+#   1  at least one is DEAD  -> repin. P12 / model-approval change.
+#   2  config error (malformed scripts/model-id-allowlist.json, bad argument).
+#   3  COULD NOT VERIFY (missing/rejected key, provider unreachable, vacuous
+#      scan, or a scope that matched no enforced id).
+# 1 and 3 are both red and both actionable, but they mean different things and
+# the step below prints which one happened. Never "fix" a 3 by making it green.
+#
+# Runbook: docs/runbooks/model-id-canary.md
+# Owner: ops.
+
+on:
+  schedule:
+    - cron: '20 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-id-canary
+  cancel-in-progress: false
+
+jobs:
+  # ── Anthropic ───────────────────────────────────────────────────────────────
+  probe-anthropic:
+    name: Probe pinned model ids — Anthropic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # `schedule` only ever fires on the default branch. This guard closes the
+    # arbitrary-ref hole on the `workflow_dispatch` path, so a dispatch from a
+    # feature branch cannot run branch-controlled script content while holding
+    # provider credentials. Same containment pattern as
+    # content-quality-nightly.yml's main-only guard.
+    if: github.ref == 'refs/heads/main'
+    # The environment that literally holds `ANTHROPIC_API_KEY`. Confusingly it
+    # is NAMED after the secret; that is the repo's actual layout, verified by
+    # `gh api`, not a guess from a neighbouring workflow's comment. Guessing is
+    # what aborted rag-cosine-replay runs 30325456772 and 30326862812.
+    environment: ANTHROPIC_API_KEY
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          check-latest: true
+
+      # No `npm ci`. The canary is dependency-free on purpose: it uses only
+      # node:fs / node:path / global fetch. An install step would add a failure
+      # mode (registry outage, lockfile drift) that has nothing to do with
+      # whether a model id resolves, and every such failure would be
+      # indistinguishable from a real alert.
+
+      - name: Preflight — Anthropic credential present
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY did not resolve in this job."
+            echo "The canary cannot probe without it, and a canary that passes when it could not"
+            echo "probe is worse than no canary. Failing here rather than reporting green."
+            echo "Most likely cause: this job's \`environment:\` no longer matches the environment"
+            echo "that holds the secret. See the SECRETS section at the top of this workflow file."
+            # Exit 3, not 1, to match the script's own exit-code contract:
+            # 3 = COULD NOT VERIFY, 1 = a pinned model is DEAD. Triage differs.
+            exit 3
+          fi
+          echo "Anthropic credential present (value never printed)."
+
+      - name: Probe Anthropic model ids
+        id: canary
+        run: |
+          set +e
+          node scripts/check-model-ids.mjs --provider=anthropic --verbose
+          CODE=$?
+          set -e
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          case "$CODE" in
+            0) echo "::notice::Model-id canary PASS (anthropic) — every pinned Anthropic model id resolves. This says NOTHING about OpenAI; see the probe-openai job." ;;
+            1) echo "::error::Model-id canary FAIL (anthropic) — a pinned Anthropic model id no longer resolves. Repin it (P12: ai-engineer implements, assessment reviews, user approves). Runbook: docs/runbooks/model-id-canary.md" ;;
+            2) echo "::error::Model-id canary CONFIG ERROR (anthropic) — scripts/model-id-allowlist.json is missing or malformed, or an argument was rejected." ;;
+            3) echo "::error::Model-id canary COULD NOT VERIFY (anthropic) — the provider was unreachable or ANTHROPIC_API_KEY did not resolve. This is NOT the same as a dead model, and it is NOT green. Do not silence it." ;;
+            *) echo "::error::Model-id canary (anthropic) exited $CODE (unexpected)." ;;
+          esac
+          exit "$CODE"
+
+  # ── OpenAI ──────────────────────────────────────────────────────────────────
+  probe-openai:
+    name: Probe pinned model ids — OpenAI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Same main-only containment as the Anthropic job. Independent of it on
+    # purpose: no `needs:`, so an Anthropic outage never suppresses the OpenAI
+    # check. A skipped check is a silent check.
+    if: github.ref == 'refs/heads/main'
+    # The environment that literally holds `OPENAI_API_KEY` — same
+    # secret-name-as-environment-name situation as above.
+    environment: OPENAI_API_KEY
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          check-latest: true
+
+      # No `npm ci` — same reasoning as the Anthropic job above.
+
+      - name: Preflight — OpenAI credential present
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::OPENAI_API_KEY did not resolve in this job."
+            echo "The canary cannot probe without it, and a canary that passes when it could not"
+            echo "probe is worse than no canary. Failing here rather than reporting green."
+            echo "Most likely cause: this job's \`environment:\` no longer matches the environment"
+            echo "that holds the secret. See the SECRETS section at the top of this workflow file."
+            # Exit 3, not 1 — see the note in the Anthropic job.
+            exit 3
+          fi
+          echo "OpenAI credential present (value never printed)."
+
+      - name: Probe OpenAI model ids
+        id: canary
+        run: |
+          set +e
+          node scripts/check-model-ids.mjs --provider=openai --verbose
+          CODE=$?
+          set -e
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          case "$CODE" in
+            0) echo "::notice::Model-id canary PASS (openai) — every pinned OpenAI model id resolves. This says NOTHING about Anthropic; see the probe-anthropic job." ;;
+            1) echo "::error::Model-id canary FAIL (openai) — a pinned OpenAI model id no longer resolves. Repin it (P12: ai-engineer implements, assessment reviews, user approves). Runbook: docs/runbooks/model-id-canary.md" ;;
+            2) echo "::error::Model-id canary CONFIG ERROR (openai) — scripts/model-id-allowlist.json is missing or malformed, or an argument was rejected." ;;
+            3) echo "::error::Model-id canary COULD NOT VERIFY (openai) — the provider was unreachable or OPENAI_API_KEY did not resolve. This is NOT the same as a dead model, and it is NOT green. Do not silence it." ;;
+            *) echo "::error::Model-id canary (openai) exited $CODE (unexpected)." ;;
+          esac
+          exit "$CODE"

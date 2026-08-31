@@ -330,13 +330,24 @@ export async function validateCurriculumScope(
   // client-claimed requestGrade for any downstream decision.
   let enrolledGrade: string | null = null;
   try {
-    const { data: studentRow } = await supabaseAdmin
+    const { data: studentRow, error: studentErr } = await supabaseAdmin
       .from('students')
       .select('grade')
       .eq('id', input.studentId)
       .maybeSingle();
+    // supabase-js resolves rather than throws, so the fail-closed catch below
+    // never fired for a query error — a DB fault produced a `grade_mismatch`
+    // deny indistinguishable from a genuine one. Still fail closed (P12), now
+    // attributable. P13: no student id, no grade value.
+    if (studentErr) {
+      logger.warn('foxy.curriculum_scope.lookup_failed', {
+        step: 'students.grade',
+        code: studentErr.code,
+        message: studentErr.message,
+      });
+    }
     enrolledGrade =
-      typeof studentRow?.grade === 'string' ? studentRow.grade : null;
+      !studentErr && typeof studentRow?.grade === 'string' ? studentRow.grade : null;
   } catch {
     // DB read failure -> fail closed: we cannot establish the enrolled grade.
     enrolledGrade = null;
@@ -396,12 +407,21 @@ export async function validateCurriculumScope(
   // enrolledGrade). The chapter param may be a number ("3") or a title.
   let subjectId: string | null = null;
   try {
-    const { data: subjectRow } = await supabaseAdmin
+    const { data: subjectRow, error: subjectErr } = await supabaseAdmin
       .from('subjects')
       .select('id, code')
       .ilike('code', input.subject)
       .maybeSingle();
-    subjectId = (subjectRow?.id as string | undefined) ?? null;
+    // Fail closed (subjectId stays null → no topic constraint resolves), now
+    // attributable rather than silent. P13: no ids.
+    if (subjectErr) {
+      logger.warn('foxy.curriculum_scope.lookup_failed', {
+        step: 'subjects.by_code',
+        code: subjectErr.code,
+        message: subjectErr.message,
+      });
+    }
+    subjectId = subjectErr ? null : (subjectRow?.id as string | undefined) ?? null;
   } catch {
     subjectId = null;
   }
@@ -442,14 +462,23 @@ export async function validateCurriculumScope(
   let chapterInScope = false;
   if (resolvedChapterNumber !== null) {
     try {
-      const { data: syllabusRow } = await supabaseAdmin
+      const { data: syllabusRow, error: syllabusErr } = await supabaseAdmin
         .from('cbse_syllabus')
         .select('is_in_scope')
         .eq('grade', enrolledGrade)
         .eq('subject_code', input.subject)
         .eq('chapter_number', resolvedChapterNumber)
         .maybeSingle();
-      chapterInScope = syllabusRow?.is_in_scope === true;
+      // Fail closed exactly as the (unreachable) catch intended — a syllabus
+      // read failure must never be read as "in scope". P13: no ids.
+      if (syllabusErr) {
+        logger.warn('foxy.curriculum_scope.lookup_failed', {
+          step: 'cbse_syllabus.is_in_scope',
+          code: syllabusErr.code,
+          message: syllabusErr.message,
+        });
+      }
+      chapterInScope = !syllabusErr && syllabusRow?.is_in_scope === true;
     } catch {
       chapterInScope = false; // fail closed.
     }
@@ -471,7 +500,7 @@ export async function validateCurriculumScope(
   let topicTitles: string[] = [];
   if (subjectId && resolvedChapterNumber !== null) {
     try {
-      const { data: topicRows } = await supabaseAdmin
+      const { data: topicRows, error: topicErr } = await supabaseAdmin
         .from('curriculum_topics')
         .select('title')
         .eq('subject_id', subjectId)
@@ -480,7 +509,16 @@ export async function validateCurriculumScope(
         .eq('is_active', true)
         .order('display_order', { ascending: true })
         .limit(50);
-      topicTitles = ((topicRows ?? []) as Array<{ title: string | null }>)
+      // Fail closed (empty topic list), matching the catch — but a failed read
+      // and a genuinely topic-less chapter are now distinguishable. P13: no ids.
+      if (topicErr) {
+        logger.warn('foxy.curriculum_scope.lookup_failed', {
+          step: 'curriculum_topics.titles',
+          code: topicErr.code,
+          message: topicErr.message,
+        });
+      }
+      topicTitles = ((topicErr ? [] : topicRows ?? []) as Array<{ title: string | null }>)
         .map((r) => (typeof r.title === 'string' ? r.title.trim() : ''))
         .filter((t) => t.length > 0);
     } catch {

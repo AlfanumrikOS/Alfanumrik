@@ -93,7 +93,7 @@ describe('MODEL_FALLBACK_ORDER Deno ↔ TS parity (P12)', () => {
     // quality swap back restored Claude-primary ordering.
     expect(deno.auto.map((t) => `${t.provider}:${t.model}`)).toEqual([
       'anthropic:claude-haiku-4-5-20251001',
-      'anthropic:claude-sonnet-4-20250514',
+      'anthropic:claude-sonnet-4-5-20250929',
       'openai:gpt-4o-mini',
       'openai:gpt-4o',
     ]);
@@ -130,7 +130,7 @@ describe('CLAUDE_PRIMARY_FALLBACK_ORDER Deno ↔ TS parity (P12)', () => {
       'openai:gpt-4o-mini',
       'openai:gpt-4o',
       'anthropic:claude-haiku-4-5-20251001',
-      'anthropic:claude-sonnet-4-20250514',
+      'anthropic:claude-sonnet-4-5-20250929',
     ]);
     expect(tsAsPlain(CLAUDE_PRIMARY_FALLBACK_ORDER.auto).map((t) => `${t.provider}:${t.model}`)).toEqual(
       deno.auto.map((t) => `${t.provider}:${t.model}`),

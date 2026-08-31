@@ -23,7 +23,7 @@ const HAIKU: ModelConfig = {
 };
 
 const SONNET: ModelConfig = {
-  name: ANTHROPIC_SONNET_ID, // 'claude-sonnet-4-20250514'
+  name: ANTHROPIC_SONNET_ID, // 'claude-sonnet-4-5-20250929'
   maxTokens: 2048,
   temperature: 0.3,
   timeoutMs: 45_000,

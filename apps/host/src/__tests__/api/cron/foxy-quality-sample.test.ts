@@ -172,7 +172,7 @@ describe('POST /api/cron/foxy-quality-sample', () => {
       ageAppropriatenessScore: 95,
       cbseScopeScore: 100,
       overallScore: 89,
-      judgeModel: 'claude-sonnet-4-20250514',
+      judgeModel: 'claude-sonnet-4-5-20250929',
       rubricVersion: 'v1',
       rawJudgeResponse: { accuracy: 90, scaffold_fidelity: 80, age_appropriateness: 95, cbse_scope: 100 },
       notes: 'good answer',
@@ -188,7 +188,7 @@ describe('POST /api/cron/foxy-quality-sample', () => {
     const inserted = _insertCalls[0] as Record<string, unknown>;
     expect(inserted.message_id).toBe('msg-1');
     expect(inserted.overall_score).toBe(89);
-    expect(inserted.judge_model).toBe('claude-sonnet-4-20250514');
+    expect(inserted.judge_model).toBe('claude-sonnet-4-5-20250929');
     expect(inserted.rubric_version).toBe('v1');
 
     // scoreFoxyAnswer received the right shape
@@ -258,7 +258,7 @@ describe('POST /api/cron/foxy-quality-sample', () => {
     });
     _scoreFn.mockResolvedValue({
       accuracyScore: 90, scaffoldFidelityScore: 80, ageAppropriatenessScore: 95, cbseScopeScore: 100,
-      overallScore: 89, judgeModel: 'claude-sonnet-4-20250514', rubricVersion: 'v1',
+      overallScore: 89, judgeModel: 'claude-sonnet-4-5-20250929', rubricVersion: 'v1',
       rawJudgeResponse: {}, notes: null,
     });
     setInsertResult({ data: null, error: { message: 'duplicate key value violates unique constraint' } });

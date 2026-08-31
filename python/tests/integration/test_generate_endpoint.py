@@ -46,28 +46,24 @@ def test_readyz_returns_degraded_when_no_supabase(client: TestClient):
 
 
 @pytest.fixture()
-def openai_default_route(respx_mock):
-    """Pre-loaded 200 for the default explanation chain's primary provider."""
-    return respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
+def anthropic_default_route(respx_mock):
+    """Pre-loaded 200 for the default explanation chain's primary provider —
+    Anthropic (CEO directive 2026-08-26; see router.py's anthropic-primary
+    BASE_MATRIX and the deterministic-priority default)."""
+    return respx_mock.post("https://api.anthropic.com/v1/messages").mock(
         return_value=httpx.Response(
             200,
             json={
-                "id": "chatcmpl-int",
-                "model": "gpt-4o-mini",
-                "choices": [
-                    {
-                        "message": {"role": "assistant", "content": "Integration reply."},
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {"prompt_tokens": 12, "completion_tokens": 8},
+                "content": [{"type": "text", "text": "Integration reply."}],
+                "usage": {"input_tokens": 12, "output_tokens": 8},
+                "stop_reason": "end_turn",
             },
         )
     )
 
 
 def test_generate_happy_path_returns_mol_result(
-    client: TestClient, openai_default_route, mock_supabase_client
+    client: TestClient, anthropic_default_route, mock_supabase_client
 ):
     """POST /v1/generate with a valid envelope returns a MolResult."""
     payload = {
@@ -84,20 +80,20 @@ def test_generate_happy_path_returns_mol_result(
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["text"] == "Integration reply."
-    assert body["provider"] == "openai"
-    assert body["model"] == "gpt-4o-mini"
+    assert body["provider"] == "anthropic"
+    assert body["model"] == "claude-haiku-4-5-20251001"
     assert body["task_type"] == "explanation"
     assert body["tokens"] == {"prompt": 12, "completion": 8}
     assert body["passes"] == 1
     assert body["request_id"]
-    # USD cost: 12/1e6 * 0.15 + 8/1e6 * 0.60 = 1.8e-6 + 4.8e-6 = 6.6e-6.
-    # The orchestrator rounds to 6-decimal USD precision (matches TS
-    # ``Math.round(usd*1e6)/1e6``), so 6.6e-6 → 7e-6 on the wire.
-    assert body["usd_cost"] == pytest.approx(7e-6, rel=1e-6)
+    # USD cost (anthropic/claude-haiku-4-5 pricing): 12/1e6 * 1.00 + 8/1e6 * 5.00
+    # = 1.2e-5 + 4.0e-5 = 5.2e-5. The orchestrator rounds to 6-decimal USD
+    # precision (matches TS ``Math.round(usd*1e6)/1e6``); already exact here.
+    assert body["usd_cost"] == pytest.approx(5.2e-5, rel=1e-6)
 
 
 def test_generate_writes_one_telemetry_row(
-    client: TestClient, openai_default_route, mock_supabase_client
+    client: TestClient, anthropic_default_route, mock_supabase_client
 ):
     payload = {
         "task_type": "explanation",
@@ -112,14 +108,14 @@ def test_generate_writes_one_telemetry_row(
     row = mock_supabase_client.inserts[0]
     assert row["student_id"] == "22222222-2222-2222-2222-222222222222"
     assert row["task_type"] == "explanation"
-    assert row["provider"] == "openai"
+    assert row["provider"] == "anthropic"
     assert row["passes"] == 1
     assert row["prompt_tokens"] == 12
     assert row["completion_tokens"] == 8
 
 
 def test_generate_echoes_request_id_header(
-    client: TestClient, openai_default_route, mock_supabase_client
+    client: TestClient, anthropic_default_route, mock_supabase_client
 ):
     """The X-Request-Id response header must mirror the bound request id."""
     payload = {
@@ -186,7 +182,7 @@ def test_generate_502_when_all_providers_fail(client: TestClient, respx_mock, mo
 
 
 def test_generate_reads_deterministic_priority_flag(
-    client, openai_default_route, mock_supabase_client, monkeypatch
+    client, anthropic_default_route, mock_supabase_client, monkeypatch
 ):
     """The orchestrator MUST read ff_mol_deterministic_priority on every call."""
     seen: list[str] = []
@@ -205,15 +201,27 @@ def test_generate_reads_deterministic_priority_flag(
     assert "ff_mol_deterministic_priority" in seen
 
 
-def test_generate_uses_openai_primary_when_deterministic_flag_on(
-    client, openai_default_route, mock_supabase_client, monkeypatch
+def test_generate_uses_anthropic_primary_when_deterministic_flag_on(
+    client, mock_supabase_client, monkeypatch, respx_mock
 ):
-    """When ff_mol_deterministic_priority is ON, OpenAI is the primary provider."""
+    """When ff_mol_deterministic_priority is ON, Anthropic is the primary
+    provider (CEO directive 2026-08-26 — reversed from the earlier
+    OpenAI-primary deterministic policy)."""
 
     async def _flag(name, **kwargs):
         return name == "ff_mol_deterministic_priority"
 
     monkeypatch.setattr("services.ai.mol.orchestrator.is_flag_enabled", _flag)
+    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": "Sonnet reply."}],
+                "usage": {"input_tokens": 20, "output_tokens": 15},
+                "stop_reason": "end_turn",
+            },
+        )
+    )
     payload = {
         "task_type": "reasoning",
         "input": {"question": "Prove the Pythagoras theorem."},
@@ -221,7 +229,7 @@ def test_generate_uses_openai_primary_when_deterministic_flag_on(
     }
     res = client.post("/v1/generate", json=payload)
     assert res.status_code == 200, res.text
-    assert res.json()["provider"] == "openai"
+    assert res.json()["provider"] == "anthropic"
 
 
 # ─── A3: ff_mol_circuit_breaker_v1 wiring ────────────────────────────────────
@@ -230,8 +238,9 @@ def test_generate_uses_openai_primary_when_deterministic_flag_on(
 def test_generate_skips_open_breaker_provider(
     client: TestClient, respx_mock, mock_supabase_client, monkeypatch
 ):
-    """When the OpenAI breaker is OPEN for the task, the orchestrator skips
-    OpenAI and resolves on the Anthropic fallback rung."""
+    """When the Anthropic breaker is OPEN for the task, the orchestrator skips
+    Anthropic and resolves on the OpenAI fallback rung (Anthropic is now the
+    deterministic-primary rung — CEO directive 2026-08-26)."""
     from services.ai.mol import breaker as breaker_mod
 
     async def _flag(name, **kwargs):
@@ -240,17 +249,27 @@ def test_generate_skips_open_breaker_provider(
     monkeypatch.setattr("services.ai.mol.orchestrator.is_flag_enabled", _flag)
 
     async def _can_request(provider, task):
-        return provider != "openai"  # OpenAI breaker OPEN
+        return provider != "anthropic"  # Anthropic breaker OPEN
 
     monkeypatch.setattr(breaker_mod, "can_request", _can_request)
     monkeypatch.setattr(breaker_mod, "record_failure", lambda *a, **k: _noop())
     monkeypatch.setattr(breaker_mod, "record_success", lambda *a, **k: _noop())
 
-    # OpenAI is the deterministic-primary AND would succeed if called — so the
-    # ONLY way the result resolves on Anthropic is the breaker skipping OpenAI
-    # without an HTTP call. This makes the RED meaningful: un-wired, the result
-    # would be "openai".
-    openai_route = respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
+    # Anthropic is the deterministic-primary AND would succeed if called — so
+    # the ONLY way the result resolves on OpenAI is the breaker skipping
+    # Anthropic without an HTTP call. This makes the RED meaningful: un-wired,
+    # the result would be "anthropic".
+    anthropic_route = respx_mock.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": "Anthropic reply."}],
+                "usage": {"input_tokens": 4, "output_tokens": 2},
+                "stop_reason": "end_turn",
+            },
+        )
+    )
+    respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -258,21 +277,11 @@ def test_generate_skips_open_breaker_provider(
                 "model": "gpt-4o-mini",
                 "choices": [
                     {
-                        "message": {"role": "assistant", "content": "OpenAI reply."},
+                        "message": {"role": "assistant", "content": "OpenAI fallback."},
                         "finish_reason": "stop",
                     }
                 ],
-                "usage": {"prompt_tokens": 4, "completion_tokens": 2},
-            },
-        )
-    )
-    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "content": [{"type": "text", "text": "Anthropic fallback."}],
-                "usage": {"input_tokens": 5, "output_tokens": 3},
-                "stop_reason": "end_turn",
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
             },
         )
     )
@@ -283,10 +292,11 @@ def test_generate_skips_open_breaker_provider(
     }
     res = client.post("/v1/generate", json=payload)
     assert res.status_code == 200, res.text
-    assert res.json()["provider"] == "anthropic"
-    # OpenAI must be skipped WITHOUT an HTTP call (breaker OPEN), not merely
-    # tried-and-failed. A real network hit would mean the gate did nothing.
-    assert not openai_route.called
+    assert res.json()["provider"] == "openai"
+    # Anthropic must be skipped WITHOUT an HTTP call (breaker OPEN), not
+    # merely tried-and-failed. A real network hit would mean the gate did
+    # nothing.
+    assert not anthropic_route.called
 
 
 def test_breaker_ignores_non_retryable_4xx_but_counts_5xx(
@@ -294,9 +304,9 @@ def test_breaker_ignores_non_retryable_4xx_but_counts_5xx(
 ):
     """A3 health-signal gating: only provider-HEALTH failures trip the breaker.
 
-    A non-retryable 4xx (client/input error) on OpenAI must NOT call
-    ``record_failure`` (and the request falls through to the Anthropic rung),
-    while a retryable 5xx MUST call ``record_failure``.
+    A non-retryable 4xx (client/input error) on Anthropic (the primary rung)
+    must NOT call ``record_failure`` (and the request falls through to the
+    OpenAI fallback rung), while a retryable 5xx MUST call ``record_failure``.
     """
     from services.ai.mol import breaker as breaker_mod
 
@@ -322,17 +332,23 @@ def test_breaker_ignores_non_retryable_4xx_but_counts_5xx(
     monkeypatch.setattr(breaker_mod, "record_failure", _record_failure)
     monkeypatch.setattr(breaker_mod, "record_success", _record_success)
 
-    # ── Case 1: OpenAI 400 (non-retryable 4xx) → must NOT record, falls to Anthropic.
-    openai_400 = respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
+    # ── Case 1: Anthropic 400 (non-retryable 4xx) → must NOT record, falls to OpenAI.
+    anthropic_400 = respx_mock.post("https://api.anthropic.com/v1/messages").mock(
         return_value=httpx.Response(400, json={"error": {"message": "bad request"}})
     )
-    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
+    respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(
             200,
             json={
-                "content": [{"type": "text", "text": "Anthropic fallback."}],
-                "usage": {"input_tokens": 5, "output_tokens": 3},
-                "stop_reason": "end_turn",
+                "id": "chatcmpl-fallback",
+                "model": "gpt-4o-mini",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "OpenAI fallback."},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
             },
         )
     )
@@ -343,24 +359,30 @@ def test_breaker_ignores_non_retryable_4xx_but_counts_5xx(
     }
     res = client.post("/v1/generate", json=payload)
     assert res.status_code == 200, res.text
-    # Fell through to anthropic after the OpenAI 400.
-    assert res.json()["provider"] == "anthropic"
-    assert openai_400.called
+    # Fell through to openai after the Anthropic 400.
+    assert res.json()["provider"] == "openai"
+    assert anthropic_400.called
     # The non-retryable 4xx must NOT have been counted toward the breaker.
-    assert ("openai", "explanation") not in recorded_failures
+    assert ("anthropic", "explanation") not in recorded_failures
 
-    # ── Case 2: OpenAI 503 (retryable 5xx) → MUST record_failure.
+    # ── Case 2: Anthropic 503 (retryable 5xx) → MUST record_failure.
     recorded_failures.clear()
-    respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
+    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
         return_value=httpx.Response(503)
     )
-    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
+    respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(
             200,
             json={
-                "content": [{"type": "text", "text": "Anthropic fallback."}],
-                "usage": {"input_tokens": 5, "output_tokens": 3},
-                "stop_reason": "end_turn",
+                "id": "chatcmpl-fallback",
+                "model": "gpt-4o-mini",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "OpenAI fallback."},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
             },
         )
     )
@@ -368,7 +390,7 @@ def test_breaker_ignores_non_retryable_4xx_but_counts_5xx(
     assert res.status_code == 200, res.text
     # A retryable provider-health failure MUST be recorded (at least once;
     # the 503 rung gets 1 retry, so it may be recorded twice — both count).
-    assert ("openai", "explanation") in recorded_failures
+    assert ("anthropic", "explanation") in recorded_failures
 
 
 # ─── A4: ff_mol_cost_cap_v1 wiring ──────────────────────────────────────────

@@ -6,12 +6,26 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 414 entries upper bound / 409 honest (target: 35 — TARGET
-EXCEEDED). Independently measured body-backed `REG-N` ids: 375 (max 428) as of
-the 2026-08-24 REG-422..428 filing — see addendum #3 below. (The immediately
-preceding state, 407/402 and 368/max-421, was the REG-421 filing; the state
-before that, 406/401 and 367/max-420, was REG-419/420. All addenda are kept so
-each delta is auditable rather than overwritten.)**
+**Total catalog: 419 entries upper bound / 414 honest (target: 35 — TARGET
+EXCEEDED). Independently measured body-backed `REG-N` ids: 380 (max 438) as of
+the 2026-08-31 REG-434..438 filing — see the 2026-08-31 #2 addendum below. (The
+immediately preceding state, 414/409 and 375/max-428, was the 2026-08-24
+REG-422..428 filing; before that 407/402 and 368/max-421 at REG-421, and
+406/401 and 367/max-420 at REG-419/420. All addenda are kept so each delta is
+auditable rather than overwritten.)**
+
+> **MEASUREMENT NOTE (2026-08-31, testing agent).** The `380` above continues the
+> running series by applying the same `+N filed` delta the prior addenda used, so
+> it stays comparable with them. A DIRECT re-measure taken the same day with an
+> explicit definition — every unique `REG-\d+` token appearing in any shard file
+> except `00-header.md`, `sort -u` — reads **395 unique ids, max REG-438** (390
+> before this filing). A narrower definition (ids carrying their own `## REG-N`
+> section heading) reads **83**. These three numbers are all "the catalog size"
+> under three different definitions; none is wrong and none supersedes the others.
+> This is the SAME pre-existing three-way divergence documented in the 2026-08-11
+> addenda — **carried forward unchanged, not resolved and not investigated here.**
+> Do not quote any one of them as "the" total without stating which definition
+> you used.
 See the 2026-08-11 addenda below — that three-way divergence is PRE-EXISTING
 and still unresolved; do not quote any one of the three numbers as "the" total
 without saying which definition you used. The 346 figure was RE-MEASURED on
@@ -85,8 +99,89 @@ definition on the same day (distinct ids appearing as a `| REG-N |` table-row
 id across shards 01-15) reads 371 after this filing (364 before) — quoted here
 only to show the pre-existing three-way divergence is carried forward unchanged,
 NOT resolved.
-**REG-429 is the next free REG id.**
-Latest REG id: **REG-428** (filed 2026-08-24, testing agent, in
+**2026-08-31 addendum (testing agent, Foxy MOL audit requirement 10 close-out).**
+Filed **REG-429..REG-433** (5 entries) in `02-foxy-ai.md`. REG-429 the
+`{{foxy_safety_rails}}` wiring gap (the route sent the nine P12 rails on 100% of
+turns; no template declared the slot; `resolveTemplate` discarded them silently —
+green suite, zero rails at the model, for months) plus the `foxy_tutor_teach_v1`
+`.txt`↔`inline.ts` twin-parity hole; REG-430 cross-provider `auth_error`
+containment in BOTH `callClaude` and `callClaudeStream` plus the first-ever
+Anthropic↔OpenAI prompt/policy parity test (the two branches build their bodies
+in two functions with no shared builder); REG-431 the timeout-budget invariant
+(hop-vs-`maxDuration`, and the 3-rung chain budget that made cross-provider
+fallback arithmetically reachable instead of dead code); REG-432 the homework
+Socratic hint ladder, filed explicitly as an **academic-integrity** defect
+(Foxy completing a student's graded assignment), not a pedagogy preference; and
+REG-433 the 2026-08-26 Claude-primary swap, which had **never been catalogued** —
+`grep -rn "2026-08-26" .claude/regression/` returned zero hits, so REG-334 sat
+documenting the exact opposite of production for five days while its own backing
+tests had already been updated. REG-334 carries a CORRECTION block pointing
+forward; it is NOT removed (per this catalog's removal rule). The durable lesson
+across REG-429/430/433 is one rule: **assert on the RENDERED artifact via the
+real loader, never on the source constant, and compare mirrors by VALUE, never by
+constant NAME** — both existing parity mechanisms
+(`scripts/pre-rollout-checklist.ts`; the dead `scripts/check-config-parity.sh`)
+compare names only, which is why `packages/lib/src/grounding-config.ts` diverged
+twice. (`scripts/check-config-parity.sh` was DELETED 2026-08-31 rather than
+repaired — `config-parity-values.test.ts` already does the same job by VALUE.
+Its deletion also unblocked `lint:ai-boundary`, which had been chained behind it
+with `&&` and so had never once run its ESLint; that gate is now blocking in
+CI's `quality` job. See REG-433 in `02-foxy-ai.md`.) Every new pin in this batch was verified to FAIL when the behaviour is
+reverted or desynced, then restored and re-verified green.
+(Superseded by the 2026-08-31 #2 addendum below — REG-434 is no longer free.)
+
+**2026-08-31 addendum #2 (testing agent, same-session pin-and-catalog pass over
+the landed Foxy safety/SEL/homework work).**
+Filed **REG-434..REG-438** (5 entries) in `02-foxy-ai.md`. REG-434 the SEL
+(`ff_foxy_sel_v1`) render proof plus its four suppression gates — adopted
+VERBATIM from the ai-engineer's throwaway wiring harness rather than rewritten,
+because those are the pins the implementer actually used to convince themselves
+the wiring was right; the load-bearing one is the safeguarding gate (Tier-1 hit +
+Tier-2 classifier THROW ⇒ SEL fully suppressed), and it ships with a
+discrimination control so "suppressed on every screened turn" cannot pass as
+correctness. REG-435 the P13 half the harness did NOT cover: `selSection !== ''`
+is a term of `cognitiveSectionIsPersonal`, and the pre-existing
+`response-cache-v2-callers.test.ts` **still passes with that term deleted**
+(it greps for the `!cognitiveSectionIsPersonal` conjunct, which survives) — so an
+SEL-bearing turn could be declared `cache_scope:'shared'` and one child's
+struggle-shaped answer served to another. REG-436 the homework ladder on the
+ENTRY surfaces (web `/foxy/snap` + mobile Scan & Solve), filed as **academic
+integrity** — REG-432 pins the ladder in the rendered prompt but nothing pinned
+that the two photograph-a-problem surfaces actually ASK for `homework`, and the
+route rewrites an unknown mode to `'learn'` SILENTLY. REG-437 the AI-boundary
+gate promoted to its own entry (a blocking lint that had never once executed,
+now ratcheted at 8 named, still-unfixed violations). REG-438 the hermetic-Deno
+fix (`import.meta.main` + `_security-harness.ts`) — 11 tests that had been
+passing only for developers with ambient service credentials.
+
+Two findings worth carrying forward. (1) **The timeout-ladder invariant the task
+asked for was already fully covered by REG-431** — `config-parity-values.test.ts`
+already PARSES `CHAIN_RESERVE_MS` / `PLANNED_FALLBACK_RUNGS` /
+`RECOVERY_RUNG_TIMEOUT_MS` / `FOXY_MAX_DURATION_MS` out of real source and
+asserts both `hop + cleanup + preamble <= maxDuration` and the 3-rung
+OpenAI-reachability budget; no new test was written, deliberately, rather than
+duplicating it. Same for the web snap CTA mapping, already covered by
+`snap-page-flag-gate.test.tsx` and here only CATALOGUED (REG-436a-c), not
+re-tested. (2) **The revert-proof caught a vacuity bug in this batch's own new
+test**: REG-436e's transport assertion was originally a file-wide regex, which
+kept passing after the Foxy CTA was decoupled from its params map, because a
+SIBLING `/quiz` CTA on the same screen satisfied it. Rewritten to a scoped window.
+That is the whole argument for running the revert-proof rather than trusting a
+green first draft.
+
+**Known gap, explicitly NOT claimed as coverage:** the Dart-side widget test for
+the Scan & Solve tap was not written. The Flutter SDK is absent from this
+checkout (both PATH entries point at non-existent directories), so it could be
+neither compiled nor run, and `flutter test` could not be executed at all — the
+`+590 -18` baseline was NOT reproduced or verified this session. REG-436d/e pin
+the same behaviour by parsing the Dart source from the host suite, which also
+covers the direction mobile CI structurally cannot (a server-side `VALID_MODES`
+rename touches no `mobile/**` path, so the Flutter suite never runs).
+
+**REG-439 is the next free REG id.**
+Latest REG id: **REG-438** (filed 2026-08-31, testing agent, in
+`02-foxy-ai.md`). Prior: REG-433 (filed 2026-08-31, testing agent, in
+`02-foxy-ai.md`); REG-428 (filed 2026-08-24, testing agent, in
 `15-cross-cutting.md`).
 
 **2026-08-23 reconciliation (launch-readiness catalog audit, testing agent).**

@@ -2,7 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
 import { supabase } from '@alfanumrik/lib/supabase';
+
+// PostgREST code for "0 rows returned by .single()". Expected here whenever the
+// signed-in parent simply has no guardian row / no approved link yet (a B2C
+// parent), so it must NOT be logged as a failure.
+const PGRST_NO_ROWS = 'PGRST116';
 
 function t(isHi: boolean, en: string, hi: string): string { return isHi ? hi : en; }
 
@@ -42,13 +48,20 @@ export default function ParentExamSchedule() {
     (async () => {
       try {
         // Get linked child's school
-        const { data: guardian } = await supabase
+        const { data: guardian, error: guardianError } = await supabase
           .from('guardians')
           .select('id')
           .eq('auth_user_id', authUserId)
           .single();
 
         if (cancelled) return;
+        // supabase-js resolves {data, error} and never throws — the catch
+        // below is unreachable for query failures, so check `error` here.
+        // P13: pg error code only, never the auth user id.
+        if (guardianError && guardianError.code !== PGRST_NO_ROWS) {
+          logger.warn('parent exam schedule: guardian lookup failed', { code: guardianError.code });
+          return;
+        }
         if (!guardian) return;
 
         // Matches both terminal link statuses ('active' from the self-service
@@ -58,7 +71,7 @@ export default function ParentExamSchedule() {
         // .eq('status', 'approved') here would silently show no exams for a
         // guardian linked via the OTP flow, the same class of bug fixed
         // elsewhere in this migration.
-        const { data: link } = await supabase
+        const { data: link, error: linkError } = await supabase
           .from('guardian_student_links')
           .select('student_id, students(name, school_id)')
           .eq('guardian_id', guardian.id)
@@ -67,6 +80,11 @@ export default function ParentExamSchedule() {
           .single();
 
         if (cancelled) return;
+        // P13: pg error code only — never the guardian/student id or name.
+        if (linkError && linkError.code !== PGRST_NO_ROWS) {
+          logger.warn('parent exam schedule: link lookup failed', { code: linkError.code });
+          return;
+        }
         if (!link?.students) return;
 
         const student = link.students as unknown as { name: string; school_id: string | null };
@@ -74,7 +92,7 @@ export default function ParentExamSchedule() {
 
         setChildName(student.name);
 
-        const { data } = await supabase
+        const { data, error: examsError } = await supabase
           .from('school_exams')
           .select('id, title, subject, start_time, duration_minutes')
           .eq('school_id', student.school_id)
@@ -84,6 +102,13 @@ export default function ParentExamSchedule() {
           .limit(5);
 
         if (cancelled) return;
+        // A failure here is indistinguishable from "no upcoming exams" in the
+        // rendered output (this card hides itself when empty), so the log is
+        // the only signal. P13: pg error code only, never the school id.
+        if (examsError) {
+          logger.warn('parent exam schedule: exam fetch failed', { code: examsError.code });
+          return;
+        }
         setExams(data || []);
       } catch {
         // Fail closed: no exams shown, no crash, no unhandled rejection.

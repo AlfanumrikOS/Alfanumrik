@@ -650,9 +650,20 @@ async function recalculatePerformanceScores(supabase: ReturnType<typeof createCl
 
   // Fetch previous scores for threshold notifications
   const prevScoresMap = new Map<string, number>()
-  const { data: prevScores } = await supabase
+  const { data: prevScores, error: prevScoresErr } = await supabase
     .from('performance_scores')
     .select('student_id,subject,overall_score')
+  // An empty map makes every score look like a first-ever score, so the
+  // improvement/decline threshold notifications silently stop firing for the
+  // whole run. The run still completes (idempotent, re-runs tomorrow) but the
+  // gap must not be invisible.
+  if (prevScoresErr) {
+    console.error(
+      '[daily-cron] previous performance_scores read failed:',
+      prevScoresErr.code,
+      prevScoresErr.message,
+    )
+  }
   if (prevScores) {
     for (const ps of prevScores as { student_id: string; subject: string; overall_score: number }[]) {
       prevScoresMap.set(`${ps.student_id}::${ps.subject}`, ps.overall_score)
@@ -984,24 +995,50 @@ async function generateDailyChallenges(supabase: ReturnType<typeof createClient>
         : subject
 
       // Try to get a chapter from the chapters table for this subject+grade
-      const { data: subjectRow } = await supabase
+      const { data: subjectRow, error: subjectRowErr } = await supabase
         .from('subjects')
         .select('id')
         .eq('code', effectiveSubject)
         .eq('is_active', true)
         .maybeSingle()
 
+      // Degrades to using the bare subject code as the chapter/topic label
+      // (the existing fallback), which is acceptable content-wise but would
+      // otherwise hide a broken subjects lookup for every grade in the run.
+      if (subjectRowErr) {
+        console.error(
+          '[daily-cron] subject lookup failed for',
+          effectiveSubject,
+          '-',
+          subjectRowErr.code,
+          subjectRowErr.message,
+        )
+      }
+
       let chapterTitle = effectiveSubject
       let topic = effectiveSubject
 
       if (subjectRow?.id) {
         // Pick a random chapter for this subject+grade
-        const { data: chapters } = await supabase
+        const { data: chapters, error: chaptersErr } = await supabase
           .from('chapters')
           .select('title, chapter_number')
           .eq('subject_id', subjectRow.id)
           .eq('grade', grade)
           .eq('is_active', true)
+
+        // Same fallback as above; logged so "no chapters found" and "chapter
+        // query failed" stay distinguishable.
+        if (chaptersErr) {
+          console.error(
+            '[daily-cron] chapter lookup failed for grade',
+            grade,
+            effectiveSubject,
+            '-',
+            chaptersErr.code,
+            chaptersErr.message,
+          )
+        }
 
         if (chapters && chapters.length > 0) {
           const randomChapter = chapters[Math.floor(Math.random() * chapters.length)]
@@ -1220,11 +1257,21 @@ async function triggerMonthlySynthesis(supabase: ReturnType<typeof createClient>
   const synthesisMonth = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`
 
   // Verify the flag is globally enabled before doing per-student work.
-  const { data: flagRow } = await supabase
+  //
+  // Both branches below skip the step (fail SAFE, and the cron is idempotent so
+  // skipping one run is recoverable) — but "the flag is off" and "we could not
+  // read the flag" are different facts, and only the second is a defect. The
+  // error branch is kept compact and the gate line immediately follows the
+  // query so the daily-cron contract test's source regex still matches.
+  const { data: flagRow, error: flagRowErr } = await supabase
     .from('feature_flags')
     .select('is_enabled, rollout_percentage, target_roles')
     .eq('flag_name', 'ff_pedagogy_v2_monthly_synthesis')
     .maybeSingle()
+  if (flagRowErr) {
+    console.error('[daily-cron] synthesis flag read failed:', flagRowErr.code)
+    return 0
+  }
   if (!flagRow || !flagRow.is_enabled) return 0
   // Rollout-percent gating happens per-student inside the loop via the
   // hashForRollout function in the Next.js side; for v1 the cron takes a

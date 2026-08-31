@@ -322,11 +322,25 @@ export async function checkParentPlanGate(
     const supabase = getSupabaseAdmin();
 
     // 1. Look up the mapped child permission
-    const { data: mapping } = await supabase
+    const { data: mapping, error: mappingErr } = await supabase
       .from('parent_plan_permission_map')
       .select('required_child_permission')
       .eq('parent_permission', parentPermission)
       .maybeSingle();
+
+    // supabase-js resolves rather than throws, so this never reached the
+    // catch below — the module's documented "fail-open, LOG the error"
+    // contract was only half-honoured. Fail-open is preserved deliberately
+    // (see the module header); the log is what was missing. P13: no ids.
+    if (mappingErr) {
+      logger.warn('parent_plan_gate_lookup_failed', {
+        step: 'parent_plan_permission_map',
+        parentPermission,
+        code: mappingErr.code,
+        message: mappingErr.message,
+      });
+      return { granted: true };
+    }
 
     if (!mapping) {
       // No mapping = no plan restriction on this parent permission
@@ -334,11 +348,23 @@ export async function checkParentPlanGate(
     }
 
     // 2. Get the child's subscription plan
-    const { data: student } = await supabase
+    const { data: student, error: studentErr } = await supabase
       .from('students')
       .select('subscription_plan')
       .eq('id', childStudentId)
       .maybeSingle();
+
+    // Same reasoning as the mapping lookup above: preserve fail-open, add the
+    // log the module header already promised. P13: no student id in the log.
+    if (studentErr) {
+      logger.warn('parent_plan_gate_lookup_failed', {
+        step: 'students.subscription_plan',
+        parentPermission,
+        code: studentErr.code,
+        message: studentErr.message,
+      });
+      return { granted: true };
+    }
 
     if (!student) {
       // Child not found — fail open

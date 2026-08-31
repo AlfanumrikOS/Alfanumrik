@@ -57,7 +57,7 @@ const okQuality: QualityJudgeFn = async () => ({
   ageAppropriatenessScore: 90,
   cbseScopeScore: 90,
   overallScore: 90,
-  judgeModel: 'claude-sonnet-4-20250514',
+  judgeModel: 'claude-sonnet-4-5-20250929',
   rubricVersion: 'v2',
   notes: null,
 });
@@ -599,7 +599,7 @@ describe('runEval — zero network, every dependency injected', () => {
       ageAppropriatenessScore: 40,
       cbseScopeScore: 40,
       overallScore: 40,
-      judgeModel: 'claude-sonnet-4-20250514',
+      judgeModel: 'claude-sonnet-4-5-20250929',
       rubricVersion: 'v2',
       notes: 'weak',
     });

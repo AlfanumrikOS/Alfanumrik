@@ -401,7 +401,7 @@ export async function flagGraceWarn(
   try {
     // De-dupe: skip if a school-facing grace_warn flag already exists today.
     // This row is the per-school/per-day sentinel for the whole fan-out.
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .from('notifications')
       .select('id')
       .eq('recipient_id', schoolId)
@@ -409,6 +409,19 @@ export async function flagGraceWarn(
       .eq('type', TYPE)
       .gte('created_at', todayStartIso)
       .limit(1);
+
+    // This read IS the once-per-school-per-day sentinel. Reading a failure as
+    // "no sentinel yet" would re-run the whole notification fan-out, so a
+    // flaky read spams every recipient. Skip this cycle instead — the warning
+    // re-fires on the next run. P13: school id + error metadata only.
+    if (existingErr) {
+      logger.error('seat_grace_warn_dedupe_read_failed', {
+        schoolId,
+        code: existingErr.code,
+        message: existingErr.message,
+      });
+      return;
+    }
 
     if (existing && existing.length > 0) return;
 

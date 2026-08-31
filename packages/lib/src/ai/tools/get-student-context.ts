@@ -68,12 +68,26 @@ export async function getSessionContext(
     }
 
     // Fetch recent chat history
-    const { data: messages } = await supabaseAdmin
+    const { data: messages, error: messagesError } = await supabaseAdmin
       .from('foxy_chat_messages')
       .select('role, content')
       .eq('session_id', sessionId)
       .order('created_at', { ascending: true })
       .limit(MAX_HISTORY_TURNS * 2); // 2 messages per turn (user + assistant)
+
+    // foxy_chat_messages is the exact table behind the 22-day silent
+    // message-loss incident: a failure here reads as "this is a brand-new
+    // conversation" and Foxy keeps answering with no memory, indefinitely and
+    // undetectably. History stays empty (the session is still usable), but the
+    // failure is now surfaced. P13: ids + error text only, never message bodies.
+    if (messagesError) {
+      logger.error('Failed to fetch Foxy chat history', {
+        sessionId,
+        studentId,
+        error: messagesError.message,
+        code: messagesError.code,
+      });
+    }
 
     const history: ChatMessage[] = (messages ?? []).map((m) => ({
       role: m.role as 'user' | 'assistant',

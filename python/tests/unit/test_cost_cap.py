@@ -47,7 +47,7 @@ def test_over_ceiling_raises_cost_cap_exceeded():
         enforce_cost_cap(
             task_type="evaluation",
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5-20250929",
             prompt_tokens=2_000_000,
             max_tokens=2_000_000,
         )

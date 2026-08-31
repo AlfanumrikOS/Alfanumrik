@@ -239,11 +239,19 @@ export default function QuizResults({
     let active = true;
     (async () => {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('feature_flags')
           .select('is_enabled')
           .eq('flag_name', 'ff_goal_aware_foxy')
           .maybeSingle();
+        // supabase-js resolves {data, error} and never throws, so the catch
+        // below cannot see a query failure. Flag stays OFF (unchanged
+        // fail-safe), but a broken read is logged rather than dropped.
+        // P13: pg error code only, never the student id.
+        if (error) {
+          logger.warn('goal-aware flag read failed', { code: error.code });
+          return;
+        }
         if (active && data?.is_enabled === true) setGoalFlagOn(true);
       } catch {
         // Silent — flag-gated UI is non-critical. Default OFF means the
@@ -272,12 +280,24 @@ export default function QuizResults({
     if (!student?.id || !selectedSubject) return;
     (async () => {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('performance_scores')
           .select('overall_score, level_name')
           .eq('student_id', student.id)
           .eq('subject', selectedSubject)
           .single();
+        // supabase-js resolves {data, error} and never throws — the catch
+        // below is unreachable for query failures. PGRST116 = no score row
+        // for this subject yet (normal on a first quiz), so only anything
+        // else is a real failure. Display-only: the Performance Score delta
+        // stays hidden either way, no scored value is affected (P1/P2).
+        // P13: pg error code only, never the student id.
+        if (error) {
+          if (error.code !== 'PGRST116') {
+            logger.warn('performance score fetch failed', { code: error.code });
+          }
+          return;
+        }
         if (data) {
           setPerfScoreInfo({
             currentScore: Number(data.overall_score) || 0,

@@ -435,3 +435,53 @@ export const CONTENT_GENERATION_FLAGS = {
   /** Student-facing Content Generation Agent (Mermaid diagrams, GenAI Phase 5c). Default off = nothing served. */
   V1: 'ff_content_generation_v1',
 } as const;
+
+/**
+ * Foxy SEL-moment flag (2026-08-31, assessment-authored SEL spec).
+ *
+ *  ff_foxy_sel_v1 — gates the ADDITIVE "SEL MOMENT" prompt section
+ *    (`buildSelSection` in packages/lib/src/foxy/prompt-sections.ts) that is
+ *    appended to the `cognitive_context_section` template variable on a
+ *    TEACHING turn where an OBSERVED academic-difficulty signal just appeared.
+ *
+ *    The section instructs Foxy to open the turn with ONE ≤25-word sentence
+ *    that acknowledges the WORK (never the person), restores agency, and points
+ *    at the small next step the pedagogy mode has ALREADY chosen — then teach
+ *    normally. It explicitly FORBIDS naming or guessing a feeling (same rule as
+ *    Safety Rail 9 / prohibited inferences, which stays the hard floor),
+ *    FORBIDS caving (no free answer, no skipped hint rung, no lowered Bloom
+ *    target, no coach-mode change), and FORBIDS self-authored crisis copy — the
+ *    safeguarding lane (Tier-1 screen → Tier-2 classifier → escalation) is the
+ *    only surface allowed to produce that, because it alerts a real adult.
+ *
+ *    Route-side gates, ALL required before the section is built:
+ *      1. this flag ON for the student,
+ *      2. EDGE TRANSITION on the pure `detectStruggleSignal` detector — null on
+ *         the prior messages, non-null including the current message (anti-spam:
+ *         it never repeats on consecutive struggle turns). `repeated_wrong` is
+ *         excluded (currently unreachable — sessionWrongCount is never passed),
+ *      3. `isTeachingTurn(mode)` — scopes SEL out of the exam/practice template,
+ *      4. NOT suppressed by a safeguarding Tier-2 classifier failure on this
+ *         turn (a Tier-1 hit whose classifier threw ⇒ SEL is suppressed).
+ *
+ *    When OFF (default) `buildSelSection` is never called and the composed
+ *    `cognitive_context_section` is BYTE-IDENTICAL to today. No template text
+ *    changed and no PROMPT_REV bump: the section rides the existing
+ *    {{cognitive_context_section}} slot, and `template_variables` is already in
+ *    the hashed gen_ctx cache tuple, so cache keys rotate automatically.
+ *
+ *    P13: an SEL-bearing turn is per-student, so `selSection !== ''` is a term
+ *    of the route's `cognitiveSectionIsPersonal` predicate — such a turn can
+ *    never be declared `cache_scope: 'shared'` and served to another student.
+ *
+ *    Seeded OFF (is_enabled=false, rollout_percentage=0) by migration
+ *    20260831120000_seed_ff_foxy_sel_v1.sql — REG-125 canonical shape
+ *    (to_regclass guard + explicit column list + ON CONFLICT (flag_name)
+ *    DO NOTHING). Ramp is an ops/CEO decision.
+ *
+ *    Owner: ai-engineer (wiring). Content owner: assessment. Default: false.
+ */
+export const FOXY_SEL_FLAGS = {
+  /** Foxy SEL-moment opening line (additive cognitive_context_section append). Default off. */
+  V1: 'ff_foxy_sel_v1',
+} as const;

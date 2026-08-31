@@ -71,7 +71,14 @@ import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 // GenAI Phase 2 — Unified Student Memory read-API (flag-gated proof consumer).
 // Flag CONSTANT imported from the registry module (unmocked) so a vi.mock of
 // the feature-flags barrel can never strip it (Phase-1 lesson, PR #1384).
-import { UNIFIED_MEMORY_FLAGS, RESPONSE_EVAL_FLAGS } from '@alfanumrik/lib/flags/registries/foxy';
+// FOXY_SEL_FLAGS rides the same unmocked-registry import for the same reason
+// (SEL is flag-gated OFF by default; a stripped constant would read as OFF, but
+// importing from the registry keeps the gate deterministic under vi.mock).
+import {
+  UNIFIED_MEMORY_FLAGS,
+  RESPONSE_EVAL_FLAGS,
+  FOXY_SEL_FLAGS,
+} from '@alfanumrik/lib/flags/registries/foxy';
 import { getStudentMemory } from '@/lib/memory/student-memory';
 // GenAI Phase 4 — runtime ResponseEval observability sensor (flag-gated proof
 // consumer). OBSERVABILITY ONLY, fire-and-forget: never blocks/alters/delays the
@@ -324,6 +331,39 @@ import {
 
 const MAX_MESSAGE_LENGTH = 1000;
 const RAG_MATCH_COUNT = 5;
+
+/**
+ * Platform ceiling for THIS route, mirrored from the `src/app/api/foxy/route.ts`
+ * entry in apps/host/vercel.json. Vercel gives the runtime no way to read its
+ * own configured maxDuration, so the number is duplicated here on purpose —
+ * if you change one, change the other. Kept deliberately as a plain literal
+ * (not an env read) so the hop clamp below cannot silently become a no-op in
+ * an environment where the variable is unset.
+ *
+ * Deliberately still 60s after the 2026-08-31 timeout recalibration. Raising it
+ * was evaluated and REJECTED: the ceiling was never the binding constraint. The
+ * per-plan budgets (44/45/46/47s — PER_PLAN_TIMEOUT_MS) close inside 60s with
+ * room for hop (+2s), FOXY_CLEANUP_RESERVE_MS (6s) and ~5s of preamble, while
+ * still giving the Edge Function's fallback rung 1 a 19-22s slice — which
+ * covers ~p99 of measured Foxy answer latency (p95 14.1s, p99 20.2s). A higher
+ * ceiling would only buy a rung 1 LONGER than the distribution asks for, i.e. a
+ * student waiting longer before the cross-provider recovery rung is even tried.
+ * That is a worse tail, not a better one. The budget arithmetic is pinned by
+ * apps/host/src/__tests__/grounding/config-parity-values.test.ts, which parses
+ * this constant and vercel.json rather than mirroring them as literals.
+ */
+const FOXY_MAX_DURATION_MS = 60_000;
+
+/**
+ * Time held back from the hop so that, when the upstream hop DOES time out,
+ * the failure path below still has room to run refundQuota, persist the turn,
+ * and serialize a response before Vercel kills the function. Sized for a
+ * couple of Supabase round-trips plus slack, not for a retry.
+ */
+const FOXY_CLEANUP_RESERVE_MS = 6_000;
+
+/** Never hand the transport a zero/negative deadline — fail fast and refund. */
+const FOXY_MIN_HOP_TIMEOUT_MS = 5_000;
 // MAX_HISTORY_TURNS + SESSION_IDLE_MINUTES moved to ./_lib/session (H1
 // REFACTOR M4) alongside the session/history helpers that are their only
 // consumers.
@@ -383,6 +423,11 @@ import {
   FOXY_SAFETY_RAILS,
   buildSystemPrompt,
   buildColdStartPromptSection,
+  // SEL moment (ff_foxy_sel_v1, default OFF) — assessment-authored, additive
+  // opening-line section appended to `cognitive_context_section`. Never called
+  // when the flag is OFF, so the composed section stays byte-identical.
+  buildSelSection,
+  type SelSignal,
   type CoachDirective,
   type CoachFeedbackSignal,
 } from '@alfanumrik/lib/foxy/prompt-sections';
@@ -940,6 +985,15 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // quota unit (the student did not consume a tutoring answer), (d) return the
   // supportive bilingual terminal. AMBIGUOUS (not confirmed) or any classifier
   // failure → continue the turn completely normally (no row, normal response).
+  //
+  // SEL SUPPRESSION (ff_foxy_sel_v1): when the Tier-1 screen HIT but the Tier-2
+  // classifier THREW, we do not know whether this turn is an academic-
+  // difficulty turn or an unresolved safeguarding turn. The SEL section (which
+  // deliberately says nothing about wellbeing and is forbidden from producing
+  // crisis copy) must NOT be injected in that blind spot — so the catch below
+  // sets this flag and the SEL gate reads it. `false` for every other path,
+  // including a clean AMBIGUOUS verdict.
+  let safeguardingClassifierFailed = false;
   if (safeguardingFlagOn && safeguardingScreen?.hit) {
     try {
       const verdict = await classifySafeguarding(message, {
@@ -1017,6 +1071,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       // Not confirmed (ambiguous) → fall through; the turn proceeds normally.
     } catch (classifyErr) {
       // Classifier unavailable ≠ confirmed. Continue the turn normally.
+      // Tier-1 hit + Tier-2 failure = unresolved safeguarding ambiguity →
+      // suppress the SEL section for this turn (see the declaration above).
+      safeguardingClassifierFailed = true;
       logger.warn('foxy_safeguarding_classify_failed', {
         error: classifyErr instanceof Error ? classifyErr.message : String(classifyErr),
       });
@@ -1523,9 +1580,27 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // Cached 5 min downstream via the tenant_configs cache.
   const tenantAi = await resolveTenantAiOverrides(studentId);
 
-  // Compose the safety-railed system prompt. The grounded-answer service has
-  // its own template, but we pass ours as `foxy_safety_rails` so the final
-  // rendered prompt includes the Next.js-side rails for defense-in-depth.
+  // Compose the safety-railed system prompt.
+  //
+  // WHAT ACTUALLY REACHES THE MODEL (corrected 2026-08-31 — this comment
+  // previously claimed the opposite and was false for the entire life of the
+  // grounded-answer path):
+  //   - `foxy_safety_rails` (FOXY_SAFETY_RAILS) IS rendered. It is sent in
+  //     `template_variables` below and, as of PROMPT_REV=4, the three live
+  //     Foxy templates (foxy_tutor_teach_v1 / _exam_v1 / _doubt_v1) each
+  //     declare a `{{foxy_safety_rails}}` slot in their `## Safety Rails`
+  //     section. Before that slot existed the variable was silently dropped —
+  //     `resolveTemplate` only substitutes tokens PRESENT in the template and
+  //     discards every other key — so the rails never reached the model.
+  //   - `foxy_system_prompt` (the value built here) is NOT rendered by the
+  //     grounded-answer path. No registered template declares a
+  //     `{{foxy_system_prompt}}` slot, so it is discarded by resolveTemplate.
+  //     It is still built because the non-grounded legacy intent-router
+  //     fallback below consumes it directly, and it is kept in
+  //     template_variables only as a forward-compatible payload. Do NOT
+  //     assume its persona/pedagogy text is in the grounded prompt — the
+  //     grounded prompt is the template plus the variables the template
+  //     actually names.
   let foxySystemPrompt = buildSystemPrompt({
     grade,
     subject,
@@ -1990,6 +2065,82 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     }
   }
 
+  // ── SEL moment (ff_foxy_sel_v1, default OFF) ─────────────────────────────
+  // On a TEACHING turn where an OBSERVED academic-difficulty signal has JUST
+  // appeared, append the assessment-authored SEL section (buildSelSection) to
+  // the cognitive_context_section template variable — the SAME reliably-
+  // rendered slot the Digital Twin and the Teaching Director use. No new
+  // template, no new slot, no PROMPT_REV bump (template_variables is already
+  // part of the hashed gen_ctx tuple, so keys rotate on their own).
+  //
+  // FOUR gates, ALL required:
+  //   1. EDGE TRANSITION (anti-spam). `detectStruggleSignal` is PURE over
+  //      `recentStudentMessages`, so we call it TWICE — once over the prior
+  //      messages only, once including the current message — and inject ONLY
+  //      when it goes from null → non-null. Consecutive struggle turns
+  //      therefore get the acknowledgement ONCE, not every turn.
+  //      `repeated_wrong` is excluded: it is currently unreachable (the route
+  //      never passes sessionWrongCount) and is not an SEL signal.
+  //   2. isTeachingTurn(mode) — scopes SEL out of the exam/practice template
+  //      (an MCQ-emitting turn has no "first block" to open).
+  //   3. Safeguarding suppression — a Tier-1 screen hit whose Tier-2 classifier
+  //      THREW leaves the turn's safeguarding status unresolved; SEL (which is
+  //      deliberately silent about wellbeing and forbidden from crisis copy)
+  //      must not speak into that blind spot.
+  //   4. ff_foxy_sel_v1 ON for this student. OFF (default) ⇒ buildSelSection is
+  //      never called ⇒ cognitiveContextSectionValue is BYTE-IDENTICAL to today.
+  //
+  // Every step is guarded: ANY failure leaves selSection '' (safe no-op).
+  // P13: the detector returns enums only; no student text is logged here, and
+  // `selSection !== ''` is a term of cognitiveSectionIsPersonal below so an
+  // SEL-bearing turn can never be declared cache_scope 'shared'.
+  let selSection = '';
+  if (isTeachingTurn(mode) && !safeguardingClassifierFailed) {
+    try {
+      const priorStudentMessages = history
+        .filter((m) => m.role === 'user')
+        .map((m) => m.content)
+        .slice(-8);
+      // State BEFORE this turn: same pure detector, prior messages only, and
+      // no coachDirective (the directive belongs to the CURRENT turn).
+      const priorSignal = detectStruggleSignal({
+        message: priorStudentMessages[priorStudentMessages.length - 1] ?? '',
+        recentStudentMessages: priorStudentMessages,
+        coachDirective: null,
+      });
+      // State INCLUDING this turn.
+      const currentSignal = detectStruggleSignal({
+        message,
+        recentStudentMessages: [...priorStudentMessages, message].slice(-8),
+        coachDirective,
+      });
+      const isSelSignal = (s: string | null): s is SelSignal =>
+        s === 'explicit_confusion' || s === 'repeated_hint';
+      if (priorSignal === null && isSelSignal(currentSignal)) {
+        const selEnabled = await isFeatureEnabled(FOXY_SEL_FLAGS.V1, {
+          role: 'student',
+          userId: auth.userId!,
+        });
+        if (selEnabled) {
+          selSection = buildSelSection(currentSignal);
+          logger.info('foxy.sel.injected', {
+            // P13: enum + scope only — never the student's message or studentId.
+            subject,
+            grade,
+            mode,
+            signalType: currentSignal,
+          });
+        }
+      }
+    } catch (selErr) {
+      // Non-fatal — Foxy works without the SEL line. Safe no-op.
+      selSection = '';
+      logger.warn('foxy_sel_section_failed', {
+        error: selErr instanceof Error ? selErr.message : String(selErr),
+      });
+    }
+  }
+
   // ── Response-cache v2: personalization sections + cache_scope ────────────
   // The six per-student prompt sections are computed ONCE here so the same
   // values feed BOTH the template_variables below and the cache_scope
@@ -2063,7 +2214,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const cognitiveContextSectionValue =
     baseCognitiveSection +
     memTwinSection +
-    (teachingDirectorSection ? `\n\n${teachingDirectorSection}` : '');
+    (teachingDirectorSection ? `\n\n${teachingDirectorSection}` : '') +
+    // SEL moment (ff_foxy_sel_v1) — appended EXACTLY like the Teaching Director
+    // section. '' when the flag is OFF / not a teaching turn / no edge
+    // transition / safeguarding-suppressed → appends nothing → byte-identical.
+    (selSection ? `\n\n${selSection}` : '');
   const misconceptionSectionValue = buildMisconceptionPromptSection(
     memCognitive.recentMisconceptions,
   );
@@ -2089,10 +2244,16 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const hasTenantAiOverride = Boolean(
     tenantAi.tenantPersonality || tenantAi.tenantTone || tenantAi.tenantPedagogy,
   );
+  // P13 CORRECTNESS (not a nicety): `selSection !== ''` MUST be a term here.
+  // The SEL section is emitted from THIS student's observed struggle signal, so
+  // an SEL-bearing turn is personal by construction. Omitting this term would
+  // let such a turn be declared cache_scope 'shared' and its answer served to a
+  // different student.
   const cognitiveSectionIsPersonal =
     !(baseCognitiveSection === '' || baseCognitiveSection === buildColdStartPromptSection()) ||
     memTwinSection !== '' ||
-    teachingDirectorSection !== '';
+    teachingDirectorSection !== '' ||
+    selSection !== '';
   const foxyCacheScope: 'shared' | 'none' =
     history.length === 0 &&
     !hasTenantAiOverride &&
@@ -2305,7 +2466,25 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
 
   // Hop timeout = service timeout + 2s buffer so we let the service return its
   // own abstain payload rather than giving up at the transport layer.
-  const hopTimeoutMs = (PER_PLAN_TIMEOUT_MS[plan] ?? 20000) + 2000;
+  //
+  // P0 REPAIR 2026-08-31: that value alone is not safe to use. Vercel kills
+  // this function at FOXY_MAX_DURATION_MS (pinned in apps/host/vercel.json);
+  // a hop allowed to outlive that returns FUNCTION_INVOCATION_TIMEOUT to the
+  // student BEFORE the refundQuota calls below can run, so a paying student
+  // loses a quota unit for an answer they never received. Clamp the hop to the
+  // time actually left on the platform clock — measured, not assumed, because
+  // the preamble (auth, quota, session, flags, and in the flagged-but-not-
+  // confirmed case a 10s safeguarding classifier) has already spent some of
+  // it. The floor keeps a degenerate clamp from producing a zero/negative
+  // timeout: better a hop that fails fast and refunds than one that never
+  // returns.
+  const hopTimeoutMs = Math.max(
+    FOXY_MIN_HOP_TIMEOUT_MS,
+    Math.min(
+      (PER_PLAN_TIMEOUT_MS[plan] ?? 20000) + 2000,
+      FOXY_MAX_DURATION_MS - FOXY_CLEANUP_RESERVE_MS - (Date.now() - startTime),
+    ),
+  );
 
   // ─── Phase 1.1: streaming branch (opt-in via body.stream + ff_foxy_streaming) ──
   // "Quiz me" MUST go through the blocking path: the inline MCQ is oracle-gated

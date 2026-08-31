@@ -43,7 +43,7 @@ function validGoldenSet(): unknown {
       snapshot_note: 'matches baseline_from_prod corpus as of 2026-06-13',
     },
     judge: {
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5-20250929',
       rubric_version: 'rag-relevance-v1',
       temperature: 0,
     },

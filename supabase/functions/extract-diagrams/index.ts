@@ -340,12 +340,21 @@ async function handlePost(
   const seenRefs: Set<string> = new Set()
 
   // Load existing content_media for this grade/subject to skip duplicates
-  const { data: existingMedia } = await supabase
+  const { data: existingMedia, error: existingMediaErr } = await supabase
     .from('content_media')
     .select('grade, subject, chapter_number, caption')
     .eq('grade', params.grade)
     .eq('subject', params.subject)
     .eq('is_active', true)
+
+  // This read IS the duplicate-skip set. Reading a failure as "nothing exists
+  // yet" makes the whole extraction run re-emit every diagram already stored
+  // for this grade/subject. Abort instead — the run is safely re-runnable.
+  if (existingMediaErr) {
+    throw new Error(
+      `content_media dedupe read failed (${existingMediaErr.code}): ${existingMediaErr.message}`,
+    )
+  }
 
   if (existingMedia) {
     for (const m of existingMedia) {

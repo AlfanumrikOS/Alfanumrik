@@ -279,12 +279,19 @@ async function loadObjective(
 ): Promise<string> {
   if (experimentId) {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('experiment_definitions')
         .select('objective')
         .eq('id', experimentId)
         .maybeSingle()
-      if (data && typeof (data as any).objective === 'string' && (data as any).objective.trim()) {
+      // supabase-js resolves rather than throwing, so the catch below never
+      // saw a query error. The generic-objective fallback is kept, but note
+      // it grades the student against a DIFFERENT rubric than the one they
+      // were set — a persistent failure quietly changes grading behaviour.
+      if (error) {
+        console.warn('[grade-experiment-conclusion] objective lookup failed:', error.code, error.message)
+      }
+      if (!error && data && typeof (data as any).objective === 'string' && (data as any).objective.trim()) {
         return (data as any).objective.trim().slice(0, 500)
       }
     } catch { /* table may not exist yet — fall through */ }

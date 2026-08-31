@@ -133,11 +133,19 @@ async function isGroundedAiEnabled(sb: any): Promise<boolean> {
   const now = Date.now();
   if (_streamFfCache && _streamFfCache.expiresAt > now) return _streamFfCache.value;
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', 'ff_grounded_ai_enabled')
       .single();
+    // Same defect and same fix as pipeline.ts's isServiceEnabled: the
+    // fail-closed catch below was unreachable for query errors, so an
+    // unreadable kill switch was indistinguishable from an operator disable.
+    if (error && error.code !== 'PGRST116') {
+      console.warn(`ff_grounded_ai_enabled lookup failed (stream) — ${error.code}: ${error.message}`);
+      _streamFfCache = { value: false, expiresAt: now + STREAM_FF_CACHE_TTL_MS };
+      return false;
+    }
     const value = data?.is_enabled === true;
     _streamFfCache = { value, expiresAt: now + STREAM_FF_CACHE_TTL_MS };
     return value;
@@ -604,10 +612,25 @@ export async function* runStreamingPipeline(
   // mode_directive (line 24 of the template) is the top-level grounding
   // instruction paragraph — defaulted to mode_instruction so both template
   // references resolve correctly (mirrors pipeline.ts fix).
+  //
+  // DOUBLE-RENDER FIX (2026-08-31) — byte-identical to the block in
+  // pipeline.ts (see the long rationale there). Skip the fallback ONLY for
+  // templates that already render mode_instruction as a standalone paragraph
+  // of their own (foxy_tutor_doubt_v1 / foxy_tutor_exam_v1); templates that
+  // reference `{{mode_instruction}}` mid-sentence (foxy_tutor_v1 /
+  // foxy_tutor_teach_v1) still depend on the fallback and are unchanged.
+  // The streaming and non-streaming system prompts MUST stay byte-identical,
+  // so this block and pipeline.ts's must be edited together.
+  const rendersModeInstructionStandalone =
+    /^[ \t]*\{\{mode_instruction\}\}[ \t]*$/m.test(template);
   if (!vars.misconception_section) vars.misconception_section = '';
   if (!vars.pending_expectation) vars.pending_expectation = '';
   if (!vars.learner_memory_section) vars.learner_memory_section = '';
-  if (!vars.mode_directive) vars.mode_directive = vars.mode_instruction ?? '';
+  if (!vars.mode_directive) {
+    vars.mode_directive = rendersModeInstructionStandalone
+      ? ''
+      : (vars.mode_instruction ?? '');
+  }
   if (!vars.next_topic) vars.next_topic = '';
   if (!vars.prereq) vars.prereq = '';
 
@@ -756,7 +779,7 @@ export async function* runStreamingPipeline(
   const baselineProviderHint = openaiApiKey ? 'openai' : 'anthropic';
   const baselineModelHint = openaiApiKey
     ? (request.generation.model_preference === 'sonnet' ? 'gpt-4o' : 'gpt-4o-mini')
-    : (request.generation.model_preference === 'sonnet' ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5-20251001');
+    : (request.generation.model_preference === 'sonnet' ? 'claude-sonnet-4-5-20250929' : 'claude-haiku-4-5-20251001');
 
   // ── C4.2b-ii (2026-05-20): stash key ──
   // Mint the shadow's request_id HERE (not inside the helper) so we can

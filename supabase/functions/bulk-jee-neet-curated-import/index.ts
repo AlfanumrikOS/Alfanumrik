@@ -327,11 +327,22 @@ Deno.serve(async (req: Request) => {
       // PostgREST error code 23505 surfaces as code '23505' on .error.code.
       const errCode = (paperErr as { code?: string }).code;
       if (errCode === '23505') {
-        const { data: existing } = await adminClient
+        const { data: existing, error: existingErr } = await adminClient
           .from('exam_papers')
           .select('id')
           .eq('paper_code', paper.paper_code)
           .maybeSingle();
+        // Best-effort enrichment of an already-correct 409: the unique
+        // violation above IS the authoritative dedupe, this read only recovers
+        // the existing id for the response body. A failure degrades to
+        // `existing_paper_id: null`, which is already a supported shape.
+        if (existingErr) {
+          console.error(
+            'bulk-jee-neet-curated-import: existing paper_code lookup failed:',
+            existingErr.code,
+            existingErr.message,
+          );
+        }
         return jsonResponse(
           {
             error: 'paper_code already exists',

@@ -16,7 +16,7 @@ import type { Pass } from './router.ts';
 // is Deno-consumable without pulling the TS gateway across the runtime boundary).
 export const MODEL_IDS = {
   ANTHROPIC_HAIKU_ID: "claude-haiku-4-5-20251001",
-  ANTHROPIC_SONNET_ID: "claude-sonnet-4-20250514",
+  ANTHROPIC_SONNET_ID: "claude-sonnet-4-5-20250929",
   OPENAI_MINI_ID: "gpt-4o-mini",
   OPENAI_FULL_ID: "gpt-4o",
 } as const;
@@ -43,7 +43,7 @@ export const GENERATED_BASE_MATRIX: Record<TaskType, Pass[]> = {
   ],
   reasoning: [
     { role: "single", chain: [
-      { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      { provider: "anthropic", model: "claude-sonnet-4-5-20250929" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
       { provider: "openai", model: "gpt-4o" },
     ] },
@@ -62,7 +62,7 @@ export const GENERATED_BASE_MATRIX: Record<TaskType, Pass[]> = {
   ],
   doubt_solving: [
     { role: "reason", chain: [
-      { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      { provider: "anthropic", model: "claude-sonnet-4-5-20250929" },
       { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
       { provider: "openai", model: "gpt-4o" },
     ] },
@@ -73,7 +73,7 @@ export const GENERATED_BASE_MATRIX: Record<TaskType, Pass[]> = {
   ],
   ocr_extraction: [
     { role: "vision", chain: [
-      { provider: "anthropic", model: "claude-sonnet-4-20250514" },
+      { provider: "anthropic", model: "claude-sonnet-4-5-20250929" },
       { provider: "openai", model: "gpt-4o" },
     ] },
   ],

@@ -44,11 +44,23 @@ export async function isEverydayExamplesEnabled(sb: any): Promise<boolean> {
   }
 
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', EVERYDAY_EXAMPLES_FLAG_NAME)
       .single();
+    // supabase-js resolves instead of throwing, so the fail-CLOSED catch below
+    // never ran for a query error — the flag resolved OFF and was cached as a
+    // SUCCESS with no log. Same outcome (OFF, which the header explains is the
+    // deliberate direction for a generation-changing flag), now recorded.
+    // PGRST116 ("no rows") is the documented missing-row case and stays silent.
+    if (error && error.code !== 'PGRST116') {
+      console.warn(
+        `${EVERYDAY_EXAMPLES_FLAG_NAME} lookup failed — ${error.code}: ${error.message}`,
+      );
+      everydayFlagCache = { value: false, expiresAt: now + EVERYDAY_FLAG_CACHE_TTL_MS };
+      return false;
+    }
     // Default OFF: ONLY an explicit `is_enabled === true` enables the directive.
     // A missing row (migration not applied — dev/test/fresh DB) → false.
     const value = data?.is_enabled === true;

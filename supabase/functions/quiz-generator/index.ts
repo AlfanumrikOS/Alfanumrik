@@ -379,11 +379,19 @@ async function isIRTSelectionEnabled(supabase: SupabaseClient): Promise<boolean>
   const now = Date.now()
   if (_irtFlagCache && now < _irtFlagCache.expiresAt) return _irtFlagCache.value
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("feature_flags")
       .select("is_enabled, rollout_percentage")
       .eq("flag_name", "ff_irt_question_selection")
       .maybeSingle()
+    // supabase-js resolves instead of throwing, so the fail-closed catch below
+    // never ran for a query error. Same outcome (IRT selection OFF, the safe
+    // default), but the reason is now recorded and NOT cached for the TTL, so
+    // one blip cannot pin the flag off for a minute.
+    if (error) {
+      console.warn(`ff_irt_question_selection lookup failed — ${error.code}: ${error.message}`)
+      return false
+    }
     const enabled = Boolean(data && data.is_enabled === true && (data.rollout_percentage ?? 0) >= 100)
     _irtFlagCache = { value: enabled, expiresAt: now + _IRT_FLAG_TTL_MS }
     return enabled

@@ -203,13 +203,22 @@ export async function fetchQuizQuestions(
 
   const seenIds = new Set<string>();
   try {
-    const { data: histData } = await supabase
+    const { data: histData, error: histErr } = await supabase
       .from('user_question_history')
       .select('question_id')
       .eq('student_id', input.studentId)
       .eq('subject', input.subject)
       .eq('grade', input.grade)
       .limit(500);
+    // supabase-js resolves instead of throwing, so the catch below could never
+    // fire for a query error. Dedup stays best-effort (worst case the student
+    // re-sees a question) but no longer fails invisibly.
+    if (histErr) {
+      logger.warn('quiz_domain_dedup_history_failed', {
+        error: histErr.message,
+        studentId: input.studentId,
+      });
+    }
     if (histData) histData.forEach(h => seenIds.add(h.question_id));
   } catch {
     // Best-effort dedup — proceed without it

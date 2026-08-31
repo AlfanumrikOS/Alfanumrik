@@ -59,12 +59,23 @@ export async function authenticateApiKey(
 
   const supabase = getSupabaseAdmin();
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('school_api_keys')
     .select('id, school_id, permissions, expires_at')
     .eq('key_hash', keyHash)
     .eq('is_active', true)
     .single();
+
+  // PGRST116 ("no rows") is the ordinary "unknown / revoked key" outcome and is
+  // deliberately NOT logged — it is expected traffic on a public endpoint and
+  // logging it would be a free log-flood vector. Any OTHER code means the
+  // lookup itself failed; this stays fail-CLOSED (null → 401) but must not be
+  // invisible, since a systematic failure here 401s every ERP integration at
+  // once. P13: never log the key, the hash, or the school id.
+  if (error && error.code !== 'PGRST116') {
+    console.error('[school-api-auth] key lookup failed:', error.code, error.message);
+    return null;
+  }
 
   if (!data) return null;
 

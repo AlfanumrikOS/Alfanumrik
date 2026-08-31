@@ -7,8 +7,10 @@
 // Design:
 //   - modelPreference drives which model(s) to try and in what order.
 //   - Per-call timeout capped at min(budget * 0.6, 45s).
-//   - HTTP 401/403 fail fast (auth errors won't recover on Sonnet either).
-//   - HTTP 404/529 or AbortError → try next model.
+//   - HTTP 401/403 skip the rest of THAT provider's rungs (same key, same
+//     result) but still fall through to the other provider, which has its own
+//     key; only an all-providers auth failure returns reason:'auth_error'.
+//   - HTTP 404/429/5xx (incl. 529) or AbortError → try next model.
 //   - {{INSUFFICIENT_CONTEXT}} is a first-class sentinel the prompt can emit;
 //     we surface it as insufficientContext:true so the caller can abstain
 //     on no_supporting_chunks without treating it as an error.
@@ -27,8 +29,124 @@ const ANTHROPIC_VERSION = '2023-06-01';
 
 const INSUFFICIENT_CONTEXT_SENTINEL = '{{INSUFFICIENT_CONTEXT}}';
 
+// ── Fallback-chain time budget ───────────────────────────────────────────
+//
+// P0 REPAIR 2026-08-31 (part 1). The ORIGINAL rule was
+//   perCall = min(timeoutMs * 0.6, 45s)
+// applied identically to EVERY rung, with no notion of a chain deadline. With
+// MODEL_FALLBACK_ORDER.auto being four rungs long, that promised each caller
+// up to 2.4x its own timeout_ms. The rungs past the second were therefore
+// never attempted — the transport hop (and, for Foxy, the Vercel function
+// itself) aborted first. Cross-provider fallback on a TIMEOUT was dead code:
+// the whole OpenAI tier of `auto` was unreachable on every plan.
+//
+// RECALIBRATION 2026-08-31 (part 2). Part 1 replaced that with a UNIFORM slice,
+//   perCall = clamp(chainBudget / PLANNED_FALLBACK_RUNGS, 12s, 45s)
+// which made the chain fit but was never validated against real latency. It has
+// now been measured — 1000 most recent successful Foxy answers,
+// `grounded_ai_traces` where caller='foxy' AND grounded=true:
+//
+//   p50  5,167ms   p75  7,499ms   p90 11,055ms
+//   p95 14,098ms   p99 20,215ms   max 36,627ms
+//   >12,000ms: 82/1000 (8.2%)   >14,000ms: 51/1000 (5.1%)
+//
+// A uniform 12-14s slice severs ~8% of currently-successful answers at rung 1.
+// Those turns then retry on Sonnet — SLOWER than Haiku, on a slice that is
+// shorter still — so they almost certainly time out again before reaching the
+// cross-provider rung. Net effect for that 8%: a substantially longer wait AND
+// a worse model, versus simply receiving the Haiku answer they get today. A
+// uniform slice is the wrong shape.
+//
+// The rule is now a NON-UNIFORM LADDER. Rung 1 is not the same kind of thing as
+// rungs 2+:
+//   * Rung 1 is the attempt that normally succeeds (~92% of turns complete
+//     inside 12s, ~99% inside 20s). Cutting it is the expensive mistake, so it
+//     gets the LION'S SHARE of the chain budget — sized to cover p99, not p50.
+//   * Rungs 2+ are RECOVERY attempts, reached only because rung 1 already
+//     failed. Here "an answer, soon" beats "the best answer, eventually", and a
+//     deliberately short bound is what makes the cross-provider rung reachable
+//     at all. They get a flat RECOVERY_RUNG_TIMEOUT_MS.
+//
+//   chainBudget   = timeoutMs - CHAIN_RESERVE_MS
+//   recoveryCall  = min(RECOVERY_RUNG_TIMEOUT_MS, chainBudget)
+//   firstCall     = clamp(chainBudget - (PLANNED_FALLBACK_RUNGS-1) * recoveryCall,
+//                         min(chainBudget, FIRST_RUNG_TIMEOUT_FLOOR_MS),
+//                         PER_CALL_TIMEOUT_CAP_MS)
+//
+// The hard chain deadline from part 1 is UNCHANGED and still governs: no rung
+// starts past the budget, and no rung may overrun what is left. A rung that
+// fails FAST (401/404/429/5xx — sub-second) donates its unused slice to the
+// rungs after it, which is how rung 4 stays reachable in the failure mode that
+// actually produces it.
+//
+// "First" means the first rung ACTUALLY ATTEMPTED, not modelOrder[0]. Rungs are
+// skipped when the provider has no key or has already returned 401/403, and the
+// first attempt a caller really makes is the one carrying the ~92% success
+// probability — wherever it happens to sit in the array.
+//
+// PLANNED_FALLBACK_RUNGS is 3, not 4, on purpose. Three is what
+// MODEL_FALLBACK_ORDER.auto needs to reach its FIRST cross-provider rung
+// (anthropic haiku -> anthropic sonnet -> openai gpt-4o-mini), which is the
+// property that has to hold on a timeout. Rung 4 (gpt-4o) remains best-effort:
+// it is reachable when earlier rungs fail fast, not when all three time out.
+// Budgeting for 4 would shrink rung 1 to buy a rung whose only distinct value
+// is over an already-tried provider.
+//
+// CHAIN_RESERVE_MS covers the rest of the invocation that shares timeout_ms —
+// embedding, vector search, Voyage rerank, prompt assembly, trace writes. NOTE
+// when reading the percentiles above against these constants: `latency_ms` is
+// stamped from the top of the Edge Function invocation, so the measured
+// distribution ALREADY INCLUDES that retrieval time. Rung 1 only has to cover
+// latency-minus-retrieval, so every coverage figure quoted here is conservative
+// — the true fraction of answers a given rung-1 budget covers is higher.
+const CHAIN_RESERVE_MS = 5_000;
+const PLANNED_FALLBACK_RUNGS = 3;
+// Rungs 2+. Ten seconds sits just under the measured p90 (11.06s): generous
+// enough that a healthy recovery model usually finishes, short enough that two
+// of them plus a p99-sized rung 1 still fit under a ceiling a student will sit
+// through. This is intentionally NOT plan-scaled — a recovery attempt's job is
+// identical on every tier.
+const RECOVERY_RUNG_TIMEOUT_MS = 10_000;
+// Floor for rung 1. Unchanged in value and purpose from the previous
+// PER_CALL_TIMEOUT_FLOOR_MS: no caller drops below the per-attempt budget
+// Foxy's free tier has been running on in production, so small-budget callers
+// (ncert-solver at 30s, quiz verifiers at 15-20s) keep ONE usable attempt
+// instead of being sliced into three useless ones. Below this the deadline
+// clamp — not the ladder — decides how many rungs actually get tried.
+const FIRST_RUNG_TIMEOUT_FLOOR_MS = 12_000;
+// Cap unchanged: it only binds for callers with budgets north of ~70s, i.e.
+// nobody today. Left in place as a backstop against an unbounded rung 1.
 const PER_CALL_TIMEOUT_CAP_MS = 45_000;
-const PER_CALL_TIMEOUT_FRAC = 0.6;
+
+/**
+ * Whole-chain budget + the two-tier per-rung ladder inside it.
+ *
+ * Returned together because every caller needs all three: `firstCallMs` for the
+ * first attempt actually made, `recoveryCallMs` for every attempt after it, and
+ * `chainBudgetMs` to stop starting attempts it cannot finish.
+ */
+function planChainBudget(timeoutMs: number): {
+  chainBudgetMs: number;
+  firstCallMs: number;
+  recoveryCallMs: number;
+} {
+  const chainBudgetMs = Math.max(timeoutMs - CHAIN_RESERVE_MS, 1_000);
+  const recoveryCallMs = Math.min(RECOVERY_RUNG_TIMEOUT_MS, chainBudgetMs);
+  const recoveryRungs = PLANNED_FALLBACK_RUNGS - 1;
+  const firstCallMs = Math.min(
+    PER_CALL_TIMEOUT_CAP_MS,
+    Math.max(
+      chainBudgetMs - recoveryRungs * recoveryCallMs,
+      // Small-budget callers: the ladder subtraction can go negative (a 15s
+      // caller has a 10s chain budget and cannot host three rungs at all).
+      // Give them the whole remaining budget as ONE attempt rather than a
+      // nonsensical slice; `Math.min(chainBudgetMs, ...)` keeps this floor from
+      // ever exceeding the budget it is floored against.
+      Math.min(chainBudgetMs, FIRST_RUNG_TIMEOUT_FLOOR_MS),
+    ),
+  );
+  return { chainBudgetMs, firstCallMs, recoveryCallMs };
+}
 
 /**
  * Phase 2 of Foxy continuity fix (2026-05-18): a single prior turn passed
@@ -299,7 +417,12 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
     return { ok: false, reason: 'auth_error' };
   }
   const modelOrder = await resolveModelOrder(req.modelPreference, req.callerId);
-  const perCallTimeout = Math.min(req.timeoutMs * PER_CALL_TIMEOUT_FRAC, PER_CALL_TIMEOUT_CAP_MS);
+  const { chainBudgetMs, firstCallMs, recoveryCallMs } = planChainBudget(req.timeoutMs);
+  const chainDeadlineAt = Date.now() + chainBudgetMs;
+  // Non-uniform ladder bookkeeping. Counts rungs ACTUALLY ATTEMPTED, not array
+  // index: skipped rungs (no provider key, provider already 401'd) must not
+  // consume the generous first-attempt slice. See planChainBudget's header.
+  let attemptsMade = 0;
 
   let lastReason: 'timeout' | 'server_error' | 'unknown' = 'unknown';
   // C3 fallback bookkeeping: every non-final-model failure pushes an entry
@@ -307,14 +430,37 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
   // these counts so downstream telemetry can attribute cost/latency to the
   // model that actually answered, not just the first model tried.
   const failureChain: string[] = [];
+  // Providers whose credentials have already been rejected this call. An auth
+  // failure is only conclusive WITHIN a provider (same key, same result) — it
+  // says nothing about the other provider's key, and MODEL_FALLBACK_ORDER is
+  // cross-provider. See the auth_error branch below.
+  const authFailedProviders = new Set<'openai' | 'anthropic'>();
 
-  for (const target of modelOrder) {
+  for (const [i, target] of modelOrder.entries()) {
     if (target.provider === 'openai' && !req.openaiApiKey) {
       continue;
     }
     if (target.provider === 'anthropic' && !req.apiKey) {
       continue;
     }
+    if (authFailedProviders.has(target.provider)) {
+      continue;
+    }
+
+    // Chain deadline. Starting a rung we cannot finish is worse than not
+    // starting it: the caller's hop (and, for Foxy, the Vercel function)
+    // aborts mid-attempt, so the student gets a transport error instead of
+    // this function's own abstain payload — and, upstream, no quota refund.
+    const remainingMs = chainDeadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      lastReason = 'timeout';
+      break;
+    }
+    // Rung 1 (the first attempt actually made) gets the p99-sized slice; every
+    // recovery attempt after it gets the short flat one.
+    const perCallMs = attemptsMade === 0 ? firstCallMs : recoveryCallMs;
+    const perCallTimeout = Math.min(perCallMs, remainingMs);
+    attemptsMade += 1;
 
     const attempt = target.provider === 'openai'
       ? await callOpenAIOnce({
@@ -356,8 +502,21 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
     }
 
     if (attempt.kind === 'auth_error') {
-      // Auth errors don't recover on the next model — same key, same result.
-      return { ok: false, reason: 'auth_error' };
+      // Auth errors don't recover on the next model OF THE SAME PROVIDER —
+      // same key, same result. They say nothing about the OTHER provider,
+      // whose key is separate: aborting here would strand healthy OpenAI
+      // rungs whenever ANTHROPIC_API_KEY is rotated/revoked (and vice versa),
+      // taking Foxy fully down while a working key sits unused.
+      authFailedProviders.add(target.provider);
+      failureChain.push(failureLabel(target.provider, attempt.kind));
+      const hasAlternateProvider = modelOrder.slice(i + 1).some((t) =>
+        !authFailedProviders.has(t.provider) &&
+        (t.provider === 'openai' ? !!req.openaiApiKey : !!req.apiKey)
+      );
+      if (!hasAlternateProvider) {
+        return { ok: false, reason: 'auth_error' };
+      }
+      continue;
     }
 
     // timeout | server_error | unknown → record + try next model.
@@ -375,7 +534,10 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
  * Kept narrow on purpose — adding new internal kinds requires explicit
  * mapping here so the telemetry contract never drifts silently.
  */
-function failureLabel(provider: 'openai' | 'anthropic', kind: 'timeout' | 'server_error' | 'unknown'): string {
+function failureLabel(
+  provider: 'openai' | 'anthropic',
+  kind: 'timeout' | 'server_error' | 'unknown' | 'auth_error',
+): string {
   const reason = kind === 'server_error' ? '5xx' : kind;
   return `${provider}:${reason}`;
 }
@@ -492,9 +654,13 @@ async function callOnce(params: {
       return { kind: 'auth_error' };
     }
 
-    if (response.status === 404 || response.status === 529) {
-      // 404: model decommissioned / typo. 529: anthropic overloaded.
-      // Both are retriable on the next model in the fallback order.
+    if (response.status === 404 || response.status === 429 || response.status >= 500) {
+      // 404: model decommissioned / typo. 429: rate limited. 5xx (incl. 529
+      // anthropic-overloaded): upstream failure. All retriable on the next
+      // model in the fallback order. Classification kept identical to the
+      // OpenAI branch below so failureLabel() emits 'anthropic:5xx' rather
+      // than 'anthropic:unknown' for rate limits and 5xx — dashboards were
+      // under-reporting both entirely.
       await response.text().catch(() => '');
       return { kind: 'server_error' };
     }
@@ -537,10 +703,10 @@ async function callOnce(params: {
 // ─── Streaming variant ───────────────────────────────────────────────────────
 //
 // callClaudeStream(): yields ClaudeStreamEvent values. Mirrors callClaude's
-// model-fallback + auth-error fast-fail policy, but only the FIRST model in
-// the order is used for the stream (we cannot retry mid-stream once tokens
-// have shipped to the browser). If the chosen model fails BEFORE any tokens
-// arrive, we transparently retry with the next model in the order.
+// model-fallback + provider-scoped auth-error policy, but only the FIRST
+// model in the order is used for the stream (we cannot retry mid-stream once
+// tokens have shipped to the browser). If the chosen model fails BEFORE any
+// tokens arrive, we transparently retry with the next model in the order.
 //
 // Why not full fallback once tokens flow: re-trying a different model
 // after partial text would force the browser to either splice two responses
@@ -556,7 +722,10 @@ export async function* callClaudeStream(
     return;
   }
   const modelOrder = await resolveModelOrder(req.modelPreference, req.callerId);
-  const perCallTimeout = Math.min(req.timeoutMs * PER_CALL_TIMEOUT_FRAC, PER_CALL_TIMEOUT_CAP_MS);
+  const { chainBudgetMs, firstCallMs, recoveryCallMs } = planChainBudget(req.timeoutMs);
+  const chainDeadlineAt = Date.now() + chainBudgetMs;
+  // Ladder bookkeeping — same semantics as callClaude: attempts made, not index.
+  let attemptsMade = 0;
 
   let lastReason: 'timeout' | 'server_error' | 'unknown' = 'unknown';
   // C3 fallback bookkeeping (streaming variant). A fallback can only occur
@@ -564,6 +733,13 @@ export async function* callClaudeStream(
   // current model (see firstTokenSent below). Mirrors callClaude semantics
   // so a single MOL telemetry adapter handles both paths.
   const failureChain: string[] = [];
+  // Providers whose credentials have already been rejected this turn. Same
+  // reasoning as callClaude: an auth failure is only conclusive WITHIN a
+  // provider (same key, same result) and says nothing about the other
+  // provider's key. This path carries essentially all web traffic
+  // (ff_foxy_streaming is at 100%), so it needs the containment more, not
+  // less, than the blocking path.
+  const authFailedProviders = new Set<'openai' | 'anthropic'>();
 
   for (let i = 0; i < modelOrder.length; i++) {
     const target = modelOrder[i];
@@ -573,8 +749,32 @@ export async function* callClaudeStream(
     if (target.provider === 'anthropic' && !req.apiKey) {
       continue;
     }
+    if (authFailedProviders.has(target.provider)) {
+      continue;
+    }
 
-    const isLastModel = i === modelOrder.length - 1;
+    // Chain deadline — same reasoning as the blocking path above.
+    const remainingMs = chainDeadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      lastReason = 'timeout';
+      break;
+    }
+    // `timeoutMs` bounds the FALLBACK-relevant window only (time to first
+    // token) — see streamOnce. `streamBudgetMs` is what the stream may use
+    // once it has committed, which is everything left in the chain budget:
+    // after the first delta no fallback is possible, so squeezing the stream
+    // to the per-rung slice would truncate healthy long answers to buy
+    // reachability for a rung that can no longer be taken.
+    // Ladder, streaming flavour. Because `timeoutMs` here bounds only the
+    // PRE-FIRST-TOKEN window, the practical effect of the recovery slice is
+    // "how long we wait for a recovery model to start talking" — once it does,
+    // streamBudgetMs (= remainingMs) takes over and the answer is never cut
+    // mid-sentence. The generous first-rung slice still matters on this path:
+    // it is the window in which a slow-but-alive primary is allowed to begin.
+    const perCallMs = attemptsMade === 0 ? firstCallMs : recoveryCallMs;
+    const perCallTimeout = Math.min(perCallMs, remainingMs);
+    attemptsMade += 1;
+
     const result = target.provider === 'openai'
       ? yield* streamOpenAIOnce({
           model: target.model,
@@ -583,9 +783,9 @@ export async function* callClaudeStream(
           maxTokens: req.maxTokens,
           temperature: req.temperature,
           timeoutMs: perCallTimeout,
+          streamBudgetMs: remainingMs,
           apiKey: req.openaiApiKey!,
           conversationTurns: req.conversationTurns,
-          allowFallback: !isLastModel,
         })
       : yield* streamOnce({
           model: target.model,
@@ -594,10 +794,10 @@ export async function* callClaudeStream(
           maxTokens: req.maxTokens,
           temperature: req.temperature,
           timeoutMs: perCallTimeout,
+          streamBudgetMs: remainingMs,
           apiKey: req.apiKey,
           conversationTurns: req.conversationTurns,
           systemSegments: req.systemSegments,
-          allowFallback: !isLastModel,
         });
 
     if (result.ok) {
@@ -617,8 +817,29 @@ export async function* callClaudeStream(
     }
 
     if (result.reason === 'auth_error') {
-      yield { type: 'final', ok: false, reason: 'auth_error', partialText: '', model: target.model };
-      return;
+      // Auth errors don't recover on the next model OF THE SAME PROVIDER —
+      // same key, same result. They say nothing about the OTHER provider,
+      // whose key is separate: aborting the whole chain here strands healthy
+      // OpenAI rungs whenever ANTHROPIC_API_KEY is rotated/revoked (and vice
+      // versa), taking Foxy down for every streaming turn — i.e. for
+      // essentially every web student — while a working key sits unused.
+      //
+      // The `result.firstTokenSent` guard keeps the mid-stream boundary a
+      // hard wall. streamOnce/streamOpenAIOnce only return auth_error from
+      // the pre-stream status check, so it is false here by construction;
+      // the guard makes that structural rather than incidental, so a
+      // post-first-token failure can never switch providers.
+      authFailedProviders.add(target.provider);
+      failureChain.push(failureLabel(target.provider, 'auth_error'));
+      const hasAlternateProvider = modelOrder.slice(i + 1).some((t) =>
+        !authFailedProviders.has(t.provider) &&
+        (t.provider === 'openai' ? !!req.openaiApiKey : !!req.apiKey)
+      );
+      if (result.firstTokenSent || !hasAlternateProvider) {
+        yield { type: 'final', ok: false, reason: 'auth_error', partialText: '', model: target.model };
+        return;
+      }
+      continue;
     }
 
     if (result.firstTokenSent) {
@@ -666,15 +887,26 @@ async function* streamOnce(params: {
   maxTokens: number;
   temperature: number;
   timeoutMs: number;
+  streamBudgetMs?: number;
   apiKey: string;
-  allowFallback: boolean;
   conversationTurns?: ClaudeConversationTurn[];
   systemSegments?: SystemSegment[];
 }): AsyncGenerator<ClaudeStreamEvent, StreamOnceResult, unknown> {
-  void params.allowFallback; // reserved for future telemetry; behavior driven by caller's loop
-
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
+  const callStartedAt = Date.now();
+  let timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
+  // Two-phase timer. `timeoutMs` is the pre-first-token window — the only
+  // window in which callClaudeStream can still switch models — and it is
+  // deliberately small so three rungs fit the chain budget. Once a delta has
+  // shipped the model is committed, so the abort is re-armed to the caller's
+  // full remaining budget rather than cutting a healthy answer mid-sentence.
+  // Omitting streamBudgetMs reproduces the previous single-timer behaviour.
+  const extendOnFirstToken = () => {
+    const extra = (params.streamBudgetMs ?? params.timeoutMs) - (Date.now() - callStartedAt);
+    if (extra <= 0) return;
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => controller.abort(), extra);
+  };
 
   let fullText = '';
   let inputTokens = 0;
@@ -719,7 +951,13 @@ async function* streamOnce(params: {
       await response.body?.cancel().catch(() => {});
       return { ok: false, reason: 'auth_error', fullText, inputTokens, outputTokens, firstTokenSent };
     }
-    if (response.status === 404 || response.status === 529) {
+    if (response.status === 404 || response.status === 429 || response.status >= 500) {
+      // 404: model decommissioned / typo. 429: rate limited. 5xx (incl. 529
+      // anthropic-overloaded): upstream failure. All retriable on the next
+      // model in the fallback order. Classification kept identical to the
+      // blocking callOnce and to streamOpenAIOnce so failureLabel() emits
+      // 'anthropic:5xx' rather than 'anthropic:unknown' for rate limits and
+      // 5xx — dashboards were under-reporting both on the streaming path too.
       await response.body?.cancel().catch(() => {});
       return { ok: false, reason: 'server_error', fullText, inputTokens, outputTokens, firstTokenSent };
     }
@@ -771,6 +1009,7 @@ async function* streamOnce(params: {
           const delta = parsed.delta;
           if (delta && delta.type === 'text_delta' && typeof delta.text === 'string') {
             fullText += delta.text;
+            if (!firstTokenSent) extendOnFirstToken();
             firstTokenSent = true;
             yield { type: 'text_delta', delta: delta.text };
           }
@@ -881,13 +1120,20 @@ async function* streamOpenAIOnce(params: {
   maxTokens: number;
   temperature: number;
   timeoutMs: number;
+  streamBudgetMs?: number;
   apiKey: string;
-  allowFallback: boolean;
   conversationTurns?: ClaudeConversationTurn[];
 }): AsyncGenerator<ClaudeStreamEvent, StreamOnceResult, unknown> {
-  void params.allowFallback;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
+  const callStartedAt = Date.now();
+  let timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
+  // Two-phase timer — see streamOnce above for the full rationale.
+  const extendOnFirstToken = () => {
+    const extra = (params.streamBudgetMs ?? params.timeoutMs) - (Date.now() - callStartedAt);
+    if (extra <= 0) return;
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => controller.abort(), extra);
+  };
 
   let fullText = '';
   let inputTokens = 0;
@@ -971,6 +1217,7 @@ async function* streamOpenAIOnce(params: {
         const deltaText = parsed.choices?.[0]?.delta?.content;
         if (typeof deltaText === 'string') {
           fullText += deltaText;
+          if (!firstTokenSent) extendOnFirstToken();
           firstTokenSent = true;
           yield { type: 'text_delta', delta: deltaText };
         }

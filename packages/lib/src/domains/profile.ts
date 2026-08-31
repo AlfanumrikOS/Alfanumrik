@@ -252,12 +252,23 @@ export async function getStudyPlan(
 
   if (planErr || !plan) return ok({ has_plan: false });
 
-  const { data: tasks } = await supabase
+  const { data: tasks, error: tasksErr } = await supabase
     .from('study_plan_tasks')
     .select('*')
     .eq('plan_id', plan.id)
     .order('day_number')
     .order('task_order');
+
+  // This function already has a typed failure channel, so use it: a task-query
+  // failure previously rendered as an existing plan with ZERO tasks, which is
+  // indistinguishable from a legitimately empty plan. P13: message only.
+  if (tasksErr) {
+    logger.warn('profile_domain_study_plan_tasks_failed', {
+      error: tasksErr.message,
+      studentId,
+    });
+    return fail(`Study plan tasks lookup failed: ${tasksErr.message}`, 'DB_ERROR');
+  }
 
   return ok({ has_plan: true, plan, tasks: tasks ?? [] });
 }
@@ -290,7 +301,7 @@ export async function getReviewCards(
 
   // Fallback 1: spaced_repetition_cards table
   const today = new Date().toISOString().split('T')[0];
-  const { data: cards } = await supabase
+  const { data: cards, error: cardsErr } = await supabase
     .from('spaced_repetition_cards')
     .select(
       'id, student_id, subject, topic, chapter_title, front_text, back_text, ' +
@@ -302,7 +313,18 @@ export async function getReviewCards(
     .order('next_review_date')
     .limit(limit);
 
-  if (cards && cards.length > 0) {
+  // A failure here is NOT the same as "this student has no due cards": the
+  // former must not silently promote the caller to fallback 2 unexplained.
+  // The fall-through is kept (fallback 2 is the designed next rung and still
+  // returns a typed failure of its own), but the reason is now recorded.
+  if (cardsErr) {
+    logger.warn('profile_domain_review_cards_srs_table_failed', {
+      error: cardsErr.message,
+      studentId,
+    });
+  }
+
+  if (!cardsErr && cards && cards.length > 0) {
     return ok(cards);
   }
 

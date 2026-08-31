@@ -238,10 +238,20 @@ async function fetchChaptersWithoutConcepts(
   }
 
   // Get chapters that already have concepts — chapter_concepts uses normalised format
-  const { data: existingConcepts } = await supabase
+  const { data: existingConcepts, error: existingConceptsErr } = await supabase
     .from('chapter_concepts')
     .select('grade, subject, chapter_number')
     .limit(20000)
+
+  // This read IS the already-generated skip set, and generation costs PAID LLM
+  // calls. Treating a failed read as "no chapter has concepts yet" re-generates
+  // every chapter in the corpus — an expensive, unbounded, silent re-run.
+  // Abort; the job is idempotent and safe to retry.
+  if (existingConceptsErr) {
+    throw new Error(
+      `chapter_concepts skip-set read failed (${existingConceptsErr.code}): ${existingConceptsErr.message}`,
+    )
+  }
 
   const existingSet = new Set(
     (existingConcepts || []).map(

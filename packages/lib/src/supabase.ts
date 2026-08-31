@@ -296,11 +296,17 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data: studentRow } = await supabase
+      const { data: studentRow, error: studentRowErr } = await supabase
         .from('students')
         .select('id')
         .eq('auth_user_id', user.id)
         .maybeSingle();
+      // The enclosing try/catch cannot see this: supabase-js resolves the
+      // failure instead of throwing. Dedup stays best-effort (a miss only
+      // means the student may re-see a question), but it is no longer silent.
+      if (studentRowErr) {
+        console.warn('getQuizQuestions dedup: student lookup failed —', studentRowErr.code, studentRowErr.message);
+      }
       if (studentRow) {
         let historyQuery = supabase
           .from('user_question_history')
@@ -1208,7 +1214,14 @@ export async function getChapterTopics(
   // Voyage RAG source of truth. curriculum_topics is legacy and will be removed
   // after chapter_concepts + rag_content_chunks fully supersede it.
   const ragGrade = grade.startsWith('Grade') ? grade : `Grade ${grade}`;
-  const { data: ragSubjectRow } = await supabase.rpc('subject_code_to_rag_name', { p_code: subject });
+  const { data: ragSubjectRow, error: ragSubjectErr } = await supabase.rpc('subject_code_to_rag_name', { p_code: subject });
+  // Deliberate fail-soft: the raw subject code is a valid fallback for the RAG
+  // name, so a failed translation degrades retrieval rather than breaking it.
+  // Log it so a missing/renamed RPC is not invisible (this is exactly how the
+  // 42883-class defects hid before).
+  if (ragSubjectErr) {
+    console.warn('getChapterTopics: subject_code_to_rag_name failed —', ragSubjectErr.code, ragSubjectErr.message);
+  }
   const ragSubject = typeof ragSubjectRow === 'string' && ragSubjectRow ? ragSubjectRow : subject;
 
   const [ragResult, subjectRow] = await Promise.all([
@@ -1492,11 +1505,19 @@ async function resolveStudentId(): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const { data: student } = await supabase
+  const { data: student, error: studentErr } = await supabase
     .from('students')
     .select('id')
     .eq('auth_user_id', user.id)
     .single();
+  // PGRST116 ("no rows") IS the "Student not found" case this function already
+  // reports, so it is deliberately not logged. Any other code means the lookup
+  // itself failed and was previously reported to the user as a missing student.
+  // The thrown message is left unchanged (callers match on it); the true cause
+  // is now recorded. P13: code/message only, never the auth_user_id.
+  if (studentErr && studentErr.code !== 'PGRST116') {
+    console.error('resolveStudentId: students lookup failed —', studentErr.code, studentErr.message);
+  }
   if (!student) throw new Error('Student not found');
 
   return student.id;
@@ -1526,12 +1547,19 @@ export async function getQuizQuestionsV2(
     // maybeSingle() error and theta silently stays null. Filter by THIS
     // quiz's subject; if no per-subject row exists yet, theta stays null
     // (same fail-soft behavior as before).
-    const { data: profileData } = await supabase
+    const { data: profileData, error: profileErr } = await supabase
       .from('student_learning_profiles')
       .select('irt_theta')
       .eq('student_id', studentId)
       .eq('subject', subject)
       .maybeSingle();
+    // The comment above documents the exact failure mode ("theta silently stays
+    // null") that this destructure caused. Fail-soft is intentional and kept —
+    // quiz-generator falls back to the default difficulty band — but the reason
+    // is now recorded instead of vanishing.
+    if (profileErr) {
+      console.warn('getQuizQuestionsV2: IRT theta lookup failed —', profileErr.code, profileErr.message);
+    }
     if (profileData?.irt_theta != null) {
       irtTheta = profileData.irt_theta as number;
     }
@@ -1910,10 +1938,17 @@ export async function getQuestionHistoryStats(
       // seen_questions could exceed total_questions (negative unseen, >100%
       // coverage). question_responses never had repeats because it never had
       // any rows at all, which is why the old head-count looked correct.
-      const { data: seenRows } = await supabase.from('quiz_responses')
+      const { data: seenRows, error: seenRowsErr } = await supabase.from('quiz_responses')
         .select('question_id')
         .eq('student_id', studentId)
         .in('question_id', questionIds);
+      // A failure here renders as "0 questions seen / 0% coverage" — a
+      // plausible-looking number, and therefore undetectable. The returned
+      // shape is deliberately unchanged (this is a display statistic, not a
+      // gate), but the failure is now recorded instead of vanishing.
+      if (seenRowsErr) {
+        console.error('getQuestionHistoryStats: quiz_responses seen-count failed —', seenRowsErr.code, seenRowsErr.message);
+      }
       seenCount = new Set(
         (seenRows ?? []).map(r => r.question_id).filter(Boolean)
       ).size;

@@ -13,10 +13,11 @@ const PRICING: Record<string, { input: number; output: number }> = {
   'openai/o1':          { input: 15.00, output: 60.00 },
   'anthropic/claude-haiku-4-5-20251001':  { input: 1.00, output: 5.00 },
   // Key aligned to the id pinned by config-model-name-identity.test.ts /
-  // registry.ts (ANTHROPIC_SONNET_ID) / quality-eval.ts (JUDGE_MODEL); not
-  // confirmed live (no ANTHROPIC_API_KEY in this environment) — reconfirm at
-  // the next Anthropic model-catalog review. Values unchanged.
-  'anthropic/claude-sonnet-4-20250514':   { input: 3.00, output: 15.00 },
+  // registry.ts (ANTHROPIC_SONNET_ID) / quality-eval.ts (JUDGE_MODEL).
+  // 2026-08-31: repinned to claude-sonnet-4-5-20250929 after the previous id
+  // was RETIRED (HTTP 404 not_found_error); replacement confirmed live.
+  // Values unchanged (same 3.00 / 15.00 per-1M Sonnet-tier pricing).
+  'anthropic/claude-sonnet-4-5-20250929': { input: 3.00, output: 15.00 },
   'anthropic/claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
   'anthropic/claude-3-opus-20240229':    { input: 15.00, output: 75.00 },
 }

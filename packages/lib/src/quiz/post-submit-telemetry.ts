@@ -110,10 +110,23 @@ export async function prepareQuizTelemetry(
 
     // OQ-2 Option B: batch question_id → topic_id resolution.
     const topicIdByQuestionId: Record<string, string | null> = {};
-    const { data: qbRows } = await admin
+    const { data: qbRows, error: qbErr } = await admin
       .from('question_bank')
       .select('id, topic_id')
       .in('id', uniqueQuestionIds);
+
+    // Without topic_ids every downstream mastery delta silently reads 0.0 →
+    // "no mastery achieved" for the whole quiz, which looks exactly like a
+    // legitimate result. Return the documented empty pre-state instead of a
+    // fabricated one. P13: ids/metadata only, no PII.
+    if (qbErr) {
+      logger.warn('quiz telemetry: question_bank topic resolution failed', {
+        code: qbErr.code,
+        message: qbErr.message,
+        correlation_id: correlationId,
+      });
+      return empty;
+    }
 
     for (const row of (qbRows ?? []) as Array<{ id: string; topic_id: string | null }>) {
       topicIdByQuestionId[row.id] = row.topic_id ?? null;
@@ -132,11 +145,25 @@ export async function prepareQuizTelemetry(
     if (uniqueTopicIds.length > 0) {
       // READ keyed by students.id + topic_id. mastery_level is read as FLOAT
       // (the quiz updater writes mastery_level::TEXT; parseFloat, NaN→0.0).
-      const { data: cmRows } = await admin
+      const { data: cmRows, error: cmErr } = await admin
         .from('concept_mastery')
         .select('topic_id, mastery_level')
         .eq('student_id', studentId)
         .in('topic_id', uniqueTopicIds);
+
+      // A failed pre-read would leave every topic at the 0.0 "not started"
+      // default, which makes any post-quiz mastery look like a fresh
+      // breakthrough and emits FALSE mastery_updated events. Degrade to the
+      // documented empty snapshot instead (no events) rather than fabricating
+      // a baseline. P13: ids/metadata only.
+      if (cmErr) {
+        logger.warn('quiz telemetry: concept_mastery pre-read failed', {
+          code: cmErr.code,
+          message: cmErr.message,
+          correlation_id: correlationId,
+        });
+        return empty;
+      }
 
       for (const row of (cmRows ?? []) as Array<{
         topic_id: string;
@@ -250,11 +277,22 @@ export function runQuizPostSubmitTelemetry(
       let postByTopicId: Record<string, number> = {};
       let consecutiveWrongByTopicId: Record<string, number> = {};
       try {
-        const { data: cmPost } = await admin
+        const { data: cmPost, error: cmPostErr } = await admin
           .from('concept_mastery')
           .select('topic_id, mastery_level, consecutive_wrong')
           .eq('student_id', input.studentId) // READ → students.id
           .in('topic_id', uniqueTopicIds);
+        // supabase-js resolves rather than throws, so the catch below never saw
+        // a query error — it just produced empty maps silently. Same degrade
+        // (no mastery / no intervention events, never a fabricated one), now
+        // logged. P13: ids/metadata only.
+        if (cmPostErr) {
+          logger.warn('quiz telemetry: concept_mastery post-read failed', {
+            code: cmPostErr.code,
+            message: cmPostErr.message,
+            correlation_id: pre.correlationId,
+          });
+        }
         for (const row of (cmPost ?? []) as Array<{
           topic_id: string;
           mastery_level: unknown;
@@ -313,7 +351,7 @@ export function runQuizPostSubmitTelemetry(
         triggerFoxy = true;
 
         // DEDUP: only one OPEN consecutive_wrong alert per (student, topic).
-        const { data: openAlert } = await admin
+        const { data: openAlert, error: openAlertErr } = await admin
           .from('intervention_alerts')
           .select('id')
           .eq('student_id', authUserId) // WRITE/READ key → auth.uid()
@@ -321,6 +359,21 @@ export function runQuizPostSubmitTelemetry(
           .eq('alert_type', 'consecutive_wrong')
           .is('resolved_at', null)
           .limit(1);
+
+        // A failed dedup probe previously read as "no open alert" and fell
+        // straight into the INSERT, so a flaky read could stack duplicate open
+        // alerts on the same (student, topic) — the exact thing this probe
+        // exists to prevent. Skip the insert instead: the alert re-fires on the
+        // next qualifying quiz, whereas a duplicate is permanent. P13: ids only.
+        if (openAlertErr) {
+          logger.warn('SPEC-3 intervention alert dedup probe failed — insert skipped', {
+            topic_id: topicId,
+            code: openAlertErr.code,
+            message: openAlertErr.message,
+            correlation_id: pre.correlationId,
+          });
+          continue;
+        }
 
         if (openAlert && openAlert.length > 0) {
           // An open alert already exists — skip the insert (dedup). P13: ids +

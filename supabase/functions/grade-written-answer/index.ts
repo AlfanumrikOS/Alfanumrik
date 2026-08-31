@@ -190,8 +190,14 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authError } = await userClient.auth.getUser()
   if (authError || !user) return errorResponse('Invalid or expired token', 401, origin)
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-  const { data: studentRow } = await admin.from('students').select('id').eq('auth_user_id', user.id).maybeSingle()
-  if (!studentRow) return errorResponse('Student not found', 403, origin)
+  const { data: studentRow, error: studentRowErr } = await admin.from('students').select('id').eq('auth_user_id', user.id).maybeSingle()
+  // Fail CLOSED (403) is already correct and is preserved. But "not a student"
+  // and "we could not check" are different facts — the second would 403 every
+  // student at once, with no signal. P13: no ids in the log.
+  if (studentRowErr) {
+    console.error('[grade-written-answer] student lookup failed:', studentRowErr.code, studentRowErr.message)
+  }
+  if (studentRowErr || !studentRow) return errorResponse('Student not found', 403, origin)
   const studentId = studentRow.id
 
   // 2. Parse + validate body

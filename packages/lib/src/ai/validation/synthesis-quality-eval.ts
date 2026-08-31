@@ -82,7 +82,7 @@ export const SYNTHESIS_RUBRIC_VERSION = 'v1';
 // Sonnet judge — pinned to the same model id the rest of the codebase uses for
 // judging (foxy/quality-eval.ts:112, grounded-answer/claude.ts). Nightly cron,
 // so latency is irrelevant; rubric fidelity matters.
-export const SYNTHESIS_JUDGE_MODEL = 'claude-sonnet-4-20250514';
+export const SYNTHESIS_JUDGE_MODEL = 'claude-sonnet-4-5-20250929';
 
 const COMPOSITE_WEIGHTS = {
   grounding: 0.35,

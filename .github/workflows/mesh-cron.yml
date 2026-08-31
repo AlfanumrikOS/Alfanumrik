@@ -5,10 +5,20 @@ name: Mesh Autonomous Cron
 # Restoring it requires a protected environment, main-only source enforcement,
 # least-privilege token scope, and a reviewed non-eval argument contract.
 #
-# Required GitHub secrets (Settings → Secrets and variables → Actions):
-#   ANTHROPIC_API_KEY                 — your Anthropic API key
-#   STAGING_SUPABASE_URL              — https://gzpxqklxwzishrkiaatd.supabase.co
-#   STAGING_SUPABASE_SERVICE_ROLE_KEY — service_role secret from staging Supabase
+# Required secrets — WHERE EACH ONE ACTUALLY LIVES (measured 2026-08-31 via
+# `gh api`, superseding an earlier "Settings → Secrets and variables → Actions"
+# claim that was true for only two of the three):
+#   STAGING_SUPABASE_URL              — REPO-level secret. Resolves anywhere.
+#   STAGING_SUPABASE_SERVICE_ROLE_KEY — REPO-level secret. Resolves anywhere.
+#   ANTHROPIC_API_KEY                 — NOT repo-level. It exists only inside a
+#                                       GitHub Environment that is literally
+#                                       NAMED "ANTHROPIC_API_KEY" (the secret
+#                                       name was pasted into the environment
+#                                       name field; ~9 of this repo's 21
+#                                       environments are that same mistake).
+#                                       It is NOT in `agent-mesh-break-glass`,
+#                                       which holds no secrets at all — see the
+#                                       block on the `tick` job below.
 #
 # Cost ceiling: ~one cycle/day. At Sonnet+Opus rates a no-op cycle costs
 # roughly $0.20–$0.50. Real cycles that touch code cost more. The job
@@ -49,11 +59,48 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    # ANTHROPIC_API_KEY is stored as an environment-scoped secret in a
-    # GitHub Environment named "ANTHROPIC_API_KEY" (narrower scope than a
-    # plain repo secret). Declaring the environment here is what makes
-    # `${{ secrets.ANTHROPIC_API_KEY }}` resolve in the env block below.
-    # The Supabase repo-secrets are picked up automatically regardless.
+    # ─────────────────────────────────────────────────────────────────────────
+    # READ THIS BEFORE CHANGING THE `environment:` BELOW.
+    #
+    # The comment that used to sit here was WRONG, and its wrongness spread:
+    # it claimed that declaring `agent-mesh-break-glass` is what makes
+    # `${{ secrets.ANTHROPIC_API_KEY }}` resolve. It does not. That sentence was
+    # written for PR #713, which set `environment: ANTHROPIC_API_KEY` and was
+    # true of THAT value; commit b66c25c3 ("ci: contain production delivery
+    # paths") later changed the value to `agent-mesh-break-glass` and left the
+    # sentence behind. model-id-canary.yml and docs/runbooks/model-id-canary.md
+    # both went on to cite this file as evidence for how the secret resolves.
+    #
+    # MEASURED 2026-08-31 (`gh api`): `agent-mesh-break-glass` contains NO
+    # SECRETS AT ALL. `ANTHROPIC_API_KEY` exists only in the environment of the
+    # same name. So `secrets.ANTHROPIC_API_KEY` resolves EMPTY in this job and
+    # the Required-env check below (`test -n "$ANTHROPIC_API_KEY"`) fails it.
+    # Latent, not currently firing: `needs: gate` + `if: enabled == 'true'`
+    # means `tick` is unreachable in Phase 0 and has not actually run.
+    #
+    # THE ENVIRONMENT IS NOT LEFT-OVER SLOPPINESS — DO NOT JUST REPOINT IT.
+    # b66c25c3 introduced `agent-mesh-break-glass` as a deliberate containment
+    # control, alongside the Phase-0 suspension gate, `permissions: contents:
+    # read` at workflow level, and the removal of the `eval`-ed goal_override.
+    # The file header states the restore conditions verbatim: "Restoring it
+    # requires a PROTECTED ENVIRONMENT, main-only source enforcement,
+    # least-privilege token scope, and a reviewed non-eval argument contract."
+    # This environment IS that protected-environment requirement. This job runs
+    # with `contents: write` + `pull-requests: write`, a staging service-role
+    # credential and an Anthropic key, and it commits and opens PRs. Swapping
+    # to `environment: ANTHROPIC_API_KEY` would make the secret resolve and
+    # would ALSO delete the approval gate standing between an autonomous agent
+    # and this repo's git history. That trade is not ops' to make silently.
+    #
+    # THE CORRECT FIX IS AN OPERATOR ACTION, NOT A WORKFLOW EDIT — put the
+    # secret inside the break-glass environment so both properties hold:
+    #     gh secret set ANTHROPIC_API_KEY --env agent-mesh-break-glass
+    #     gh api repos/:owner/:repo/environments/agent-mesh-break-glass \
+    #       --jq '{reviewers: .protection_rules}'   # confirm the gate survives
+    # Then the required-env check passes AND break-glass approval still applies.
+    # Do that before Phase 0 is ever lifted; until then this is latent.
+    # Full context and the durable secret-layout fix: docs/runbooks/model-id-canary.md §11.
+    # ─────────────────────────────────────────────────────────────────────────
     environment: agent-mesh-break-glass
     timeout-minutes: 30
     env:
@@ -78,7 +125,12 @@ jobs:
 
       - name: Required-env check
         run: |
-          test -n "$ANTHROPIC_API_KEY"           || { echo "::error::ANTHROPIC_API_KEY secret missing"; exit 1; }
+          # Known cause if this fires: `agent-mesh-break-glass` holds no secrets
+          # (measured 2026-08-31). Fix by putting the secret IN that environment
+          # — `gh secret set ANTHROPIC_API_KEY --env agent-mesh-break-glass` —
+          # not by repointing `environment:`, which would drop the break-glass
+          # approval gate. See the block above the `environment:` key.
+          test -n "$ANTHROPIC_API_KEY"           || { echo "::error::ANTHROPIC_API_KEY secret missing — it is NOT in the agent-mesh-break-glass environment this job declares. Do NOT repoint the environment; add the secret to it. See the comment above 'environment:' in this file."; exit 1; }
           test -n "$SUPABASE_URL"                || { echo "::error::STAGING_SUPABASE_URL secret missing"; exit 1; }
           test -n "$SUPABASE_SERVICE_ROLE_KEY"   || { echo "::error::STAGING_SUPABASE_SERVICE_ROLE_KEY secret missing"; exit 1; }
           echo "All required env present"

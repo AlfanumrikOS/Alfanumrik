@@ -136,7 +136,7 @@ function loadGolden(): { golden: GoldenSet; seeded: boolean } {
     version: 'pre-seed-smoke',
     created_at: '2026-06-13',
     corpus_ref: { source: 'ncert_2025', snapshot_note: 'pre-seed smoke (Task 9 not yet seeded)' },
-    judge: { model: 'claude-sonnet-4-20250514', rubric_version: 'rag-relevance-v1', temperature: 0 },
+    judge: { model: 'claude-sonnet-4-5-20250929', rubric_version: 'rag-relevance-v1', temperature: 0 },
     items: [
       {
         id: 'smoke-g8-sci-001',

@@ -102,11 +102,24 @@ export async function resolveActiveStudent(
       return null;
     }
 
-    const { data: sessionRow } = await supabase
+    const { data: sessionRow, error: sessionErr } = await supabase
       .from('whatsapp_sessions')
       .select('active_student_id, subject, locale')
       .eq('identity_id', identityId)
       .maybeSingle();
+    // A failed session read is NOT "fresh session". Falling through would
+    // silently resolve the OTP binding's own student — i.e. serve the WRONG
+    // SIBLING to a parent who had explicitly switched. This resolver is the
+    // single R6 chokepoint and its documented failure mode is null, so return
+    // null rather than guess. P13: no phone/identity values logged.
+    if (sessionErr) {
+      console.warn(
+        '[whatsapp-identity] session read failed:',
+        sessionErr.code,
+        sessionErr.message,
+      );
+      return null;
+    }
     const session = (sessionRow ?? null) as SessionRowLite | null;
 
     // Session's sibling selection wins; fresh sessions fall back to the

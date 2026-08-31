@@ -390,11 +390,27 @@ serve(async (req) => {
   // Prefer school_gst_details.place_of_supply_state_code; fall back to the
   // school's own state, then the supplier state (conservative). Buyer GSTIN /
   // legal name are also snapshotted from school_gst_details when present.
-  const { data: gstDetails } = await admin
+  const { data: gstDetails, error: gstDetailsErr } = await admin
     .from('school_gst_details')
     .select('gstin, legal_name, place_of_supply_state_code, is_registered')
     .eq('school_id', inv.school_id)
     .maybeSingle()
+
+  // A failed read is NOT "this school has no GST record". It silently drops the
+  // buyer GSTIN and falls back to the school's own state for place-of-supply,
+  // which flips the intra/inter-state CGST+SGST vs IGST split on a TAX
+  // DOCUMENT. The fallback chain is kept (an invoice must still be issuable),
+  // but a systematically mis-taxed invoice run must not be silent.
+  // P13: school id + error metadata only, never GSTIN or legal name.
+  if (gstDetailsErr) {
+    console.error(
+      '[invoice-generator] school_gst_details read failed for school',
+      inv.school_id,
+      '-',
+      gstDetailsErr.code,
+      gstDetailsErr.message,
+    )
+  }
 
   // ── Resolve GST inputs ───────────────────────────────────────────────
   const periodStartDate = new Date(inv.period_start)

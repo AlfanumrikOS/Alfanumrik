@@ -150,12 +150,21 @@ export async function loadLongMemorySnapshot(
     // Resolve subject_id for the mastery scope.
     let subjectId: string | null = null;
     try {
-      const { data: subjectRow } = await supabase
+      const { data: subjectRow, error: subjectErr } = await supabase
         .from('subjects')
         .select('id')
         .ilike('code', subject)
         .maybeSingle();
-      subjectId = subjectRow?.id ?? null;
+      // Non-fatal by design (falls through to subject-wide mastery), but the
+      // catch below never fired — supabase-js resolves instead of throwing.
+      if (subjectErr) {
+        console.warn(
+          '[foxy-long-memory] subject lookup failed:',
+          subjectErr.code,
+          subjectErr.message,
+        );
+      }
+      subjectId = subjectErr ? null : subjectRow?.id ?? null;
     } catch {
       // Non-fatal — fall through to subject-wide mastery (return [] below).
     }

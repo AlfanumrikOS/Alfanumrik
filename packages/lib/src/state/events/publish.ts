@@ -48,11 +48,20 @@ async function isBusEnabled(sb: SupabaseClient): Promise<boolean> {
   if (cachedFlagValue !== null && cachedFlagAt !== null && now - cachedFlagAt < FLAG_TTL_MS) {
     return cachedFlagValue;
   }
-  const { data } = await sb
+  const { data, error } = await sb
     .from('feature_flags')
     .select('is_enabled')
     .eq('flag_name', BUS_FLAG_NAME)
     .maybeSingle();
+  // An unreadable flag is NOT the same as a disabled flag: reporting it as
+  // `flag_off` tells the caller "the bus is intentionally off", which is a
+  // different (and non-alarming) fact from "we could not tell". Throw so
+  // publish() can map it onto its existing `db_error` channel. The cache is
+  // deliberately left untouched so one blip cannot pin the bus off for the
+  // whole TTL.
+  if (error) {
+    throw new Error(`${BUS_FLAG_NAME} read failed (${error.code}): ${error.message}`);
+  }
   cachedFlagValue = data?.is_enabled === true;
   cachedFlagAt = now;
   return cachedFlagValue;
@@ -125,7 +134,19 @@ export async function publishEvent(
 
   // 2. Flag check. A feature being "wired" to publish is independent of
   //    the bus being live for that tenant; the gate sits here, once.
-  if (!(await isBusEnabled(sb))) {
+  let busEnabled: boolean;
+  try {
+    busEnabled = await isBusEnabled(sb);
+  } catch (err) {
+    // Flag unreadable — report it through the existing typed failure channel
+    // rather than as `flag_off` (see isBusEnabled).
+    return {
+      published: false,
+      reason: 'db_error',
+      errorMessage: (err instanceof Error ? err.message : String(err)).slice(0, 500),
+    };
+  }
+  if (!busEnabled) {
     return { published: false, reason: 'flag_off' };
   }
 

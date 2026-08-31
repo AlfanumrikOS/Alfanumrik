@@ -277,14 +277,24 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
   // matched against students.school_id. (The previously referenced
   // school_memberships table does not exist in the prod baseline.)
   if (perms.roles.some(r => r.name === 'institution_admin')) {
-    const { data: studentSchool } = await supabase
+    const { data: studentSchool, error: studentSchoolErr } = await supabase
       .from('students')
       .select('school_id')
       .eq('id', studentId)
       .maybeSingle();
 
+    // Fail closed: a query failure must not silently look like "student has no
+    // school". Log metadata only (P13) and fall through to the next check.
+    if (studentSchoolErr) {
+      logger.warn('rbac.canAccessStudent lookup failed', {
+        step: 'students.school_id',
+        code: studentSchoolErr.code,
+        message: studentSchoolErr.message,
+      });
+    }
+
     if (studentSchool?.school_id) {
-      const { data: membership } = await supabase
+      const { data: membership, error: membershipErr } = await supabase
         .from('school_admins')
         .select('id')
         .eq('auth_user_id', authUserId)
@@ -292,35 +302,64 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
         .eq('is_active', true)
         .maybeSingle();
 
-      if (membership) return true;
+      if (membershipErr) {
+        logger.warn('rbac.canAccessStudent lookup failed', {
+          step: 'school_admins.membership',
+          code: membershipErr.code,
+          message: membershipErr.message,
+        });
+      }
+
+      if (!membershipErr && membership) return true;
     }
   }
 
   // Student: can only access own data
-  const { data: ownStudent } = await supabase
+  const { data: ownStudent, error: ownStudentErr } = await supabase
     .from('students')
     .select('id')
     .eq('auth_user_id', authUserId)
     .eq('id', studentId)
     .maybeSingle();
-  if (ownStudent) return true;
+  if (ownStudentErr) {
+    logger.warn('rbac.canAccessStudent lookup failed', {
+      step: 'students.own',
+      code: ownStudentErr.code,
+      message: ownStudentErr.message,
+    });
+  }
+  if (!ownStudentErr && ownStudent) return true;
 
   // Parent: can access linked children
-  const { data: guardians } = await supabase
+  const { data: guardians, error: guardiansErr } = await supabase
     .from('guardians')
     .select('id')
     .eq('auth_user_id', authUserId);
-  const guardianIds = guardians?.map(g => g.id) || [];
+  if (guardiansErr) {
+    logger.warn('rbac.canAccessStudent lookup failed', {
+      step: 'guardians.by_auth_user',
+      code: guardiansErr.code,
+      message: guardiansErr.message,
+    });
+  }
+  const guardianIds = guardiansErr ? [] : guardians?.map(g => g.id) || [];
 
   if (guardianIds.length > 0) {
-    const { data: linkedChild } = await supabase
+    const { data: linkedChild, error: linkedChildErr } = await supabase
       .from('guardian_student_links')
       .select('id')
       .eq('student_id', studentId)
       .in('status', ['active', 'approved'])
       .in('guardian_id', guardianIds)
       .limit(1);
-    if (linkedChild && linkedChild.length > 0) return true;
+    if (linkedChildErr) {
+      logger.warn('rbac.canAccessStudent lookup failed', {
+        step: 'guardian_student_links.linked',
+        code: linkedChildErr.code,
+        message: linkedChildErr.message,
+      });
+    }
+    if (!linkedChildErr && linkedChild && linkedChild.length > 0) return true;
   }
 
   // Teacher: can access students in assigned classes (matrix ownership
@@ -617,7 +656,21 @@ export async function resolveTeacherRosterScope(
  */
 export async function canAccessImage(authUserId: string, imageId: string): Promise<boolean> {
   const supabase = getServiceClient();
-  const { data: image } = await supabase.from('image_uploads').select('student_id').eq('id', imageId).maybeSingle();
+  const { data: image, error: imageErr } = await supabase
+    .from('image_uploads')
+    .select('student_id')
+    .eq('id', imageId)
+    .maybeSingle();
+  // Fail closed: a lookup failure must not be indistinguishable from "no such
+  // image" in a way that could later be relaxed into a grant. Metadata only (P13).
+  if (imageErr) {
+    logger.warn('rbac.canAccessImage lookup failed', {
+      step: 'image_uploads.by_id',
+      code: imageErr.code,
+      message: imageErr.message,
+    });
+    return false;
+  }
   if (!image) return false;
   return canAccessStudent(authUserId, image.student_id);
 }
@@ -812,12 +865,22 @@ export async function authorizeRequest(
   let studentId: string | null = null;
   if (options?.requireStudentId || perms.roles.some(r => r.name === 'student')) {
     const supabase = getServiceClient();
-    const { data: student } = await supabase
+    const { data: student, error: studentErr } = await supabase
       .from('students')
       .select('id')
       .eq('auth_user_id', authUserId)
       .maybeSingle();
-    studentId = student?.id || null;
+    // A failure here previously read as "no student row", which silently
+    // downgraded the caller to studentId=null instead of surfacing the fault.
+    // Keep the fail-closed null but make the fault observable (P13: no PII).
+    if (studentErr) {
+      logger.warn('authorizeRequest student lookup failed', {
+        step: 'students.by_auth_user',
+        code: studentErr.code,
+        message: studentErr.message,
+      });
+    }
+    studentId = studentErr ? null : student?.id || null;
   }
 
   // 5. Resource access check

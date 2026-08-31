@@ -465,11 +465,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               // permanently null while isLoggedIn stays true → the dashboard
               // skeletons forever. We therefore never let a resolved student
               // role end this branch with a null `student`.
-              let { data: studentData } = await supabase
+              let { data: studentData, error: studentErr } = await supabase
                 .from('students')
                 .select('*')
                 .eq('id', rd.student.id)
                 .maybeSingle();
+
+              // maybeSingle() does NOT error on 0 rows, so any error here is a
+              // real failure (RLS skew, dropped column, network). It used to be
+              // indistinguishable from "0 rows" and silently fell through to the
+              // reduced RPC payload below. Behaviour is unchanged — the
+              // re-read + RPC fallback still run (that is the P15 guarantee) —
+              // but the fault is now visible. P13: code/message only.
+              if (studentErr) {
+                console.warn('[Auth] student profile read failed:', studentErr.code, studentErr.message);
+              }
 
               // Defensive re-read by auth_user_id if the PK lookup came back
               // empty — this is the exact query the parallel fallback block
@@ -511,21 +521,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             // Load teacher profile if role exists
             if (rd.teacher) {
-              const { data: teacherData } = await supabase
+              const { data: teacherData, error: teacherErr } = await supabase
                 .from('teachers')
                 .select('id, name, school_name, subjects_taught, grades_taught, email, phone')
                 .eq('id', rd.teacher.id)
                 .single();
+              // get_user_role already told us this teacher row exists, so ANY
+              // error here (including PGRST116) is a genuine anomaly, not an
+              // expected miss. Non-fatal — teacher stays null and is retried on
+              // the next fetchUser — but no longer silent. P13: code/message only.
+              if (teacherErr) {
+                console.warn('[Auth] teacher profile read failed:', teacherErr.code, teacherErr.message);
+              }
               if (teacherData) setTeacher(teacherData as TeacherProfile);
             }
 
             // Load guardian profile if role exists
             if (rd.guardian) {
-              const { data: guardianData } = await supabase
+              const { data: guardianData, error: guardianErr } = await supabase
                 .from('guardians')
                 .select('id, name, email, phone')
                 .eq('id', rd.guardian.id)
                 .single();
+              // Same reasoning as the teacher read above: the RPC already
+              // resolved a guardian role, so any error is anomalous. Non-fatal.
+              if (guardianErr) {
+                console.warn('[Auth] guardian profile read failed:', guardianErr.code, guardianErr.message);
+              }
               if (guardianData) setGuardian(guardianData as GuardianProfile);
             }
           }
@@ -617,12 +639,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // school_admins lookup pattern above (own-row RLS select).
             let hasAdminUserRow = false;
             try {
-              const { data: adminUserRow } = await supabase
+              const { data: adminUserRow, error: adminUserErr } = await supabase
                 .from('admin_users')
                 .select('id')
                 .eq('auth_user_id', user.id)
                 .maybeSingle();
-              hasAdminUserRow = !!adminUserRow;
+              // supabase-js never throws, so the catch below could not see a
+              // query error — it read as "no admin_users row" and let the
+              // student auto-bootstrap proceed. Fail-open is retained
+              // deliberately (this probe must never break the P15 funnel), but
+              // the failure is now logged. P13: code/message only.
+              if (adminUserErr) {
+                console.warn('[Auth] admin_users probe failed:', adminUserErr.code, adminUserErr.message);
+              }
+              hasAdminUserRow = !adminUserErr && !!adminUserRow;
             } catch {
               // Fail open to the existing failsafe below — this probe must
               // never itself break the P15 onboarding funnel.

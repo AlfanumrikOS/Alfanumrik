@@ -68,22 +68,36 @@ export async function retrieveTransferChunks(
     if (!scope.subject_code || scope.chapter_number == null) return [];
 
     // 1. Resolve the current subject's id.
-    const { data: subjRow } = await sb
+    const { data: subjRow, error: subjErr } = await sb
       .from('subjects')
       .select('id')
       .ilike('code', scope.subject_code)
       .maybeSingle();
+    // Every failure path in this function returns [] (it is an optional
+    // enrichment on top of the primary retrieval, and the header promises it
+    // never throws). That degrade is preserved — but supabase-js resolves
+    // rather than throwing, so the catch at the bottom could never see a query
+    // error and a permanently-broken transfer lane looked exactly like
+    // "no transfer edge for this topic", which is the expected common case.
+    if (subjErr) {
+      console.warn('[transfer-retrieval] subjects lookup failed:', subjErr.code, subjErr.message);
+      return [];
+    }
     const subjectId: string | null = subjRow?.id ?? null;
     if (!subjectId) return [];
 
     // 2. Resolve the current topic ids for (subject, grade, chapter).
-    const { data: topicRows } = await sb
+    const { data: topicRows, error: topicErr } = await sb
       .from('curriculum_topics')
       .select('id')
       .eq('subject_id', subjectId)
       .eq('grade', scope.grade)
       .eq('chapter_number', scope.chapter_number)
       .limit(50);
+    if (topicErr) {
+      console.warn('[transfer-retrieval] curriculum_topics lookup failed:', topicErr.code, topicErr.message);
+      return [];
+    }
     const currentTopicIds: string[] = (topicRows ?? [])
       .map((t: { id?: string }) => t.id)
       .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0);
@@ -92,12 +106,16 @@ export async function retrieveTransferChunks(
 
     // 3. Explicit transfer edges touching any current topic (either direction).
     const idList = currentTopicIds.join(',');
-    const { data: edgeRows } = await sb
+    const { data: edgeRows, error: edgeErr } = await sb
       .from('concept_edges')
       .select('from_topic_id, to_topic_id')
       .eq('edge_type', 'transfer')
       .or(`from_topic_id.in.(${idList}),to_topic_id.in.(${idList})`)
       .limit(MAX_TRANSFER_EDGES);
+    if (edgeErr) {
+      console.warn('[transfer-retrieval] concept_edges lookup failed:', edgeErr.code, edgeErr.message);
+      return [];
+    }
     const edges: Array<{ from_topic_id: string; to_topic_id: string }> = edgeRows ?? [];
     if (edges.length === 0) return [];
 
@@ -111,12 +129,16 @@ export async function retrieveTransferChunks(
 
     // 5. Resolve those topics → subject_id + chapter, SAME GRADE only (P12),
     //    and only when the subject genuinely DIFFERS from the current one.
-    const { data: otherTopicRows } = await sb
+    const { data: otherTopicRows, error: otherTopicErr } = await sb
       .from('curriculum_topics')
       .select('id, subject_id, chapter_number, grade')
       .in('id', Array.from(new Set(otherTopicIds)))
       .eq('grade', scope.grade)
       .limit(50);
+    if (otherTopicErr) {
+      console.warn('[transfer-retrieval] transfer-target topic lookup failed:', otherTopicErr.code, otherTopicErr.message);
+      return [];
+    }
     const targets = (otherTopicRows ?? []).filter(
       (t: { subject_id?: string; chapter_number?: number | null }) =>
         typeof t.subject_id === 'string' &&
@@ -127,10 +149,14 @@ export async function retrieveTransferChunks(
 
     // 6. Resolve target subject ids → codes.
     const targetSubjectIds = Array.from(new Set(targets.map((t) => t.subject_id)));
-    const { data: subjRows } = await sb
+    const { data: subjRows, error: subjRowsErr } = await sb
       .from('subjects')
       .select('id, code')
       .in('id', targetSubjectIds);
+    if (subjRowsErr) {
+      console.warn('[transfer-retrieval] target subject-code lookup failed:', subjRowsErr.code, subjRowsErr.message);
+      return [];
+    }
     const codeById = new Map<string, string>();
     for (const s of (subjRows ?? []) as Array<{ id: string; code: string }>) {
       if (s.id && s.code) codeById.set(s.id, s.code);

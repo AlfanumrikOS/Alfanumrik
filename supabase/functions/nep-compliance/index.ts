@@ -152,10 +152,18 @@ async function generateHPC(
   const studentRecord = student as { id: string; name: string; grade: string }
 
   // 2. Fetch learning profiles across all subjects
-  const { data: profiles } = await supabase
+  const { data: profiles, error: profilesError } = await supabase
     .from('student_learning_profiles')
     .select('subject, xp_total, streak_days, total_questions_asked, total_questions_answered_correctly')
     .eq('student_id', studentId)
+
+  // This is a COMPLIANCE report. An empty profile list does not render as an
+  // error — it renders as a filed report stating the student did nothing, which
+  // is a false statement in an artifact meant to be authoritative. The two
+  // reads above already throw on failure; match them.
+  if (profilesError) {
+    throw new Error(`Failed to fetch learning profiles: ${profilesError.message}`)
+  }
 
   const profileList = (profiles ?? []) as Array<{
     subject: string
@@ -166,7 +174,7 @@ async function generateHPC(
   }>
 
   // 3. Fetch concept mastery data
-  const { data: masteryRows } = await supabase
+  const { data: masteryRows, error: masteryError } = await supabase
     .from('concept_mastery')
     .select(`
       topic_id,
@@ -176,6 +184,12 @@ async function generateHPC(
       curriculum_topics(title, chapter_number, subject_id, subjects(name, code))
     `)
     .eq('student_id', studentId)
+
+  // Same reasoning as the profile read: a zeroed mastery section in a filed
+  // NEP compliance report is worse than no report at all.
+  if (masteryError) {
+    throw new Error(`Failed to fetch concept mastery: ${masteryError.message}`)
+  }
 
   // mastery_probability is the canonical numeric posterior (0-1);
   // mastery_level is a TEXT band label and is not read numerically here.
@@ -193,11 +207,17 @@ async function generateHPC(
   }>
 
   // 4. Fetch quiz sessions for Bloom's distribution and session counts
-  const { data: quizSessions } = await supabase
+  const { data: quizSessions, error: quizSessionsError } = await supabase
     .from('quiz_sessions')
     .select('id, subject, score_percent, xp_earned, bloom_level, created_at')
     .eq('student_id', studentId)
     .order('created_at', { ascending: false })
+
+  // Drives the Bloom's-distribution section of the report — an empty list
+  // reports a flat, all-zero cognitive profile as fact.
+  if (quizSessionsError) {
+    throw new Error(`Failed to fetch quiz sessions: ${quizSessionsError.message}`)
+  }
 
   const sessionList = (quizSessions ?? []) as Array<{
     id: string
@@ -480,13 +500,19 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
-    const { data: studentRow } = await supabase
+    const { data: studentRow, error: studentRowError } = await supabase
       .from('students')
       .select('id')
       .eq('auth_user_id', user.id)
       .eq('is_active', true)
       .maybeSingle()
-    if (!studentRow?.id) {
+    // Fail CLOSED (403) is already correct and is preserved. But "no student
+    // profile" and "we could not check" are different facts; the second would
+    // 403 every student at once with no signal. P13: no ids in the log.
+    if (studentRowError) {
+      console.error('[nep-compliance] student lookup failed:', studentRowError.code, studentRowError.message)
+    }
+    if (studentRowError || !studentRow?.id) {
       return new Response(
         JSON.stringify({ error: 'No active student profile for this user' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

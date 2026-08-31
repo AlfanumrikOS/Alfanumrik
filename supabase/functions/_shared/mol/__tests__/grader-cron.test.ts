@@ -263,7 +263,7 @@ const okGrader = async (_args: {
   // This is a mock GraderResult (no assertion in this file depends on the
   // literal value), updated only for hygiene alongside the grader.ts/
   // grader-cron.ts source fix in the same PR.
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-5-20250929',
   prompt_tokens: 320,
   completion_tokens: 280,
 });

@@ -204,7 +204,7 @@ async function loadCallClaude(): Promise<any> {
 /**
  * Adapt `callClaude` into the judge's completion seam, PINNING the judge model.
  *
- * Pinning is deliberate and is NOT a model change: `claude-sonnet-4-20250514` is
+ * Pinning is deliberate and is NOT a model change: `claude-sonnet-4-5-20250929` is
  * already in packages/lib/src/ai/gateway/registry.ts (ANTHROPIC_SONNET_ID) and
  * is the same id eval/rag/harness/relevance-judge.ts uses. It is pinned because
  * the committed baseline is only comparable to a run judged by the SAME judge —

@@ -276,11 +276,21 @@ async function isServiceEnabled(sb: any): Promise<boolean> {
   if (ffCache && ffCache.expiresAt > now) return ffCache.value;
 
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', 'ff_grounded_ai_enabled')
       .single();
+    // supabase-js resolves instead of throwing, so the fail-closed catch below
+    // never ran for a query error — the kill switch resolved OFF and was cached
+    // as a SUCCESS with no log, making a DB fault look like a deliberate
+    // operator disable. PGRST116 ("no rows") is the missing-seed case and stays
+    // silent; it already means OFF.
+    if (error && error.code !== 'PGRST116') {
+      console.warn(`ff_grounded_ai_enabled lookup failed — ${error.code}: ${error.message}`);
+      ffCache = { value: false, expiresAt: now + FF_CACHE_TTL_MS };
+      return false;
+    }
     const value = data?.is_enabled === true;
     ffCache = { value, expiresAt: now + FF_CACHE_TTL_MS };
     return value;
@@ -1428,9 +1438,33 @@ export async function runPipeline(
   // instruction paragraph. It was renamed from mode_instruction in a refactor
   // but the pipeline still only sets mode_instruction — default mode_directive
   // to mode_instruction so both template references resolve correctly.
+  //
+  // DOUBLE-RENDER FIX (2026-08-31): foxy_tutor_doubt_v1 / foxy_tutor_exam_v1
+  // gained their OWN standalone `{{mode_instruction}}` line, so this fallback
+  // then rendered the SAME paragraph a second time via `{{mode_directive}}`
+  // whenever the mode has no MODE_DIRECTIVES entry (`doubt` deliberately has
+  // none — its absence is a structural guarantee that doubt turns stay
+  // unchanged, so it must NOT be given one). Measured effect: the exact
+  // "not covered in the reference material" refusal sentence appeared twice in
+  // a resolved doubt prompt.
+  //
+  // Both slots keep their purpose. The fallback is skipped ONLY for templates
+  // that already render mode_instruction as a standalone paragraph of their
+  // own. foxy_tutor_v1 / foxy_tutor_teach_v1 reference `{{mode_instruction}}`
+  // mid-sentence ("follow the {{mode_instruction}} fallback rule above") and
+  // genuinely depend on this fallback to produce the paragraph that sentence
+  // points at — the regex below does not match those, so they are unchanged.
+  // Kept in lockstep with the identical block in pipeline-stream.ts so the
+  // streaming and non-streaming system prompts stay byte-identical.
+  const rendersModeInstructionStandalone =
+    /^[ \t]*\{\{mode_instruction\}\}[ \t]*$/m.test(template);
   if (!vars.pending_expectation) vars.pending_expectation = '';
   if (!vars.learner_memory_section) vars.learner_memory_section = '';
-  if (!vars.mode_directive) vars.mode_directive = vars.mode_instruction ?? '';
+  if (!vars.mode_directive) {
+    vars.mode_directive = rendersModeInstructionStandalone
+      ? ''
+      : (vars.mode_instruction ?? '');
+  }
   if (!vars.next_topic) vars.next_topic = '';
   if (!vars.prereq) vars.prereq = '';
   // Defense-in-depth for NCERT_SOLVER_V1's {{marks}} (Answer Depth block).

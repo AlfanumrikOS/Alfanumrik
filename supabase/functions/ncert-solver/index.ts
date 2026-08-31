@@ -93,13 +93,26 @@ async function refundQuota(
 ): Promise<void> {
   try {
     const today = new Date().toISOString().slice(0, 10)
-    const { data: row } = await supabase
+    const { data: row, error: rowErr } = await supabase
       .from('student_daily_usage')
       .select('usage_count')
       .eq('student_id', studentId)
       .eq('feature', feature)
       .eq('usage_date', today)
       .single()
+    // supabase-js resolves rather than throwing, so the catch below never saw a
+    // query error — the refund was silently skipped and the student kept losing
+    // an allowance they never spent. PGRST116 ("no rows") genuinely means there
+    // is nothing to refund and is deliberately not logged.
+    if (rowErr && rowErr.code !== 'PGRST116') {
+      console.warn(
+        'ncert-solver: quota refund read failed:',
+        rowErr.code,
+        rowErr.message,
+        { feature },
+      )
+      return
+    }
     if (row && typeof row.usage_count === 'number' && row.usage_count > 0) {
       await supabase
         .from('student_daily_usage')
@@ -293,14 +306,22 @@ Deno.serve(async (req) => {
     // get_plan_limit (no code change needed here).
     let resolvedStudentId: string | null = null
     try {
-      const { data: studentRow } = await supabase
+      const { data: studentRow, error: studentRowErr } = await supabase
         .from('students')
         .select('id, grade, onboarding_completed')
         .eq('auth_user_id', user.id)
         .eq('is_active', true)
         .is('deleted_at', null)
         .maybeSingle()
-      if (!studentRow?.id) {
+      // Fail CLOSED — this row feeds the HIGH-1 (P12) grade-spoof block below,
+      // so an unresolved student must never proceed. That was already the
+      // behaviour; what was missing is any way to tell a genuine
+      // "no such student" from a students-table outage that would 422 every
+      // solver request at once. P13: no ids in the log.
+      if (studentRowErr) {
+        console.error('[ncert-solver] student resolution failed:', studentRowErr.code, studentRowErr.message)
+      }
+      if (studentRowErr || !studentRow?.id) {
         statusCode = 422
         errorCode = 'subject_not_allowed'
         const resp = jsonResponse(

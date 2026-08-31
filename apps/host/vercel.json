@@ -25,6 +25,12 @@
     "src/app/api/whatsapp/webhook/route.ts": {
       "maxDuration": 60
     },
+    "src/app/api/foxy/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/concept-engine/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/**/*.ts": {
       "maxDuration": 30
     },

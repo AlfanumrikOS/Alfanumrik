@@ -34,10 +34,10 @@ from .types import Pass, ProviderTarget, SelectedChain, TaskType
 HAIKU = "claude-haiku-4-5-20251001"
 # Aligned to the id already pinned by config-model-name-identity.test.ts,
 # packages/lib/src/ai/gateway/registry.ts (ANTHROPIC_SONNET_ID), and
-# packages/lib/src/foxy/quality-eval.ts (JUDGE_MODEL) — this environment has
-# no ANTHROPIC_API_KEY, so this was NOT confirmed against a live Anthropic
-# model-catalog check; get a final live confirmation at the next review.
-SONNET = "claude-sonnet-4-20250514"
+# packages/lib/src/foxy/quality-eval.ts (JUDGE_MODEL). 2026-08-31: repinned to
+# claude-sonnet-4-5-20250929 after the previous id was RETIRED (HTTP 404
+# not_found_error); the replacement was confirmed live against the API.
+SONNET = "claude-sonnet-4-5-20250929"
 GPT_MINI = "gpt-4o-mini"
 GPT_FULL = "gpt-4o"
 
@@ -49,8 +49,8 @@ BASE_MATRIX: dict[TaskType, list[dict]] = {
         {
             "role": "single",
             "chain": [
-                {"provider": "openai", "model": GPT_MINI},
                 {"provider": "anthropic", "model": HAIKU},
+                {"provider": "openai", "model": GPT_MINI},
             ],
         }
     ],
@@ -58,8 +58,8 @@ BASE_MATRIX: dict[TaskType, list[dict]] = {
         {
             "role": "single",
             "chain": [
-                {"provider": "openai", "model": GPT_MINI},
                 {"provider": "anthropic", "model": HAIKU},
+                {"provider": "openai", "model": GPT_MINI},
             ],
         }
     ],
@@ -67,8 +67,8 @@ BASE_MATRIX: dict[TaskType, list[dict]] = {
         {
             "role": "single",
             "chain": [
-                {"provider": "openai", "model": GPT_MINI},
                 {"provider": "anthropic", "model": HAIKU},
+                {"provider": "openai", "model": GPT_MINI},
             ],
         }
     ],
@@ -77,8 +77,8 @@ BASE_MATRIX: dict[TaskType, list[dict]] = {
             "role": "single",
             "chain": [
                 {"provider": "anthropic", "model": SONNET},
-                {"provider": "openai", "model": GPT_FULL},
                 {"provider": "anthropic", "model": HAIKU},
+                {"provider": "openai", "model": GPT_FULL},
             ],
         }
     ],
@@ -86,8 +86,8 @@ BASE_MATRIX: dict[TaskType, list[dict]] = {
         {
             "role": "single",
             "chain": [
-                {"provider": "openai", "model": GPT_MINI},
                 {"provider": "anthropic", "model": HAIKU},
+                {"provider": "openai", "model": GPT_MINI},
             ],
         }
     ],
@@ -106,13 +106,14 @@ BASE_MATRIX: dict[TaskType, list[dict]] = {
             "chain": [
                 {"provider": "anthropic", "model": SONNET},
                 {"provider": "anthropic", "model": HAIKU},
+                {"provider": "openai", "model": GPT_FULL},
             ],
         },
         {
             "role": "simplify",
             "chain": [
-                {"provider": "openai", "model": GPT_MINI},
                 {"provider": "anthropic", "model": HAIKU},
+                {"provider": "openai", "model": GPT_MINI},
             ],
         },
     ],
@@ -161,13 +162,17 @@ class RouterOptions:
 
     hybrid_enabled: bool = False
     openai_default: bool = False
-    # Per-task weight in [0,1]. weights[task] > 0.5 ⇒ openai becomes primary.
+    # Per-task weight in [0,1] — probability (on the shadow_priority=True path)
+    # that anthropic is promoted to primary. Higher weight ⇒ anthropic more
+    # likely primary. Defaults to 0.8 when unset (see select_provider_chain).
     weights: dict[str, float] = field(default_factory=dict)
-    # A2: when False (default, live path), priority is DETERMINISTIC — OpenAI
+    # Anthropic is primary/default, OpenAI is fallback (CEO directive,
+    # 2026-08-26 — reversed the earlier 2026-08-02 OpenAI-primary swap).
+    # When False (default, live path), priority is DETERMINISTIC — Anthropic
     # is always the primary rung. When True (gated by ff_mol_deterministic_priority
-    # being OFF → shadow/experiment), restore the legacy probabilistic
-    # weights/random reorder. The flag name is inverted on purpose: the flag
-    # turns the *deterministic* path ON; shadow_priority is the negation.
+    # being OFF → shadow/experiment), use the weighted-random reorder (still
+    # anthropic-favored by default). The flag name is inverted on purpose: the
+    # flag turns the *deterministic* path ON; shadow_priority is the negation.
     shadow_priority: bool = False
 
 
@@ -187,18 +192,20 @@ def select_provider_chain(task: TaskType, opts: RouterOptions) -> SelectedChain:
     Logic mirrors router.ts:selectProviderChain:
         1. Clone the BASE_MATRIX entry so we never mutate the original.
         2. If task='doubt_solving' AND hybrid OFF, collapse to a single-pass
-           Anthropic-first chain with a cost-conscious gpt-4o-mini fallback.
+           chain: anthropic-sonnet, anthropic-haiku, openai-gpt-4o,
+           openai-gpt-4o-mini.
         3. If openai_default AND task in {explanation, step_by_step,
            quiz_generation}, reorder so gpt-4o-mini is primary.
-        4. If weights[task] > 0.5, ensure openai is the primary rung
-           (per-task override beats global default).
+        4. Per-task weighted-random reorder — anthropic primary by default
+           (CEO directive 2026-08-26); see select_provider_chain step 4.
         5. ``mode`` reflects the post-mutation shape: 'hybrid' for
            doubt_solving + hybrid, 'vision' for ocr_extraction, else 'single'.
     """
     # Step 1: deep-clone so mutations to the chain list never leak back.
     passes_raw = deepcopy(BASE_MATRIX[task])
 
-    # Step 2: hybrid OFF collapse for doubt_solving.
+    # Step 2: hybrid OFF collapse for doubt_solving — Anthropic primary
+    # (CEO directive 2026-08-26), matches router.ts's hybrid-off branch.
     if task == "doubt_solving" and not opts.hybrid_enabled:
         passes_raw = [
             {
@@ -206,9 +213,7 @@ def select_provider_chain(task: TaskType, opts: RouterOptions) -> SelectedChain:
                 "chain": [
                     {"provider": "anthropic", "model": SONNET},
                     {"provider": "anthropic", "model": HAIKU},
-                    # gpt-4o-mini chosen (not GPT_FULL) for cost-effective
-                    # fallback — keeps cutover cost-neutral vs the Anthropic
-                    # baseline. Matches router.ts comment block.
+                    {"provider": "openai", "model": GPT_FULL},
                     {"provider": "openai", "model": GPT_MINI},
                 ],
             }
@@ -223,16 +228,18 @@ def select_provider_chain(task: TaskType, opts: RouterOptions) -> SelectedChain:
             ]
             p["chain"] = [{"provider": "openai", "model": GPT_MINI}, *others]
 
-    # Step 4: priority selection.
+    # Step 4: priority selection — Anthropic primary (CEO directive 2026-08-26).
     if opts.shadow_priority:
-        # Shadow/experiment ONLY: legacy probabilistic 80%-to-OpenAI path.
+        # Shadow/experiment path: weighted-random reorder, anthropic-favored
+        # by default (80%). Mirrors router.ts's unconditional weighted-random
+        # reorder (it has no separate deterministic branch anymore).
         w = opts.weights.get(task)
         if not isinstance(w, int | float):
             w = 0.8
-        head_provider = "openai" if random.random() < w else "anthropic"
+        head_provider = "anthropic" if random.random() < w else "openai"
     else:
-        # A2 live path: OpenAI is ALWAYS primary. Deterministic, no randomness.
-        head_provider = "openai"
+        # Deterministic path: Anthropic is ALWAYS primary. No randomness.
+        head_provider = "anthropic"
 
     for p in passes_raw:
         target = next((t for t in p["chain"] if t["provider"] == head_provider), None)

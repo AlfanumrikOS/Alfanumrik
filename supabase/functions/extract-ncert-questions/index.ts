@@ -191,7 +191,7 @@ async function fetchExerciseChunks(
   let allChunks: Array<{ chunk_text: string; chapter_title: string }> = []
 
   for (const pattern of chapterPatterns) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('rag_content_chunks')
       .select('chunk_text, chapter_title')
       .eq('subject', dbSubject)
@@ -199,6 +199,15 @@ async function fetchExerciseChunks(
       .eq('is_active', true)
       .ilike('chapter_title', pattern)
       .limit(50)
+
+    // Every pattern failing this way ends in `{ chunks: [], chapterTitle: null }`
+    // — reported upstream as "this chapter has no ingested NCERT content",
+    // which is precisely the signal used to scope (paid) re-ingestion. Do not
+    // let a query failure produce it silently.
+    if (error) {
+      console.error('[extract-ncert-questions] chapter chunk read failed:', error.code, error.message)
+      continue
+    }
 
     if (data && data.length > 0) {
       chapterTitle = data[0].chapter_title
@@ -230,7 +239,7 @@ async function fetchExerciseChunks(
   if (exerciseChunks.length === 0) {
     for (const pattern of EXERCISE_PATTERNS.slice(0, 4)) {
       // Use the top 4 patterns
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('rag_content_chunks')
         .select('chunk_text')
         .eq('subject', dbSubject)
@@ -239,6 +248,12 @@ async function fetchExerciseChunks(
         .ilike('chapter_title', `%${chapterTitle}%`)
         .ilike('chunk_text', pattern)
         .limit(10)
+
+      // An empty result reads as "this chapter has no exercise content", which
+      // makes the extractor report a legitimately-ingested chapter as empty.
+      if (error) {
+        console.error('[extract-ncert-questions] exercise-pattern chunk read failed:', error.code, error.message)
+      }
 
       if (data) {
         for (const row of data) {
@@ -698,11 +713,18 @@ async function handleGet(origin: string | null): Promise<Response> {
     .eq('is_active', true)
 
   // Get breakdown by grade/subject for NCERT questions
-  const { data: ncertRows } = await supabase
+  const { data: ncertRows, error: ncertRowsErr } = await supabase
     .from('question_bank')
     .select('grade, subject, chapter_number, source_type')
     .eq('is_active', true)
     .eq('is_ncert', true)
+
+  // Coverage-stats read: an empty result reports "no NCERT questions extracted"
+  // for every grade/subject, which is exactly the number someone would use to
+  // justify re-running a paid extraction over an already-populated corpus.
+  if (ncertRowsErr) {
+    console.error('[extract-ncert-questions] NCERT breakdown read failed:', ncertRowsErr.code, ncertRowsErr.message)
+  }
 
   const breakdown: Record<
     string,

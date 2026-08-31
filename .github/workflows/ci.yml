@@ -1634,6 +1634,37 @@ jobs:
       - name: withRoute() adoption ratchet (P2-2)
         run: npm run check:route-wrapper-ratchet
 
+      # AI-boundary architectural gate (P12 / ADR-005), baseline-ratcheted.
+      # scripts/check-ai-boundary.mjs runs ESLint with
+      # .eslintrc.ai-boundary.json — which promotes three architectural rules
+      # to `error` (no-direct-ai-calls, no-direct-rag-rpc,
+      # no-canonical-write-outside-projector) — over apps/host/src,
+      # packages/lib/src, packages/ui/src and supabase/functions, then diffs
+      # the result against the checked-in ceiling in
+      # scripts/ai-boundary-baseline.json.
+      #
+      # WHY THIS IS NEW (2026-08-31): the gate existed as
+      # `lint:ai-boundary` in apps/host/package.json but was unreachable twice
+      # over. (1) It was chained `bash scripts/check-config-parity.sh && eslint`,
+      # and that script's pre-monorepo paths made it exit 1 on every checkout,
+      # so `&&` meant the eslint NEVER RAN. (2) Nothing in .github/workflows/
+      # or the root package.json referenced it, so it was not in CI at all.
+      # Three rules sat at `error` enforcing nothing. This step is what makes
+      # them enforce something, and what stops the gate rotting silently again.
+      #
+      # 8 pre-existing real violations are RECORDED (not exempted, not
+      # downgraded to `warn`) in the baseline so the gate can be blocking from
+      # day one. A NEW violation, or an extra occurrence in an
+      # already-listed file, fails this step. Fixing one and shrinking the
+      # baseline (`--update`) is always allowed and never fails.
+      #
+      # Uses the workspace node_modules already installed above (ESLint's Node
+      # API); no extra install. This step is intentionally BLOCKING with no
+      # continue-on-error and no `if:` — an event-gated architectural boundary
+      # is a boundary that is off on pull requests, which is when it matters.
+      - name: AI boundary gate (P12 / ADR-005, baseline-ratcheted)
+        run: node scripts/check-ai-boundary.mjs
+
   # ── Step 1c: Unit tests (sharded 4×, 2026-07-20 CI speed-up) ──
   # The full-suite `npm test -- --coverage` run (previously a single ~long step
   # inside the quality job) is split across 4 parallel shards. Vitest shards by
@@ -2073,12 +2104,28 @@ jobs:
   #   no fetch, no top-level await, no module-scope env read. The DB-failure cases
   #   use an in-process object stub, not a socket.
   #
-  #   - grounded-answer/__tests__/ — 5 of its 26 Deno test files are absent from
+  #   2026-08-31: +provider-parity.test.ts (Foxy MOL audit req. 4 — asserts the
+  #   Anthropic and OpenAI request bodies carry the SAME system prompt, safety
+  #   rails, conversation turns, max_tokens and temperature, so P12 instructions
+  #   reach EVERY rung of the cross-provider chain). It shipped passing locally
+  #   but was NOT in this list, so it would never have run in CI — on the one
+  #   test whose entire purpose is guarding the minority traffic slice nobody
+  #   watches. Same static verification as the others: its relative-import
+  #   closure is ../claude.ts + ../prompts/index.ts (→ ./inline.ts, ./config.ts),
+  #   no index.ts, no Deno.serve, no top-level await, no module-scope env read.
+  #   It never opens a socket — globalThis.fetch is replaced with an in-process
+  #   capturing stub that returns canned Responses, and it restores the original
+  #   fetch in a finally block. --allow-read covers prompts/index.ts's .txt
+  #   fallback; --allow-env is unused by it but harmless.
+  #
+  #   - grounded-answer/__tests__/ — 5 of its 27 Deno test files are absent from
   #     DENO_TEST_TARGETS: e2e, pipeline, cache-durable-l3,
   #     foxy-answer-continuation and model-order-cache-fix. All five import
   #     ../index.ts, which calls Deno.serve() (binds a socket → requires
   #     --allow-net + has a server side-effect): flaky/non-deterministic in CI.
-  #     There is no longer any "unexplained TODO" residue in this directory.
+  #     That exclusion set is DELIBERATE and unchanged by the 2026-08-31
+  #     provider-parity addition above. There is no longer any "unexplained
+  #     TODO" residue in this directory.
   #   - alfabot-answer/__tests__/integration.test.ts (statically imports
   #     ../index.ts → Deno.serve) and send-welcome-email/__tests__/
   #     bilingual-welcome.test.ts (DYNAMICALLY imports `../index.ts?cb=…` →
@@ -2181,6 +2228,7 @@ jobs:
         supabase/functions/grounded-answer/__tests__/model-rollout-flag.test.ts
         supabase/functions/grounded-answer/__tests__/output-screen.test.ts
         supabase/functions/grounded-answer/__tests__/prompt-segments.test.ts
+        supabase/functions/grounded-answer/__tests__/provider-parity.test.ts
         supabase/functions/grounded-answer/__tests__/rag-content-version-bump.test.ts
         supabase/functions/grounded-answer/__tests__/retrieval.test.ts
         supabase/functions/grounded-answer/__tests__/trace.test.ts

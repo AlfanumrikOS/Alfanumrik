@@ -217,7 +217,9 @@ interface ConceptChunk {
 // Best-effort: NCERT numbered section headings, e.g. "11.3 PHOTOELECTRIC EFFECT"
 // or "5.2 Prime Numbers" -- short, no trailing period, first line of a paragraph.
 const HEADING_RE = /^(\d{1,2}\.\d{1,2})\s+([A-Za-z][A-Za-z0-9 ,'&-]{2,60})$/;
-const SECTION_LABEL_RE = /^(EXERCISES?|SUMMARY|POINTS TO REMEMBER)$/i;
+// NCERT exercise headers carry a trailing chapter.section number, e.g.
+// "EXERCISE 2.1" -- a bare "^EXERCISES?$" anchor never matches real text.
+const SECTION_LABEL_RE = /^(EXERCISES?(\s+\d{1,2}\.\d{1,2})?|SUMMARY|POINTS TO REMEMBER)$/i;
 const EXAMPLE_RE = /^Example\s+\d+(\.\d+)?/i;
 const FIGURE_RE = /^Fig\.?\s*\d+\.\d+/i;
 
@@ -241,9 +243,15 @@ function detectHeading(paragraph: string): string | null {
 }
 
 function classifyParagraph(paragraph: string, inExerciseSection: boolean): ContentType {
-  const firstLine = paragraph.split('\n')[0].trim();
-  if (EXAMPLE_RE.test(firstLine)) return 'example';
-  if (FIGURE_RE.test(firstLine)) return 'figure_caption';
+  // Same issue as detectHeading: "Example 1 :" / "EXERCISE 2.1" routinely land
+  // mid-paragraph (single newline after the prior sentence, not a paragraph
+  // break), so checking only the first line missed nearly all of them --
+  // confirmed against raw extracted text, not guessed.
+  for (const rawLine of paragraph.split('\n')) {
+    const line = rawLine.trim();
+    if (EXAMPLE_RE.test(line)) return 'example';
+    if (FIGURE_RE.test(line)) return 'figure_caption';
+  }
   if (inExerciseSection) return 'exercise';
   return 'concept';
 }
@@ -276,7 +284,7 @@ function chunkPagesConcepts(pages: Array<{ num: number; text: string }>, targetS
       if (heading) {
         flush();
         currentConcept = heading;
-        inExercise = /^EXERCISES?$/i.test(heading);
+        inExercise = /^EXERCISES?\b/i.test(heading);
       }
 
       const paraType = classifyParagraph(para, inExercise);
@@ -491,26 +499,92 @@ async function cmdIngest(onlyCode?: string, force = false, includeImages = false
   }
 }
 
-async function cmdQuery(question: string, grade?: string, subject?: string, contentType?: string): Promise<void> {
-  if (!question) {
-    console.error('Usage: pinecone-ncert-sandbox.ts query "<question>" [--grade N] [--subject X] [--type concept|example|exercise|figure_caption]');
-    process.exit(2);
-  }
-  const pc = getClient();
+interface SearchHit {
+  id: string;
+  score: number;
+  fields: Record<string, string>;
+}
+
+async function searchOnce(
+  pc: Pinecone,
+  grade: string,
+  subject: string,
+  question: string,
+  contentType?: string,
+  topK = 5
+): Promise<SearchHit[]> {
+  const namespace = `grade-${grade}-${subject}`;
   const index = pc.index(INDEX_NAME);
-  const namespace = grade && subject ? `grade-${grade}-${subject}` : undefined;
-  if (!namespace) {
-    console.error('Both --grade and --subject are required (namespaces are per grade+subject).');
-    process.exit(2);
-  }
   const results = await index.namespace(namespace).searchRecords({
     query: {
       inputs: { text: question },
-      topK: 5,
+      topK,
       ...(contentType ? { filter: { content_type: contentType } } : {}),
     },
   });
-  console.log(JSON.stringify(results, null, 2));
+  // SDK result shape: { result: { hits: [{ _id, _score, fields }] } }
+  const hits = (results as unknown as { result: { hits: Array<{ _id: string; _score: number; fields: Record<string, string> }> } }).result.hits;
+  return hits.map((h) => ({ id: h._id, score: h._score, fields: h.fields }));
+}
+
+async function cmdQuery(question: string, grade?: string, subject?: string, contentType?: string): Promise<void> {
+  if (!question || !grade || !subject) {
+    console.error('Usage: pinecone-ncert-sandbox.ts query "<question>" --grade N --subject X [--type concept|example|exercise|figure_caption]');
+    process.exit(2);
+  }
+  const pc = getClient();
+  const hits = await searchOnce(pc, grade, subject, question, contentType);
+  console.log(JSON.stringify(hits, null, 2));
+}
+
+interface EvalCase {
+  question: string;
+  grade: string;
+  subject: string;
+  contentType?: string;
+  expectConcept?: string; // substring expected in concept_title, for a rough automated check
+}
+
+const EVAL_CASES: EvalCase[] = [
+  { question: 'What is a prime number?', grade: '6', subject: 'mathematics', expectConcept: 'Prime' },
+  { question: 'How does photosynthesis work in plants?', grade: '7', subject: 'science', expectConcept: undefined },
+  { question: 'Show me a worked example of solving a linear equation', grade: '8', subject: 'mathematics', contentType: 'example' },
+  { question: 'What causes acid rain?', grade: '9', subject: 'science', expectConcept: undefined },
+  { question: 'practice questions on quadratic equations', grade: '10', subject: 'mathematics', contentType: 'exercise' },
+  { question: 'What is the photoelectric effect?', grade: '12', subject: 'physics', expectConcept: 'Photoelectric' },
+  { question: "Explain Newton's laws of motion", grade: '11', subject: 'physics', expectConcept: undefined },
+  { question: 'What is the structure of DNA?', grade: '12', subject: 'biology', expectConcept: undefined },
+  { question: 'How do you balance a chemical equation?', grade: '11', subject: 'chemistry', expectConcept: undefined },
+  { question: 'worked example of finding pH of a solution', grade: '12', subject: 'chemistry', contentType: 'example' },
+];
+
+function snippet(text: string, len = 160): string {
+  const s = text.replace(/\s+/g, ' ').trim();
+  return s.length > len ? `${s.slice(0, len)}...` : s;
+}
+
+async function cmdEval(): Promise<void> {
+  const pc = getClient();
+  let imagesSeenTotal = 0;
+  console.log('\n=== NCERT Pinecone RAG quality check ===\n');
+  for (const c of EVAL_CASES) {
+    const hits = await searchOnce(pc, c.grade, c.subject, c.question, c.contentType, 3);
+    const top = hits[0];
+    const conceptMatch = c.expectConcept && top ? top.fields.concept_title?.includes(c.expectConcept) : null;
+    const imageCount = top ? Number(top.fields.image_count || '0') : 0;
+    imagesSeenTotal += imageCount;
+
+    console.log(`Q: "${c.question}"  [grade ${c.grade} ${c.subject}${c.contentType ? `, type=${c.contentType}` : ''}]`);
+    if (!top) {
+      console.log('  NO HITS\n');
+      continue;
+    }
+    console.log(`  top hit: score=${top.score.toFixed(3)} type=${top.fields.content_type} concept="${top.fields.concept_title}" book=${top.fields.book_title} ch=${top.fields.chapter} images=${imageCount}`);
+    console.log(`  snippet: ${snippet(top.fields.chunk_text)}`);
+    if (conceptMatch !== null) console.log(`  expected concept contains "${c.expectConcept}": ${conceptMatch ? 'MATCH' : 'NO MATCH'}`);
+    console.log('');
+  }
+  console.log(`=== Done. Total images referenced across all top hits: ${imagesSeenTotal} (expected 0 -- images are disabled in this corpus) ===\n`);
 }
 
 async function main(): Promise<void> {
@@ -536,9 +610,11 @@ async function main(): Promise<void> {
     }
     case 'reset':
       return cmdReset();
+    case 'eval':
+      return cmdEval();
     default:
       console.error(
-        'Usage: pinecone-ncert-sandbox.ts download | reset | ingest | query "<question>" [--grade N] [--subject X] [--type concept|example|exercise|figure_caption]'
+        'Usage: pinecone-ncert-sandbox.ts download | reset | ingest | query "<question>" --grade N --subject X [--type concept|example|exercise|figure_caption] | eval'
       );
       process.exit(2);
   }

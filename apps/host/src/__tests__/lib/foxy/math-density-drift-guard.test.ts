@@ -584,3 +584,138 @@ describe('§9.1 vertical_math precedence carve-out (spec §9.1.4 pins)', () => {
     expect(lf(onDisk)).toBe(lf(committed));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// foxy_tutor_teach_v1 twin parity (2026-08-31 — guard hole closed)
+//
+// CLOSURE_TEMPLATE_IDS above covers doubt_v1 and exam_v1 but NOT teach_v1, even
+// though teach_v1 is the template behind learn / explain / explorer — the
+// LARGEST share of Foxy traffic. Its .txt <-> inline.ts twins were therefore
+// unguarded, and they have ALREADY FORKED.
+//
+// The fork is cosmetic (3 sites, ASCII-ification of two Unicode characters) and
+// semantically neutral to the model, so it is NOT being "fixed" here — but it is
+// also NOT covered by the two transforms inline.ts's own header DECLARES
+// (inner-backtick -> straight-quote, and U+2264/U+2265 -> <=/>=). The header
+// explicitly says "Other Unicode (em-dash, arrows, multiplication sign, etc.) is
+// fine", and foxy_tutor_v1's own twin does keep its arrows and ellipsis — so
+// this is undeclared, template-local drift, not house policy.
+//
+// Two pins, deliberately different in strength:
+//   HARD  — after applying the observed transforms to BOTH sides, the twin must
+//           be byte-identical to the .txt. This is the real guard: any change to
+//           teach_v1 that alters a WORD in one twin and not the other fails.
+//   DOCUMENTED — the fork today is exactly 3 lines and exactly two character
+//           substitutions. If someone makes the twins byte-identical (a fine
+//           outcome), this second block is what tells them to delete it.
+//
+// NOTE (reported, not fixed): teach_v1 is deliberately NOT added to
+// CLOSURE_TEMPLATE_IDS. It carries NONE of the delimiter-contract markers those
+// tests assert (no docs/math-rendering-spec.md reference, no \( ... \) mandate,
+// no density deferral, no boxing rule) — adding it would produce five real
+// failures describing a genuine content gap, which is an ai-engineer/assessment
+// decision, not something a test file should paper over or silently assert away.
+//
+// Owner: testing. Reviewer: ai-engineer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TEACH_TXT_PATH = join(
+  REPO_ROOT,
+  'supabase/functions/grounded-answer/prompts/foxy_tutor_teach_v1.txt',
+);
+
+/** Pull one `export const NAME = String.raw\`...\`;` literal out of inline.ts. */
+function extractInlineTwin(src: string, constName: string): string {
+  const decl = src.indexOf(`export const ${constName} = String.raw`);
+  if (decl === -1) throw new Error(`inline.ts: ${constName} not found`);
+  const open = src.indexOf('`', decl);
+  if (open === -1) throw new Error(`inline.ts: ${constName} has no opening backtick`);
+  const close = src.indexOf('`', open + 1);
+  if (close === -1) throw new Error(`inline.ts: ${constName} has no closing backtick`);
+  // String.raw with no inner backticks (mandated by inline.ts's header), so the
+  // first closing backtick terminates the literal.
+  return src.slice(open + 1, close);
+}
+
+/** Line-ending-insensitive; trailing blank lines are not prompt content. */
+const lf = (s: string) => s.replace(/\r\n/g, '\n').trimEnd();
+
+/**
+ * The two character substitutions actually observed between the teach_v1 twins.
+ * NOT the transforms inline.ts's header declares — see the block comment above.
+ */
+const OBSERVED_ASCII_TRANSFORMS: Array<[string, string]> = [
+  ['\u2026', '...'], // HORIZONTAL ELLIPSIS
+  ['\u2192', '->'], // RIGHTWARDS ARROW
+];
+
+function applyObservedTransforms(s: string): string {
+  let out = s;
+  for (const [from, to] of OBSERVED_ASCII_TRANSFORMS) out = out.split(from).join(to);
+  return out;
+}
+
+describe('foxy_tutor_teach_v1 — .txt <-> inline.ts twin parity (the runtime serves the INLINE copy)', () => {
+  const teachTxt = lf(readFileSync(TEACH_TXT_PATH, 'utf8'));
+  const teachInline = lf(extractInlineTwin(inlineSrc, 'FOXY_TUTOR_TEACH_V1'));
+
+  it('guard against a vacuous test: both twins were actually extracted and are substantial', () => {
+    expect(teachTxt.length).toBeGreaterThan(4000);
+    expect(teachInline.length).toBeGreaterThan(4000);
+    expect(teachTxt.startsWith('[TEACH MODE')).toBe(true);
+    expect(teachInline.startsWith('[TEACH MODE')).toBe(true);
+  });
+
+  it('HARD PIN: the twins are identical once the observed ASCII transforms are applied to BOTH', () => {
+    // Any word-level edit made to one twin and not the other fails here.
+    expect(applyObservedTransforms(teachInline)).toBe(applyObservedTransforms(teachTxt));
+  });
+
+  it('HARD PIN: both twins carry the 2026-08-31 safety-rails wiring', () => {
+    // A .txt-only rails edit would be a runtime no-op (loadTemplate prefers
+    // inline), which is exactly how the rails gap survived for months.
+    expect(teachTxt).toContain('{{foxy_safety_rails}}');
+    expect(teachInline).toContain('{{foxy_safety_rails}}');
+    expect(teachTxt).toContain('## Safety Rails (P12 — a binding safety FLOOR');
+    expect(teachInline).toContain('## Safety Rails (P12 — a binding safety FLOOR');
+    expect(teachTxt).toContain('{{mode_instruction}}');
+    expect(teachInline).toContain('{{mode_instruction}}');
+  });
+
+  // ── DOCUMENTED FORK (delete this block if the twins are ever made byte-identical) ──
+
+  it('DOCUMENTED: the twins are NOT byte-identical today — 3 lines differ', () => {
+    const a = teachTxt.split('\n');
+    const b = teachInline.split('\n');
+    expect(a.length).toBe(b.length);
+    const differing = a
+      .map((line, i) => (line === b[i] ? -1 : i))
+      .filter((i) => i !== -1);
+    expect(differing.length).toBe(3);
+  });
+
+  it('DOCUMENTED: every differing line differs ONLY by the two observed character substitutions', () => {
+    const a = teachTxt.split('\n');
+    const b = teachInline.split('\n');
+    for (let i = 0; i < a.length; i += 1) {
+      if (a[i] === b[i]) continue;
+      expect(
+        applyObservedTransforms(a[i]),
+        `teach_v1 line ${i + 1} diverges beyond the ASCII-safety transforms`,
+      ).toBe(applyObservedTransforms(b[i]));
+    }
+  });
+
+  it('DOCUMENTED: the inline twin is fully ASCII-fied; the .txt keeps the Unicode originals', () => {
+    expect(teachInline).not.toContain('\u2192');
+    expect(teachInline).not.toContain('\u2026');
+    expect(teachTxt).toContain('\u2192');
+    expect(teachTxt).toContain('\u2026');
+  });
+
+  it('DOCUMENTED: this is template-LOCAL drift, not house policy — foxy_tutor_v1\'s twin keeps its Unicode', () => {
+    const v1Inline = extractInlineTwin(inlineSrc, 'FOXY_TUTOR_V1');
+    expect(v1Inline).toContain('\u2192');
+    expect(v1Inline).toContain('\u2026');
+  });
+});

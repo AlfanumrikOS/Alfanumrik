@@ -134,7 +134,7 @@ export const RUBRIC_VERSION = 'v3';
 // fidelity does. Pinned to the same model id used elsewhere in the codebase
 // (supabase/functions/grounded-answer/claude.ts:21) so behaviour stays
 // consistent. Bump alongside that file when migrating.
-export const JUDGE_MODEL = 'claude-sonnet-4-20250514';
+export const JUDGE_MODEL = 'claude-sonnet-4-5-20250929';
 
 const COMPOSITE_WEIGHTS = {
   accuracy: 0.40,

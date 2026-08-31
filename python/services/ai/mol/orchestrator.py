@@ -313,8 +313,9 @@ async def generate_response(req: GenerateRequest) -> MolResult:
             hybrid_enabled=hybrid_on,
             openai_default=openai_default,
             weights=weights,
-            # deterministic ON  ⇒ shadow_priority OFF (OpenAI always primary).
-            # deterministic OFF ⇒ legacy probabilistic path (shadow/experiment).
+            # deterministic ON  ⇒ shadow_priority OFF (Anthropic always primary).
+            # deterministic OFF ⇒ weighted-random path (shadow/experiment,
+            # still anthropic-favored by default — see router.py).
             shadow_priority=not deterministic_on,
         ),
     )

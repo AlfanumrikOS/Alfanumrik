@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
 import { supabase } from '@alfanumrik/lib/supabase';
 
 interface RetentionTest {
@@ -35,7 +36,7 @@ export default function RetentionTestsSection() {
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('retention_tests')
           .select('id, topic_title, subject, predicted_retention, scheduled_date')
           .eq('student_id', student.id)
@@ -43,7 +44,17 @@ export default function RetentionTestsSection() {
           .lte('scheduled_date', new Date().toISOString().split('T')[0])
           .order('scheduled_date')
           .limit(5);
-        if (!cancelled) setTests(data ?? []);
+        if (cancelled) return;
+        // supabase-js resolves {data, error} and never throws — the catch
+        // below is unreachable for query failures. This section hides itself
+        // when empty, so a dropped error looks exactly like "nothing due".
+        // P13: pg error code only, never student id or topic titles.
+        if (error) {
+          logger.warn('retention tests fetch failed', { code: error.code });
+          setTests([]);
+          return;
+        }
+        setTests(data ?? []);
       } catch {
         if (!cancelled) setTests([]);
       }

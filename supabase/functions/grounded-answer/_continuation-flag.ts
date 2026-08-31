@@ -26,11 +26,23 @@ export async function isAnswerContinuationEnabled(sb: any): Promise<boolean> {
   }
 
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', 'ff_foxy_answer_continuation_v1')
       .single();
+    // supabase-js resolves instead of throwing, so the fail-CLOSED catch below
+    // never actually ran for a query error — the flag just resolved OFF and was
+    // cached as a SUCCESS, with no log. The outcome is the same (OFF), but the
+    // reason was unrecorded. PGRST116 ("no rows") is the documented
+    // missing-row case and stays deliberately silent.
+    if (error && error.code !== 'PGRST116') {
+      console.warn(
+        `ff_foxy_answer_continuation_v1 lookup failed — ${error.code}: ${error.message}`,
+      );
+      continuationFlagCache = { value: false, expiresAt: now + CONTINUATION_FLAG_CACHE_TTL_MS };
+      return false;
+    }
     // Default OFF: only a row with is_enabled === true enables the behavior.
     // A missing row (migration not applied / dev DB) → OFF (fail-closed).
     const value = data?.is_enabled === true;

@@ -20,6 +20,32 @@ import { getRequestOrigin } from '../_shared/security/attribution.ts'
 // ── Platform Security Layer — Phase 3 integration ──
 const ROUTE_NAME = 'scan-ocr'
 
+/**
+ * Record a supabase-js / storage failure that this handler deliberately
+ * degrades past (404 "not found", missing signed URL, empty scan list).
+ *
+ * supabase-js resolves `{ data, error }` and never throws, so every one of
+ * those degrades previously reported a confident, WRONG user-facing fact —
+ * "scan not found" for a scan that exists, "no scans" for a student who has
+ * uploaded dozens. The degrade is preserved (fail-closed is right here); this
+ * makes the underlying fault observable.
+ *
+ * PGRST116 ("no rows" from `.single()`) is deliberately NOT logged: every
+ * scan_id here comes from the request body, so a miss is ordinary traffic and
+ * logging it would be a free log-flood vector. The 404 the caller already
+ * returns is the correct and sufficient response to that case.
+ *
+ * P13: query site + Postgres error code/message only — never file names,
+ * OCR text, or student identifiers.
+ */
+function logQueryError(
+  step: string,
+  error: { code?: string | null; message?: string } | null | undefined,
+): void {
+  if (!error || error.code === 'PGRST116') return
+  console.error(`[scan-ocr] ${step} read failed:`, error.code, error.message)
+}
+
 const SCAN_OCR_PROFILE = createStaticAiRouteProfile({
   route: ROUTE_NAME,
   callerTypes: ['student', 'internal_service'],
@@ -197,8 +223,9 @@ serve(async (req) => {
       })
     }
 
-    const { data: student } = await supabase
+    const { data: student, error: studentErr } = await supabase
       .from('students').select('id').eq('auth_user_id', user.id).eq('is_active', true).maybeSingle()
+    logQueryError('students', studentErr)
     if (!student) {
       await finalizeAiRoute({ sb, admission, statusCode: 404, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'student_not_found' })
       return new Response(JSON.stringify({ error: 'Student not found' }), {
@@ -288,9 +315,10 @@ serve(async (req) => {
       }
 
       // Get signed URL for the file
-      const { data: signedUrl } = await supabase.storage
+      const { data: signedUrl, error: signedUrlErr } = await supabase.storage
         .from('student-scans')
         .createSignedUrl(storage_path, 300) // 5 min
+      logQueryError('student-scans', signedUrlErr)
 
       if (!signedUrl?.signedUrl) {
         await supabase.from('student_scans').update({ status: 'failed', error_message: 'Could not access file' }).eq('id', scan.id)
@@ -347,12 +375,24 @@ serve(async (req) => {
       const limit = 10
       const offset = (page - 1) * limit
 
-      const { data: scans, count } = await supabase
+      const { data: scans, count, error: scansErr } = await supabase
         .from('student_scans')
         .select('id, file_name, file_type, status, ocr_confidence, created_at, updated_at', { count: 'exact' })
         .eq('student_id', student.id)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1)
+
+      // "You have no scans" is the single most misleading thing this endpoint
+      // can say to a student who has uploaded work. Report the failure instead
+      // of an empty page.
+      if (scansErr) {
+        logQueryError('student_scans list', scansErr)
+        await finalizeAiRoute({ sb, admission, statusCode: 503, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'scan_list_unavailable' })
+        return new Response(JSON.stringify({ error: 'Could not load your scans. Please try again.' }), {
+          status: 503,
+          headers: { ...securityCorsHeaders(origin), 'Content-Type': 'application/json' },
+        })
+      }
 
       await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens: null, actualOutputTokens: null, actualCost: null })
       return new Response(JSON.stringify({ data: scans || [], total: count || 0, page }), {
@@ -371,12 +411,13 @@ serve(async (req) => {
         })
       }
 
-      const { data: scan } = await supabase
+      const { data: scan, error: scanErr } = await supabase
         .from('student_scans')
         .select('*')
         .eq('id', scan_id)
         .eq('student_id', student.id)
         .single()
+      logQueryError('student_scans', scanErr)
 
       if (!scan) {
         await finalizeAiRoute({ sb, admission, statusCode: 404, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'scan_not_found' })
@@ -389,16 +430,18 @@ serve(async (req) => {
       // Get signed URL for viewing
       let imageUrl = null
       if (scan.storage_path) {
-        const { data } = await supabase.storage.from('student-scans').createSignedUrl(scan.storage_path, 3600)
+        const { data, error: dataErr } = await supabase.storage.from('student-scans').createSignedUrl(scan.storage_path, 3600)
+        logQueryError('student-scans', dataErr)
         imageUrl = data?.signedUrl || null
       }
 
       // Get queries
-      const { data: queries } = await supabase
+      const { data: queries, error: queriesErr } = await supabase
         .from('foxy_scan_queries')
         .select('id, question, response, created_at')
         .eq('scan_id', scan_id)
         .order('created_at', { ascending: true })
+      logQueryError('foxy_scan_queries', queriesErr)
 
       await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens: null, actualOutputTokens: null, actualCost: null })
       return new Response(JSON.stringify({ ...scan, image_url: imageUrl, queries: queries || [] }), {
@@ -409,12 +452,13 @@ serve(async (req) => {
     // ── RETRY OCR ──
     if (action === 'retry_ocr') {
       const { scan_id } = body as { scan_id?: string }
-      const { data: scan } = await supabase
+      const { data: scan, error: scanErr2 } = await supabase
         .from('student_scans')
         .select('id, storage_path, status')
         .eq('id', scan_id)
         .eq('student_id', student.id)
         .single()
+      logQueryError('student_scans', scanErr2)
 
       if (!scan) {
         await finalizeAiRoute({ sb, admission, statusCode: 404, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'scan_not_found' })
@@ -426,7 +470,8 @@ serve(async (req) => {
 
       await supabase.from('student_scans').update({ status: 'processing', error_message: null }).eq('id', scan.id)
 
-      const { data: signedUrl } = await supabase.storage.from('student-scans').createSignedUrl(scan.storage_path, 300)
+      const { data: signedUrl, error: signedUrlErr2 } = await supabase.storage.from('student-scans').createSignedUrl(scan.storage_path, 300)
+      logQueryError('student-scans', signedUrlErr2)
       if (!signedUrl?.signedUrl) {
         await supabase.from('student_scans').update({ status: 'failed', error_message: 'File not accessible' }).eq('id', scan.id)
         await finalizeAiRoute({ sb, admission, statusCode: 500, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'file_not_accessible' })
@@ -468,12 +513,13 @@ serve(async (req) => {
       }
 
       // Get scan text
-      const { data: scan } = await supabase
+      const { data: scan, error: scanErr3 } = await supabase
         .from('student_scans')
         .select('normalized_text, file_name')
         .eq('id', scan_id)
         .eq('student_id', student.id)
         .single()
+      logQueryError('student_scans', scanErr3)
 
       if (!scan || !scan.normalized_text) {
         await finalizeAiRoute({ sb, admission, statusCode: 404, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'scan_text_unavailable' })
@@ -513,7 +559,7 @@ Based on this scanned document, help the student with their question. Be clear, 
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-5-20250929',
           max_tokens: 1500,
           system: systemPrompt,
           messages: [{ role: 'user', content: question }],

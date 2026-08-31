@@ -32,12 +32,21 @@ serve(async (req) => {
       const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
 
       // Check if this token is already registered
-      const { data: existing } = await supabase
+      const { data: existing, error: existingErr } = await supabase
         .from('user_active_sessions')
         .select('id')
         .eq('session_token_hash', hashHex)
         .eq('is_active', true)
         .limit(1)
+
+      // supabase-js resolves rather than throws, so the outer catch never saw
+      // this. Reading a failure as "not registered yet" would insert a SECOND
+      // active row for the same token, inflating the device count and evicting
+      // a legitimate device. Refuse instead — the client can retry.
+      if (existingErr) {
+        console.error('[session-guard] register: existing-session probe failed:', existingErr.code, existingErr.message)
+        return json({ error: 'Session registry unavailable' }, 503)
+      }
 
       if (existing && existing.length > 0) {
         // Update last_seen
@@ -46,12 +55,20 @@ serve(async (req) => {
       }
 
       // Count active sessions
-      const { data: activeSessions } = await supabase
+      const { data: activeSessions, error: activeErr } = await supabase
         .from('user_active_sessions')
         .select('id, created_at, device_label')
         .eq('auth_user_id', user.id)
         .eq('is_active', true)
         .order('created_at', { ascending: true })
+
+      // This count IS the MAX_SESSIONS enforcement. Reading a failure as "zero
+      // active sessions" silently disables the 2-device limit for this request
+      // — a security control failing open. Refuse instead.
+      if (activeErr) {
+        console.error('[session-guard] register: active-session count failed:', activeErr.code, activeErr.message)
+        return json({ error: 'Session registry unavailable' }, 503)
+      }
 
       const active = activeSessions || []
 
@@ -72,7 +89,7 @@ serve(async (req) => {
       }
 
       // Register new session
-      const { data: newSession } = await supabase
+      const { data: newSession, error: newSessionErr } = await supabase
         .from('user_active_sessions')
         .insert({
           auth_user_id: user.id,
@@ -83,6 +100,14 @@ serve(async (req) => {
         })
         .select('id')
         .single()
+
+      // A failed insert previously still returned status 'registered' with an
+      // undefined session_id — the caller believed it had a session that does
+      // not exist. Report the failure instead.
+      if (newSessionErr || !newSession) {
+        console.error('[session-guard] register: session insert failed:', newSessionErr?.code, newSessionErr?.message)
+        return json({ error: 'Could not register session' }, 503)
+      }
 
       await supabase.from('identity_events').insert({
         auth_user_id: user.id,
@@ -99,12 +124,20 @@ serve(async (req) => {
 
     // ── CHECK SESSION ──
     if (action === 'check') {
-      const { data: session } = await supabase
+      const { data: session, error: sessionErr } = await supabase
         .from('user_active_sessions')
         .select('id, is_active, revoked_at')
         .eq('session_token_hash', hashHex)
         .limit(1)
         .maybeSingle()
+
+      // "We could not read the registry" is NOT "this session is not
+      // registered". Returning the latter would log every user out on a
+      // transient DB fault. Report the fault so the client can retry.
+      if (sessionErr) {
+        console.error('[session-guard] check: session read failed:', sessionErr.code, sessionErr.message)
+        return json({ error: 'Session registry unavailable' }, 503)
+      }
 
       if (!session) return json({ valid: false, reason: 'Session not registered' })
       if (!session.is_active) return json({ valid: false, reason: 'Session was ended because you logged in on another device.' })
@@ -132,12 +165,20 @@ serve(async (req) => {
 
     // ── LIST SESSIONS ──
     if (action === 'list') {
-      const { data: sessions } = await supabase
+      const { data: sessions, error: sessionsErr } = await supabase
         .from('user_active_sessions')
         .select('id, device_label, created_at, last_seen_at, is_active')
         .eq('auth_user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(10)
+
+      // An empty list here reads as "you have no other devices signed in",
+      // which is exactly the wrong thing to tell a user auditing their
+      // sessions. Report the failure rather than an empty list.
+      if (sessionsErr) {
+        console.error('[session-guard] list: session list read failed:', sessionsErr.code, sessionsErr.message)
+        return json({ error: 'Session registry unavailable' }, 503)
+      }
 
       return json({ sessions: sessions || [] })
     }

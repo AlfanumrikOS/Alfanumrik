@@ -365,7 +365,7 @@ module embeds no AI transport, no SDK import, no endpoint URL), temperature 0,
 versioned rubric id, strict-JSON output, fenced-code recovery, clamping, and
 never-throws conservative failure.
 
-- **Model: `claude-sonnet-4-20250514`** — already registered
+- **Model: `claude-sonnet-4-5-20250929`** — already registered
   (`packages/lib/src/ai/gateway/registry.ts` `ANTHROPIC_SONNET_ID`), already
   priced, and already the model the B1 relevance judge uses. **No new model, no
   new provider**, so no CEO model-approval gate is tripped. It is *pinned* (the
