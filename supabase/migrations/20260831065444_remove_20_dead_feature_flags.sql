@@ -32,6 +32,23 @@
 CREATE TABLE IF NOT EXISTS public._feature_flags_dead_flags_backup_20260831 AS
 SELECT * FROM public.feature_flags WHERE 1=0;
 
+-- CI's "Migration Safety: RLS Coverage" check (CLAUDE.md P8) requires every
+-- CREATE TABLE to enable RLS in the same migration file. Matches the
+-- existing repo convention for backup tables (_ao10b_grade_backfill_backup,
+-- 20260702070000_ao10b_backfill_student_grade_p5.sql): service_role bypasses
+-- RLS regardless, but an explicit ALL-for-service_role policy makes the
+-- intent unambiguous and leaves the table fully closed to anon/authenticated
+-- (no policy for them => deny-by-default).
+ALTER TABLE public._feature_flags_dead_flags_backup_20260831 ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "_feature_flags_dead_flags_backup_service_role_all" ON public._feature_flags_dead_flags_backup_20260831;
+CREATE POLICY "_feature_flags_dead_flags_backup_service_role_all"
+  ON public._feature_flags_dead_flags_backup_20260831
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
 INSERT INTO public._feature_flags_dead_flags_backup_20260831
 SELECT * FROM public.feature_flags
 WHERE flag_name IN (
