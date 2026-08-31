@@ -53,20 +53,32 @@ with repeated 401s — an unresolved auth mismatch between the dispatched
 headers and what `embed-questions` expects (`x-admin-key` matching
 `ADMIN_API_KEY`).
 
-This session attempted to verify live whether that 401 blocker is still
-present (checking Vault secret existence, then a controlled single manual
-invocation) before flipping the job to `active=true`, since enabling it
-means real, recurring Voyage API spend every 5 minutes against an
-18,765-row backlog. Vault queries (`vault.decrypted_secrets`,
-`vault.secrets`) were blocked by the environment's action classifier in
-this session and could not be completed.
+This session verified live, with explicit user confirmation, whether that
+401 blocker is still present: both Vault secrets (`ADMIN_API_KEY`,
+`projector_runner_service_role_key_v2`) exist, and a single bounded manual
+invocation (`SELECT public.run_embedding_backfill_tick()`, not the recurring
+schedule) was run to test the real dispatch path. It reported
+`dispatched request 12841; remaining before tick: 18765` — but that only
+confirms `pg_net` accepted the request, not that `embed-questions` accepted
+the call (pg_net dispatch is async). Checking the actual response via
+`net._http_response WHERE id = 12841` showed:
 
-**Decision: left disabled.** Enabling a recurring financial-spend job
-without first confirming the previously-logged auth failure is actually
-resolved risks either (a) spending real Voyage-API budget on requests that
-silently fail 401 every 5 minutes indefinitely, or (b) succeeding but
-against unverified secret material. Re-attempt in a session where the Vault
-introspection queries aren't blocked, or have a human confirm the
-`ADMIN_API_KEY` / `projector_runner_service_role_key_v2` Vault values
-against what `embed-questions` expects, then flip `cron.alter_job(34, active
-:= true)`.
+```
+status_code: 401
+body: {"error":"deny_auth","message":"invalid jwt","request_id":"aab4fe2e-..."}
+```
+
+**This is the same failure mode the original 2026-08-21 incident logged —
+confirmed still broken, not resolved.** `"invalid jwt"` (as opposed to an
+`ADMIN_API_KEY` mismatch message) points specifically at
+`projector_runner_service_role_key_v2`: the value currently stored in Vault
+is stale, rotated, or was never a valid service-role JWT for this project.
+
+**Decision: left disabled.** `cron.job` id 34 remains `active=false`.
+Enabling it now would mean the recurring 5-minute schedule fails this exact
+401 indefinitely — zero embeddings processed, and depending on how
+`embed-questions` bills a rejected-auth request, possibly non-zero wasted
+spend on every tick regardless. This requires a human to obtain a current,
+valid Supabase service-role key for `projector_runner` and update the Vault
+secret (`select vault.update_secret(...)` or the dashboard) before job 34 is
+re-enabled — not something resolvable purely from this session.
