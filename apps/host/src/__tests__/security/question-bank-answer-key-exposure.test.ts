@@ -3,69 +3,74 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, relative, sep } from 'node:path';
 
 /**
- * R2 / finding C2 — `question_bank` answer key is readable by ANY authenticated
- * user (P1 / P3 / P6 / P8).
+ * R2 / finding C2 (CLOSED 2026-08-31) — `question_bank` answer key was readable
+ * by ANY authenticated user (P1 / P3 / P6 / P8).
  *
- * WHAT IS BROKEN, RIGHT NOW, IN PRODUCTION
- * ========================================
+ * WHAT WAS BROKEN
+ * ================
  * `public.question_bank` has RLS enabled (baseline:21665, re-asserted
- * 20260728090000:308) and exactly ONE policy:
- *
- *   question_bank_authenticated_read  FOR SELECT TO authenticated USING (true)
- *                                     (20260728090000:311-312)
- *
- * The baseline pg_dump ships no per-table GRANT and ends with
+ * 20260728090000:308) with a policy `question_bank_authenticated_read`
+ * (FOR SELECT TO authenticated USING (true), 20260728090000:311-312). The
+ * baseline pg_dump ships no per-table GRANT and ends with
  * `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON TABLES TO anon, authenticated,
  * service_role` (baseline:22640-22643). PostgreSQL RLS is ROW-level and cannot
- * restrict COLUMNS, so `authenticated` holds a table-level ALL and row
- * visibility is the only gate. Therefore:
- *
+ * restrict COLUMNS, so `authenticated` held a table-level ALL and row
+ * visibility was the only gate — any signed-in user could read the answer key
+ * for any of the ~12.8k questions:
  *   GET /rest/v1/question_bank?select=id,correct_answer_index&id=eq.<uuid>
  *
- * returns the answer key for ANY of the ~12.8k questions to ANY signed-in user.
- * This is strictly WIDER than the per-session leak closed by 20260814000020
- * (that one covered a single in-flight session; this one is the whole bank).
- *
- * WHY THERE IS NO ACL MIGRATION YET
- * =================================
- * The fix shape is settled and matches 20260814000020: table-level `REVOKE ALL`
- * from the client roles, then a literal column-level `GRANT SELECT` on the 94
- * non-key columns, withholding the 9 in KEY_COLUMNS below. It cannot ship alone,
- * because consumers read those columns TODAY under the CALLER's role — and one
- * class of them is unfixable by any code change:
- *
- *   mobile/lib/data/repositories/quiz_repository.dart:104 calls `.select()`
- *   with no argument => PostgREST `select=*` => `SELECT question_bank.*`, which
- *   needs SELECT on EVERY column and so fails under ANY column allowlist,
- *   whichever columns are withheld. `useV2` is a COMPILE-TIME constant
- *   defaulting to false (mobile/lib/core/constants/api_constants.dart:61;
- *   mobile/build_apk.sh:93 passes `USE_V2="${USE_V2:-false}"`), so every APK
- *   already installed takes that path. Applying the ACL before a forced mobile
- *   upgrade is a live outage for the installed base.
+ * WHY THE ONCE-DOCUMENTED MOBILE BLOCKER NO LONGER APPLIED
+ * ==========================================================
+ * An earlier version of this file (and the audit that produced it) recorded a
+ * mobile blocker as the reason the ACL couldn't ship: a bare `.select()` in
+ * mobile/lib/data/repositories/quiz_repository.dart would fail under any
+ * column allowlist, and an installed app base couldn't be force-upgraded. Both
+ * halves of that were re-verified stale on 2026-08-31: (1) commit 681b8b43
+ * (2026-08-11) already rewrote quiz_repository.dart to call
+ * `.select(_questionColumns)`, an explicit list excluding the answer key, on
+ * both the useV2=true and useV2=false paths — mobile/pyq_repository.dart (the
+ * other cited call site) no longer exists, retired the same commit; (2)
+ * multiple independent signals (mobile/pubspec.yaml frozen at 1.1.0+2 since
+ * 2026-06-06, zero `mobile-v*` release tags ever pushed, an unchecked Play
+ * Store row in LAUNCH_CHECKLIST.md, zero authenticated-role traffic to
+ * question_bank across four 24h log samples spanning 6+ weeks) show no real
+ * installed mobile user base exists to break. The fix shipped
+ * (2026-08-31, migration below) using the exact table-level-REVOKE-then-
+ * column-level-GRANT pattern already proven safe in production by
+ * 20260814000020 (see quiz-session-shuffles-answer-key-acl.test.ts) — a
+ * column-level REVOKE alone against the baseline table-level grant would be a
+ * no-op (20260814000000:29-32).
  *
  * WHAT THIS FILE PINS
  * ===================
- * It is a BLOCKER-INVENTORY canary, not a proof that the hole is closed — the
- * hole is open and this file says so out loud rather than asserting a fiction.
- *
- *   Lane A  The defect is still exactly as described (policy shape + absence of
- *           any table-level REVOKE on question_bank anywhere in the chain).
- *           When someone finally ships the ACL, Lane A goes red and whoever
- *           does it must come here and convert this file into the real
- *           "authenticated is refused 42501" assertion.
+ *   Lane A  The ACL migration exists, is shaped correctly (table-level revoke
+ *           from both client roles, column-level allowlist to authenticated
+ *           excluding the 9 key columns, self-verifying post-conditions), and
+ *           a DRIFT GUARD — no later root migration may re-open the table or
+ *           either key column to a client role. Unlike the sibling
+ *           quiz-session-shuffles test, this does NOT replay the full
+ *           migration chain through a column-grant simulator (94 columns vs.
+ *           10, and no established pattern yet of additive per-column grants
+ *           on question_bank) — the allowlist here is asserted as an exact
+ *           literal against the ACL migration itself. A genuinely legitimate
+ *           future additive column grant WILL need a corresponding update to
+ *           this test's expected list; that is a deliberate fail-closed
+ *           tradeoff, not an oversight — see quiz-session-shuffles-answer-key-
+ *           acl.test.ts's own comments for why a frozen literal is normally
+ *           the wrong call, and reconsider whether this file should grow the
+ *           same chain-derivation machinery if question_bank starts
+ *           accumulating additive grants the way that table did.
  *
  *   Lane B  The exact set of caller-role `question_bank` readers that consume a
- *           withheld column is FROZEN. A new one going red means R2 just got
- *           wider. An old one going red means a blocker was cleared and the
- *           ship set shrank. Either way it is news, and either way it is
- *           reviewed rather than discovered in production.
+ *           withheld column is FROZEN (still empty — this is now purely a
+ *           regression guard, not a blocker inventory). A new one going red
+ *           means R2 reopened.
  *
  *   Lane C  The P1/P4 scoring + serving RPCs stay SECURITY DEFINER. That is the
- *           single property that makes the eventual column ACL safe for
- *           scoring: DEFINER functions execute as the OWNER, so caller-role
- *           ACLs never apply to them. If one of these silently flips to
- *           INVOKER, the ACL stops being safe and this test says so BEFORE the
- *           migration lands.
+ *           single property that makes the column ACL safe for scoring:
+ *           DEFINER functions execute as the OWNER, so caller-role ACLs never
+ *           apply to them. If one of these silently flips to INVOKER, the ACL
+ *           stops being safe and this test says so.
  *
  * P1/P4 note: nothing in this file executes SQL or touches scoring. It is a
  * static scan of the repo and the migration chain.
@@ -207,70 +212,130 @@ const uncommented = (sql: string) =>
   sql.split('\n').map(l => l.replace(/--.*$/, '')).join('\n');
 
 describe('R2 — question_bank answer-key exposure (P1/P3/P6/P8)', () => {
-  // ── Lane A: the hole is still open, and shaped exactly as documented ──────
-  describe('Lane A — the defect, asserted from the migration chain', () => {
-    it('the only SELECT policy on question_bank scoped TO authenticated is USING (true)', () => {
-      // Migration 20260814000015 (content-reporter read-only role) added a SECOND,
-      // later, SELECT policy on question_bank -- "question_bank_content_reporter_read"
-      // FOR SELECT TO content_reporter USING (true). That policy is scoped to a
-      // distinct, non-interactive DB role (content_reporter) whose column-level
-      // GRANTs withhold every answer-key column (see that migration's section 5.3) --
-      // RLS policies for different roles do not OR together across roles, so it adds
-      // ZERO visibility for `authenticated` and does not touch R2 at all. Taking the
-      // chronologically LAST `CREATE POLICY ... ON question_bank` regardless of role
-      // (the original mechanism here) picked up that unrelated addition and went red
-      // on a change that never touched the authenticated-role posture this test
-      // exists to pin. Filtering to policies scoped `TO authenticated` restores the
-      // original intent: still-open R2 is `question_bank_authenticated_read`
-      // (20260728090000:311-312), untouched by every migration since (verified by
-      // grep -- 20260814000000/20260814000020/20260814000023 only reference it in
-      // prose, never redefine it).
-      const policies: { migration: string; text: string }[] = [];
-      for (const { name, sql } of rootMigrations()) {
-        const re = /CREATE POLICY\s+"?([\w]+)"?\s+ON\s+"?public"?\."?question_bank"?([\s\S]{0,240}?);/gi;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(uncommented(sql))) !== null) {
-          policies.push({ migration: name, text: m[0] });
-        }
-      }
-      expect(policies.length).toBeGreaterThan(0);
-      const authenticatedPolicies = policies.filter(p =>
-        /FOR SELECT\s+TO\s+"?authenticated"?/i.test(p.text),
-      );
-      expect(authenticatedPolicies.length).toBeGreaterThan(0);
-      const live = authenticatedPolicies[authenticatedPolicies.length - 1];
-      expect(live.migration).toBe('20260728090000_lockdown_anon_readable_public_tables.sql');
-      expect(live.text).toMatch(/FOR SELECT\s+TO\s+"?authenticated"?/i);
-      expect(live.text).toMatch(/USING\s*\(\s*true\s*\)/i);
+  // ── Lane A: the ACL exists and is shaped correctly ───────────────────────
+  describe('Lane A — the answer-key column ACL, asserted from the migration chain', () => {
+    const MIGRATION_FILE = '20260831021852_h1_question_bank_answer_key_column_acl.sql';
+    const files = readdirSync(MIGRATIONS).filter(f => f.endsWith('.sql')).sort();
+    const migrationPath = resolve(MIGRATIONS, MIGRATION_FILE);
+    const raw = readFileSync(migrationPath, 'utf8');
+    const sql = uncommented(raw);
+
+    // The 94 non-key columns exactly as granted by the migration — see that
+    // file's header for how this list was derived (every column of
+    // question_bank at authoring time, minus the 9 in KEY_COLUMNS).
+    const NON_KEY_COLUMNS = [
+      'id', 'subject', 'grade', 'topic_id', 'chapter_number', 'question_text',
+      'question_hi', 'question_hinglish', 'question_type', 'options',
+      'explanation', 'explanation_hi', 'hint', 'difficulty', 'bloom_level',
+      'tags', 'source', 'irt_difficulty', 'irt_discrimination', 'times_shown',
+      'times_correct', 'avg_time_seconds', 'is_active', 'is_verified',
+      'created_at', 'generation_batch', 'times_wrong', 'discrimination_index',
+      'last_served_at', 'concept_code', 'layer', 'deleted_at', 'updated_at',
+      'board_year', 'marks', 'cbse_question_type', 'paper_section',
+      'cognitive_load', 'prerequisite_concepts', 'common_mistakes',
+      'time_estimate_seconds', 'cbse_paper_id', 'interleaving_eligible',
+      'irt_guessing', 'irt_calibrated', 'irt_response_count', 'hint_level_1',
+      'hint_level_2', 'hint_level_3', 'content_status', 'created_by',
+      'updated_by', 'reviewed_by', 'published_by', 'published_at',
+      'review_notes', 'search_vector', 'source_version', 'concept_tag',
+      'chapter_id', 'question_type_v2', 'case_passage', 'case_passage_hi',
+      'max_marks', 'ncert_exercise', 'ncert_page', 'is_ncert',
+      'board_relevance', 'board_relevance_note', 'source_type',
+      'marks_expected', 'embedding', 'embedded_at', 'verified_against_ncert',
+      'verification_state', 'verification_claimed_by',
+      'verification_claim_expires_at', 'verifier_chunk_ids', 'verifier_model',
+      'verifier_trace_id', 'verified_at', 'verifier_failure_reason', 'irt_a',
+      'irt_b', 'irt_calibration_n', 'irt_calibrated_at', 'quality_status',
+      'chapter_title', 'exam_session', 'question_number', 'marks_correct',
+      'marks_wrong', 'paper_pattern', 'exam_paper_id',
+    ] as const;
+
+    it('the ACL migration exists in the chain', () => {
+      expect(files).toContain(MIGRATION_FILE);
     });
 
-    it('no migration revokes the baseline table-level grant on question_bank', () => {
-      // The ALTER DEFAULT PRIVILEGES in the baseline (22640-22643) hands anon +
-      // authenticated a table-level ALL. Until some migration revokes it, RLS
-      // row visibility is the ONLY gate and every column is readable.
-      const revokes: string[] = [];
-      for (const { name, sql } of rootMigrations()) {
-        if (/REVOKE[\s\S]{0,120}?ON\s+TABLE\s+"?public"?\."?question_bank"?/i.test(uncommented(sql))) {
-          revokes.push(name);
+    it('is wrapped in a single BEGIN; … COMMIT; transaction', () => {
+      expect(sql).toMatch(/^\s*BEGIN;/m);
+      expect(sql).toMatch(/^COMMIT;\s*$/m);
+    });
+
+    it('revokes the baseline table-level grant from BOTH client roles', () => {
+      for (const role of ['authenticated', 'anon']) {
+        expect(
+          sql,
+          `missing table-level REVOKE ALL from ${role} — a column-level REVOKE alone ` +
+            'is a no-op against the baseline default-privileges table grant',
+        ).toMatch(new RegExp(`REVOKE\\s+ALL\\s+ON\\s+TABLE\\s+public\\.question_bank\\s+FROM\\s+${role}\\s*;`, 'i'));
+      }
+    });
+
+    it('re-grants column-level SELECT to authenticated on EXACTLY the 94 non-key columns', () => {
+      const m = sql.match(
+        /GRANT\s+SELECT\s*\(([^)]*)\)\s*ON\s+TABLE\s+public\.question_bank\s+TO\s+authenticated\s*;/i,
+      );
+      expect(m, 'no column-scoped GRANT SELECT … TO authenticated found').toBeTruthy();
+      const granted = m![1].split(',').map(s => s.trim().replace(/"/g, '')).filter(Boolean).sort();
+      expect(granted).toEqual([...NON_KEY_COLUMNS].sort());
+      for (const key of KEY_COLUMNS) {
+        expect(granted, `${key} must never appear in the authenticated allowlist`).not.toContain(key);
+      }
+    });
+
+    it('grants NOTHING to anon', () => {
+      expect(sql).not.toMatch(/GRANT[\s\S]{0,200}?question_bank[\s\S]{0,80}?TO\s+anon\b/i);
+    });
+
+    it('explicitly revokes all 9 answer-key columns from both client roles (belt-and-braces)', () => {
+      for (const role of ['anon', 'authenticated']) {
+        const re = new RegExp(
+          `REVOKE\\s+SELECT\\s*\\([\\s\\S]{0,400}?\\)\\s*ON\\s+TABLE\\s+public\\.question_bank\\s+FROM\\s+[\\s\\S]{0,60}?\\b${role}\\b`,
+          'i',
+        );
+        expect(sql, `missing explicit column REVOKE naming ${role}`).toMatch(re);
+      }
+    });
+
+    it('carries in-transaction post-conditions that roll back a half-applied or ineffective ACL', () => {
+      expect(sql).toMatch(/has_column_privilege\(\s*'authenticated'/);
+      expect(sql).toMatch(/has_column_privilege\(\s*'anon'/);
+      expect(sql).toMatch(/has_column_privilege\(\s*'service_role'/);
+      expect(sql).toMatch(/has_table_privilege\(\s*'authenticated'[^)]*'INSERT'\s*\)/);
+      expect(sql).toMatch(/RAISE\s+EXCEPTION[\s\S]*POST-CONDITION FAILED/);
+    });
+
+    it('DRIFT GUARD: no later root migration re-opens the table or a key column to a client role', () => {
+      const ours = files.indexOf(MIGRATION_FILE);
+      const offenders: string[] = [];
+      for (const f of files.slice(ours + 1)) {
+        const body = uncommented(readFileSync(resolve(MIGRATIONS, f), 'utf8'));
+        const grantRe =
+          /GRANT\s+([\s\S]{0,4000}?)\s+ON\s+(?:TABLE\s+)?(?:public\.)?"?question_bank"?\s+TO\s+([a-z_,\s"]+);/gi;
+        let m: RegExpExecArray | null;
+        while ((m = grantRe.exec(body)) !== null) {
+          const privileges = m[1];
+          const roles = m[2].toLowerCase();
+          if (!/\b(authenticated|anon|public)\b/.test(roles)) continue;
+          if (!/\(/.test(privileges)) {
+            offenders.push(`${f}: table-level GRANT ${privileges.trim().slice(0, 60)} TO ${roles.trim()}`);
+            continue;
+          }
+          for (const key of KEY_COLUMNS) {
+            if (privileges.includes(key)) offenders.push(`${f}: GRANT of ${key} TO ${roles.trim()}`);
+          }
+        }
+        if (
+          /ALTER\s+DEFAULT\s+PRIVILEGES[\s\S]{0,200}?GRANT\s+(ALL|SELECT)[\s\S]{0,80}?ON\s+TABLES\s+TO\s+[\s\S]{0,60}?\b(authenticated|anon)\b/i.test(
+            body,
+          )
+        ) {
+          offenders.push(`${f}: ALTER DEFAULT PRIVILEGES re-grant on TABLES to a client role`);
         }
       }
       expect(
-        revokes,
-        'A migration now REVOKEs on question_bank — R2 may be closed. Convert this ' +
-          'file into the real "authenticated is refused 42501 on the key" assertion ' +
-          '(see apps/host/src/__tests__/security/quiz-session-shuffles-answer-key-acl.test.ts) ' +
-          'and delete Lane A.',
+        offenders,
+        'a later migration re-opened question_bank to a client role — the answer key ' +
+          'is readable again. Offenders:\n' + offenders.join('\n'),
       ).toEqual([]);
-    });
-
-    it('no migration grants question_bank column-level SELECT to a client role', () => {
-      const grants: string[] = [];
-      for (const { name, sql } of rootMigrations()) {
-        if (/GRANT\s+SELECT\s*\([\s\S]{0,4000}?\)\s*ON\s+TABLE\s+"?public"?\."?question_bank"?/i.test(uncommented(sql))) {
-          grants.push(name);
-        }
-      }
-      expect(grants).toEqual([]);
     });
   });
 

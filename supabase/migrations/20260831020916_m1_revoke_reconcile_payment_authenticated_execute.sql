@@ -1,0 +1,15 @@
+-- M1 (schema review finding): public.reconcile_payment(uuid) — SECURITY DEFINER,
+-- two-person-rule payment reconciliation RPC — held an unnecessary EXECUTE grant
+-- to `authenticated`. The function's only real caller,
+-- apps/host/src/app/api/super-admin/reconciliation/[id]/approve/route.ts, uses
+-- the service-role client (getSupabaseAdmin()), which is unaffected by this
+-- revoke. payment_reconciliation_queue has RLS enabled with zero policies for
+-- authenticated/anon, so a plain authenticated caller cannot enumerate
+-- reconciliation UUIDs to exploit this even today — but the grant itself is
+-- unnecessary, flagged independently by Supabase's own security advisor
+-- (authenticated_security_definer_function_executable), and appears to be a
+-- leftover false-positive from 20260510033000's automated
+-- `supabase.rpc(...)` grep-based grant restoration (which matched the string
+-- inside the service-role-only /approve route without distinguishing client
+-- type). service_role retains EXECUTE, unaffected.
+REVOKE EXECUTE ON FUNCTION public.reconcile_payment(uuid) FROM authenticated;
