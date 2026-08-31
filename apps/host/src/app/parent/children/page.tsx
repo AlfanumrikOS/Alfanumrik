@@ -1090,18 +1090,23 @@ export default function ParentChildrenPage() {
   const handleUnlinkConfirm = async () => {
     if (!unlinkTarget || !guardian) return;
     setUnlinkLoading(true);
-    // The PostgREST builder RESOLVES with { data, error } — it never rejects —
-    // so the previous catch was dead code and a FAILED unlink closed the modal
-    // as if it had succeeded. Check `error` explicitly and keep the modal open
-    // with a real message when the write did not land.
-    const { error: unlinkErr } = await supabase
-      .from('guardian_student_links')
-      .update({ status: 'revoked' })
-      .eq('student_id', unlinkTarget.id)
-      .eq('guardian_id', guardian.id);
-    if (unlinkErr) {
+    // A direct client-side `.from('guardian_student_links').update(...)`
+    // silently no-ops here: RLS has no guardian-scoped UPDATE policy on this
+    // table (only student-owned policies exist), and a zero-row UPDATE is
+    // NOT an error in Postgres/PostgREST — it just returns { data: [], error:
+    // null }. That made every unlink report success while leaving the link
+    // active. parent_revoke_guardian_link is a SECURITY DEFINER RPC that
+    // re-verifies ownership via auth.uid() server-side and returns an
+    // explicit success/error_code instead.
+    const { data, error: unlinkErr } = await supabase.rpc('parent_revoke_guardian_link', {
+      p_student_id: unlinkTarget.id,
+    });
+    const result = data as { success: boolean; error?: string } | null;
+    if (unlinkErr || !result?.success) {
       // P13: reason only — never the child id or name.
-      logger.warn('parent.children.unlink_failed', { reason: unlinkErr.message });
+      logger.warn('parent.children.unlink_failed', {
+        reason: unlinkErr?.message ?? result?.error ?? 'unknown',
+      });
       setLoadError(
         t(isHi, 'Could not unlink this child. Please try again.', 'इस बच्चे को अलग नहीं किया जा सका। कृपया फिर से कोशिश करें।'),
       );

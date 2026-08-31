@@ -30732,6 +30732,10 @@ export type Database = {
         }
         Returns: Json
       }
+      parent_revoke_guardian_link: {
+        Args: { p_student_id: string }
+        Returns: Json
+      }
       parent_send_teacher_message: {
         Args: {
           p_body?: string
