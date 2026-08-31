@@ -22,7 +22,7 @@ Apply the Supabase migration to enable flags in your database:
 
 ```bash
 # Prerequisites: Supabase local instance running OR staging DB configured
-cd d:\Alfa_local\Alfanumrik
+cd /path/to/your/Alfanumrik/checkout
 
 # Push migrations to your local instance
 supabase db push
@@ -50,7 +50,7 @@ Run the Node.js script to enable flags directly:
 
 ```bash
 # Prerequisites: SUPABASE_SERVICE_ROLE_KEY set in .env.local
-cd d:\Alfa_local\Alfanumrik
+cd /path/to/your/Alfanumrik/checkout
 
 # Check current flag status
 npx tsx scripts/sync-production-flags.ts --check
@@ -94,7 +94,7 @@ npx tsx scripts/sync-production-flags.ts --reset --force
 **For local Supabase:**
 ```bash
 # Start the local Supabase instance
-cd d:\Alfa_local\Alfanumrik
+cd /path/to/your/Alfanumrik/checkout
 supabase start
 
 # Verify connection
