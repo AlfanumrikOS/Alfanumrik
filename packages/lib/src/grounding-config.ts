@@ -173,26 +173,14 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // existing request, and gen_ctx keys on system_prompt_template so it cannot
 // collide with a cached entry. Per the bump rule, this does NOT bump PROMPT_REV
 // (a bump would needlessly flush every Foxy cache tier).
-// PROMPT_REV=4 (2026-08-31, safety-rails wiring fix): the three LIVE Foxy
-// templates (foxy_tutor_teach_v1 / _exam_v1 / _doubt_v1) gained a
-// `{{foxy_safety_rails}}` slot — the route had been SENDING FOXY_SAFETY_RAILS on
-// every turn since the grounded-answer cutover while no template declared the
-// slot, so resolveTemplate silently discarded it and the rails never reached the
-// model. Same deploy: `{{mode_instruction}}` was added to _exam_v1 and _doubt_v1
-// (the service-computed soft-mode grounding instruction was being dropped on
-// every doubt/homework/practice turn). Text changed in BOTH prompts/*.txt and
-// the runtime-preferred prompts/inline.ts twins. Kept in sync with the
-// authoritative bump in supabase/functions/grounded-answer/config.ts; see that
-// file for the full rationale.
-// NOTE: this mirror was NOT updated when the authoritative bump landed in
-// config.ts on 2026-08-31 and sat stale at 3 within the same day — the SECOND
-// time this file silently diverged (see the MODEL_ROUTE_REV=4 note below for the
-// first). Both parity mechanisms compared constant NAMES only
-// (scripts/pre-rollout-checklist.ts's /^export const ([A-Z_]+)\s*=/ regex; the
-// dead scripts/check-config-parity.sh), so neither could ever see a VALUE drift.
-// Pinned since 2026-08-31 by apps/host/src/__tests__/grounding/
+// PROMPT_REV parity: this mirror has silently diverged from the authoritative
+// constant in supabase/functions/grounded-answer/config.ts before (see the
+// MODEL_ROUTE_REV=4 note below). Both older parity mechanisms compared constant
+// NAMES only (scripts/pre-rollout-checklist.ts's /^export const ([A-Z_]+)\s*=/
+// regex; the dead scripts/check-config-parity.sh), so neither could ever see a
+// VALUE drift. Pinned since 2026-08-31 by apps/host/src/__tests__/grounding/
 // config-parity-values.test.ts, which compares parsed VALUES across both files.
-export const PROMPT_REV = 4;
+export const PROMPT_REV = 3;
 // MODEL_ROUTE_REV=2 (2026-08-02): OpenAI-primary provider swap — kept in sync
 // with the authoritative bump in supabase/functions/grounded-answer/config.ts
 // (see that file for the full cost-driven rationale and RCA-FIX CRITICAL-1

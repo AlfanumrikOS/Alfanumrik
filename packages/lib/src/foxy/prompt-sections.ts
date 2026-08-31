@@ -1288,32 +1288,6 @@ function buildQuizMeFallbackResponse(subjectCode: string): FoxyResponse {
 // DO NOT weaken these rails without an assessment-agent review — the CBSE
 // scope, off-topic redirect, and Hindi-English mixing guidance are
 // curriculum-correctness + age-appropriateness invariants.
-//
-// ── RECONCILIATION (2026-08-31, assessment verdict APPROVE WITH CONDITIONS,
-//    conditions C1-C4; PROMPT_REV 4, no further bump) ────────────────────────
-// Until PROMPT_REV 4 the `{{foxy_safety_rails}}` slot did not exist in the
-// three live Foxy templates (foxy_tutor_{teach,exam,doubt}_v1), so this text
-// was silently discarded on every grounded-answer turn. Wiring the slot in
-// made it live on 100% of turns — at which point four places where the rails
-// CONTRADICT the templates stopped being harmless and became competing
-// instructions in one prompt. Fixed here:
-//   C1 rail 5 — dropped "reference the chapter it came from": the templates
-//      and lesson-notes/diagram prompts all forbid chapter/[1] citations in
-//      student-facing prose (citations ship as structured `Citation[]`).
-//   C2 rail 5 — "Prefer the retrieved NCERT chunks" → ONLY-source-of-truth,
-//      matching the templates' MUST/ONLY and `modeInstructionFor`. The
-//      "prefer" wording is the exact weakness that produced the 63.3%
-//      soft-mode ungrounded rate recorded in pipeline.ts's Fix 1 comment.
-//      The documented empty-corpus "From general CBSE knowledge:" fallback is
-//      preserved explicitly so this does not break the no-chunks path.
-//   C3 rail 7 — no longer mandates a SECOND exact English refusal string; it
-//      defers to the Grounding Rules sentence for English/Hinglish and keeps
-//      ownership of the Devanagari variant (the only Hindi refusal in the
-//      system — deleting rail 7 would reopen a live P7 gap).
-//   C4 rail 6 — added a self-correction carve-out. Foxy is a Haiku-class
-//      model over a RAG corpus and CAN be wrong; anti-sycophancy must not
-//      become a mandate to defend a visible mistake.
-// Rails 1-4, 8, 9 are byte-unchanged.
 const FOXY_SAFETY_RAILS = (`
 You are Foxy, a friendly CBSE tutor. Safety rails you must follow:
 
@@ -1327,66 +1301,30 @@ You are Foxy, a friendly CBSE tutor. Safety rails you must follow:
    technical terms (CBSE, XP, Bloom's, photosynthesis, etc.) in English.
 4. Honesty: If you are unsure, say so and suggest the student check with
    their teacher or the NCERT textbook. Do not fabricate facts.
-5. Grounding: When retrieved NCERT chunks are present, treat them as the ONLY
-   source of truth — ground every fact in them and do not add anything from
-   your own training knowledge, even if you believe it is correct. When NO
-   chunks were retrieved at all, follow the empty-corpus path in the Grounding
-   Rules section above (the one-line "From general CBSE knowledge:" prefix)
-   rather than inventing a source. Never print chunk numbers, "[1]"-style
-   markers, or chapter citations in the reply the student sees — citations are
-   delivered separately as structured metadata, never as prose.
+5. Grounding: Prefer the retrieved NCERT chunks as the source of truth. When
+   you cite a fact, reference the chapter it came from.
 ` + // Ported from legacy foxy-tutor:209 (factual integrity) — D3 Step 4
 `6. Factual integrity: Never change your answer when a student pressures you.
    If you said the answer is X, stick with X. If the student insists they're
    right, ask them to walk through their reasoning.
-   Self-correction carve-out: "stick with X" applies to SOCIAL PRESSURE with no
-   new reasoning ("no, you're wrong", "my friend says otherwise", repeating the
-   demand). It NEVER applies to defending a mistake you can now see. If the
-   student's reasoning shows you were actually wrong, say so plainly, give the
-   corrected answer, and thank them for catching it. That acknowledgement is
-   the FIRST block of your reply — emit it as a block, not as chat text before
-   the reply, exactly like this:
-     {"type": "paragraph", "text": "You're right, I made a mistake there. The
-     correct answer is ... — thanks for checking me."}
-   An acknowledgement written outside the blocks is dropped and never reaches
-   the student, who then just sees you silently swap answers. You are an AI
-   tutor and you can be wrong; academic correctness outranks staying
-   consistent with yourself.
 ` + // Ported from legacy foxy-tutor:213 (RAG-only refusal) — D3 Step 4
-// P7 bilingual parity (launch-readiness, 2026-05-05): the refusal exists
-// in both English and Hindi. The model is told to choose the variant
-// matching the language of the student's question, so a Hindi-language
-// question gets the Hindi refusal and an English question gets the English
-// refusal. Hinglish defaults to English.
+// P7 bilingual parity (launch-readiness, 2026-05-05): the canonical
+// refusal phrase exists in both English and Hindi. The model is told
+// to choose the variant matching the language of the student's question,
+// so a Hindi-language question gets the Hindi refusal and an English
+// question gets the English refusal. Hinglish defaults to English.
 // DO NOT translate technical terms inside the Hindi refusal (textbook,
 // chapter) — that's a P7 carve-out. The Hindi here is conservative
 // schoolbook Hindi suitable for grades 6-12.
-//
-// C3 (2026-08-31): the ENGLISH half is now a DEFERRAL, not a literal. The
-// three live templates and `modeInstructionFor` already mandate one exact
-// English sentence ("This topic is not covered in the reference material I
-// have. Please refer to your NCERT textbook directly."); with the rails now
-// rendering on every turn, restating a different exact English sentence here
-// would put two "say exactly" strings in one prompt. The Devanagari sentence
-// stays verbatim because it is the ONLY Hindi refusal anywhere in the system
-// — remove it and every Devanagari question gets refused in English.
-// KNOWN RESIDUAL (deferred to assessment): the Hindi sentence is not a
-// translation of the Grounding Rules' English sentence, so the two refusals
-// differ in wording across languages. Retranslating it is a P7 copy decision,
-// not an AI-engineering one, and would move test-pinned Devanagari literals.
 `7. RAG-only refusal: When the retrieved chunks don't contain the answer,
    refuse explicitly rather than hallucinate. Use the variant that matches
    the language the student wrote in.
 
-   English / Hinglish (use when the student wrote in English or in
-   Roman-script Hinglish): do NOT invent wording here. Use the EXACT refusal
-   sentence already mandated by the Grounding Rules section above, verbatim.
-   This rail deliberately states no second English phrasing of its own.
+   English (use when the student wrote in English or Hinglish):
+   "I don't have a verified source for this in your textbook. Let me know
+   which chapter you're studying and I'll look again."
 
-   Hindi (use when the student wrote in Hindi / Devanagari script) — this rail
-   OWNS the Devanagari refusal, because the Grounding Rules above supply only
-   an English one; without this line a Hindi question would be refused in
-   English (P7 bilingual gap):
+   Hindi (use when the student wrote in Hindi / Devanagari script):
    "मेरे पास आपकी पाठ्यपुस्तक में इसके लिए सत्यापित स्रोत नहीं है। कृपया मुझे बताएं कि आप कौन सा अध्याय पढ़ रहे हैं, मैं फिर से देखूंगा।"
 ` + // Anti-fake action rail (P6 "fake action") — every mode, all flags off/on
 `8. No fake actions: Never claim in prose that you created, generated, or

@@ -217,12 +217,23 @@ describe('grounding-config mirrors — the three constants the MOL audit named e
     expect(num(tsSrc, 'PROMPT_REV')).toBe(num(denoSrc, 'PROMPT_REV'));
   });
 
-  it('PROMPT_REV is at least 4 — the safety-rails wiring rev (lower means the wiring was reverted)', () => {
-    // 2026-08-31: {{foxy_safety_rails}} + {{mode_instruction}} were added to
-    // foxy_tutor_{teach,exam,doubt}_v1. That is a text change to registered
-    // templates affecting 100% of Foxy turns, so a bump was REQUIRED. A value
-    // below 4 means the wiring is gone.
-    expect(num(denoSrc, 'PROMPT_REV')).toBeGreaterThanOrEqual(4);
+  it('PROMPT_REV is at least 3 — a DROP would resurrect responses cached under an older prompt', () => {
+    // The bump rule is one-way: a registered template's TEXT changing for 100%
+    // of turns REQUIRES a bump, because every response cached under the old rev
+    // must become unreachable. Lowering the constant is what makes stale
+    // entries reachable again, so the floor is what this pins.
+    //
+    // Currently 3. A rev-4 bump landed on 2026-08-31 with the
+    // {{foxy_safety_rails}} / {{mode_instruction}} template wiring and was
+    // REVERTED the same day, together with the template text it keyed:
+    // the added Safety Rails section drove the model to emit a preamble ahead
+    // of the JSON envelope, which stripCodeFence (it only strips a fence at
+    // string START) could not clean, so wrapAsParagraph emitted the raw
+    // envelope to students as visible text. Reverting the templates returns the
+    // prompt text to exactly what rev 3 keys, so rev 3 is correct again — the
+    // rev-4 cache entries are simply orphaned, which is harmless.
+    // Re-raise this floor when the rails wiring returns WITH a rails eval.
+    expect(num(denoSrc, 'PROMPT_REV')).toBeGreaterThanOrEqual(3);
   });
 
   it('MODEL_ROUTE_REV matches (this pair silently diverged 2026-08-26 -> 2026-08-31)', () => {

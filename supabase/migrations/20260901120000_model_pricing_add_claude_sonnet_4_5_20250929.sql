@@ -1,0 +1,61 @@
+-- 20260901120000_model_pricing_add_claude_sonnet_4_5_20250929.sql
+--
+-- Purpose: seed public.model_pricing for the Sonnet model id that the runtime
+-- now actually reports, 'claude-sonnet-4-5-20250929'. No row exists for it.
+--
+-- Context: on 2026-08-31 the previously-pinned Sonnet id was RETIRED by the
+-- provider (HTTP 404 not_found_error) and every runtime mapping was repinned to
+-- 'claude-sonnet-4-5-20250929':
+--   * supabase/functions/_shared/security/quota.ts  (mapModel)
+--   * supabase/functions/_shared/mol/telemetry.ts   (PRICING key, 3.00 / 15.00)
+--   * python/services/ai/mol/cost.py                (PRICING key, 3.00 / 15.00)
+--   * packages/lib/src/ai/gateway/registry.ts       (ANTHROPIC_SONNET_ID)
+-- The pricing TABLE was not repinned with them, so the id reaching SQL has no
+-- row. This migration closes that half-applied change.
+--
+-- Functional risk this closes (the SAME defect that
+-- 20260802180000_model_pricing_add_claude_sonnet_4_20250514.sql was written to
+-- prevent, recurring one model id later): quota.ts's computeEstimatedCost()
+-- calls public.security_compute_ai_cost(provider, model, ...) (added in
+-- 20260618000001_platform_security_layer.sql), which SELECTs from model_pricing
+-- WHERE provider = p_provider AND model = p_model with NO fallback row. A miss
+-- returns SQL NULL, and quota.ts:65 (`if (res.error || res.data == null) return
+-- 0;`) floors that to 0 — so cost-based quota estimation silently returns ZERO
+-- for every Sonnet-preference call, and every 'auto' call, since mapModel()
+-- returns the Sonnet id for both. The failure is silent by construction: no
+-- error, no log, just a zero budget consumption. (Request-count-based quota is a
+-- separate mechanism and is unaffected.)
+--
+-- UPDATE vs INSERT — INSERT, per the established convention:
+--   1. docs/MOL_OPERATIONS.md's "Updating prices" section documents it for this
+--      exact table: "Update model_pricing rows via migration (do not UPDATE
+--      in-place — migration trail is the audit)."
+--   2. model_pricing.model is joined by plain string equality against
+--      provider/model pairs recorded elsewhere with NO foreign key — e.g.
+--      mol_request_logs.model (text not null, no FK) and
+--      security_compute_ai_cost's p_model argument. Renaming an existing row's
+--      model id in place would orphan that join for every historical row still
+--      keyed on the older id. Precedent: 20260520000020_mol_pricing_date_
+--      aliases.sql and 20260802180000 both ADDED sibling rows for this reason.
+--      Nothing in this schema assumes one row per provider.
+--
+-- Pricing: 3.00 input / 15.00 output USD per 1M tokens — the Sonnet-tier rate
+-- already carried by the sibling rows and byte-matching the two runtime pricing
+-- tables this row must agree with (_shared/mol/telemetry.ts's
+-- 'anthropic/claude-sonnet-4-5-20250929' and python/services/ai/mol/cost.py's
+-- identical key). This corrects a MISSING model id, not a price.
+--
+-- RLS: public.model_pricing already has RLS enabled with zero SELECT policies
+-- as of 20260728090000_lockdown_anon_readable_public_tables.sql
+-- ("commercially sensitive cost data; zero client refs" — service-role-only
+-- reads). This migration is seed data only; it deliberately does not touch RLS
+-- or policies, and must not reintroduce the permissive model_pricing_read_all
+-- policy that migration dropped.
+--
+-- Idempotent: ON CONFLICT (provider, model) DO NOTHING on the (provider, model)
+-- primary key — safe to re-run.
+
+insert into public.model_pricing (provider, model, input_usd_per_1m, output_usd_per_1m)
+values
+  ('anthropic', 'claude-sonnet-4-5-20250929', 3.00, 15.00)
+on conflict (provider, model) do nothing;

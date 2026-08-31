@@ -671,13 +671,20 @@ describe('foxy_tutor_teach_v1 — .txt <-> inline.ts twin parity (the runtime se
     expect(applyObservedTransforms(teachInline)).toBe(applyObservedTransforms(teachTxt));
   });
 
-  it('HARD PIN: both twins carry the 2026-08-31 safety-rails wiring', () => {
-    // A .txt-only rails edit would be a runtime no-op (loadTemplate prefers
-    // inline), which is exactly how the rails gap survived for months.
-    expect(teachTxt).toContain('{{foxy_safety_rails}}');
-    expect(teachInline).toContain('{{foxy_safety_rails}}');
-    expect(teachTxt).toContain('## Safety Rails (P12 — a binding safety FLOOR');
-    expect(teachInline).toContain('## Safety Rails (P12 — a binding safety FLOOR');
+  it('HARD PIN: NEITHER twin carries the reverted safety-rails wiring', () => {
+    // The 2026-08-31 `{{foxy_safety_rails}}` wiring (PROMPT_REV=4) was reverted
+    // before ship — the added section induced a preamble ahead of the JSON
+    // envelope that stripCodeFence could not strip, leaking raw JSON to
+    // students. Pinned on BOTH twins because a .txt-only edit is a runtime
+    // no-op (loadTemplate prefers inline), which is exactly how the original
+    // rails gap survived for months — and a .txt-only re-add would be an
+    // invisible half-revert.
+    expect(teachTxt).not.toContain('{{foxy_safety_rails}}');
+    expect(teachInline).not.toContain('{{foxy_safety_rails}}');
+    expect(teachTxt).not.toContain('## Safety Rails (P12 — a binding safety FLOOR');
+    expect(teachInline).not.toContain('## Safety Rails (P12 — a binding safety FLOOR');
+    // teach_v1's mid-sentence `{{mode_instruction}}` reference predates that rev
+    // and is unaffected — it must survive in both twins.
     expect(teachTxt).toContain('{{mode_instruction}}');
     expect(teachInline).toContain('{{mode_instruction}}');
   });

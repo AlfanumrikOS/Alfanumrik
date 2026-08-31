@@ -70,12 +70,51 @@ export async function POST(request: NextRequest) {
   const { classes = [], students = [], teachers = [] } = parsed.data;
 
   // ── Existing classes (tenant-scoped) for ref resolution + class dedupe ──────
-  const classIndex = await loadClassIndex(schoolId);
-  const { data: existingClasses } = await supabase
+  //
+  // loadClassIndex THROWS on a classes-lookup failure by design: an empty index
+  // makes every roster row look like it references an unknown class, which must
+  // not be indistinguishable from "this school has no classes yet". The only
+  // try in this handler wraps request.json(), so without this block a DB blip
+  // would escape as an unhandled 500 and break the { success, error } contract
+  // every other failure path in this route returns. P13: the thrown message
+  // carries school id + PostgREST code/message only, never roster rows.
+  let classIndex: Awaited<ReturnType<typeof loadClassIndex>>;
+  try {
+    classIndex = await loadClassIndex(schoolId);
+  } catch (err) {
+    logger.error('school_admin_roster_validate_class_index_failed', {
+      route: '/api/school-admin/roster/validate',
+      schoolId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { success: false, error: 'Could not load classes for this school. Please try again.' },
+      { status: 503 },
+    );
+  }
+
+  // Same table, read again for the (grade, section, academic_year) dedupe key.
+  // Bind + check `error`: an unchecked failure here silently empties
+  // existingClassKeys, and every class row in the payload would then be
+  // reported as 'created' when it already exists — a dry-run that tells the
+  // school admin the opposite of the truth.
+  const { data: existingClasses, error: existingClassesError } = await supabase
     .from('classes')
     .select('grade, section, academic_year')
     .eq('school_id', schoolId)
     .is('deleted_at', null);
+  if (existingClassesError) {
+    logger.error('school_admin_roster_validate_existing_classes_failed', {
+      route: '/api/school-admin/roster/validate',
+      schoolId,
+      code: existingClassesError.code,
+      error: existingClassesError.message,
+    });
+    return NextResponse.json(
+      { success: false, error: 'Could not load classes for this school. Please try again.' },
+      { status: 503 },
+    );
+  }
   const existingClassKeys = new Set<string>();
   for (const c of existingClasses ?? []) {
     const row = c as { grade: string; section: string | null; academic_year: string | null };

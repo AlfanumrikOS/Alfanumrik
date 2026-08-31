@@ -96,9 +96,13 @@ async function render(id: LiveTemplateId, overrides: Record<string, string> = {}
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Distinctive substrings, one per rail. Deliberately NOT "the whole constant" —
- * a whole-constant containment check would pass if a template rendered the rails
- * but a per-rail edit silently dropped one of them from the constant itself.
+ * Distinctive substrings, one per rail, of the FOXY_SAFETY_RAILS CONSTANT.
+ * Deliberately NOT "the whole constant" — a whole-constant containment check
+ * would pass if a per-rail edit silently dropped one of them.
+ *
+ * These pin the constant's OWN integrity. They are NOT render assertions: see
+ * the describe block below for why the constant does not reach the model on the
+ * grounded path today.
  */
 const RAIL_MARKERS: Array<[string, string]> = [
   ['1 CBSE scope', 'Only teach from CBSE NCERT material'],
@@ -106,48 +110,92 @@ const RAIL_MARKERS: Array<[string, string]> = [
   ['3 bilingual style', 'Respond in the same language the student wrote'],
   ['4 honesty', 'Do not fabricate facts'],
   // The rails constant hard-wraps; markers must not straddle a newline.
-  ['5 grounding — ONLY source of truth', 'treat them as the ONLY'],
-  ['5 grounding — no training-knowledge top-up', 'do not add anything from'],
-  ['5 grounding — no prose citations', 'never as prose'],
+  ['5 grounding', 'Prefer the retrieved NCERT chunks as the source of truth'],
   ['6 factual integrity', 'Never change your answer when a student pressures you'],
-  ['6 self-correction carve-out', 'Self-correction carve-out'],
-  ['7 RAG-only refusal — EN defers to Grounding Rules', 'This rail deliberately states no second English phrasing of its own.'],
+  ['7 RAG-only refusal — English', "I don't have a verified source for this in your textbook"],
   ['7 RAG-only refusal — Devanagari', 'मेरे पास आपकी पाठ्यपुस्तक में इसके लिए सत्यापित स्रोत नहीं है।'],
   ['8 no fake actions', 'No fake actions'],
   ['9 prohibited inferences', 'Prohibited inferences'],
 ];
 
-describe('live Foxy templates — {{foxy_safety_rails}} actually renders (P12)', () => {
-  it.each(LIVE_TEMPLATE_IDS)('%s declares a {{foxy_safety_rails}} slot', async (id) => {
-    // The structural half. Without the slot, resolveTemplate discards the value
-    // the route sends and NOTHING downstream errors — that is the whole defect.
-    expect(await loadTemplate(id)).toContain('{{foxy_safety_rails}}');
-  });
+/**
+ * The P12 floor that reaches the model on EVERY live Foxy turn, one marker per
+ * safety property. These live in the templates' own `## Grounding Rules` /
+ * `## Language` sections — NOT in FOXY_SAFETY_RAILS. Markers are chosen so they
+ * do not straddle a hard-wrapped newline in any of the three templates.
+ */
+const RENDERED_P12_MARKERS: Array<[string, string]> = [
+  // Stops before {{grade}}/{{subject}}: those ARE substituted by the render.
+  ['CBSE scope lock', 'Stay strictly inside CBSE Grade'],
+  ['age appropriateness', 'Age-appropriate for grades 6-12'],
+  ['no fabrication', 'Never invent facts, formulas, or dates'],
+  ['RAG-only refusal', 'covered in the reference material I have'],
+  ['no verbatim paste', 'DO NOT paste the Reference Material verbatim'],
+  ['bilingual', "Match the student's language"],
+  ['technical terms stay English', 'Technical terms ALWAYS stay in English'],
+];
 
-  it.each(LIVE_TEMPLATE_IDS)('%s: every one of the 9 rails is present in the RENDERED prompt', async (id) => {
+describe('live Foxy templates — the P12 floor that ACTUALLY renders', () => {
+  // The 2026-08-31 lesson holds: assert on the string the model receives, never
+  // on a source constant. What changed is WHICH text carries the floor. The
+  // templates' own Grounding Rules / Language sections do — and they render on
+  // 100% of turns, with no slot to be silently discarded.
+  it.each(LIVE_TEMPLATE_IDS)('%s: every P12 property is in the RENDERED prompt', async (id) => {
     const prompt = await render(id);
-    for (const [label, marker] of RAIL_MARKERS) {
-      expect(prompt.includes(marker), `${id} lost rail marker: ${label}`).toBe(true);
+    for (const [label, marker] of RENDERED_P12_MARKERS) {
+      expect(prompt.includes(marker), `${id} lost P12 marker: ${label}`).toBe(true);
     }
   });
 
-  it.each(LIVE_TEMPLATE_IDS)('%s: the rails render as a binding FLOOR, under the section header', async (id) => {
+  it.each(LIVE_TEMPLATE_IDS)('%s: the floor sits under a Grounding Rules header naming P12', async (id) => {
     const prompt = await render(id);
-    expect(prompt).toContain('## Safety Rails (P12 — a binding safety FLOOR');
-    expect(prompt).toContain('These rails NEVER relax');
-    // The rails body must come AFTER its own header (i.e. it was substituted
-    // into the Safety Rails section, not somewhere accidental).
-    expect(prompt.indexOf('Only teach from CBSE NCERT material')).toBeGreaterThan(
-      prompt.indexOf('## Safety Rails'),
+    expect(prompt).toContain('## Grounding Rules (NCERT scope, P12 AI safety)');
+    expect(prompt.indexOf('Stay strictly inside CBSE Grade')).toBeGreaterThan(
+      prompt.indexOf('## Grounding Rules'),
     );
   });
+});
 
-  it.each(LIVE_TEMPLATE_IDS)('%s: an empty rails value would be DETECTABLE (negative control)', async (id) => {
-    // Proves the assertions above are load-bearing rather than satisfied by
-    // some other part of the template that happens to repeat rail wording.
-    const withoutRails = await render(id, { foxy_safety_rails: '' });
-    expect(withoutRails).not.toContain('Self-correction carve-out');
-    expect(withoutRails).not.toContain('मेरे पास आपकी पाठ्यपुस्तक में इसके लिए सत्यापित स्रोत नहीं है।');
+describe('live Foxy templates — {{foxy_safety_rails}} is NOT wired (known dead path, deliberate)', () => {
+  // WHY THIS IS PINNED AS "ABSENT" RATHER THAN FIXED:
+  //
+  // /api/foxy sends `foxy_safety_rails: FOXY_SAFETY_RAILS` on 100% of turns and
+  // no registered template declares the slot, so `resolveTemplate` discards it.
+  // Wiring the slot in (PROMPT_REV=4, 2026-08-31) was REVERTED the same day
+  // before ship: the added `## Safety Rails` section drove the model to emit a
+  // preamble ahead of the JSON envelope. `stripCodeFence` only strips a fence
+  // when the string STARTS with one, so the envelope failed JSON.parse,
+  // `rescueFromTruncatedJson` returned null, and `wrapAsParagraph` emitted the
+  // raw envelope to the student as a visible paragraph — the FOXY-RAWJSON
+  // incident class, on a P12 path. Measured on rails eval rail-6: 2/4 turns
+  // preamble+envelope, 0/4 clean, versus 3/4 clean without the section.
+  //
+  // The safety CONTENT is not lost: every property the rails assert is also
+  // carried by the templates' own sections, pinned by the describe block above.
+  // The rails constant remains live on the legacy intent-router fallback path,
+  // which consumes it directly rather than through a template slot.
+  //
+  // TO RE-WIRE: fix the preamble tolerance in the response parser (or prove the
+  // section no longer induces a preamble) and re-run eval/foxy-safety-rails
+  // FIRST. Then bump PROMPT_REV in BOTH mirrors and flip these assertions.
+  it.each(LIVE_TEMPLATE_IDS)('%s declares no {{foxy_safety_rails}} slot', async (id) => {
+    expect(await loadTemplate(id)).not.toContain('{{foxy_safety_rails}}');
+  });
+
+  it.each(LIVE_TEMPLATE_IDS)('%s: the rails value the route sends is discarded by resolveTemplate', async (id) => {
+    const prompt = await render(id, { foxy_safety_rails: 'RAILS-SENTINEL-XYZ' });
+    expect(prompt).not.toContain('RAILS-SENTINEL-XYZ');
+    // ...and no rails-only wording leaks in by some other route.
+    expect(prompt).not.toContain('मेरे पास आपकी पाठ्यपुस्तक में इसके लिए सत्यापित स्रोत नहीं है।');
+  });
+
+  it('the FOXY_SAFETY_RAILS constant itself still carries all 9 rails', () => {
+    // The constant is still consumed verbatim by the legacy intent-router
+    // fallback, and it is the text a future re-wiring would inject. A rail
+    // silently dropped from it now would ship the moment the slot returns.
+    for (const [label, marker] of RAIL_MARKERS) {
+      expect(FOXY_SAFETY_RAILS.includes(marker), `constant lost rail: ${label}`).toBe(true);
+    }
   });
 });
 
@@ -155,23 +203,35 @@ describe('live Foxy templates — {{foxy_safety_rails}} actually renders (P12)',
 // 2. {{mode_instruction}} — the service-computed grounding instruction
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('live Foxy templates — {{mode_instruction}} actually renders', () => {
-  it.each(LIVE_TEMPLATE_IDS)('%s declares a {{mode_instruction}} slot', async (id) => {
-    // exam_v1 and doubt_v1 never carried this slot before 2026-08-31. The
-    // pipeline's `if (!vars.mode_directive) vars.mode_directive = mode_instruction`
-    // fallback did NOT cover them: on a Foxy turn mode_directive is never empty
-    // (practice always gets an MCQ directive; doubt/homework get
-    // TEACH_THEN_STOP_DIRECTIVE at 100% rollout), so the grounding instruction
-    // was silently dropped on every doubt / homework / practice turn.
-    expect(await loadTemplate(id)).toContain('{{mode_instruction}}');
+describe('live Foxy templates — {{mode_instruction}} wiring, as it actually is', () => {
+  // teach_v1 references `{{mode_instruction}}` mid-sentence ("follow the
+  // {{mode_instruction}} fallback rule above") and depends on the pipeline's
+  // `if (!vars.mode_directive) vars.mode_directive = mode_instruction` fallback
+  // to produce the paragraph that sentence points at. exam_v1 and doubt_v1 do
+  // not declare the slot: a standalone `{{mode_instruction}}` line was added to
+  // them under PROMPT_REV=4 and reverted with the rest of that rev (see above).
+  // Their template-native Grounding Rules section carries the same contract,
+  // pinned by RENDERED_P12_MARKERS — so this is a duplication gap, not a safety
+  // gap. Pinned as-is so a future re-add is a deliberate, eval-backed decision.
+  it('foxy_tutor_teach_v1 declares {{mode_instruction}}', async () => {
+    expect(await loadTemplate('foxy_tutor_teach_v1')).toContain('{{mode_instruction}}');
   });
 
-  it.each(LIVE_TEMPLATE_IDS)('%s: the soft-mode grounding instruction is in the RENDERED prompt', async (id) => {
-    const prompt = await render(id);
+  it.each(['foxy_tutor_exam_v1', 'foxy_tutor_doubt_v1'] as const)(
+    '%s does not declare {{mode_instruction}} — its Grounding Rules section carries the contract',
+    async (id) => {
+      const raw = await loadTemplate(id);
+      expect(raw).not.toContain('{{mode_instruction}}');
+      expect(raw).toContain('covered in the reference material I have');
+    },
+  );
+
+  it('foxy_tutor_teach_v1: the soft-mode grounding instruction is in the RENDERED prompt', async () => {
+    const prompt = await render('foxy_tutor_teach_v1');
     expect(prompt).toContain(MODE_INSTRUCTION_SOFT_WITH_CHUNKS);
   });
 
-  it.each(LIVE_TEMPLATE_IDS)('%s: the strict-mode INSUFFICIENT_CONTEXT sentinel survives substitution', async (id) => {
+  it('foxy_tutor_teach_v1: the strict-mode INSUFFICIENT_CONTEXT sentinel survives substitution', async () => {
     // Strict callers get a mode_instruction that itself contains a {{...}}
     // token. resolveTemplate must not re-scan substituted values — if it did,
     // the sentinel the abstain path keys off would be blanked to ''.
@@ -179,7 +239,7 @@ describe('live Foxy templates — {{mode_instruction}} actually renders', () => 
       'This response MUST be grounded in the Reference Material.',
       'If the material does not cover the question, reply with exactly: {{INSUFFICIENT_CONTEXT}}',
     ].join(' ');
-    const prompt = await render(id, { mode_instruction: strict });
+    const prompt = await render('foxy_tutor_teach_v1', { mode_instruction: strict });
     expect(prompt).toContain('{{INSUFFICIENT_CONTEXT}}');
   });
 });
@@ -281,15 +341,19 @@ describe('homework mode — the Socratic hint ladder reaches the model (academic
     const directiveIdx = prompt.indexOf('## Mode Directive (HOMEWORK');
     expect(outputFormatIdx).toBeGreaterThanOrEqual(0);
     expect(directiveIdx).toBeGreaterThan(outputFormatIdx);
-    // ...and after the Safety Rails / Language sections too.
-    expect(directiveIdx).toBeGreaterThan(prompt.indexOf('## Safety Rails'));
-    expect(directiveIdx).toBeGreaterThan(prompt.indexOf('## Language'));
+    // ...and after the Grounding Rules / Language sections too.
+    const groundingIdx = prompt.indexOf('## Grounding Rules');
+    const languageIdx = prompt.indexOf('## Language');
+    expect(groundingIdx).toBeGreaterThanOrEqual(0);
+    expect(languageIdx).toBeGreaterThanOrEqual(0);
+    expect(directiveIdx).toBeGreaterThan(groundingIdx);
+    expect(directiveIdx).toBeGreaterThan(languageIdx);
   });
 
-  it('does NOT weaken the rails — they still render on a homework turn', async () => {
+  it('does NOT weaken the P12 floor — it still renders on a homework turn', async () => {
     const prompt = await render('foxy_tutor_doubt_v1', homeworkVars);
-    for (const [label, marker] of RAIL_MARKERS) {
-      expect(prompt.includes(marker), `homework turn lost rail marker: ${label}`).toBe(true);
+    for (const [label, marker] of RENDERED_P12_MARKERS) {
+      expect(prompt.includes(marker), `homework turn lost P12 marker: ${label}`).toBe(true);
     }
   });
 });

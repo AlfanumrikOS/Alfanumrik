@@ -88,15 +88,26 @@ function openAIOk(text: string): Response {
 /**
  * ONE fixed request, rendered through the REAL prompt loader.
  *
- * The system prompt is a genuine `foxy_tutor_doubt_v1` render (rails slot
- * filled, mode_instruction filled), not a stub string — so this test also
- * covers the case that actually matters: the safety rails must cross the
- * provider boundary intact.
+ * The system prompt is a genuine `foxy_tutor_doubt_v1` render, not a stub
+ * string — so this test covers the case that actually matters: the
+ * service-composed instruction text must cross the provider boundary intact.
+ *
+ * SLOT CHOICE (2026-08-31): the sentinels ride `{{mode_directive}}` and
+ * `{{reference_material_section}}`, two slots the LIVE template declares.
+ * They deliberately do NOT ride `{{foxy_safety_rails}}`: no registered
+ * template declares that slot (the PROMPT_REV=4 wiring that added it was
+ * reverted before ship — it drove the model to emit a preamble ahead of the
+ * JSON envelope, which `stripCodeFence` could not strip, leaking raw JSON to
+ * students). A sentinel sent for an undeclared slot is silently discarded by
+ * `resolveTemplate`, so pinning parity on it would make this whole suite
+ * vacuous — comparing two copies of the same hole, which is precisely what
+ * the guard test below exists to prevent.
  */
-const RAILS_MARKER = 'SAFETY-RAILS-SENTINEL-DO-NOT-REMOVE';
-const MODE_INSTRUCTION =
-  'You MUST answer ONLY from the Reference Material provided above. ' +
-  'Do NOT use your general training knowledge even if you know the answer.';
+const MODE_DIRECTIVE_MARKER = 'MODE-DIRECTIVE-SENTINEL-DO-NOT-REMOVE';
+const REFERENCE_MARKER =
+  '[1] Light travels in straight lines. REFERENCE-SENTINEL-DO-NOT-REMOVE';
+/** Sent but NOT declared by any live template — must NOT survive the render. */
+const UNDECLARED_SLOT_MARKER = 'UNDECLARED-SLOT-SENTINEL';
 
 async function buildFixedRequest() {
   const template = await loadTemplate('foxy_tutor_doubt_v1');
@@ -105,16 +116,18 @@ async function buildFixedRequest() {
     subject: 'Science',
     chapter_suffix: ' — Light',
     board: 'CBSE',
-    foxy_safety_rails: RAILS_MARKER,
-    mode_instruction: MODE_INSTRUCTION,
-    mode_directive: '## Mode Directive (HOMEWORK)',
+    foxy_safety_rails: UNDECLARED_SLOT_MARKER,
+    mode_instruction:
+      'You MUST answer ONLY from the Reference Material provided above. ' +
+      'Do NOT use your general training knowledge even if you know the answer.',
+    mode_directive: MODE_DIRECTIVE_MARKER,
     academic_goal_section: '',
     cognitive_context_section: '',
     misconception_section: '',
     learner_memory_section: '',
     pending_expectation: '',
     previous_session_context: '',
-    reference_material_section: '[1] Light travels in straight lines.',
+    reference_material_section: REFERENCE_MARKER,
   };
   const systemPrompt = resolveTemplate(template, vars);
   const systemSegments = buildSystemPromptSegments(template, vars).map((s) => ({
@@ -193,13 +206,18 @@ async function captureBothProviders(): Promise<{
 }
 
 // ─── Guard against a vacuous suite ───────────────────────────────────────────
-// If the rendered prompt did not actually contain the rails / mode instruction,
+// If the rendered prompt did not actually contain the service-composed text,
 // every "both providers got the same thing" assertion below would be comparing
 // two copies of the same hole.
-Deno.test('fixture guard: the rendered system prompt really carries the rails and the grounding instruction', async () => {
+Deno.test('fixture guard: the rendered system prompt really carries the service-composed sections', async () => {
   const { systemPrompt, systemSegments } = await buildFixedRequest();
-  assertEquals(systemPrompt.includes(RAILS_MARKER), true);
-  assertEquals(systemPrompt.includes(MODE_INSTRUCTION), true);
+  assertEquals(systemPrompt.includes(MODE_DIRECTIVE_MARKER), true);
+  assertEquals(systemPrompt.includes(REFERENCE_MARKER), true);
+  // resolveTemplate substitutes ONLY tokens the template declares and silently
+  // discards the rest — `foxy_safety_rails` is declared by no live template, so
+  // its value never reaches the model. Pinned so that re-wiring the slot (which
+  // was reverted for leaking raw JSON to students) cannot happen silently.
+  assertEquals(systemPrompt.includes(UNDECLARED_SLOT_MARKER), false);
   // No unresolved slot survived the render.
   assertEquals(/\{\{[a-z_]+\}\}/.test(systemPrompt), false);
   // Segments must reconstruct the prompt exactly (buildSystemBlocks' own
@@ -219,15 +237,15 @@ Deno.test('parity: the OpenAI rung receives a BYTE-IDENTICAL system prompt to th
   assertEquals(anthropicSystem, openaiSystem);
 });
 
-Deno.test('parity: the safety rails and the grounding instruction reach BOTH providers (P12)', async () => {
+Deno.test('parity: the mode directive and the reference material reach BOTH providers (P12)', async () => {
   const { anthropic, openai } = await captureBothProviders();
 
   const anthropicSystem = flattenAnthropicSystem(anthropic.system);
   const openaiSystem = openai.messages[0].content as string;
 
   for (const [label, text] of [['anthropic', anthropicSystem], ['openai', openaiSystem]] as const) {
-    assertEquals(text.includes(RAILS_MARKER), true, `${label} lost the safety rails`);
-    assertEquals(text.includes(MODE_INSTRUCTION), true, `${label} lost the grounding instruction`);
+    assertEquals(text.includes(MODE_DIRECTIVE_MARKER), true, `${label} lost the mode directive`);
+    assertEquals(text.includes(REFERENCE_MARKER), true, `${label} lost the reference material`);
   }
 });
 

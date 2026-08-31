@@ -269,7 +269,7 @@ const PIPELINE_VARS: Record<string, string> = {
 };
 
 describe('SEL render proof', () => {
-  it('flag ON: real route vars carry the SEL section, and it renders after Safety Rails + Language with zero unresolved slots', async () => {
+  it('flag ON: real route vars carry the SEL section, and it renders after Grounding Rules + Language with zero unresolved slots', async () => {
     const { res } = await postFoxy(CONFUSION_BODY);
     expect(res.status).toBe(200);
     expect(_callGroundedAnswer).toHaveBeenCalledTimes(1);
@@ -289,19 +289,26 @@ describe('SEL render proof', () => {
     const rendered = resolveTemplate(template, { ...PIPELINE_VARS, ...vars });
 
     const iSel = rendered.indexOf('## SEL MOMENT');
-    const iRails = rendered.indexOf('## Safety Rails');
+    const iGrounding = rendered.indexOf('## Grounding Rules');
     const iLang = rendered.indexOf('## Language');
     console.log(
-      `\n===== RENDER OFFSETS ===== SafetyRails=${iRails} Language=${iLang} SELMOMENT=${iSel}`,
+      `\n===== RENDER OFFSETS ===== GroundingRules=${iGrounding} Language=${iLang} SELMOMENT=${iSel}`,
     );
     expect(iSel).toBeGreaterThan(-1);
-    expect(iRails).toBeGreaterThan(-1);
+    expect(iGrounding).toBeGreaterThan(-1);
     expect(iLang).toBeGreaterThan(-1);
-    expect(iSel).toBeGreaterThan(iRails);
+    expect(iSel).toBeGreaterThan(iGrounding);
     expect(iSel).toBeGreaterThan(iLang);
 
-    // rails really rendered (sanity that the ordering comparison is meaningful)
-    expect(rendered).toContain(FOXY_SAFETY_RAILS.slice(0, 60));
+    // The P12 floor really rendered (sanity that the ordering comparison is
+    // meaningful). NOT asserted via FOXY_SAFETY_RAILS: no live template
+    // declares `{{foxy_safety_rails}}`, so the constant the route sends is
+    // discarded by resolveTemplate — the PROMPT_REV=4 wiring that would have
+    // rendered it was reverted for leaking raw JSON to students. The floor
+    // that DOES render is the template's own Grounding Rules section.
+    expect(rendered).toContain('## Grounding Rules (NCERT scope, P12 AI safety)');
+    expect(rendered).toContain('Age-appropriate for grades 6-12');
+    expect(rendered).not.toContain(FOXY_SAFETY_RAILS.slice(0, 60));
 
     // (2) zero unresolved placeholders.
     const unresolved = rendered.match(/\{\{[^}]*\}\}/g) ?? [];
@@ -309,7 +316,7 @@ describe('SEL render proof', () => {
     expect(unresolved).toEqual([]);
 
     console.log(
-      '\n===== RENDERED TAIL (from ## Safety Rails onward) =====\n' + rendered.slice(iRails),
+      '\n===== RENDERED TAIL (from ## Grounding Rules onward) =====\n' + rendered.slice(iGrounding),
     );
   });
 

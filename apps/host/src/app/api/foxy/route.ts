@@ -1585,15 +1585,20 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // WHAT ACTUALLY REACHES THE MODEL (corrected 2026-08-31 — this comment
   // previously claimed the opposite and was false for the entire life of the
   // grounded-answer path):
-  //   - `foxy_safety_rails` (FOXY_SAFETY_RAILS) IS rendered. It is sent in
-  //     `template_variables` below and, as of PROMPT_REV=4, the three live
-  //     Foxy templates (foxy_tutor_teach_v1 / _exam_v1 / _doubt_v1) each
-  //     declare a `{{foxy_safety_rails}}` slot in their `## Safety Rails`
-  //     section. Before that slot existed the variable was silently dropped —
-  //     `resolveTemplate` only substitutes tokens PRESENT in the template and
-  //     discards every other key — so the rails never reached the model.
+  //   - `foxy_safety_rails` (FOXY_SAFETY_RAILS) is NOT rendered. It is sent in
+  //     `template_variables` below, but no registered template declares a
+  //     `{{foxy_safety_rails}}` slot, and `resolveTemplate` only substitutes
+  //     tokens PRESENT in the template and discards every other key — so the
+  //     rails do not reach the model on the grounded path. Wiring the slot in
+  //     was attempted under PROMPT_REV=4 and REVERTED on 2026-08-31 before
+  //     ship: the added section drove the model to emit a preamble ahead of
+  //     the JSON envelope, which `stripCodeFence` (pipeline.ts — it only
+  //     strips a fence at string START) could not clean, so `wrapAsParagraph`
+  //     leaked the raw envelope to the student as visible text. Do NOT re-wire
+  //     the slot without a rails eval run against the post-mitigation
+  //     templates.
   //   - `foxy_system_prompt` (the value built here) is NOT rendered by the
-  //     grounded-answer path. No registered template declares a
+  //     grounded-answer path either. No registered template declares a
   //     `{{foxy_system_prompt}}` slot, so it is discarded by resolveTemplate.
   //     It is still built because the non-grounded legacy intent-router
   //     fallback below consumes it directly, and it is kept in

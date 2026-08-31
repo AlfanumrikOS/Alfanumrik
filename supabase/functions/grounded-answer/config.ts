@@ -219,39 +219,7 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // which is the same trade this comment block declines above. If the flag is
 // ever promoted to unconditional (directive always appended, flag removed),
 // THAT change MUST bump PROMPT_REV.
-// PROMPT_REV=4 (2026-08-31, safety-rails wiring fix): the Foxy route has been
-// sending `foxy_safety_rails` (FOXY_SAFETY_RAILS, packages/lib/src/foxy/
-// prompt-sections.ts — rails 1-9: CBSE scope, age-appropriateness, bilingual
-// style, honesty, grounding, factual integrity under pressure, the bilingual
-// EN/HI RAG-only refusal, the no-fake-actions rail, and the prohibited-
-// inferences denylist) on EVERY live turn since the grounded-answer cutover,
-// but NO registered template declared a `{{foxy_safety_rails}}` slot.
-// resolveTemplate only substitutes tokens that EXIST in the template and
-// silently discards the rest, so the rails have never reached the model. A
-// `## Safety Rails` section carrying `{{foxy_safety_rails}}` was added
-// immediately after the `## Grounding Rules` block of the three LIVE Foxy
-// templates — foxy_tutor_teach_v1 (learn/explain), foxy_tutor_exam_v1
-// (practice), foxy_tutor_doubt_v1 (doubt/homework) — in BOTH the canonical
-// prompts/*.txt and their shipped prompts/inline.ts String.raw twins (the
-// loader prefers inline, so a .txt-only edit would have been a no-op).
-// Same deploy: `{{mode_instruction}}` was added to foxy_tutor_exam_v1 and
-// foxy_tutor_doubt_v1. Those two templates never carried the slot, and the
-// pipeline's `if (!vars.mode_directive) vars.mode_directive = vars.mode_
-// instruction` fallback only fires when mode_directive is EMPTY — which it
-// never is on a Foxy turn (practice always gets an MCQ directive;
-// doubt/homework get TEACH_THEN_STOP_DIRECTIVE via ff_foxy_learning_actions_v1,
-// enabled at 100% by migration 20260624100000). The service-computed
-// soft-mode grounding instruction ("You MUST answer ONLY from the Reference
-// Material…" / the empty-corpus fallback) was therefore dropped on every
-// doubt/homework/practice turn; it now renders inside the Grounding Rules
-// section of both templates.
-// foxy_tutor_v1 is deliberately UNCHANGED (byte-for-byte pinned by
-// apps/host/src/__tests__/foxy-prompt-pedagogy-v2.test.ts and not selected by
-// selectFoxyPromptTemplate).
-// Per the bump rule above this IS a text change to registered templates that
-// applies to 100% of Foxy requests (no flag gate), so every cached response
-// generated under rev 3 must become unreachable — bump is REQUIRED.
-export const PROMPT_REV = 4;
+export const PROMPT_REV = 3;
 
 // ── Model fallback ordering (edge mirror of the TS gateway registry) ─────────
 //
