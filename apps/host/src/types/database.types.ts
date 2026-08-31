@@ -9003,6 +9003,119 @@ export type Database = {
           },
         ]
       }
+      foxy_pending_expectations: {
+        Row: {
+          answered_at: string | null
+          answered_message_id: string | null
+          asked_message_id: string | null
+          bloom_level: string | null
+          chapter: string | null
+          created_at: string
+          difficulty: string | null
+          expectation_kind: string
+          expectation_meta: Json
+          expectation_text: string
+          expires_at: string
+          grade: string
+          id: string
+          session_id: string
+          status: string
+          student_id: string
+          subject: string
+          topic_id: string | null
+        }
+        Insert: {
+          answered_at?: string | null
+          answered_message_id?: string | null
+          asked_message_id?: string | null
+          bloom_level?: string | null
+          chapter?: string | null
+          created_at?: string
+          difficulty?: string | null
+          expectation_kind: string
+          expectation_meta?: Json
+          expectation_text: string
+          expires_at?: string
+          grade: string
+          id?: string
+          session_id: string
+          status?: string
+          student_id: string
+          subject: string
+          topic_id?: string | null
+        }
+        Update: {
+          answered_at?: string | null
+          answered_message_id?: string | null
+          asked_message_id?: string | null
+          bloom_level?: string | null
+          chapter?: string | null
+          created_at?: string
+          difficulty?: string | null
+          expectation_kind?: string
+          expectation_meta?: Json
+          expectation_text?: string
+          expires_at?: string
+          grade?: string
+          id?: string
+          session_id?: string
+          status?: string
+          student_id?: string
+          subject?: string
+          topic_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "foxy_pending_expectations_answered_message_id_fkey"
+            columns: ["answered_message_id"]
+            isOneToOne: false
+            referencedRelation: "foxy_chat_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "foxy_pending_expectations_asked_message_id_fkey"
+            columns: ["asked_message_id"]
+            isOneToOne: false
+            referencedRelation: "foxy_chat_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "foxy_pending_expectations_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "foxy_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "foxy_pending_expectations_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "foxy_pending_expectations_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "v_class_lab_leaderboard"
+            referencedColumns: ["student_id"]
+          },
+          {
+            foreignKeyName: "foxy_pending_expectations_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "v_xp_ledger_drift"
+            referencedColumns: ["student_id"]
+          },
+          {
+            foreignKeyName: "foxy_pending_expectations_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "curriculum_topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       foxy_quality_scores: {
         Row: {
           accuracy_score: number
