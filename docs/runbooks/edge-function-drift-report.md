@@ -319,3 +319,47 @@ until these run):**
    before deletion.
 4. `supabase functions delete cme-engine --project-ref shktyoxqhundlvkiwguu`
    only after a clean window.
+
+## Execution log — 2026-08-31 (39-function deletion + 11-function tombstone sweep, schema-review H3)
+
+The 39 functions that completed their 30-day observation window with zero
+tombstone hits were **permanently deleted** from production
+(`shktyoxqhundlvkiwguu`) via `supabase functions delete <slug>` — each
+confirmed with a `{"message":"Deleted Edge Function."}` response. Live
+`list_edge_functions` re-check afterward confirmed none of the 39 slugs
+remain deployed.
+
+Separately, 11 previously-undiscovered orphans were found: **all 11** show
+an `entrypoint_path` of `file:///tmp/user_fn_<project>_<id>/source/index.ts`
+(a Supabase CLI/dashboard hand-deploy path) rather than the CI runner path
+(`file:///home/runner/work/Alfanumrik/Alfanumrik/supabase/functions/...`),
+meaning they were never deployed by CI and have no source history in this
+repo at all — a different drift mode than the git-tracked-then-orphaned
+functions above. Repo-wide grep (`*.ts`, `*.tsx`, `*.dart`, `*.sql`) found
+zero call sites for any of the 11. One, `agent-worker`, shares a name with
+the unrelated SQL function `public.agent_worker_tick()` driving active
+pg_cron job 26 — verified via `pg_get_functiondef` that this SQL function
+makes no `net.http_*` call to any Edge Function, so the naming collision is
+coincidental and does not make `agent-worker` live.
+
+Tombstoned (same structured-410 pattern, stub committed to
+`supabase/functions/<slug>/index.ts`, not yet permanently deleted — lacking
+the 39's 30-day window):
+`agent-orchestrator`, `agent-worker`, `auth-write-skeleton`,
+`embed-ncert-books`, `embed-rag-remaining`, `rag-query-v3`, `rag-answer-v3`,
+`rag-answer-v4`, `rag-answer-v5`, `rag-ingest-batch`, `rag-ingest-status`.
+Permanent deletion of these 11 is deferred to a clean 30-day window from
+2026-08-31, same as every prior tombstone in this log.
+
+`grade-written-answer`'s live source was pulled into git for the first time
+(`supabase functions download grade-written-answer`) rather than tombstoned
+— it is real, functioning code (a Claude-Haiku-based written-answer grader)
+that was simply never committed, not dead code; it remains live and
+undisturbed, just now version-controlled.
+
+`export-report` (already archived to `supabase/functions/_archive/` in PR
+#1363, superseded by `parent-report-generator`) was permanently deleted from
+production directly, without an additional tombstone step — the archive
+commit already served as its observation record.
+
+Full writeup: `docs/audit/launch-readiness/29-edge-function-cleanup-and-m5-status.md`.

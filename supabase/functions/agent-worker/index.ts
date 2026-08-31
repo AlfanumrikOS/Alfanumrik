@@ -1,0 +1,48 @@
+/**
+ * TOMBSTONE — agent-worker retired 2026-08-31.
+ *
+ * Hand-created directly via the Supabase CLI/dashboard (entrypoint path was
+ * `/tmp/user_fn_.../source/index.ts`, not the CI runner path), never
+ * committed to git, never deployed by CI. A repo-wide grep across
+ * `*.ts`, `*.tsx`, `*.dart`, `*.sql` found zero call sites.
+ *
+ * NOTE: not to be confused with `public.agent_worker_tick()`, the unrelated
+ * SQL function driving pg_cron job 26 (`agent-worker-tick-every-minute`,
+ * schedule `* * * * *`, active) — that function is pure SQL and makes no
+ * `net.http_*` calls out to this or any Edge Function slug (verified via
+ * `pg_get_functiondef`). The naming similarity is coincidental; this Edge
+ * Function has no live dependents.
+ *
+ * Same tombstone-then-delete pattern used for the 39-function orphan sweep
+ * (see docs/audit/launch-readiness/29-edge-function-cleanup-and-m5-status.md).
+ * Permanent deletion (`supabase functions delete agent-worker`) is a
+ * deliberate follow-up after a 30-day observation window with zero tombstone
+ * hits in Edge Function logs.
+ */
+
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { getCorsHeaders } from '../_shared/cors.ts'
+
+const RETIRED_ON = '2026-08-31'
+
+serve((req) => {
+  const corsHeaders = getCorsHeaders(req.headers.get('origin'))
+
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders })
+  }
+
+  const userAgent = (req.headers.get('user-agent') || 'unknown').slice(0, 120)
+  console.warn(`[agent-worker:tombstone] method=${req.method} ua="${userAgent}"`)
+
+  return new Response(
+    JSON.stringify({
+      code: 'GONE',
+      error: `The agent-worker Edge Function was retired on ${RETIRED_ON}. It had zero application callers.`,
+    }),
+    {
+      status: 410,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    },
+  )
+})
