@@ -333,6 +333,23 @@ export function buildSystemBlocks(
   });
 }
 
+/**
+ * 2026-09-01 (cost-visibility fix): one non-final rung of the modelOrder
+ * fallback loop that errored before the caller moved to the next model.
+ * Token fields are omitted deliberately, not just defaulted — every current
+ * failure classification (auth_error/server_error/timeout/unknown) reaches
+ * its return point BEFORE a response body is successfully parsed, so there
+ * is never real usage data to attach. If a future failure kind captures
+ * partial usage, add fields here explicitly rather than guessing at 0 vs
+ * real; the adapter treats an absent field as 0 cost, which is accurate
+ * today but should stay a documented fact, not an assumption.
+ */
+export interface FailedAttempt {
+  provider: 'openai' | 'anthropic';
+  model: string;
+  outcome: 'auth_error' | 'server_error' | 'timeout' | 'unknown';
+}
+
 export type ClaudeResponse =
   | {
       ok: true;
@@ -377,10 +394,22 @@ export type ClaudeResponse =
        * '|' at the LogPayload boundary).
        */
       failure_chain?: string[];
+      /**
+       * 2026-09-01 (cost-visibility fix): structured form of failure_chain
+       * above — one entry per non-final rung, for the caller to log as its
+       * OWN mol_request_logs row (shadow_role='failed_attempt'). Kept
+       * alongside failure_chain rather than replacing it: existing telemetry
+       * code already joins failure_chain into a single text column, and
+       * duplicating that logic from a richer struct is more surface than
+       * this fix needs.
+       */
+      failedAttempts?: FailedAttempt[];
     }
   | {
       ok: false;
       reason: 'timeout' | 'auth_error' | 'server_error' | 'unknown';
+      /** See the ok:true variant's doc comment. Populated even on total failure. */
+      failedAttempts?: FailedAttempt[];
     };
 
 /**
@@ -416,6 +445,8 @@ export type ClaudeStreamEvent =
        */
       fallback_count?: number;
       failure_chain?: string[];
+      /** See ClaudeResponse's failedAttempts doc comment above. */
+      failedAttempts?: FailedAttempt[];
     }
   | {
       type: 'final';
@@ -424,6 +455,8 @@ export type ClaudeStreamEvent =
       // partial text accumulated up to the failure point — may be empty
       partialText: string;
       model: string | null;
+      /** See ClaudeResponse's failedAttempts doc comment above. */
+      failedAttempts?: FailedAttempt[];
     };
 
 export interface ModelTarget {
@@ -449,6 +482,9 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
   // these counts so downstream telemetry can attribute cost/latency to the
   // model that actually answered, not just the first model tried.
   const failureChain: string[] = [];
+  // 2026-09-01 (cost-visibility fix): structured twin of failureChain, pushed
+  // at the exact same two sites below. See FailedAttempt's doc comment.
+  const failedAttempts: FailedAttempt[] = [];
   // Providers whose credentials have already been rejected this call. An auth
   // failure is only conclusive WITHIN a provider (same key, same result) — it
   // says nothing about the other provider's key, and MODEL_FALLBACK_ORDER is
@@ -519,6 +555,7 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
         stopReason: attempt.stopReason,
         fallback_count: failureChain.length,
         failure_chain: failureChain.length > 0 ? failureChain.slice() : undefined,
+        failedAttempts: failedAttempts.length > 0 ? failedAttempts.slice() : undefined,
       };
     }
 
@@ -530,22 +567,24 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
       // taking Foxy fully down while a working key sits unused.
       authFailedProviders.add(target.provider);
       failureChain.push(failureLabel(target.provider, attempt.kind));
+      failedAttempts.push({ provider: target.provider, model: target.model, outcome: attempt.kind });
       const hasAlternateProvider = modelOrder.slice(i + 1).some((t) =>
         !authFailedProviders.has(t.provider) &&
         (t.provider === 'openai' ? !!req.openaiApiKey : !!req.apiKey)
       );
       if (!hasAlternateProvider) {
-        return { ok: false, reason: 'auth_error' };
+        return { ok: false, reason: 'auth_error', failedAttempts: failedAttempts.slice() };
       }
       continue;
     }
 
     // timeout | server_error | unknown → record + try next model.
     failureChain.push(failureLabel(target.provider, attempt.kind));
+    failedAttempts.push({ provider: target.provider, model: target.model, outcome: attempt.kind });
     lastReason = attempt.kind;
   }
 
-  return { ok: false, reason: lastReason };
+  return { ok: false, reason: lastReason, failedAttempts: failedAttempts.length > 0 ? failedAttempts.slice() : undefined };
 }
 
 /**
@@ -555,7 +594,7 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
  * Kept narrow on purpose — adding new internal kinds requires explicit
  * mapping here so the telemetry contract never drifts silently.
  */
-function failureLabel(
+export function failureLabel(
   provider: 'openai' | 'anthropic',
   kind: 'timeout' | 'server_error' | 'unknown' | 'auth_error',
 ): string {
@@ -815,6 +854,13 @@ export async function* callClaudeStream(
   // current model (see firstTokenSent below). Mirrors callClaude semantics
   // so a single MOL telemetry adapter handles both paths.
   const failureChain: string[] = [];
+  // 2026-09-01 (cost-visibility fix): structured twin of failureChain, pushed
+  // at the same two sites below. Scoped to rungs that actually get RETRIED
+  // (auth_error, and the "no tokens shipped yet" fallback branch) — a
+  // post-first-token failure below is terminal, not a retried rung, and is
+  // out of scope for this fix. See FailedAttempt's doc comment in
+  // ClaudeResponse's definition.
+  const failedAttempts: FailedAttempt[] = [];
   // Providers whose credentials have already been rejected this turn. Same
   // reasoning as callClaude: an auth failure is only conclusive WITHIN a
   // provider (same key, same result) and says nothing about the other
@@ -896,6 +942,7 @@ export async function* callClaudeStream(
         insufficientContext: result.fullText.trim() === INSUFFICIENT_CONTEXT_SENTINEL,
         fallback_count: failureChain.length,
         failure_chain: failureChain.length > 0 ? failureChain.slice() : undefined,
+        failedAttempts: failedAttempts.length > 0 ? failedAttempts.slice() : undefined,
       };
       return;
     }
@@ -915,12 +962,20 @@ export async function* callClaudeStream(
       // post-first-token failure can never switch providers.
       authFailedProviders.add(target.provider);
       failureChain.push(failureLabel(target.provider, 'auth_error'));
+      failedAttempts.push({ provider: target.provider, model: target.model, outcome: 'auth_error' });
       const hasAlternateProvider = modelOrder.slice(i + 1).some((t) =>
         !authFailedProviders.has(t.provider) &&
         (t.provider === 'openai' ? !!req.openaiApiKey : !!req.apiKey)
       );
       if (result.firstTokenSent || !hasAlternateProvider) {
-        yield { type: 'final', ok: false, reason: 'auth_error', partialText: '', model: target.model };
+        yield {
+          type: 'final',
+          ok: false,
+          reason: 'auth_error',
+          partialText: '',
+          model: target.model,
+          failedAttempts: failedAttempts.slice(),
+        };
         return;
       }
       continue;
@@ -943,11 +998,23 @@ export async function* callClaudeStream(
     failureChain.push(
       failureLabel(target.provider, result.reason as 'timeout' | 'server_error' | 'unknown'),
     );
+    failedAttempts.push({
+      provider: target.provider,
+      model: target.model,
+      outcome: result.reason as 'timeout' | 'server_error' | 'unknown',
+    });
     lastReason = result.reason as 'timeout' | 'server_error' | 'unknown';
     // Try next model in the order.
   }
 
-  yield { type: 'final', ok: false, reason: lastReason, partialText: '', model: null };
+  yield {
+    type: 'final',
+    ok: false,
+    reason: lastReason,
+    partialText: '',
+    model: null,
+    failedAttempts: failedAttempts.length > 0 ? failedAttempts.slice() : undefined,
+  };
 }
 
 interface StreamOnceResult {

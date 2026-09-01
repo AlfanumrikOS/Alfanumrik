@@ -880,6 +880,12 @@ export async function* runStreamingPipeline(
           insufficientContext: evt.insufficientContext,
           fallback_count: evt.fallback_count,
           failure_chain: evt.failure_chain,
+          // 2026-09-01 (cost-visibility fix): same "must be copied, this
+          // object is rebuilt field-by-field" trap as cacheReadTokens/
+          // cacheWriteTokens above. Without this, every failed Anthropic
+          // rung before a successful fallback stays invisible on the
+          // streaming path specifically — the path Foxy actually uses.
+          failedAttempts: evt.failedAttempts,
         };
         shadowLogClaudeCallIfEnabled({
           studentId: request.student_id,
@@ -900,6 +906,27 @@ export async function* runStreamingPipeline(
         });
       } else {
         if (evt.reason !== 'auth_error') recordFailure(cKey);
+        // 2026-09-01 (cost-visibility fix): a TOTAL failure (every rung of
+        // modelOrder exhausted) previously logged nothing at all on this
+        // path — shadowLogClaudeCallIfEnabled was only ever called from the
+        // evt.ok branch above. That made an Anthropic+OpenAI outage
+        // invisible in mol_request_logs, not just under-costed: zero rows,
+        // not floor rows. Logs the individual failed-rung rows the same way
+        // the success path now does; there is no "final" row to log here
+        // (nothing was served), only the attempts.
+        if (evt.failedAttempts && evt.failedAttempts.length > 0) {
+          shadowLogClaudeCallIfEnabled({
+            studentId: request.student_id,
+            grade: request.scope.grade,
+            subject: request.scope.subject_code,
+            caller: request.caller,
+            mode: request.mode,
+            isGroundingCheck: false,
+            latencyMs: Date.now() - claudeStreamStart,
+            claudeResponse: { ok: false, reason: evt.reason, failedAttempts: evt.failedAttempts },
+            groundedTraceId: traceId,
+          });
+        }
         // If we already streamed text we can't abstain — emit an error event
         // and let the client decide how to render the partial text.
         accumulated = evt.partialText || accumulated;
