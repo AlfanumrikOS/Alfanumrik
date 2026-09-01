@@ -56,7 +56,7 @@ Deno.test('streamed turns forward Anthropic prompt-cache counters to telemetry',
 
 Deno.test('streamed turns still forward the base token counts', async () => {
   const literal = await syntheticResponseLiteral();
-  for (const field of ['inputTokens', 'outputTokens', 'fallback_count', 'failure_chain']) {
+  for (const field of ['inputTokens', 'outputTokens', 'fallback_count', 'failure_chain', 'failedAttempts']) {
     assert(
       new RegExp(`${field}\\s*:`).test(literal),
       `syntheticResponse must copy ${field} — telemetry and cost depend on it.`,

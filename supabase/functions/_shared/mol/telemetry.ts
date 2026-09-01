@@ -111,14 +111,23 @@ export interface LogPayload {
   shadow_of_request_id?: string | null
 
   /**
-   * 'baseline' = this row served the user.
-   * 'shadow'   = this row was discarded, kept only for offline comparison.
+   * 'baseline'       = this row served the user.
+   * 'shadow'         = this row was discarded, kept only for offline comparison.
+   * 'failed_attempt' = one non-final rung of claude.ts's modelOrder fallback
+   *                    loop that errored before the caller moved to the next
+   *                    model (2026-09-01 cost-visibility fix) — never a
+   *                    served answer, usd_cost/tokens are 0. Deliberately
+   *                    excluded from mol_shadow_pairs_v1 and any
+   *                    shadow_role='baseline' cost query, which is exactly
+   *                    the "don't skew the per-model averages" concern that
+   *                    used to justify not writing these rows at all.
    * NULL/undefined for legacy / non-shadow rows.
    *
    * The shadow_role CHECK constraint in 20260519000001_mol_shadow_routing.sql
-   * enforces the same two-value enum at the DB level.
+   * (widened to 3 values by 20260901170000_mol_request_logs_failed_attempt_
+   * shadow_role.sql) enforces the same enum at the DB level.
    */
-  shadow_role?: 'baseline' | 'shadow' | null
+  shadow_role?: 'baseline' | 'shadow' | 'failed_attempt' | null
 
   /**
    * grounded_ai_traces.id when this MOL call originated from grounded-answer.

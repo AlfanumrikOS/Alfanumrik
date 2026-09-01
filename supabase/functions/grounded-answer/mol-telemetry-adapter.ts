@@ -33,7 +33,7 @@ import {
 } from '../_shared/mol/telemetry.ts';
 import type { TaskType, StudentContext } from '../_shared/mol/types.ts';
 import { isFlagEnabled } from '../_shared/mol/feature-flag.ts';
-import type { ClaudeResponse } from './claude.ts';
+import { failureLabel, type ClaudeResponse } from './claude.ts';
 
 /** Feature-flag name. Default OFF in feature_flags table — owner: ops. */
 const C3_TELEMETRY_FLAG = 'ff_grounded_answer_mol_telemetry_v1';
@@ -227,11 +227,75 @@ export async function shadowLogClaudeCall(args: {
     // value would crash; pathological but cheap to defend against.
   }
 
-  // We only log successful (ok:true) calls — these are the rows MOL cares
-  // about for cost/latency dashboards. Failed calls (timeout/auth/etc) are
-  // observable via grounded_ai_traces.abstain_reason='upstream_error' and
-  // the circuit-breaker telemetry; logging them into mol_request_logs as
-  // zero-token/zero-cost rows would skew the per-model averages.
+  // 2026-09-01 (cost-visibility fix): every non-final rung of claude.ts's
+  // modelOrder fallback loop gets its OWN mol_request_logs row now, tagged
+  // shadow_role='failed_attempt' — regardless of whether the overall call
+  // eventually succeeded (ok:true after 1+ retries) or exhausted every rung
+  // (ok:false). Before this, a request that failed twice on Anthropic then
+  // succeeded on OpenAI produced exactly one row (the OpenAI success); the
+  // two failed Anthropic attempts were only a string on that row's
+  // failure_chain, with zero cost/count accounting of their own. Every
+  // dashboard number computed from this table before this fix is a floor.
+  //
+  // Runs unconditionally (before the ok:false early-return below), because
+  // failed attempts can precede EITHER outcome. shadow_role='failed_attempt'
+  // (not 'baseline') keeps these out of mol_shadow_pairs_v1 and any existing
+  // AVG(usd_cost)-style query scoped to shadow_role='baseline' — the exact
+  // "skew the per-model averages" concern the old code comment here raised,
+  // now solved by tagging rather than by omission.
+  const failedAttempts = args.claudeResponse.failedAttempts;
+  if (Array.isArray(failedAttempts) && failedAttempts.length > 0) {
+    try {
+      const taskType = mapPipelineToTaskType({
+        caller: args.caller,
+        mode: args.mode,
+        isGroundingCheck: args.isGroundingCheck,
+      });
+      const surface = mapCallerToSurface(args.caller);
+      const zeroTokens = { prompt: 0, completion: 0, cache_read: 0, cache_write: 0 };
+      for (const fa of failedAttempts) {
+        const payload: LogPayload = {
+          request_id: generateRequestId(),
+          student_id: args.studentContext?.student_id ?? null,
+          task_type: taskType,
+          surface,
+          provider: fa.provider,
+          model: fa.model,
+          passes: 1,
+          fallback_count: 0,
+          // The reason this ONE rung failed — not the whole chain's history,
+          // which the eventual baseline/failure row already carries.
+          failure_chain: failureLabel(fa.provider, fa.outcome),
+          latency_ms: args.latencyMs,
+          tokens: zeroTokens,
+          // 0 is accurate, not a placeholder — see FailedAttempt's doc
+          // comment in claude.ts: every current failure kind returns before
+          // a response body is parsed, so there is never real usage to
+          // attach. calcCost() would compute 0 from zeroTokens regardless;
+          // stated directly here so a future reader doesn't have to trace
+          // through calcCost to confirm it.
+          usd_cost: 0,
+          inr_cost: 0,
+          grade: args.studentContext?.grade ?? null,
+          language: args.studentContext?.language ?? null,
+          exam_goal: args.studentContext?.exam_goal ?? null,
+          shadow_role: 'failed_attempt',
+          trace_id: args.groundedTraceId,
+        };
+        recordMolRequest(payload);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[mol-telemetry-adapter] failed-attempt logging swallowed: ${msg}`);
+    }
+  }
+
+  // We only log the FINAL row below for successful (ok:true) calls — these
+  // are the rows that represent an answer actually served to the student.
+  // A total failure (ok:false, every rung exhausted) is observable via
+  // grounded_ai_traces.abstain_reason='upstream_error' and the circuit-
+  // breaker telemetry; its individual rung failures are now captured above
+  // regardless.
   if (!args.claudeResponse.ok) return;
 
   try {
