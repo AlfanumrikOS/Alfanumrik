@@ -18,6 +18,12 @@
 
 import { MODEL_FALLBACK_ORDER, CLAUDE_PRIMARY_FALLBACK_ORDER } from './config.ts';
 import { shouldUseClaudePrimary } from './_model-rollout-flag.ts';
+// 2026-09-01 DIAGNOSTIC (temporary, remove once the anthropic:unknown root
+// cause is confirmed and fixed): every 'unknown'-classified Anthropic result
+// is currently invisible — mol_request_logs only stores the failure LABEL,
+// never the raw response that produced it. This makes the classification
+// observable without guessing.
+import { logOpsEvent } from '../_shared/ops-events.ts';
 
 const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -218,8 +224,9 @@ export interface SystemSegment {
 
 /**
  * Anthropic allows at most 4 cache_control breakpoints per request. The
- * pipeline produces ≤2 by construction ([static head] + [RAG tail]);
- * this cap is a hard guard against future segment plans exceeding it.
+ * pipeline produces exactly 1 by construction ([static head] only — RAG
+ * chunks lost their own breakpoint 2026-09-01, see prompts/index.ts); this
+ * cap is a hard guard against future segment plans exceeding it.
  */
 const MAX_CACHE_CONTROL_BLOCKS = 4;
 
@@ -254,8 +261,8 @@ export interface ClaudeRequest {
   /**
    * Response-cache v2 (design item 9): ordered system-prompt segments for
    * multi-block Anthropic prompt caching ([static template + safety rails +
-   * mode directive] cached → … → [RAG chunks] cached, per-student sections
-   * uncached). Optional and additive: absent → the legacy single
+   * mode directive] cached → per-student sections + RAG chunks uncached).
+   * Optional and additive: absent → the legacy single
    * cache_control block, byte-identical to pre-v2 behavior. OpenAI fallback
    * paths ignore this (they take the joined `systemPrompt` string).
    */
@@ -275,7 +282,7 @@ export interface ClaudeRequest {
  *      prepended to the next segment (or appended to the previous when
  *      last) so no empty/whitespace-only text block is ever sent.
  *   3. Breakpoint cap: never more than MAX_CACHE_CONTROL_BLOCKS
- *      cache_control markers (Anthropic limit is 4; we emit ≤2 today).
+ *      cache_control markers (Anthropic limit is 4; we emit 1 today).
  */
 export function buildSystemBlocks(
   systemPrompt: string,
@@ -634,7 +641,10 @@ async function callOnce(params: {
     // cache v2 (design item 9) restructures the previous single monolithic
     // cache_control block into ordered blocks via buildSystemBlocks:
     //   [static template + safety rails + mode directive] (cache_control)
-    //   → [per-student sections] (uncached) → [RAG chunks] (cache_control)
+    //   → [per-student sections] (uncached) → [RAG chunks] (uncached —
+    //   lost its own breakpoint 2026-09-01; retrieval is per-query and
+    //   measured well below the 21.7% cache-hit break-even, see
+    //   prompts/index.ts)
     // Block boundaries only — the concatenated text is verified
     // byte-identical to params.systemPrompt (fallback: legacy single
     // block). Callers that don't pass systemSegments keep the legacy single
@@ -690,13 +700,43 @@ async function callOnce(params: {
     }
 
     if (!response.ok) {
-      await response.text().catch(() => '');
+      const rawText = await response.text().catch(() => '');
       console.warn(`claude: unexpected HTTP ${response.status} for model ${params.model}`);
+      await logOpsEvent({
+        category: 'ai',
+        source: 'claude-unknown-diag',
+        severity: 'error',
+        message: `callOnce unknown: unexpected HTTP status`,
+        context: {
+          model: params.model,
+          status: response.status,
+          rawBodyPreview: rawText.slice(0, 500),
+        },
+      });
       return { kind: 'unknown' };
     }
 
-    const body = await response.json().catch(() => null);
-    if (!body) return { kind: 'unknown' };
+    const rawText = await response.text().catch(() => '');
+    let body: any = null;
+    try {
+      body = JSON.parse(rawText);
+    } catch {
+      body = null;
+    }
+    if (!body) {
+      await logOpsEvent({
+        category: 'ai',
+        source: 'claude-unknown-diag',
+        severity: 'error',
+        message: `callOnce unknown: 2xx response with unparseable/empty body`,
+        context: {
+          model: params.model,
+          status: response.status,
+          rawBodyPreview: rawText.slice(0, 500),
+        },
+      });
+      return { kind: 'unknown' };
+    }
 
     // Anthropic content is an array of blocks; concatenate all text blocks.
     // deno-lint-ignore no-explicit-any
@@ -729,6 +769,13 @@ async function callOnce(params: {
       return { kind: 'timeout' };
     }
     console.warn(`claude: network error on ${params.model} — ${String(err)}`);
+    await logOpsEvent({
+      category: 'ai',
+      source: 'claude-unknown-diag',
+      severity: 'error',
+      message: `callOnce unknown: network/fetch exception`,
+      context: { model: params.model, error: String(err) },
+    });
     return { kind: 'unknown' };
   } finally {
     clearTimeout(timeoutId);
@@ -1006,12 +1053,30 @@ async function* streamOnce(params: {
       return { ok: false, reason: 'server_error', fullText, inputTokens, outputTokens, firstTokenSent };
     }
     if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
+      const rawText = await response.text().catch(() => '');
       console.warn(`claude(stream): unexpected HTTP ${response.status} for ${params.model}`);
+      await logOpsEvent({
+        category: 'ai',
+        source: 'claude-unknown-diag',
+        severity: 'error',
+        message: `streamOnce unknown: unexpected HTTP status`,
+        context: {
+          model: params.model,
+          status: response.status,
+          rawBodyPreview: rawText.slice(0, 500),
+        },
+      });
       return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
     }
 
     if (!response.body) {
+      await logOpsEvent({
+        category: 'ai',
+        source: 'claude-unknown-diag',
+        severity: 'error',
+        message: `streamOnce unknown: 2xx response with no readable body`,
+        context: { model: params.model, status: response.status },
+      });
       return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
     }
 
@@ -1085,6 +1150,13 @@ async function* streamOnce(params: {
       return { ok: false, reason: 'timeout', fullText, inputTokens, outputTokens, firstTokenSent };
     }
     console.warn(`claude(stream): network error on ${params.model} — ${String(err)}`);
+    await logOpsEvent({
+      category: 'ai',
+      source: 'claude-unknown-diag',
+      severity: 'error',
+      message: `streamOnce unknown: network/read exception`,
+      context: { model: params.model, error: String(err), fullTextSoFarLength: fullText.length },
+    });
     return { ok: false, reason: 'unknown', fullText, inputTokens, outputTokens, firstTokenSent };
   } finally {
     clearTimeout(timeoutId);
