@@ -949,8 +949,13 @@ Deno.test('stream: post-first-token failure → final ok:false with partialText,
     } else {
       throw new Error('expected an ok:false final event');
     }
-    // No fallback of any kind once the first token has shipped.
-    assertEquals(calls.length, 1);
+    // No fallback of any kind once the first token has shipped. Filtered to
+    // AI-provider calls only: the 2026-09-01 anthropic:unknown diagnostic
+    // (claude.ts's logOpsEvent on this exact failure path) also goes through
+    // the same stubbed global fetch, and legitimately fires here — it is an
+    // observability write, not a fallback attempt, so it must not count
+    // against "no second provider call."
+    assertEquals(calls.filter((c) => c.url.includes('anthropic.com')).length, 1);
   } finally {
     restoreFetch();
   }
