@@ -890,6 +890,13 @@ export async function* runStreamingPipeline(
           isGroundingCheck: false,
           latencyMs: Date.now() - claudeStreamStart,
           claudeResponse: syntheticResponse,
+          // 2026-09-02 (§5 data-integrity fix): `traceId` (the real
+          // grounded_ai_traces.id) is already in scope here — the trace row
+          // is written PRE-STREAM (see the `const traceId = await
+          // writeGroundedTrace(...)` comment above, ~150 lines up) precisely
+          // so the metadata event can carry it. No reordering needed to wire
+          // this; it was simply never threaded through to the shadow log.
+          groundedTraceId: traceId,
         });
       } else {
         if (evt.reason !== 'auth_error') recordFailure(cKey);

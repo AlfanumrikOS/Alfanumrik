@@ -3,6 +3,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { ProviderResponse, TokenUsage } from './types.ts'
 import { redactPIIInText } from '../redact-pii.ts'
+// 2026-09-02 (§5 data-integrity fix): recordMolRequest was a pure
+// console.warn-and-drop on insert failure — invisible to anyone not tailing
+// this specific Edge Function's stdout at the exact moment. logOpsEvent
+// writes into the SAME ops_events table this repo's own alert pipeline
+// (evaluate_alert_rules / alert-deliverer) already watches, so a failure
+// here becomes an alertable event instead of a log line nobody reads.
+import { logOpsEvent } from '../ops-events.ts'
 
 // USD per 1M tokens. Source: model_pricing table (seeded). Local fallback kept
 // in sync with that migration. If you change either, change both.
@@ -173,10 +180,49 @@ export function recordMolRequest(p: LogPayload): void {
       (err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err)
         console.warn('[mol] telemetry write failed:', msg)
+        // severity:'error' is AWAITED inside logOpsEvent (guaranteed delivery
+        // per its own contract), but that await happens INSIDE this detached
+        // .then() branch — it adds no latency to the student-facing request,
+        // which already returned before this callback runs. Never throws
+        // (logOpsEvent's own contract), so this cannot introduce a new
+        // unhandled-rejection path.
+        void logOpsEvent({
+          category: 'ai',
+          source: 'mol_request_logs',
+          severity: 'error',
+          message: `mol_request_logs insert failed: ${msg}`,
+          subjectType: 'mol_request_logs_row',
+          subjectId: p.request_id,
+          requestId: p.request_id,
+          context: {
+            surface: p.surface,
+            task_type: p.task_type,
+            provider: p.provider,
+            model: p.model,
+            student_id: p.student_id,
+            usd_cost: p.usd_cost,
+            prompt_tokens: p.tokens.prompt,
+            completion_tokens: p.tokens.completion,
+            cache_read_tokens: p.tokens.cache_read ?? 0,
+            cache_write_tokens: p.tokens.cache_write ?? 0,
+            error: msg,
+          },
+        })
       },
     )
   } catch (err) {
-    console.warn('[mol] telemetry call threw synchronously:', (err as Error)?.message ?? err)
+    const msg = (err as Error)?.message ?? String(err)
+    console.warn('[mol] telemetry call threw synchronously:', msg)
+    void logOpsEvent({
+      category: 'ai',
+      source: 'mol_request_logs',
+      severity: 'error',
+      message: `mol_request_logs insert threw synchronously: ${msg}`,
+      subjectType: 'mol_request_logs_row',
+      subjectId: p.request_id,
+      requestId: p.request_id,
+      context: { surface: p.surface, task_type: p.task_type, error: msg },
+    })
   }
 }
 

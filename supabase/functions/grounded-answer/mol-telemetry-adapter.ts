@@ -191,6 +191,20 @@ export async function shadowLogClaudeCall(args: {
   isGroundingCheck: boolean;
   latencyMs: number;
   claudeResponse: ClaudeResponse;
+  /**
+   * 2026-09-02 (§5 data-integrity fix): the REAL grounded_ai_traces.id for
+   * this call, when the caller has one available. Deliberately a separate
+   * field from `traceId` above — `traceId` is MOL's own synthetic
+   * mol_request_logs.request_id, generated fresh on every call by
+   * shadowLogClaudeCallIfEnabled; it has never referred to
+   * grounded_ai_traces.id despite the shared name, which is exactly the
+   * confusion this field's distinct name is meant to end. Optional and
+   * additive: undefined -> mol_request_logs.trace_id stays NULL, byte-
+   * identical to pre-fix behavior. Only pipeline-stream.ts's Foxy call site
+   * supplies this today (see its own comment for why pipeline.ts's two call
+   * sites do not yet) — the FK join this enables is real but partial.
+   */
+  groundedTraceId?: string | null;
 }): Promise<void> {
   // Risk #4 (architect-flagged): every flag-gated entry emits a single
   // structured log line BEFORE the recordMolRequest call. Lets ops prove
@@ -309,6 +323,15 @@ export async function shadowLogClaudeCall(args: {
       //       feature-flag check short-circuited at the call site)
       //     → view returns 0 rows (correct: no baseline anchor exists)
       shadow_role: 'baseline',
+      // 2026-09-02 (§5 data-integrity fix): the real grounded_ai_traces.id,
+      // when the caller supplied one. Same convention as shadow_of_request_id
+      // above: pass the value through as-is (undefined stays undefined) and
+      // let recordMolRequest's `p.trace_id ?? null` coalesce at insert time.
+      // Coalescing here too would be redundant AND changes this payload's
+      // own shape (undefined -> null) ahead of that insert-time step, which
+      // is what stamps_shadow_role's LogPayload-contract test pins against.
+      // See groundedTraceId's doc comment above for scope.
+      trace_id: args.groundedTraceId,
     };
 
     // recordMolRequest is itself a fire-and-forget (returns void), but it
@@ -351,6 +374,8 @@ export function shadowLogClaudeCallIfEnabled(args: {
   isGroundingCheck: boolean;
   latencyMs: number;
   claudeResponse: ClaudeResponse;
+  /** See shadowLogClaudeCall's doc comment on the same field. */
+  groundedTraceId?: string | null;
 }): void {
   // The flag check itself is async (a fetch + Array.find against the
   // in-process 5-minute cache). To guarantee zero impact on request
@@ -386,6 +411,7 @@ export function shadowLogClaudeCallIfEnabled(args: {
         isGroundingCheck: args.isGroundingCheck,
         latencyMs: args.latencyMs,
         claudeResponse: args.claudeResponse,
+        groundedTraceId: args.groundedTraceId,
       });
     } catch (err) {
       // Defensive: shadowLogClaudeCall already swallows; this catches the
