@@ -365,7 +365,44 @@ describe('shadowLogClaudeCall — LogPayload contract', () => {
     });
 
     const payload = recordMolRequestSpy.mock.calls[0][0];
-    expect(payload.tokens).toEqual({ prompt: 73, completion: 412 });
+    // cache_read/cache_write added 2026-09-01. They default to 0 rather than
+    // being omitted so an UNCACHED call stays distinguishable from one that was
+    // never measured — that ambiguity is what hid ~479x of Foxy prompt tokens.
+    expect(payload.tokens).toEqual({
+      prompt: 73,
+      completion: 412,
+      cache_read: 0,
+      cache_write: 0,
+    });
+  });
+
+  it('forwards Anthropic prompt-cache counters into LogPayload.tokens', async () => {
+    // The defect this pins: claude.ts sets cache_control, so a cached Foxy turn
+    // reports most of its prompt under cache_* — a real turn logged 22 prompt
+    // tokens against ~11,500 sent. If the adapter drops these, cost is priced
+    // at zero for the cached bulk no matter what claude.ts captures.
+    await shadowLogClaudeCall({
+      traceId: 'trace-cache-tokens',
+      studentContext: studentCtx,
+      caller: 'foxy',
+      mode: 'soft',
+      isGroundingCheck: false,
+      latencyMs: 1111,
+      claudeResponse: okClaude({
+        inputTokens: 22,
+        outputTokens: 869,
+        cacheReadTokens: 9000,
+        cacheWriteTokens: 2500,
+      }),
+    });
+
+    const payload = recordMolRequestSpy.mock.calls[0][0];
+    expect(payload.tokens).toEqual({
+      prompt: 22,
+      completion: 869,
+      cache_read: 9000,
+      cache_write: 2500,
+    });
     expect(payload.provider).toBe('anthropic');
     expect(payload.passes).toBe(1);
     expect(payload.model).toBe('claude-haiku-4-5-20251001');

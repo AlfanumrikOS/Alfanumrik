@@ -334,6 +334,15 @@ export type ClaudeResponse =
       provider?: 'openai' | 'anthropic';
       inputTokens: number;
       outputTokens: number;
+      /**
+       * Anthropic prompt-cache counters (2026-09-01). Optional and additive —
+       * OpenAI never reports them and pre-existing consumers ignore them.
+       * REQUIRED for correct cost: on a cached turn most of the prompt lives
+       * here, not in inputTokens, and pricing only inputTokens under-counted
+       * Foxy by ~479x (12-78 logged vs 8,327-12,518 actually sent).
+       */
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
       insufficientContext: boolean;
       /**
        * Normalized generation stop reason (Phase 0.2). `max_tokens` signals the
@@ -387,6 +396,9 @@ export type ClaudeStreamEvent =
       provider?: 'openai' | 'anthropic';
       inputTokens: number;
       outputTokens: number;
+      /** Anthropic prompt-cache counters — see the blocking variant above. */
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
       insufficientContext: boolean;
       /**
        * C3 (MOL grounded-answer integration, 2026-05-18): fallback bookkeeping.
@@ -494,6 +506,8 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
         provider: target.provider,
         inputTokens: attempt.inputTokens,
         outputTokens: attempt.outputTokens,
+        cacheReadTokens: attempt.cacheReadTokens ?? 0,
+        cacheWriteTokens: attempt.cacheWriteTokens ?? 0,
         insufficientContext: trimmed === INSUFFICIENT_CONTEXT_SENTINEL,
         stopReason: attempt.stopReason,
         fallback_count: failureChain.length,
@@ -582,7 +596,17 @@ async function resolveModelOrder(
 }
 
 type SingleCallResult =
-  | { kind: 'ok'; content: string; inputTokens: number; outputTokens: number; stopReason: ClaudeStopReason }
+  | {
+      kind: 'ok';
+      content: string;
+      inputTokens: number;
+      outputTokens: number;
+      /** Anthropic cache_read_input_tokens — billed at 0.1x input. 0 on OpenAI. */
+      cacheReadTokens?: number;
+      /** Anthropic cache_creation_input_tokens — billed at 1.25x input. 0 on OpenAI. */
+      cacheWriteTokens?: number;
+      stopReason: ClaudeStopReason;
+    }
   | { kind: 'timeout' }
   | { kind: 'auth_error' }
   | { kind: 'server_error' }
@@ -686,9 +710,20 @@ async function callOnce(params: {
 
     const inputTokens = typeof body.usage?.input_tokens === 'number' ? body.usage.input_tokens : 0;
     const outputTokens = typeof body.usage?.output_tokens === 'number' ? body.usage.output_tokens : 0;
+    // Prompt-cache counters (2026-09-01). This file sets cache_control in 12
+    // places, so on a cached turn Anthropic moves the bulk of the prompt OUT of
+    // input_tokens and into these two. Reading only input_tokens is why Foxy
+    // logged 12-78 prompt tokens while the SAME task on OpenAI logged
+    // 8,327-12,518 (measured over 7 days) — a ~479x under-count, priced at zero.
+    const cacheReadTokens = typeof body.usage?.cache_read_input_tokens === 'number'
+      ? body.usage.cache_read_input_tokens
+      : 0;
+    const cacheWriteTokens = typeof body.usage?.cache_creation_input_tokens === 'number'
+      ? body.usage.cache_creation_input_tokens
+      : 0;
     const stopReason = normalizeAnthropicStopReason(body.stop_reason);
 
-    return { kind: 'ok', content: text, inputTokens, outputTokens, stopReason };
+    return { kind: 'ok', content: text, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, stopReason };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       return { kind: 'timeout' };
@@ -809,6 +844,8 @@ export async function* callClaudeStream(
         provider: target.provider,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
+        cacheReadTokens: result.cacheReadTokens ?? 0,
+        cacheWriteTokens: result.cacheWriteTokens ?? 0,
         insufficientContext: result.fullText.trim() === INSUFFICIENT_CONTEXT_SENTINEL,
         fallback_count: failureChain.length,
         failure_chain: failureChain.length > 0 ? failureChain.slice() : undefined,
@@ -872,6 +909,10 @@ interface StreamOnceResult {
   fullText: string;
   inputTokens: number;
   outputTokens: number;
+  /** Anthropic cache_read_input_tokens (0.1x input). Absent on the OpenAI path. */
+  cacheReadTokens?: number;
+  /** Anthropic cache_creation_input_tokens (1.25x input). Absent on the OpenAI path. */
+  cacheWriteTokens?: number;
   firstTokenSent: boolean;
 }
 
@@ -911,6 +952,9 @@ async function* streamOnce(params: {
   let fullText = '';
   let inputTokens = 0;
   let outputTokens = 0;
+  // Anthropic prompt-cache counters, populated from message_start below.
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
   let firstTokenSent = false;
 
   try {
@@ -1017,6 +1061,15 @@ async function* streamOnce(params: {
           if (parsed.message?.usage?.input_tokens) {
             inputTokens = parsed.message.usage.input_tokens;
           }
+          // Cache counters arrive on message_start alongside input_tokens.
+          // Without these the streaming path under-counts a cached prompt
+          // exactly as the non-streaming path did — see the note there.
+          if (typeof parsed.message?.usage?.cache_read_input_tokens === 'number') {
+            cacheReadTokens = parsed.message.usage.cache_read_input_tokens;
+          }
+          if (typeof parsed.message?.usage?.cache_creation_input_tokens === 'number') {
+            cacheWriteTokens = parsed.message.usage.cache_creation_input_tokens;
+          }
         } else if (parsed.type === 'message_delta') {
           if (parsed.usage?.output_tokens) {
             outputTokens = parsed.usage.output_tokens;
@@ -1026,7 +1079,7 @@ async function* streamOnce(params: {
       }
     }
 
-    return { ok: true, fullText, inputTokens, outputTokens, firstTokenSent };
+    return { ok: true, fullText, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, firstTokenSent };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       return { ok: false, reason: 'timeout', fullText, inputTokens, outputTokens, firstTokenSent };

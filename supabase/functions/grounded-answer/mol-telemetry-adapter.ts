@@ -238,6 +238,14 @@ export async function shadowLogClaudeCall(args: {
     const tokens = {
       prompt: typeof claude.inputTokens === 'number' ? claude.inputTokens : 0,
       completion: typeof claude.outputTokens === 'number' ? claude.outputTokens : 0,
+      // 2026-09-01: the Foxy answer path caches (claude.ts sets cache_control in
+      // 12 places), so on a cached turn the bulk of the prompt is reported by
+      // Anthropic under these two counters, NOT under input_tokens. Dropping
+      // them here is what made a real Foxy turn log 22 prompt tokens and price
+      // at $0.004367 when ~11,500 tokens were actually sent. calcCost() bills
+      // reads at 0.1x and writes at 1.25x; both are 0 for OpenAI.
+      cache_read: typeof claude.cacheReadTokens === 'number' ? claude.cacheReadTokens : 0,
+      cache_write: typeof claude.cacheWriteTokens === 'number' ? claude.cacheWriteTokens : 0,
     };
     // Cost is computed at write time via calcCost() / toInr(), using the
     // PRICING table in _shared/mol/telemetry.ts. The PRICING table also
