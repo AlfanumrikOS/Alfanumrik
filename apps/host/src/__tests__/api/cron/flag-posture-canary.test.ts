@@ -273,7 +273,11 @@ describe('flag-posture-canary — auth gate (fail-closed before I/O)', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('flag-posture-canary — DB query shape', () => {
-  it('reads feature_flags once, selecting state columns, .in() over the 57-name watched set (56 EXPECTED_OFF + the P11 kill-switch)', async () => {
+  // NOTE: this title previously read "57-name watched set (56 EXPECTED_OFF …)"
+  // while the assertions below pinned 55 and EXPECTED_OFF_FLAGS held 54 — the
+  // prose had drifted two ahead of the numbers it describes. Corrected here to
+  // the real, asserted values (56 = 55 EXPECTED_OFF + the P11 kill-switch).
+  it('reads feature_flags once, selecting state columns, .in() over the 56-name watched set (55 EXPECTED_OFF + the P11 kill-switch)', async () => {
     const { GET } = await loadRoute();
     await GET(req({ 'x-cron-secret': SECRET }));
 
@@ -293,18 +297,21 @@ describe('flag-posture-canary — DB query shape', () => {
     // + the 5 GenAI ecosystem flags added 2026-08-01, seed 20260801120000
     // companion, minus the 3 flags approved intentionally-live on 2026-08-03
     // — ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine —
-    // minus ff_foxy_openai_primary_rollout_v1, which was added same-day by
-    // seed 20260803120000 then CEO-approved intentionally-live at
-    // enabled=true/100 the same day, so it never nets into this list,
+    // PLUS ff_foxy_openai_primary_rollout_v1: added by seed 20260803120000,
+    // then CEO-approved intentionally-live at enabled=true/100 the same day so
+    // it did not net in, and RE-ADDED 2026-09-01 when migration
+    // 20260901140000 returned it to enabled=false/0 (CEO direction —
+    // Anthropic primary for Foxy teaching, OpenAI fallback),
     // minus ff_quiz_telemetry_v1, promoted to always-on in code 2026-08-06,
     // backendaudit P0)
     // minus ff_adaptive_loops_bc_v1 and ff_school_pulse_v1, both CEO-approved
     // intentionally-live 2026-08-19 after an audited admin_flip_feature_flag
     // rollout (admin_audit_log, 2026-08-18 16:27 UTC)
     // + ATOMIC; the two MoL shadow flags are already members of EXPECTED_OFF,
-    // so the de-duped set is 55.
+    // so the de-duped set is 56 (was 55 before ff_foxy_openai_primary_rollout_v1
+    // re-entered EXPECTED_OFF_FLAGS on 2026-09-01).
     expect(new Set(watched).size).toBe(watched.length);
-    expect(watched).toHaveLength(55);
+    expect(watched).toHaveLength(56);
     // Belt-and-braces against the silent-merge failure mode described in the
     // file header: pin the RELATION as well as the literal, so a future
     // EXPECTED_OFF_FLAGS edit that forgets this file fails with a message that
@@ -452,13 +459,22 @@ describe('flag-posture-canary — drift detection matrix', () => {
     expect(EXPECTED_OFF_FLAGS).not.toContain('ff_school_pulse_v1');
   });
 
-  it('ff_foxy_openai_primary_rollout_v1 at its CEO-approved intentionally-live posture (2026-08-03, is_enabled=true/rollout_percentage=100 — the OpenAI-primary rollback lever, #1443) is NOT drift — it is no longer in EXPECTED_OFF_FLAGS, so the post-deploy flag-posture canary sees prod enabled=true/100 as expected', async () => {
+  it('ff_foxy_openai_primary_rollout_v1 back at enabled=true/100 IS drift as of 2026-09-01 — the lever was returned to false/0 (migration 20260901140000, CEO direction: Anthropic primary for teaching), so a flip back to OpenAI-primary must fail the canary', async () => {
+    // Inverted 2026-09-01. From 2026-08-03 this asserted { drift: [], count: 0 }
+    // for exactly this row, because the lever was CEO-approved intentionally-
+    // live. It is now dormant, and at enabled=true/100 every identified caller
+    // resolves OpenAI-primary — the posture change this canary must catch.
     const { body } = await run([...CLEAN_ROWS, row('ff_foxy_openai_primary_rollout_v1', true, 100)]);
-    expect(body).toEqual({ drift: [], count: 0 });
+    expect(body.count).toBe(1);
+    expect(body.drift[0]).toMatchObject({
+      flag_name: 'ff_foxy_openai_primary_rollout_v1',
+      is_enabled: true,
+      rollout_percentage: 100,
+    });
   });
 
-  it('ff_foxy_openai_primary_rollout_v1 is correctly no longer in the watched set derived from EXPECTED_OFF_FLAGS', async () => {
-    expect(EXPECTED_OFF_FLAGS).not.toContain('ff_foxy_openai_primary_rollout_v1');
+  it('ff_foxy_openai_primary_rollout_v1 is back in the watched set derived from EXPECTED_OFF_FLAGS', async () => {
+    expect(EXPECTED_OFF_FLAGS).toContain('ff_foxy_openai_primary_rollout_v1');
   });
 });
 

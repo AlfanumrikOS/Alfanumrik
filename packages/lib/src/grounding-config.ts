@@ -204,4 +204,14 @@ export const PROMPT_REV = 3;
 // 404 not_found_error) to 'claude-sonnet-4-5-20250929'. Kept in sync with the
 // authoritative bump in supabase/functions/grounded-answer/config.ts; see that
 // file for the full rationale.
-export const MODEL_ROUTE_REV = 5;
+// MODEL_ROUTE_REV=6 (2026-09-01): ANTHROPIC-PRIMARY FOR TEACHING — CEO-directed
+// provider swap (Pradeep Sharma). ff_foxy_openai_primary_rollout_v1 returns
+// from is_enabled=true/rollout_percentage=100 to false/0 (migration
+// 20260901140000), so resolveModelOrder falls through to MODEL_FALLBACK_ORDER
+// (anthropic first, openai fallback) for every caller instead of bucketing them
+// onto CLAUDE_PRIMARY_FALLBACK_ORDER (openai first — inverted identifier, read
+// the array). Kept in sync with the authoritative bump in
+// supabase/functions/grounded-answer/config.ts; see that file for the full
+// rationale. The 2026-08-26 stale-mirror incident recorded above is why this
+// line moves in the same commit as its twin, not afterwards.
+export const MODEL_ROUTE_REV = 6;

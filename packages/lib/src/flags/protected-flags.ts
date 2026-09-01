@@ -451,18 +451,21 @@ export function getProtection(flagName: string): FlagProtection | null {
  * ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 /
  * ff_foxy_openai_primary_rollout_v1 precedents below.
  *
- * ALSO NOT in this list (on purpose, as of 2026-08-03):
- * ff_foxy_openai_primary_rollout_v1. CEO-approved (Pradeep Sharma)
- * INTENTIONALLY-LIVE at is_enabled=true / rollout_percentage=100 -- the
- * OpenAI-primary rollback lever, deliberately pulled to 100%. It was seeded
- * is_enabled=false / rollout_percentage=0 by migration 20260803120000 and
- * briefly listed here; #1443 shipped the flag and the live 100% posture is
- * now the CEO-confirmed approved state (the OpenAI-primary rollback lever is
- * allowed to be live), not drift. It remains an `ai_provider` entry in
- * PROTECTED_FLAGS above, so any FURTHER change still requires typed
- * confirmation. If ever rolled back to 0%, re-add
- * 'ff_foxy_openai_primary_rollout_v1' to this list -- mirrors the
- * ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 precedents immediately above.
+ * BACK in this list as of 2026-09-01: ff_foxy_openai_primary_rollout_v1.
+ * History: seeded is_enabled=false / rollout_percentage=0 by migration
+ * 20260803120000 and listed here; REMOVED 2026-08-03 when #1443 pulled the
+ * OpenAI-primary rollback lever to a CEO-approved intentionally-live 100%
+ * (live, therefore not drift, therefore correctly not expected-off).
+ * RE-ADDED 2026-09-01: migration 20260901140000 returns it to
+ * is_enabled=false / rollout_percentage=0 on CEO direction (Pradeep Sharma)
+ * to make Anthropic the primary provider for Foxy teaching with OpenAI as
+ * the fallback tier — this file's own standing instruction for that case was
+ * "If ever rolled back to 0%, re-add ... to this list", mirroring the
+ * ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 precedents above.
+ * It remains an `ai_provider` entry in PROTECTED_FLAGS above, so any FURTHER
+ * change still requires typed confirmation; re-pulling the lever to 100%
+ * means removing it from this list again AND carrying a
+ * CEO-APPROVED-FLAG-FLIP marker in the enabling migration.
  */
 export const EXPECTED_OFF_FLAGS: string[] = [
   // Group A — constitution-pinned. ff_adaptive_loops_bc_v1 and
@@ -552,15 +555,21 @@ export const EXPECTED_OFF_FLAGS: string[] = [
   'ff_outcome_prediction_v1',
   'ff_lesson_generation_v1',
   'ff_content_generation_v1',
-  // ff_foxy_openai_primary_rollout_v1 REMOVED from this list 2026-08-03:
-  // CEO-approved (Pradeep Sharma) intentionally-live at is_enabled=true /
-  // rollout_percentage=100 — the OpenAI-primary rollback lever, deliberately
-  // pulled to 100%. Seeded OFF by 20260803120000 and briefly listed here;
-  // #1443 shipped the flag and the live 100% posture is now the CEO-confirmed
-  // approved state (the rollback lever is allowed to be live), not drift, so
-  // the canary no longer expects it fully-OFF. It remains an ai_provider-tier
-  // PROTECTED_FLAGS entry above, so any further change still requires typed
-  // confirmation. If ever rolled back to 0%, re-add
-  // 'ff_foxy_openai_primary_rollout_v1' here. Mirrors the
-  // ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 precedents.
+  // ff_foxy_openai_primary_rollout_v1 — RE-ADDED 2026-09-01, per the standing
+  // instruction this list carried while the flag was out ("If ever rolled back
+  // to 0%, re-add ... here").
+  //
+  // Timeline: seeded OFF by 20260803120000 and listed here → REMOVED
+  // 2026-08-03 when #1443 pulled the OpenAI-primary rollback lever to a
+  // CEO-approved intentionally-live 100% (live by decision, so genuinely not
+  // drift) → back to is_enabled=false / rollout_percentage=0 by migration
+  // 20260901140000 on CEO direction (Pradeep Sharma), making Anthropic the
+  // primary provider for Foxy teaching with OpenAI as the fallback tier.
+  //
+  // With the lever at 0%, resolveModelOrder falls through to
+  // MODEL_FALLBACK_ORDER (anthropic first). Watching it here is what stops
+  // that silently reverting: an unaudited flip back to 100% would swap every
+  // identified caller to OpenAI-primary, and this entry makes the posture
+  // canary fail on it instead of letting it ride.
+  'ff_foxy_openai_primary_rollout_v1',
 ];

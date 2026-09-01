@@ -227,9 +227,9 @@ describe('PROTECTED_FLAGS registry — tier membership', () => {
 // ─── EXPECTED_OFF_FLAGS posture list ──────────────────────────────────
 
 describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
-  it('contains exactly 54 unique names (52 block-(ii) + ff_irt_question_selection + 2 Pedagogy v2 additions + 2 WhatsApp bot protected flags (seed 20260801100500) + 5 GenAI ecosystem additions (seed 20260801120000) + ff_foxy_openai_primary_rollout_v1 (seed 20260803120000) MINUS ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) MINUS ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) MINUS 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine) MINUS ff_foxy_openai_primary_rollout_v1 (CEO-approved intentionally-live, 2026-08-03) MINUS ff_quiz_telemetry_v1 (promoted always-on in code, 2026-08-06 backendaudit P0) MINUS ff_adaptive_loops_bc_v1 and ff_school_pulse_v1 (CEO-approved intentionally-live, 2026-08-19))', () => {
-    expect(EXPECTED_OFF_FLAGS).toHaveLength(54);
-    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(54);
+  it('contains exactly 55 unique names (52 block-(ii) + ff_irt_question_selection + 2 Pedagogy v2 additions + 2 WhatsApp bot protected flags (seed 20260801100500) + 5 GenAI ecosystem additions (seed 20260801120000) + ff_foxy_openai_primary_rollout_v1 (seed 20260803120000, re-added 2026-09-01) MINUS ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) MINUS ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) MINUS 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine) MINUS ff_quiz_telemetry_v1 (promoted always-on in code, 2026-08-06 backendaudit P0) MINUS ff_adaptive_loops_bc_v1 and ff_school_pulse_v1 (CEO-approved intentionally-live, 2026-08-19))', () => {
+    expect(EXPECTED_OFF_FLAGS).toHaveLength(55);
+    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(55);
     expect(EXPECTED_OFF_FLAGS).toContain('ff_irt_question_selection');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_productive_failure_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_pedagogy_v2_monthly_synthesis');
@@ -239,9 +239,11 @@ describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
     expect(EXPECTED_OFF_FLAGS).toContain('ff_outcome_prediction_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_lesson_generation_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_content_generation_v1');
-    // ff_foxy_openai_primary_rollout_v1 is deliberately NOT here as of
-    // 2026-08-03 — CEO-approved intentionally-live at enabled=true/100 (see
-    // the dedicated excludes test below).
+    // ff_foxy_openai_primary_rollout_v1 is BACK here as of 2026-09-01 — the
+    // OpenAI-primary lever was returned to enabled=false/0 by migration
+    // 20260901140000 (CEO direction: Anthropic primary for teaching), so it is
+    // expected fully-OFF again. See the dedicated includes test below.
+    expect(EXPECTED_OFF_FLAGS).toContain('ff_foxy_openai_primary_rollout_v1');
   });
 
   it('excludes ff_adaptive_remediation_v1 on purpose: CEO-approved 10% production pilot (2026-07-22), no longer expected fully-OFF, still constitution_pinned for any further increase', () => {
@@ -254,8 +256,14 @@ describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
     expect(getProtection('ff_whatsapp_bot_v1')?.tier).toBe('staged_rollout');
   });
 
-  it('excludes ff_foxy_openai_primary_rollout_v1 on purpose: CEO-approved intentionally-live at is_enabled=true/rollout_percentage=100 (2026-08-03, the OpenAI-primary rollback lever, #1443), no longer expected fully-OFF, still ai_provider-protected for any further change', () => {
-    expect(EXPECTED_OFF_FLAGS).not.toContain('ff_foxy_openai_primary_rollout_v1');
+  it('INCLUDES ff_foxy_openai_primary_rollout_v1 again as of 2026-09-01: returned to is_enabled=false/rollout_percentage=0 by migration 20260901140000 (CEO direction — Anthropic primary for Foxy teaching, OpenAI fallback), so it is expected fully-OFF once more; still ai_provider-protected for any further change', () => {
+    // 2026-08-03 → 2026-09-01 this asserted the OPPOSITE, while the lever sat
+    // CEO-approved intentionally-live at enabled=true/100 (#1443). At 0% the
+    // lever is dormant and resolveModelOrder falls through to
+    // MODEL_FALLBACK_ORDER (anthropic first). Watching it here is what makes
+    // an unaudited flip back to 100% — which would put every identified caller
+    // on OpenAI-primary — fail the post-deploy posture canary.
+    expect(EXPECTED_OFF_FLAGS).toContain('ff_foxy_openai_primary_rollout_v1');
     expect(getProtection('ff_foxy_openai_primary_rollout_v1')?.tier).toBe('ai_provider');
   });
 
@@ -298,11 +306,12 @@ describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
     expected.delete('ff_foxy_streaming');
     expected.delete('ff_goal_aware_rag');
     expected.delete('ff_grounded_ai_concept_engine');
-    // 2026-08-03: ff_foxy_openai_primary_rollout_v1 added as a literal above
-    // (it lives in its own migration, not parsed here) then deleted here as
-    // CEO-approved intentionally-live at enabled=true/100 — same add-then-
-    // delete treatment as ff_whatsapp_bot_v1.
-    expected.delete('ff_foxy_openai_primary_rollout_v1');
+    // 2026-09-01: ff_foxy_openai_primary_rollout_v1 is added as a literal
+    // above (it lives in its own migration, not parsed here) and is NO LONGER
+    // deleted. Between 2026-08-03 and 2026-09-01 it was deleted here as
+    // CEO-approved intentionally-live at enabled=true/100; migration
+    // 20260901140000 returned it to enabled=false/0 (CEO direction: Anthropic
+    // primary for teaching), so it belongs in the expected-off set again.
     // 2026-08-06: ff_quiz_telemetry_v1 promoted to always-on in code
     // (v2/quiz/submit/route.ts unconditionally calls prepareQuizTelemetry,
     // backendaudit P0) — the route no longer reads the flag, so it is no
