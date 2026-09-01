@@ -183,19 +183,33 @@ export async function fetchPendingTeacherRemediation(
     // chapter number). A miss is non-fatal — the resolver falls back to the
     // weakest chapter (general remediation behaviour).
     if (chosen.chapter_id) {
-      const { data: topic } = await admin
+      const { data: topic, error: topicErr } = await admin
         .from('curriculum_topics')
         .select('chapter_number, subject_id')
         .eq('id', chosen.chapter_id)
         .maybeSingle();
-      const topicRow = topic as { chapter_number: number | null; subject_id: string | null } | null;
+      // Best-effort anchor by design (the caller falls back to the weakest
+      // chapter), but supabase-js resolves rather than throws so the catch
+      // below never saw this — a failed anchor was indistinguishable from a
+      // legitimately missing topic row.
+      if (topicErr) {
+        console.warn(
+          `[resolve-next-action] curriculum_topics anchor read failed (${topicErr.code}): ${topicErr.message}`,
+        );
+      }
+      const topicRow = (topicErr ? null : topic) as { chapter_number: number | null; subject_id: string | null } | null;
       if (topicRow?.subject_id) {
-        const { data: subj } = await admin
+        const { data: subj, error: subjErr } = await admin
           .from('subjects')
           .select('code')
           .eq('id', topicRow.subject_id)
           .maybeSingle();
-        const subjectCode = (subj as { code?: string } | null)?.code;
+        if (subjErr) {
+          console.warn(
+            `[resolve-next-action] subjects anchor read failed (${subjErr.code}): ${subjErr.message}`,
+          );
+        }
+        const subjectCode = (subjErr ? null : (subj as { code?: string } | null))?.code;
         if (subjectCode) out.subjectCode = subjectCode;
       }
       if (typeof topicRow?.chapter_number === 'number' && topicRow.chapter_number > 0) {

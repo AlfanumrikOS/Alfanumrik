@@ -38,11 +38,16 @@
  *     `GET /api/v2/learn/curriculum` route) via the deterministic
  *     `matchTopicFromText()` heuristic (`@alfanumrik/lib/foxy/snap-topic-match`).
  *     No AI/RAG call — see that module's doc comment.
- *   - The three intents (Explain / Just the steps / Hint only) — `onIntent`
+ *   - The three intents (Explain / How to start / Hint only) — `onIntent`
  *     is expected to navigate to the REAL, EXISTING `/foxy` deep-link
- *     mechanism (`subject` + `mode=doubt` + `topic` + `prompt` query params —
- *     the exact same mechanism `learn/[subject]/[chapter]/page.tsx`'s
- *     "Ask Foxy" button already uses). See the page for the actual href
+ *     mechanism (`subject` + `mode` + `topic` + `prompt` query params — the
+ *     exact same mechanism `learn/[subject]/[chapter]/page.tsx`'s "Ask Foxy"
+ *     button already uses). The `mode` is NOT the same for all three:
+ *     `explain` hands off as `doubt`, while `steps` and `hint` hand off as
+ *     `homework` (Socratic ladder, never states the assigned problem's final
+ *     answer). That mapping lives in the page (`INTENT_MODE`), not here —
+ *     but it is why the `steps` label reads "How to start" rather than
+ *     promising a full solution. See the page for the actual href
  *     construction; this component only calls the callback.
  *
  * PLACEHOLDER (clearly labeled in the UI, does not pretend to work):
@@ -106,9 +111,15 @@ export interface SnapDoubtProps {
   onIntent: (intent: SnapDoubtIntent, block: SnapDoubtBlock) => void;
 }
 
+// The `steps` label used to read "Just the steps" / "सिर्फ़ स्टेप्स", which
+// promised a full worked solution. The page now routes that intent through
+// Foxy's `homework` mode, which will NOT solve an assigned problem end-to-end
+// — so the button must not promise one. "How to start" / "कैसे शुरू करें" is
+// what the student actually gets: the setup and the first step. See
+// `INTENT_MODE` in apps/host/src/app/foxy/snap/page.tsx.
 const INTENTS: Array<{ id: SnapDoubtIntent; icon: string; label: string; labelHi: string }> = [
   { id: 'explain', icon: '💡', label: 'Explain', labelHi: 'समझाओ' },
-  { id: 'steps', icon: '📋', label: 'Just the steps', labelHi: 'सिर्फ़ स्टेप्स' },
+  { id: 'steps', icon: '📋', label: 'How to start', labelHi: 'कैसे शुरू करें' },
   { id: 'hint', icon: '🔑', label: 'Hint only', labelHi: 'सिर्फ़ संकेत' },
 ];
 

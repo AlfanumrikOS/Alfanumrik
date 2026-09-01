@@ -17,12 +17,21 @@ export async function loadWorkflowCognitiveContext(
   }
 
   try {
-    const { data: subjectRow } = await supabaseAdmin
+    const { data: subjectRow, error: subjectErr } = await supabaseAdmin
       .from('subjects')
       .select('id')
       .ilike('code', subject)
       .maybeSingle();
-    const subjectId = subjectRow?.id ?? null;
+    // Degrades to "no cognitive context" (the documented empty return below),
+    // which is safe but was previously indistinguishable from a student who
+    // genuinely has none. P13: no ids.
+    if (subjectErr) {
+      logger.warn('workflow_context_subject_lookup_failed', {
+        code: subjectErr.code,
+        error: subjectErr.message,
+      });
+    }
+    const subjectId = subjectErr ? null : subjectRow?.id ?? null;
 
     let chapterId: string | null = null;
     if (chapter && subjectId) {
@@ -170,12 +179,20 @@ export async function loadWorkflowCognitiveContext(
       try {
         const qIds = Array.from(m.questionIds);
         if (qIds.length > 0) {
-          const { data: remRows } = await supabaseAdmin
+          const { data: remRows, error: remErr } = await supabaseAdmin
             .from('wrong_answer_remediations')
             .select('remediation_text')
             .in('question_id', qIds)
             .limit(1);
-          remediationText = remRows?.[0]?.remediation_text ?? '';
+          // Non-fatal (the misconception is still reported, just without
+          // remediation text) — but no longer silent. P13: no ids.
+          if (remErr) {
+            logger.warn('workflow_context_remediation_lookup_failed', {
+              code: remErr.code,
+              error: remErr.message,
+            });
+          }
+          remediationText = remErr ? '' : remRows?.[0]?.remediation_text ?? '';
         }
       } catch {
         // non-fatal

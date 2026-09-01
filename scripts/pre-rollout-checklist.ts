@@ -187,6 +187,14 @@ export function checkConfigFilesPresent(): CheckResult {
 export function checkConfigParity(): CheckResult {
   // Originally delegated to scripts/check-config-parity.sh, but shelling out to bash
   // is flaky on Windows environments. Re-implemented in pure TS for cross-platform reliability.
+  //
+  // 2026-08-31: that shell script has since been DELETED (it had been dead
+  // since the monorepo migration — its hardcoded `src/lib/grounding-config.ts`
+  // path stopped resolving, so it `exit 1`-ed with no message on every run).
+  // This function is unaffected: it never shelled out. Note it compares
+  // constant NAMES only, exactly as the deleted script did. The authoritative
+  // VALUE-parity check is
+  // apps/host/src/__tests__/grounding/config-parity-values.test.ts.
   const webPath = sharedLibFile('grounding-config.ts');
   const denoPath = join(REPO_ROOT, 'supabase', 'functions', 'grounded-answer', 'config.ts');
   
@@ -225,7 +233,17 @@ export function checkConfigParity(): CheckResult {
 export function checkEslintRulesRegistered(): CheckResult {
   const p = join(REPO_ROOT, '.eslintrc.ai-boundary.json');
   if (!existsSync(p)) return fail('eslint ai-boundary config', `missing: ${p}`);
-  const cfg = JSON.parse(readFileSync(p, 'utf8')) as {
+  // `.eslintrc.*.json` is JSONC, not JSON — ESLint strips `//` comments before
+  // parsing, and both this repo's eslintrc files carry substantial in-config
+  // rationale (that commentary is load-bearing: it is what records WHY each
+  // override exists). A raw JSON.parse() here therefore throws on a file
+  // ESLint itself reads happily, so strip line comments first, exactly as
+  // ESLint does. Only `//`-style comments are used in these files.
+  const rawCfg = readFileSync(p, 'utf8')
+    .split('\n')
+    .map((line) => (/^\s*\/\//.test(line) ? '' : line))
+    .join('\n');
+  const cfg = JSON.parse(rawCfg) as {
     rules?: Record<string, unknown>;
   };
   const rules = cfg.rules ?? {};

@@ -174,10 +174,21 @@ export async function fetchTopicMasteryByQuestionId(
     const uniqueIds = Array.from(new Set(questionIds.filter(Boolean)));
     if (uniqueIds.length === 0) return {};
 
-    const { data: qbRows } = await client
+    const { data: qbRows, error: qbErr } = await client
       .from('question_bank')
       .select('id, topic_id')
       .in('id', uniqueIds);
+    // Best-effort by design (callers fall back to the 0.5 default), but the
+    // catch below was unreachable for query errors — supabase-js resolves.
+    // Same {} return, now attributable.
+    if (qbErr) {
+      console.warn(
+        '[srs-quiz-review] question topic lookup failed:',
+        qbErr.code,
+        qbErr.message,
+      );
+      return {};
+    }
     const topicByQid: Record<string, string> = {};
     for (const row of (qbRows ?? []) as Array<{ id: string; topic_id: string | null }>) {
       if (row.topic_id) topicByQid[row.id] = row.topic_id;
@@ -185,11 +196,20 @@ export async function fetchTopicMasteryByQuestionId(
     const topicIds = Array.from(new Set(Object.values(topicByQid)));
     if (topicIds.length === 0) return {};
 
-    const { data: cmRows } = await client
+    const { data: cmRows, error: cmErr } = await client
       .from('concept_mastery')
       .select('topic_id, mastery_probability')
       .eq('student_id', studentId)
       .in('topic_id', topicIds);
+    // Same best-effort contract as the lookup above.
+    if (cmErr) {
+      console.warn(
+        '[srs-quiz-review] concept mastery lookup failed:',
+        cmErr.code,
+        cmErr.message,
+      );
+      return {};
+    }
     const masteryByTopic: Record<string, number> = {};
     for (const row of (cmRows ?? []) as Array<{ topic_id: string; mastery_probability: unknown }>) {
       const m = Number(row.mastery_probability);

@@ -257,12 +257,21 @@ async function handleParentLogin(
   // 2a. If caller is authenticated, check for an existing guardian profile by auth_user_id.
   //     This prevents creating orphan guardian rows when the parent already signed up via auth.
   if (authUserId) {
-    const { data: authGuardian } = await supabase
+    const { data: authGuardian, error: authGuardianErr } = await supabase
       .from('guardians')
       .select('id, name')
       .eq('auth_user_id', authUserId)
       .limit(1)
       .maybeSingle()
+
+    // Reading a failure as "no existing guardian profile" is precisely the
+    // orphan-row bug the comment above says this branch exists to prevent: the
+    // fall-through creates a SECOND guardian for an already-signed-up parent.
+    // Refuse instead — the parent can retry. P13: no email/name in the log.
+    if (authGuardianErr) {
+      console.error('[parent-portal] guardian lookup failed:', authGuardianErr.code, authGuardianErr.message)
+      return jsonResponse({ error: 'Could not verify parent profile. Please try again.' }, 503, {}, origin)
+    }
 
     if (authGuardian) {
       guardianId = authGuardian.id
@@ -273,13 +282,22 @@ async function handleParentLogin(
       // the STUDENT must approve via /api/parent/approve-link before any data is
       // exposed. Look up any existing link (status-agnostic) to decide pending vs
       // already-approved, and to guarantee no duplicate / no downgrade.
-      const { data: existingAuthLink } = await supabase
+      const { data: existingAuthLink, error: existingAuthLinkErr } = await supabase
         .from('guardian_student_links')
         .select('id, status')
         .eq('guardian_id', guardianId)
         .eq('student_id', student.id)
         .limit(1)
         .maybeSingle()
+
+      // This read decides approved-vs-pending. A failure read as "no link"
+      // would tell an ALREADY-APPROVED parent that their request is pending
+      // (and, worse, is the read that guarantees "no downgrade"). Refuse
+      // rather than answer from a guess. P13: ids only, and none in the log.
+      if (existingAuthLinkErr) {
+        console.error('[parent-portal] guardian link lookup failed:', existingAuthLinkErr.code, existingAuthLinkErr.message)
+        return jsonResponse({ error: 'Could not verify link status. Please try again.' }, 503, {}, origin)
+      }
 
       // Already approved/active (re-submit by an already-linked parent): return
       // the existing success/session shape UNCHANGED + status:'approved'. Never
@@ -306,7 +324,7 @@ async function handleParentLogin(
         // unique key) so a concurrent double-submit can never 23505 or overwrite
         // an approved row. ignoreDuplicates ⇒ the row is returned ONLY on a
         // genuine new insert, so we notify the student exactly once.
-        const { data: insertedLink } = await supabase
+        const { data: insertedLink, error: insertedLinkErr } = await supabase
           .from('guardian_student_links')
           .upsert(
             {
@@ -323,19 +341,33 @@ async function handleParentLogin(
           .select('id')
           .maybeSingle()
 
+        // A failed upsert is NOT the ignoreDuplicates race: no link row was
+        // created at all, so the parent would be told "pending" for a link that
+        // does not exist and the student would never be asked to consent.
+        if (insertedLinkErr) {
+          console.error('[parent-portal] pending link upsert failed:', insertedLinkErr.code, insertedLinkErr.message)
+          return jsonResponse({ error: 'Could not create link request. Please try again.' }, 503, {}, origin)
+        }
+
         if (insertedLink?.id) {
           linkId = insertedLink.id
           await notifyStudentOfPendingLink(supabase, student.id, insertedLink.id)
         } else {
           // Race: a concurrent submit won the upsert (no row returned). Re-read
           // the existing link id so the response still carries it.
-          const { data: raceLink } = await supabase
+          const { data: raceLink, error: raceLinkErr } = await supabase
             .from('guardian_student_links')
             .select('id')
             .eq('guardian_id', guardianId)
             .eq('student_id', student.id)
             .limit(1)
             .maybeSingle()
+          // Non-fatal: the link row exists (the upsert reported a duplicate),
+          // we just could not read its id back. The response degrades to an
+          // empty link id exactly as before — but not silently.
+          if (raceLinkErr) {
+            console.error('[parent-portal] race link re-read failed:', raceLinkErr.code, raceLinkErr.message)
+          }
           linkId = raceLink?.id || ''
         }
       }
@@ -362,7 +394,7 @@ async function handleParentLogin(
   // auth_user_id branch above) before reusing an existing guardian; otherwise
   // we add a NEW guardian + link, scoping the new caller's session to a
   // distinct guardian row.
-  const { data: existingLink } = await supabase
+  const { data: existingLink, error: existingLinkErr } = await supabase
     .from('guardian_student_links')
     .select('guardian_id, guardians(id, name, email)')
     .eq('student_id', student.id)
@@ -370,20 +402,35 @@ async function handleParentLogin(
     .limit(1)
     .maybeSingle()
 
-  if (existingLink?.guardian_id && authUserId) {
+  // Degrades in the SAFE direction (falls through to creating a distinct new
+  // guardian rather than reusing an existing one), so behaviour is left
+  // unchanged — but a systematic failure here would silently fan out duplicate
+  // guardian rows, so it must be visible. P13: no ids/emails in the log.
+  if (existingLinkErr) {
+    console.error('[parent-portal] existing-link lookup failed:', existingLinkErr.code, existingLinkErr.message)
+  }
+
+  if (!existingLinkErr && existingLink?.guardian_id && authUserId) {
     // Authenticated caller AND a guardian already exists for this student.
     // The auth_user_id branch above would have matched the caller's own
     // guardian if they had one; falling through to here means they don't.
     // Reuse the existing guardian only when the existing guardian's
     // auth_user_id matches the caller (prevents hijack). Otherwise, create a
     // distinct guardian row below.
-    const { data: existingGuardian } = await supabase
+    const { data: existingGuardian, error: existingGuardianErr } = await supabase
       .from('guardians')
       .select('id, name, auth_user_id')
       .eq('id', existingLink.guardian_id)
       .maybeSingle()
 
-    if (existingGuardian && existingGuardian.auth_user_id === authUserId) {
+    // Fail-CLOSED matters here: this comparison is the anti-hijack check
+    // documented above. An unreadable guardian row must never satisfy it, so
+    // the create-new-guardian fall-through below is the correct degrade.
+    if (existingGuardianErr) {
+      console.error('[parent-portal] guardian ownership check failed:', existingGuardianErr.code, existingGuardianErr.message)
+    }
+
+    if (!existingGuardianErr && existingGuardian && existingGuardian.auth_user_id === authUserId) {
       guardianId = existingGuardian.id
       guardianName = existingGuardian.name || parentName
     } else {
@@ -433,7 +480,7 @@ async function handleParentLogin(
     // STUDENT must approve before any data is exposed. Brand-new guardian ⇒ no
     // prior link; ON CONFLICT DO NOTHING is defense-in-depth against a concurrent
     // double-submit. Notify the student exactly once (only on a genuine insert).
-    const { data: insertedLink } = await supabase
+    const { data: insertedLink, error: insertedLinkErr } = await supabase
       .from('guardian_student_links')
       .upsert(
         {
@@ -450,17 +497,30 @@ async function handleParentLogin(
       .select('id')
       .maybeSingle()
 
+    // A failed upsert is NOT the ignoreDuplicates race: no pending link exists,
+    // so the student is never asked to consent while the parent is told the
+    // request is pending. Report it instead.
+    if (insertedLinkErr) {
+      console.error('[parent-portal] new-guardian pending link upsert failed:', insertedLinkErr.code, insertedLinkErr.message)
+      return jsonResponse({ error: 'Could not create link request. Please try again.' }, 503, {}, origin)
+    }
+
     if (insertedLink?.id) {
       pendingLinkId = insertedLink.id
       await notifyStudentOfPendingLink(supabase, student.id, insertedLink.id)
     } else {
-      const { data: raceLink } = await supabase
+      const { data: raceLink, error: raceLinkErr } = await supabase
         .from('guardian_student_links')
         .select('id')
         .eq('guardian_id', guardianId)
         .eq('student_id', student.id)
         .limit(1)
         .maybeSingle()
+      // Non-fatal: the row exists (the upsert reported a duplicate), we just
+      // could not read its id back. Same empty-id degrade as before.
+      if (raceLinkErr) {
+        console.error('[parent-portal] new-guardian race link re-read failed:', raceLinkErr.code, raceLinkErr.message)
+      }
       pendingLinkId = raceLink?.id || ''
     }
   } else {
@@ -536,24 +596,31 @@ async function getChildDashboardData(
   studentId: string
 ): Promise<Record<string, unknown>> {
   // Fetch student basic info
-  const { data: student } = await supabase
+  const { data: student, error: studentErr } = await supabase
     .from('students')
     .select('id, name, grade, xp_total, streak_days, last_active, preferred_subject, selected_subjects')
     .eq('id', studentId)
     .single()
+
+  // PGRST116 ("no rows") IS the "Student not found" case reported below and is
+  // deliberately not logged. Any other code means the read failed; reporting
+  // that as "not found" is wrong but at least visible now. P13: no name/grade.
+  if (studentErr && studentErr.code !== 'PGRST116') {
+    console.error('[parent-portal] dashboard student read failed:', studentErr.code, studentErr.message)
+  }
 
   if (!student) {
     return { error: 'Student not found', id: studentId }
   }
 
   // Fetch learning profiles
-  const { data: profiles } = await supabase
+  const { data: profiles, error: profilesErr } = await supabase
     .from('student_learning_profiles')
     .select('subject, xp, streak_days, total_sessions, total_questions_asked, total_questions_answered_correctly, total_time_minutes, last_session_at')
     .eq('student_id', studentId)
 
   // Fetch quiz sessions
-  const { data: quizSessions } = await supabase
+  const { data: quizSessions, error: quizSessionsErr } = await supabase
     .from('quiz_sessions')
     .select('id, subject, topic_title, score_percent, correct_answers, total_questions, time_taken_seconds, created_at, completed_at, is_completed')
     .eq('student_id', studentId)
@@ -563,16 +630,39 @@ async function getChildDashboardData(
     .limit(100)
 
   // Fetch chat session count
-  const { count: totalChats } = await supabase
+  const { count: totalChats, error: totalChatsErr } = await supabase
     .from('chat_sessions')
     .select('id', { count: 'exact', head: true })
     .eq('student_id', studentId)
 
   // Fetch concept mastery
-  const { data: conceptMastery } = await supabase
+  const { data: conceptMastery, error: conceptMasteryErr } = await supabase
     .from('concept_mastery')
     .select('topic_id, mastery_level, mastery_probability')
     .eq('student_id', studentId)
+
+  // Each of these four failures renders to the PARENT as a confident zero —
+  // "0 quizzes", "0 minutes", "no topics mastered" — which is the single most
+  // damaging way this dashboard can be wrong, because a worried parent cannot
+  // tell it from a child who genuinely did nothing. The response shape is left
+  // untouched (this Edge Function is deprecated in favour of /api/v2/parent/*),
+  // but every failure is now recorded. P13: student id + error metadata only.
+  for (const [source, err] of [
+    ['student_learning_profiles', profilesErr],
+    ['quiz_sessions', quizSessionsErr],
+    ['chat_sessions', totalChatsErr],
+    ['concept_mastery', conceptMasteryErr],
+  ] as const) {
+    if (err) {
+      console.error(
+        `[parent-portal] dashboard ${source} read failed for student`,
+        studentId,
+        '-',
+        err.code,
+        err.message,
+      )
+    }
+  }
 
   const allProfiles = profiles || []
   const allQuizzes = quizSessions || []
@@ -713,10 +803,20 @@ async function getChildDashboardData(
   let allowedCodes: Set<string> | null = null
   const staleSubjects: string[] = []
   try {
-    const { data: allowedRows } = await supabase.rpc('get_available_subjects', {
+    const { data: allowedRows, error: allowedRowsErr } = await supabase.rpc('get_available_subjects', {
       p_student_id: student.id,
     })
-    if (Array.isArray(allowedRows)) {
+    // The catch below was unreachable for RPC errors (supabase-js resolves), so
+    // the documented "returning unfiltered data" fallback fired silently — and
+    // that fallback is a P12/P13 relaxation, not a neutral degrade.
+    if (allowedRowsErr) {
+      console.warn(
+        'parent-portal: get_available_subjects failed, returning unfiltered data:',
+        allowedRowsErr.code,
+        allowedRowsErr.message,
+      )
+    }
+    if (!allowedRowsErr && Array.isArray(allowedRows)) {
       allowedCodes = new Set(
         (allowedRows as Array<{ code: string; is_locked: boolean }>)
           .filter((r) => !r.is_locked)
@@ -897,7 +997,7 @@ async function handleGetChildDashboard(
   const supabase = getServiceClient()
 
   // Verify guardian-student link (P13: data privacy)
-  const { data: link } = await supabase
+  const { data: link, error: linkErr } = await supabase
     .from('guardian_student_links')
     .select('id')
     .eq('guardian_id', guardianId)
@@ -906,7 +1006,15 @@ async function handleGetChildDashboard(
     .limit(1)
     .maybeSingle()
 
-  if (!link) {
+  // Fail CLOSED is already the right outcome (no readable link => 403, no
+  // payload) and is deliberately preserved. What was missing is the
+  // distinction between "this parent is not linked" and "we could not check" —
+  // the second is an outage, not an authorization decision. P13: no ids logged.
+  if (linkErr) {
+    console.error('[parent-portal] guardian link authorization check failed:', linkErr.code, linkErr.message)
+  }
+
+  if (linkErr || !link) {
     return jsonResponse(
       { error: 'You do not have access to this child\'s data.' },
       403,
@@ -955,7 +1063,7 @@ async function fetchQuizHistory(
   supabase: ReturnType<typeof getServiceClient>,
   studentId: string
 ): Promise<Record<string, unknown>[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('quiz_sessions')
     .select('id, subject, topic_title, score_percent, correct_answers, total_questions, time_taken_seconds, created_at, completed_at, is_completed')
     .eq('student_id', studentId)
@@ -963,6 +1071,12 @@ async function fetchQuizHistory(
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(100)
+  // Empty history renders to the parent as "your child has taken no quizzes",
+  // which is indistinguishable from the truth. Same [] degrade (the caller has
+  // no failure channel), but recorded. P13: student id + metadata only.
+  if (error) {
+    console.error('[parent-portal] quiz history read failed for student', studentId, '-', error.code, error.message)
+  }
   return data || []
 }
 
@@ -970,10 +1084,15 @@ async function fetchLearningProfiles(
   supabase: ReturnType<typeof getServiceClient>,
   studentId: string
 ): Promise<Record<string, unknown>[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('student_learning_profiles')
     .select('subject, xp, streak_days, total_sessions, total_questions_asked, total_questions_answered_correctly, total_time_minutes, last_session_at')
     .eq('student_id', studentId)
+  // Same reasoning as fetchQuizHistory: an empty result is a confident,
+  // wrong-looking-right answer for a parent reading a report.
+  if (error) {
+    console.error('[parent-portal] learning profile read failed for student', studentId, '-', error.code, error.message)
+  }
   return data || []
 }
 
@@ -1169,7 +1288,7 @@ async function handleGetMonthlyReport(
   const supabase = getServiceClient()
 
   // Verify guardian-student link
-  const { data: link } = await supabase
+  const { data: link, error: linkErr } = await supabase
     .from('guardian_student_links')
     .select('id')
     .eq('guardian_id', guardianId)
@@ -1178,7 +1297,15 @@ async function handleGetMonthlyReport(
     .limit(1)
     .maybeSingle()
 
-  if (!link) {
+  // Fail CLOSED is already the right outcome (no readable link => 403, no
+  // payload) and is deliberately preserved. What was missing is the
+  // distinction between "this parent is not linked" and "we could not check" —
+  // the second is an outage, not an authorization decision. P13: no ids logged.
+  if (linkErr) {
+    console.error('[parent-portal] guardian link authorization check failed:', linkErr.code, linkErr.message)
+  }
+
+  if (linkErr || !link) {
     return jsonResponse(
       { error: 'You do not have access to this child\'s data.' },
       403,
@@ -1219,12 +1346,19 @@ async function handleGetMonthlyReport(
     }
 
     // Fetch the newly generated report
-    const { data: newReport } = await supabase
+    const { data: newReport, error: newReportErr } = await supabase
       .from('monthly_reports')
       .select('*')
       .eq('student_id', studentId)
       .eq('report_month', monthDate)
       .maybeSingle()
+
+    // Non-fatal: the RPC already produced the report and the next line falls
+    // back to returning it directly, which is what the comment below describes.
+    // Only the reason for taking that fallback was missing.
+    if (newReportErr) {
+      console.error('[parent-portal] generated monthly report re-read failed:', newReportErr.code, newReportErr.message)
+    }
 
     if (newReport) {
       return jsonResponse(formatMonthlyReport(newReport), 200, {}, origin)
@@ -1436,11 +1570,17 @@ Deno.serve(async (req: Request) => {
     // For every other action, the caller must already be a registered
     // guardian. Resolve the canonical guardian_id from the JWT, then
     // override body.guardian_id so handlers see the trusted value.
-    const { data: guardian } = await supabase
+    const { data: guardian, error: guardianErr } = await supabase
       .from('guardians')
       .select('id')
       .eq('auth_user_id', authUserId)
       .single()
+    // Fail CLOSED (403, no payload) is already correct and is preserved. But
+    // PGRST116 ("not a guardian") and a real read failure are different facts:
+    // the second is an outage that would 403 every legitimate parent at once.
+    if (guardianErr && guardianErr.code !== 'PGRST116') {
+      console.error('[parent-portal] guardian identity resolution failed:', guardianErr.code, guardianErr.message)
+    }
     if (!guardian) {
       return errorResponse('Caller is not a registered guardian', 403, origin)
     }

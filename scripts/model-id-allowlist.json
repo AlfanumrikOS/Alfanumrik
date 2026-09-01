@@ -1,0 +1,54 @@
+{
+  "$comment": [
+    "Allowlist for scripts/check-model-ids.mjs — model ids the canary must NOT fail on.",
+    "",
+    "An entry here means: 'this id is knowingly-unreachable configuration, and we have",
+    "decided not to fix it today.' It does NOT mean the id is harmless. A dead id sitting",
+    "in dead code is still a landmine for whoever revives that code, which is exactly why",
+    "this is a checked-in file with a mandatory per-entry `reason` rather than a silent",
+    "skip inside the script. Adding an entry is a reviewable diff hunk; that diff IS the",
+    "approval gate.",
+    "",
+    "The canary still PROBES allowlisted ids and still prints their real status — it just",
+    "does not exit non-zero on them. An allowlisted id that is DEAD prints as a ::warning::",
+    "every run so it stays visible.",
+    "",
+    "`reason` must be >= 20 characters. An unexplained entry is rejected (exit 2).",
+    "",
+    "TO REMOVE AN ENTRY (the direction that should be common): fix or delete the dead",
+    "config, then delete the entry in the same PR. The canary prints a 'ratchet",
+    "opportunity' hint when an allowlisted id is no longer referenced anywhere.",
+    "",
+    "Runbook: docs/runbooks/model-id-canary.md"
+  ],
+  "allow": [
+    {
+      "id": "gemini-1.5-flash",
+      "provider": "gemini",
+      "reason": "Dormant provider seam. packages/lib/src/ai/gateway/registry.ts declares this descriptor with `configured: false`, and chainFromOrder()/listModels() filter on that flag, so the router can never select it. No GEMINI_API_KEY is wired anywhere in the repo. Re-verify the id (and the placeholder pricing/latency figures next to it) before ever flipping `configured` to true.",
+      "added": "2026-08-31",
+      "review": "when a third provider is actually wired"
+    },
+    {
+      "id": "gemini-1.5-pro",
+      "provider": "gemini",
+      "reason": "Dormant provider seam, same as gemini-1.5-flash: `configured: false` in packages/lib/src/ai/gateway/registry.ts means the router cannot select it and no GEMINI_API_KEY exists. Re-verify the id and its placeholder cost figures before flipping `configured` to true.",
+      "added": "2026-08-31",
+      "review": "when a third provider is actually wired"
+    },
+    {
+      "id": "claude-3-opus-20240229",
+      "provider": "anthropic",
+      "reason": "RETIRED at Anthropic (confirmed 404 by live probe). Two references, both non-routing: (1) python/services/ai/mol/use_cases.py — the Python USE_CASES table has ZERO importers anywhere under python/ (verified by grep for `use_cases`/`USE_CASES`), so nothing can route to it; the live routing table is the Deno twin supabase/functions/_shared/mol/use-cases.ts, which does NOT reference this id. (2) supabase/functions/_shared/mol/telemetry.ts PRICING — a price lookup for historical telemetry rows, correct to keep. LANDMINE: reviving the Python USE_CASES table without repinning would ship a guaranteed-404 fallback rung.",
+      "added": "2026-08-31",
+      "review": "delete when python/services/ai/mol/use_cases.py is deleted or repinned"
+    },
+    {
+      "id": "claude-3-5-sonnet-20241022",
+      "provider": "anthropic",
+      "reason": "RETIRED at Anthropic (confirmed 404 by live probe). Same two non-routing references as claude-3-opus-20240229: the caller-less python/services/ai/mol/use_cases.py table, and the historical PRICING row in supabase/functions/_shared/mol/telemetry.ts. Neither is on a request path. LANDMINE: reviving the Python USE_CASES table without repinning would ship a guaranteed-404 fallback rung.",
+      "added": "2026-08-31",
+      "review": "delete when python/services/ai/mol/use_cases.py is deleted or repinned"
+    }
+  ]
+}

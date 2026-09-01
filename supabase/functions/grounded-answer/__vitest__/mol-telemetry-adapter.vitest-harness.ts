@@ -400,12 +400,14 @@ describe('shadowLogClaudeCall — LogPayload contract', () => {
   });
 
   it('computes cost via PRICING table for claude-sonnet too', async () => {
-    // claude-sonnet-4-20250514 pricing: input 3.00/1M, output 15.00/1M.
+    // claude-sonnet-4-5-20250929 pricing: input 3.00/1M, output 15.00/1M.
     // (2026-08-02 Sonnet model-ID drift fix: PRICING's key is
-    // 'anthropic/claude-sonnet-4-20250514' — the stale
+    // 'anthropic/claude-sonnet-4-5-20250929' — the stale
     // 'claude-sonnet-4-6-20251022' id this fixture used to send has no
     // PRICING row and no base-alias match, so calcCost silently fell back to
-    // 0 instead of exercising this test's whole point.)
+    // 0 instead of exercising this test's whole point. 2026-08-31: the key
+    // moved again, from the now-RETIRED 'claude-sonnet-4-5-20250929' to
+    // 'claude-sonnet-4-5-20250929'; same failure mode if it drifts again.)
     // tokens: 1_000_000 prompt + 1_000_000 completion
     //   = 1.00 * 3.00 + 1.00 * 15.00 = 18.00 USD
     // INR @ default rate 83 = 1494.00
@@ -417,7 +419,7 @@ describe('shadowLogClaudeCall — LogPayload contract', () => {
       isGroundingCheck: false,
       latencyMs: 1234,
       claudeResponse: okClaude({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-5-20250929',
         inputTokens: 1_000_000,
         outputTokens: 1_000_000,
       }),
@@ -479,13 +481,13 @@ describe('shadowLogClaudeCall — LogPayload contract', () => {
       claudeResponse: okClaude({
         fallback_count: 2,
         failure_chain: ['anthropic:timeout', 'anthropic:5xx'],
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-5-20250929',
       }),
     });
     let payload = recordMolRequestSpy.mock.calls[0][0];
     expect(payload.fallback_count).toBe(2);
     expect(payload.failure_chain).toBe('anthropic:timeout|anthropic:5xx');
-    expect(payload.model).toBe('claude-sonnet-4-20250514');
+    expect(payload.model).toBe('claude-sonnet-4-5-20250929');
 
     recordMolRequestSpy.mockReset();
 

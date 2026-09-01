@@ -331,7 +331,7 @@ async function logTrace(
   latencyMs: number,
 ): Promise<string> {
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('retrieval_traces')
       .insert({
         user_id: params.userId ?? null,
@@ -352,6 +352,16 @@ async function logTrace(
       })
       .select('id')
       .single()
+
+    // Fire-and-forget observability: an empty trace id is the documented
+    // degrade and is preserved. But this is the table the RAG quality harness
+    // and the shadow-confidence dashboards read — a silently non-writing
+    // trace lane looks exactly like "no Foxy traffic", which is the worst
+    // possible way for a monitoring table to fail.
+    if (error) {
+      console.warn('[retrieval] trace insert failed:', error.code, error.message)
+      return ''
+    }
 
     return data?.id ?? ''
   } catch {

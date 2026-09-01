@@ -123,12 +123,22 @@ export function createDispatcher(
       if (!sub) throw new Error(`unknown subscriber: ${subscriberName}`);
       if (!sub.studentIdFromEvent) return { refused: 'not_student_scoped' };
 
-      const { data: rows } = await ctx.sb
+      const { data: rows, error: rowsErr } = await ctx.sb
         .from('state_events')
         .select('*')
         .eq('kind', sub.kind)
         .order('occurred_at', { ascending: true })
         .order('event_id', { ascending: true });
+
+      // A failed fetch previously returned `{ replayed: 0, errors: [] }` — the
+      // exact shape of a successful replay that found nothing, so an operator
+      // running a repair replay would be told it succeeded. This function
+      // already throws for the other unrecoverable case (unknown subscriber).
+      if (rowsErr) {
+        throw new Error(
+          `state_events replay fetch failed for "${subscriberName}" (${rowsErr.code}): ${rowsErr.message}`,
+        );
+      }
 
       let replayed = 0;
       const errors: Array<{ eventId: string; message: string }> = [];

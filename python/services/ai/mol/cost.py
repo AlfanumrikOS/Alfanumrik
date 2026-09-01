@@ -26,10 +26,11 @@ PRICING: dict[str, dict[str, float]] = {
     "openai/gpt-4o": {"input": 2.50, "output": 10.00},
     "anthropic/claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
     # Key aligned to the id pinned by config-model-name-identity.test.ts /
-    # registry.ts (ANTHROPIC_SONNET_ID) / quality-eval.ts (JUDGE_MODEL); not
-    # confirmed live (no ANTHROPIC_API_KEY in this environment) — reconfirm at
-    # the next Anthropic model-catalog review. Values unchanged.
-    "anthropic/claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
+    # registry.ts (ANTHROPIC_SONNET_ID) / quality-eval.ts (JUDGE_MODEL).
+    # 2026-08-31: repinned to claude-sonnet-4-5-20250929 after the previous id
+    # was RETIRED (HTTP 404 not_found_error); replacement confirmed live.
+    # Values unchanged (same 3.00 / 15.00 per-1M Sonnet-tier pricing).
+    "anthropic/claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
 }
 
 # Matches a trailing -YYYY-MM-DD on dated model strings (gpt-4o-2024-08-06,

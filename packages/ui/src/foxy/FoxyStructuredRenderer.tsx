@@ -60,6 +60,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useSubjectLookup } from '@alfanumrik/lib/useSubjectLookup';
 import { DiagramViewer } from '@alfanumrik/ui/DiagramViewer';
 import { supabase } from '@alfanumrik/lib/supabase-client';
+import { logger } from '@alfanumrik/lib/logger';
 // Re-exported below so existing imports of `isFoxyResponse` from this module
 // keep working. The implementation lives in `@alfanumrik/lib/foxy/is-foxy-response` so
 // callers can import the discriminator without pulling KaTeX into the
@@ -605,7 +606,7 @@ function DiagramBlock({
       // "Grade N" (see getTopicDiagrams in packages/lib/src/supabase.ts).
       if (subjectCode && grade && chapterNumber != null) {
         const normalizedGrade = grade.startsWith('Grade') ? grade : `Grade ${grade}`;
-        const { data: chapterDiagrams } = await supabase
+        const { data: chapterDiagrams, error: chapterError } = await supabase
           .from('topic_diagrams')
           .select('*')
           .eq('subject', subjectCode)
@@ -616,6 +617,17 @@ function DiagramBlock({
           .limit(20);
 
         if (!mounted) return;
+
+        // supabase-js resolves {data, error} and never throws. Without this
+        // check a failed lookup is indistinguishable from "this chapter has
+        // no diagrams" and renders the same fallback card forever.
+        // P13: pg error code only — never the query or student context.
+        if (chapterError) {
+          logger.warn('foxy diagram chapter lookup failed', { code: chapterError.code });
+          setDiagrams([]);
+          setLoading(false);
+          return;
+        }
 
         if (chapterDiagrams && chapterDiagrams.length > 0) {
           const ranked = rankDiagramsBySearchQuery(chapterDiagrams, rawQuery);
@@ -641,11 +653,19 @@ function DiagramBlock({
       // Best-effort corpus-wide search, same as the original implementation.
       const queryStr = rawQuery.split(' ').slice(0, 5).join(' ');
 
-      const { data } = await supabase
+      const { data, error: searchError } = await supabase
         .from('topic_diagrams')
         .select('*')
         .textSearch('caption', queryStr, { type: 'websearch' })
         .limit(2);
+
+      // supabase-js resolves {data, error} and never throws. Log and fall
+      // through to the keyword fallback below — same path as an empty
+      // result, so behaviour is unchanged but the failure is no longer
+      // silent. P13: pg error code only.
+      if (searchError) {
+        logger.warn('foxy diagram text search failed', { code: searchError.code });
+      }
 
       if (mounted) {
         if (data && data.length > 0) {
@@ -662,11 +682,17 @@ function DiagramBlock({
           const searchWords = words.slice(0, 3);
           const orConditions = searchWords.map(w => `topic.ilike.%${w}%,caption.ilike.%${w}%,alt_text.ilike.%${w}%`).join(',');
 
-          const { data: fallbackData } = await supabase
+          const { data: fallbackData, error: fallbackError } = await supabase
             .from('topic_diagrams')
             .select('*')
             .or(orConditions)
             .limit(2);
+
+          // Same fail-soft contract as above: log, then fall through to the
+          // "no diagrams found" card. P13: pg error code only.
+          if (fallbackError) {
+            logger.warn('foxy diagram keyword lookup failed', { code: fallbackError.code });
+          }
 
           if (fallbackData && fallbackData.length > 0) {
              setDiagrams(fallbackData);

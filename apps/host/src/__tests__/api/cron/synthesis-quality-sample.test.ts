@@ -100,7 +100,7 @@ const SCORE = {
   noFabricationScore: 100,
   cbseScopeScore: 95,
   overallScore: 92,
-  judgeModel: 'claude-sonnet-4-20250514',
+  judgeModel: 'claude-sonnet-4-5-20250929',
   rubricVersion: 'v1',
   oracleFindings: { unbacked_number_count: 0, unbacked_topic_count: 0 },
   rawJudgeResponse: { grounding: 90, tone: 85, no_fabrication: 100, cbse_scope: 95 },

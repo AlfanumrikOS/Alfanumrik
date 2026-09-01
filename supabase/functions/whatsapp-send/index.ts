@@ -391,11 +391,18 @@ Deno.serve(async (req: Request) => {
     //    'free' (free_entry 72h window) vs 'service' (normal 24h window) ───
     let billingCategory: 'utility' | 'service' | 'free' = 'utility'
     if (!isTemplateSend) {
-      const { data: windowRow } = await supabase
+      const { data: windowRow, error: windowErr } = await supabase
         .from('whatsapp_conversation_windows')
         .select('window_kind')
         .eq('phone_hash', identity.phone_hash)
         .maybeSingle()
+      // A failed read silently reclassifies a FREE (free_entry 72h) send as a
+      // billable 'service' send, so the cost ledger drifts with no signal.
+      // The conservative default is kept (never under-report a charge), but the
+      // misclassification is now visible. P13: never log the phone hash.
+      if (windowErr) {
+        edgeLog('error', context, { action: 'whatsapp_send.window_kind_read_failed', status: 'error', reason: windowErr.message })
+      }
       billingCategory = windowRow?.window_kind === 'free_entry' ? 'free' : 'service'
     }
 

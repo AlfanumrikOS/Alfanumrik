@@ -316,11 +316,21 @@ export async function authorizeSchoolAdmin(
       const schoolIds = memberships.map((membership) => membership.school_id);
       let schoolNames: Record<string, string> | undefined;
       try {
-        const { data: schoolRows } = await supabase
+        const { data: schoolRows, error: schoolRowsErr } = await supabase
           .from('schools')
           .select('id, name')
           .in('id', schoolIds);
-        if (Array.isArray(schoolRows) && schoolRows.length > 0) {
+        // Deliberately non-fatal (the picker falls back to id labels), but the
+        // catch below could never fire for a query error — supabase-js
+        // resolves. Same fallback, now logged with the same shape the catch
+        // uses. P13: no school names in the log.
+        if (schoolRowsErr) {
+          logger.warn('school_admin_auth_picker_name_lookup_failed', {
+            error: new Error(schoolRowsErr.message),
+            route: 'school-admin-auth',
+          });
+        }
+        if (!schoolRowsErr && Array.isArray(schoolRows) && schoolRows.length > 0) {
           schoolNames = Object.fromEntries(
             schoolRows
               .filter((row): row is { id: string; name: string } => typeof row?.id === 'string' && typeof row?.name === 'string')

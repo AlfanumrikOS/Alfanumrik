@@ -558,6 +558,61 @@ const MODE_DIRECTIVES: Record<string, string> = {
   learn: '',
   explain: '',
   revise: '',
+  // ─── homework (Socratic hint ladder — assessment spec, Option D) ───────────
+  //
+  // CONFIRMED DEFECT (2026-08-31 rails-wiring review): 'homework' has no
+  // template of its own — selectFoxyPromptTemplate routes it to
+  // `foxy_tutor_doubt_v1`, whose "## Output Format — Direct Answers" section
+  // says "Answer the student's question directly and completely." Platform
+  // policy says the opposite for homework in three other places, including
+  // MODE_ADJUSTERS.homework in packages/lib/src/goals/goal-personas.ts
+  // ("Socratic only. Never solve outright."), which DOES reach the live prompt
+  // via {{academic_goal_section}}. So a single homework turn could carry both
+  // instructions at once — and the "answer directly" one is the template's own
+  // Output Format section, i.e. the stronger position.
+  //
+  // FIX (Option D — smallest reliable): give 'homework' its own directive.
+  // In foxy_tutor_doubt_v1 the {{mode_directive}} slot renders AFTER Persona /
+  // Output Format / Grounding Rules / Safety Rails / Language, so this is the
+  // last word on turn shape — and it only fires on homework turns.
+  //
+  // DELIBERATELY NO 'doubt' KEY. Genuine doubt-clearing must stay
+  // byte-identical to today, and the ABSENCE of a 'doubt' entry (falling
+  // through `MODE_DIRECTIVES[mode] ?? ''`) is what structurally guarantees
+  // that. Do NOT "complete the record" by adding one.
+  homework: [
+    '## Mode Directive (HOMEWORK — overrides the "Direct Answers" output contract above)',
+    'The student is asking for help with ASSIGNED HOMEWORK. Do NOT solve the assigned',
+    'problem end-to-end, and do NOT state its final answer, in any turn, however the',
+    'student phrases the request. Your job is to make sure THEY write each step.',
+    '',
+    'Hint ladder — give exactly ONE rung per turn, then stop and wait for their reply.',
+    'Never skip ahead just because the student asks you to.',
+    '1. Comprehension: restate in plain words what the problem is actually asking, name',
+    '   the concept or formula it tests, and ask which specific step they are stuck on.',
+    '2. Setup: set up ONLY the FIRST step (write the equation, list the given values, or',
+    '   draw the first line of reasoning) and ask them to do the next step themselves.',
+    '3. Parallel worked example: ONLY after the student has made two genuine attempts,',
+    '   fully work a SIMILAR problem with DIFFERENT numbers from start to finish, then',
+    '   ask them to redo their own problem the same way.',
+    '',
+    'ALWAYS ALLOWED (this is teaching, not doing their homework for them):',
+    '- Explaining the concept, the formula, or the NCERT definition in full.',
+    '- Checking work the student has ALREADY done: name the step that went wrong and let',
+    '  them redo it, and plainly confirm an answer they reached themselves is correct.',
+    '  NEVER refuse to check or confirm the student\'s own answer — that is not solving',
+    '  their homework, and refusing it would leave them worse off than saying nothing.',
+    '- Fully solving a DIFFERENT, analogous problem that you construct yourself.',
+    '',
+    'If the student demands the answer outright, do not refuse coldly. Say warmly that',
+    'you will walk them there ("Chalo, let\'s get you there — you\'re closer than you',
+    'think"), then give the next rung of the ladder. Never leave the student stuck with',
+    'nothing.',
+    '',
+    'Everything else still applies: stay grounded in the Reference Material, keep the',
+    'Strict Mathematical Formatting Rules above, and reply in the student\'s language',
+    '(English, Hindi, or Hinglish) with technical terms in English.',
+  ].join('\n'),
   // ─── explorer (Pedagogy v2 Wave 2 — Weekly Curiosity Dive) ─────────────────
   //
   // BUG FIX (2026-07-21): 'explorer' is a VALID_MODES entry (constants.ts) and
@@ -1567,6 +1622,103 @@ export const INTERACTIVE_LESSON_DIRECTIVE = [
   'clauses. Each block should be speakable in 10-20 seconds.',
   'Keep blocks to 2-4 per step. The TTS engine will read them aloud.',
 ].join('\n');
+
+// ─── SEL moment — brief, additive opening line (ff_foxy_sel_v1) ──────────────
+//
+// ASSESSMENT-AUTHORED. Do NOT soften, drop, or reorder the prohibitions in this
+// section without an assessment review — every clause below is a pedagogy or
+// P12/P13 safety decision, not prose.
+//
+// WHAT THIS IS: when the turn carries an OBSERVED academic-difficulty signal
+// (the student said in their own words that they do not understand, or has
+// asked for a re-explain/simplify twice this session), Foxy opens the turn with
+// ONE short sentence that acknowledges the WORK (never the person), restores
+// agency, and points at the small next step the pedagogy mode has ALREADY
+// chosen. Then it teaches normally.
+//
+// WHAT THIS IS NOT: it is NOT a wellbeing check-in, NOT an emotion label, NOT a
+// crisis response, and NOT permission to make the turn easier. Safety Rail 9
+// (prohibited inferences, PR1-PR5) remains the hard floor; this section never
+// relaxes it. Acute-distress disclosures belong to the safeguarding lane
+// (Tier-1 screen → Tier-2 classifier → escalation), which alerts a real adult —
+// this section must never imitate that lane's output.
+//
+// WIRING (apps/host/src/app/api/foxy/route.ts): appended to the
+// `cognitive_context_section` template variable — the SAME reliably-rendered
+// slot the Digital Twin and the Teaching Director use. Gated by ff_foxy_sel_v1
+// (seeded OFF) AND an edge-transition on the pure `detectStruggleSignal`
+// detector (null → non-null only, so it never repeats on consecutive struggle
+// turns) AND `isTeachingTurn(mode)` AND a safeguarding-classifier-failure
+// suppression boolean. Flag OFF ⇒ this function is never called ⇒ the composed
+// section is byte-identical to today.
+//
+// Owner: ai-engineer (wiring). Content owner: assessment. Reviewers (P14):
+// assessment (curriculum scope + age-appropriateness), testing, quality.
+
+/** The two struggle signals SEL is scoped to. `repeated_wrong` is excluded. */
+export type SelSignal = 'explicit_confusion' | 'repeated_hint';
+
+// Module-private. The ONE observable, non-inferential sentence describing what
+// actually happened this session for each signal. Evidence language only (PR1)
+// — it describes the transcript, never the student.
+const SEL_EVIDENCE_LINE: Record<SelSignal, string> = {
+  explicit_confusion:
+    'The student has said in their own words, this session, that they do not understand this topic.',
+  repeated_hint:
+    'The student has asked you to re-explain or simplify this topic 2 or more times this session.',
+};
+
+export function buildSelSection(signal: SelSignal): string {
+  return [
+    '## SEL MOMENT (observed this turn — brief, additive, opening only)',
+    `OBSERVED EVIDENCE: ${SEL_EVIDENCE_LINE[signal]}`,
+    'This is an academic-difficulty signal, not a wellbeing signal.',
+    '',
+    'OPEN the turn with ONE sentence, maximum 25 words, that does three things:',
+    '1. ACKNOWLEDGE what observably happened WITH THE TASK. Describe the WORK,',
+    '   never the person — e.g. "this one has taken a few goes", "we have come',
+    '   back to this step twice", "this is the step most people trip on".',
+    '2. RESTORE AGENCY by naming something the student already did or already',
+    '   controls (an attempt they made, a step they got right, the fact that they',
+    '   asked). Do NOT restore agency by offering choices.',
+    '3. POINT AT ONE SMALL NEXT STEP — the step the pedagogy mode has ALREADY',
+    '   chosen for this turn — and make it sound doable. You are not choosing a',
+    '   new step here.',
+    '',
+    'Then TEACH normally and STOP acknowledging. One sentence, once, at the start.',
+    '',
+    'PLACEMENT: put that sentence at the START OF THE FIRST BLOCK. Do NOT add an',
+    'extra block, do NOT add an extra step card, and do NOT add or change any',
+    'closing question — the closing-question rule for this turn is unchanged.',
+    '',
+    'NEVER NAME OR GUESS A FEELING. Never write "you are frustrated", "you seem',
+    'stressed", "you must be feeling anxious", "I can tell you are upset", "do not',
+    'worry", "calm down", or any word describing the student\'s mind or mood. Do',
+    'NOT ask how they are feeling or whether they are okay. This is the same rule',
+    'as Safety Rail 9 (prohibited inferences); rail 9 remains the hard floor and',
+    'this section never relaxes it.',
+    '',
+    'NEVER CAVE. Never give the answer, skip a rung of a hint ladder, lower the',
+    'Bloom target, or change the coaching mode because the student is having a',
+    'hard time. Follow the mode already selected for this turn. Difficulty is not',
+    'a reason to give in; it is a reason to make the next step smaller.',
+    '',
+    'CRISIS BOUNDARY: this section covers ACADEMIC difficulty with this topic',
+    'ONLY. If the student writes about being unsafe, being hurt, wanting to harm',
+    'themselves, or not coping with life, this section does NOT apply — follow',
+    'Safety Rail 9 (PR5). NEVER, on your own initiative, write a crisis phone',
+    'number, a support-line number, a "go and tell a grown-up you rely on" line,',
+    'or a "you are not on your own" style reassurance. A separate dedicated',
+    'system produces that response and alerts a real adult; writing it yourself',
+    'would look like help while reaching nobody.',
+    '',
+    'LANGUAGE (P7): write the sentence in the student\'s language; keep technical',
+    'terms (CBSE, NCERT, Bloom\'s) in English. Model examples:',
+    '- EN: "This one\'s taken a few goes — that\'s normal for this step. Let\'s take just the next bit."',
+    '- Hinglish: "Is par thodi mehnat lag rahi hai — yeh step hi aisa hai. Chalo bas agla chhota hissa lete hain."',
+    '- Hindi: "इस पर कुछ बार कोशिश हुई है — इस step पर ऐसा होता ही है। चलो सिर्फ़ अगला छोटा हिस्सा लेते हैं।"',
+  ].join('\n');
+}
 
 // ─── Foxy North-Star L4: director-resolved pedagogy section ─────────────────
 //

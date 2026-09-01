@@ -19,11 +19,20 @@ export async function isProjectorRunnerEnabled(
   if (cachedValue !== null && cachedAt !== null && now - cachedAt < TTL_MS) {
     return cachedValue
   }
-  const { data } = await sb
+  const { data, error } = await sb
     .from('feature_flags')
     .select('is_enabled')
     .eq('flag_name', FLAG_NAME)
     .maybeSingle()
+  // tickAll() already wraps this call in a try/catch that fails closed and
+  // reports `failedClosedReason` — but supabase-js resolves instead of
+  // throwing, so that handler could never fire and an unreadable kill-switch
+  // silently resolved to "OFF, cached for 30s" with no reason recorded.
+  // Throwing restores the designed path. The cache is deliberately left
+  // untouched so the next call retries the read.
+  if (error) {
+    throw new Error(`${FLAG_NAME} read failed (${error.code}): ${error.message}`)
+  }
   cachedValue = data?.is_enabled === true
   cachedAt = now
   return cachedValue

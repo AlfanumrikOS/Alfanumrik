@@ -197,9 +197,18 @@ export async function tick(opts: ListenerOptions): Promise<TickResult> {
   // Failure here MUST NOT affect the returned TickResult.
   let newCursor = EPOCH;
   try {
-    const { data: offsetRows } = await sb
+    const { data: offsetRows, error: offsetErr } = await sb
       .from('subscriber_offsets')
       .select('last_processed_occurred_at');
+    // Genuinely best-effort (the legacy cursor is a backstop; the new path is
+    // authoritative), so the swallow below is the right POLICY — but
+    // supabase-js resolves rather than throws, so it was never even reached
+    // and the legacy cursor silently stopped advancing. Log and move on.
+    if (offsetErr) {
+      console.warn(
+        `[event-listener] legacy cursor: subscriber_offsets read failed (${offsetErr.code}): ${offsetErr.message}`,
+      );
+    }
     const watermarks = (offsetRows ?? [])
       .map(r => (r as { last_processed_occurred_at?: string | null }).last_processed_occurred_at)
       .filter((v): v is string => typeof v === 'string' && v.length > 0);

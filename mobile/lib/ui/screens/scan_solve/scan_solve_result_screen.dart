@@ -431,8 +431,31 @@ class _ActionsCard extends ConsumerWidget {
               ),
             ),
             onPressed: () {
+              // ── Academic integrity: `homework`, not `doubt` ───────────────
+              // This CTA only ever follows a PHOTOGRAPHED problem — the
+              // homework-outsourcing path. `mode: 'doubt'` selects the
+              // server's `foxy_tutor_doubt_v1` template ("Answer the
+              // student's question directly and completely"), which hands a
+              // finished answer to assigned work. `homework` selects the
+              // Socratic hint ladder (comprehension → setup → parallel worked
+              // example, ONE rung per turn, never the final answer) while
+              // still ALWAYS allowing Foxy to explain the concept fully,
+              // check work the student already did, and solve a DIFFERENT
+              // analogous problem — exactly what this button's label
+              // ("Understand it with Foxy" / "फ़ॉक्सी से समझो") promises.
+              //
+              // Mirrors the web split on `apps/host/src/app/foxy/snap/page.tsx`,
+              // where an `explain` intent stays on `doubt` and `steps`/`hint`
+              // move to `homework`. Mobile has a SINGLE Foxy action here, on a
+              // photographed problem, so it takes the `homework` side.
+              //
+              // `homework` is in the server's VALID_MODES
+              // (`apps/host/src/app/api/foxy/_lib/constants.ts`). An unknown
+              // mode is NOT rejected — `route.ts` falls back to 'learn'
+              // silently — so a typo here would be an invisible behaviour
+              // regression, not an error. Keep this literal exact.
               final params = <String, String>{
-                'mode': 'doubt',
+                'mode': 'homework',
                 if (topic != null) 'topic': topic,
                 if (subject != null) 'subject': subject,
               };

@@ -11,14 +11,21 @@
  *   - flag ON → mounts SnapDoubt, and the topics hook is only enabled once
  *     the route is confirmed reachable.
  *   - the three intents build the REAL, EXISTING /foxy deep link
- *     (?subject=&mode=doubt&topic=&prompt=&source=snap_doubt) — the same
+ *     (?subject=&mode=&topic=&prompt=&source=snap_doubt) — the same
  *     mechanism the chapter page's "Ask Foxy" button already uses — with a
  *     DIFFERENT crafted prompt per intent, and degrade gracefully (no
  *     subject/topic params) when there is no confident topic match.
+ *   - ACADEMIC INTEGRITY: the `mode` is NOT uniform across the three intents.
+ *     `explain` → `doubt`; `steps` + `hint` → `homework` (which carries
+ *     MODE_DIRECTIVES.homework's Socratic ladder + "do NOT state its final
+ *     answer"). Before this split, snapping an assigned worksheet and tapping
+ *     "steps" returned the problem solved end-to-end. `source=snap_doubt` is
+ *     NOT read by /api/foxy, so it can never be what enforces this — `mode`
+ *     is, which is why it is pinned here per intent.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, cleanup } from '@testing-library/react';
 
 const dynamicSpy = vi.fn();
 vi.mock('next/dynamic', () => ({
@@ -211,5 +218,122 @@ describe('/foxy/snap — REAL three-intent hand-off into /foxy', () => {
     const params = new URLSearchParams(url.split('?')[1]);
     expect(params.get('subject')).toBe('math');
     expect(params.get('topic')).toBe('Linear Equations in One Variable');
+  });
+});
+
+describe('/foxy/snap — academic-integrity mode split per intent', () => {
+  const BLOCK = { id: 'b1', text: 'Solve: 3x + 5 = 20' };
+
+  beforeEach(() => {
+    mockUseFeatureFlags.mockReturnValue({ data: { ff_foxy_snap_v1: true }, isLoading: false });
+  });
+
+  async function mountAndGetProps(isHi = false) {
+    mockUseRequireAuth.mockReturnValue(baseAuth({ isHi }));
+    const { default: SnapDoubtPage } = await import('@/app/foxy/snap/page');
+    const view = render(<SnapDoubtPage />);
+    await view.findByTestId('snap-doubt-stub');
+    return dynamicSpy.mock.calls[dynamicSpy.mock.calls.length - 1][0] as Record<string, any>;
+  }
+
+  function pushedParams(callIndex: number): URLSearchParams {
+    const url = mockPush.mock.calls[callIndex][0] as string;
+    return new URLSearchParams(url.split('?')[1]);
+  }
+
+  it('"explain" stays mode=doubt — a snapped textbook example still gets a direct explanation', async () => {
+    const props = await mountAndGetProps();
+    props.onIntent('explain', BLOCK);
+    expect(pushedParams(0).get('mode')).toBe('doubt');
+  });
+
+  it('"steps" hands off as mode=homework, NOT doubt', async () => {
+    const props = await mountAndGetProps();
+    props.onIntent('steps', BLOCK);
+    expect(pushedParams(0).get('mode')).toBe('homework');
+  });
+
+  it('"hint" hands off as mode=homework, NOT doubt', async () => {
+    const props = await mountAndGetProps();
+    props.onIntent('hint', BLOCK);
+    expect(pushedParams(0).get('mode')).toBe('homework');
+  });
+
+  it('the EN "steps" prompt no longer requests a full solution (it must not contradict MODE_DIRECTIVES.homework)', async () => {
+    const props = await mountAndGetProps();
+    props.onIntent('steps', BLOCK);
+    const prompt = pushedParams(0).get('prompt') ?? '';
+    // The old text asked for exactly what mode=homework forbids.
+    expect(prompt).not.toMatch(/solution steps/i);
+    expect(prompt).not.toMatch(/no long explanation/i);
+    // The new text asks for the method + the FIRST step only.
+    expect(prompt).toMatch(/first step/i);
+    expect(prompt).toContain(BLOCK.text);
+  });
+
+  it('the HI "steps" prompt translates the NEW intent, not the retired one', async () => {
+    const props = await mountAndGetProps(true);
+    props.onIntent('steps', BLOCK);
+    const prompt = pushedParams(0).get('prompt') ?? '';
+    expect(prompt).not.toContain('हल के सिर्फ़ स्टेप्स');
+    expect(prompt).not.toContain('लंबी व्याख्या मत दो');
+    expect(prompt).toContain('पहला स्टेप');
+    expect(prompt).toContain(BLOCK.text);
+  });
+
+  it('"hint" keeps its already-ladder-shaped prompt unchanged (EN + HI)', async () => {
+    const en = await mountAndGetProps(false);
+    en.onIntent('hint', BLOCK);
+    expect(pushedParams(0).get('prompt')).toBe(
+      "Give me a hint only — don't solve it or give the final answer: " + BLOCK.text,
+    );
+
+    cleanup();
+    mockPush.mockClear();
+
+    const hi = await mountAndGetProps(true);
+    hi.onIntent('hint', BLOCK);
+    expect(pushedParams(0).get('prompt')).toBe(
+      'सिर्फ़ एक संकेत दो — इसे हल मत करो और अंतिम उत्तर मत दो: ' + BLOCK.text,
+    );
+  });
+
+  it('source=snap_doubt rides along but is NOT the enforcement point — mode is', async () => {
+    const props = await mountAndGetProps();
+    props.onIntent('steps', BLOCK);
+    const params = pushedParams(0);
+    expect(params.get('source')).toBe('snap_doubt');
+    expect(params.get('mode')).toBe('homework');
+  });
+
+  it('EN/HI parity: every intent has a distinct, genuinely Devanagari prompt variant', async () => {
+    const en = await mountAndGetProps(false);
+    (['explain', 'steps', 'hint'] as const).forEach((i) => en.onIntent(i, BLOCK));
+    const enPrompts = [0, 1, 2].map((i) => pushedParams(i).get('prompt') ?? '');
+
+    cleanup();
+    mockPush.mockClear();
+
+    const hi = await mountAndGetProps(true);
+    (['explain', 'steps', 'hint'] as const).forEach((i) => hi.onIntent(i, BLOCK));
+    const hiPrompts = [0, 1, 2].map((i) => pushedParams(i).get('prompt') ?? '');
+
+    expect(new Set(enPrompts).size).toBe(3);
+    expect(new Set(hiPrompts).size).toBe(3);
+    hiPrompts.forEach((p, idx) => {
+      expect(p).toMatch(/[ऀ-ॿ]/); // real Hindi, not an English fallback
+      expect(p).not.toBe(enPrompts[idx]);
+      expect(p).toContain(BLOCK.text);
+    });
+  });
+
+  it('the mode mapping is language-independent (explain=doubt, steps/hint=homework under isHi)', async () => {
+    const hi = await mountAndGetProps(true);
+    (['explain', 'steps', 'hint'] as const).forEach((i) => hi.onIntent(i, BLOCK));
+    expect([0, 1, 2].map((i) => pushedParams(i).get('mode'))).toEqual([
+      'doubt',
+      'homework',
+      'homework',
+    ]);
   });
 });

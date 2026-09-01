@@ -378,7 +378,7 @@ async def _write_grader_telemetry(
                     # 4 files the ai-engineer follow-up task named, but the
                     # regression catalog independently corroborated it as a
                     # 5th still-stale instance of the same bug).
-                    "model": result.model if result else "claude-sonnet-4-20250514",
+                    "model": result.model if result else "claude-sonnet-4-5-20250929",
                     "passes": 1,
                     "fallback_count": 0,
                     "failure_chain": "grader:no_result" if failed else None,

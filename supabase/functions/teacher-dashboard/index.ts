@@ -69,6 +69,28 @@ function getServiceClient() {
   return SERVICE_CLIENT
 }
 
+/**
+ * Record a supabase-js query failure that the calling handler deliberately
+ * degrades past (empty roster / empty metric / zero count).
+ *
+ * supabase-js resolves `{ data, error }` and NEVER throws, so a discarded
+ * `error` here does not surface as a 500 — it renders to the teacher as a
+ * confident zero: an empty class, a student with no quizzes, a heatmap with no
+ * mastery. That is indistinguishable from the truth, which is exactly why this
+ * defect class survives in production. The degrade itself is intentional and
+ * unchanged (a partial dashboard beats a blank one); this makes it observable.
+ *
+ * P13: logs the query site and the Postgres error code/message ONLY — never row
+ * payloads, student names, or emails.
+ */
+function logQueryError(
+  step: string,
+  error: { code?: string | null; message?: string } | null | undefined,
+): void {
+  if (!error) return
+  console.error(`[teacher-dashboard] ${step} read failed:`, error.code, error.message)
+}
+
 type CurriculumTopicScopeRow = {
   id: string
   title: string
@@ -144,11 +166,19 @@ async function resolveTeacherSchoolId(
 ): Promise<string | null> {
   if (!teacherId) return null
   try {
-    const { data: teacher } = await supabase
+    const { data: teacher, error } = await supabase
       .from('teachers')
       .select('school_id')
       .eq('id', teacherId)
       .maybeSingle()
+    // TSB-1 (P8/P13): callers treat null as FAIL-CLOSED (no students), which is
+    // the correct degrade — but supabase-js resolves instead of throwing, so
+    // the catch below never ran and a tenant-resolution outage was
+    // indistinguishable from an independent/B2C teacher.
+    if (error) {
+      console.error('[teacher-dashboard] teacher tenant resolution failed:', error.code, error.message)
+      return null
+    }
     const sid = (teacher as { school_id?: string | null } | null)?.school_id
     return sid ? String(sid) : null
   } catch {
@@ -178,12 +208,18 @@ async function assertTeacherOwnsClass(
   // case; the teacher must reach students through an explicit class roster.
   if (classId.startsWith('grade-')) {
     const grade = classId.replace('grade-', '')
-    const { data: teacher } = await supabase
+    const { data: teacher, error: teacherErr } = await supabase
       .from('teachers')
       .select('grades_taught, school_id')
       .eq('id', teacherId)
       .single()
-    if (!teacher) return false
+    // Ownership check — MUST fail closed. A failed read is not "no such
+    // teacher"; either way access is denied, but only one of the two is a
+    // defect worth alerting on.
+    if (teacherErr && teacherErr.code !== 'PGRST116') {
+      console.error('[teacher-dashboard] grade pseudo-class ownership read failed:', teacherErr.code, teacherErr.message)
+    }
+    if (teacherErr || !teacher) return false
     if (!(teacher as { school_id?: string | null }).school_id) return false
     const grades = Array.isArray(teacher.grades_taught)
       ? teacher.grades_taught.map(String)
@@ -193,13 +229,20 @@ async function assertTeacherOwnsClass(
     return grades.includes(grade)
   }
 
-  const { data: classTeacher } = await supabase
+  const { data: classTeacher, error: classTeacherErr } = await supabase
     .from('class_teachers')
     .select('class_id')
     .eq('teacher_id', teacherId)
     .eq('class_id', classId)
     .limit(1)
     .maybeSingle()
+  // Ownership check — fail closed. Denying on error is already what happens;
+  // what was missing is any signal that the check itself broke (which would
+  // lock every teacher out of every class at once, silently).
+  if (classTeacherErr) {
+    console.error('[teacher-dashboard] class ownership read failed:', classTeacherErr.code, classTeacherErr.message)
+    return false
+  }
   if (classTeacher) return true
 
   return false
@@ -217,12 +260,20 @@ async function assertTeacherOwnsPoll(
 ): Promise<boolean> {
   if (!pollId) return false
   try {
-    const { data: poll } = await supabase
+    const { data: poll, error } = await supabase
       .from('classroom_polls')
       .select('teacher_id')
       .eq('id', pollId)
       .limit(1)
       .maybeSingle()
+    // Ownership check — fail closed, exactly as the doc comment promises
+    // ("including the case where the polls table doesn't exist"). The catch
+    // below could never see a query error, so that promise was only
+    // accidentally kept; make it explicit and visible.
+    if (error) {
+      console.error('[teacher-dashboard] poll ownership read failed:', error.code, error.message)
+      return false
+    }
     return !!poll && poll.teacher_id === teacherId
   } catch {
     return false
@@ -240,11 +291,12 @@ async function handleGetDashboard(
   const supabase = getServiceClient()
 
   // Fetch teacher profile
-  const { data: teacher } = await supabase
+  const { data: teacher, error: teacherErr } = await supabase
     .from('teachers')
     .select('id, name, school_name, school_id, subjects_taught, grades_taught')
     .eq('id', teacherId)
     .single()
+  logQueryError('teachers', teacherErr)
 
   if (!teacher) return errorResponse('Teacher not found', 404, origin)
 
@@ -295,10 +347,11 @@ async function handleGetDashboard(
     assignments?: DashAssignment[]
   }> = []
   try {
-    const { data: classData } = await supabase
+    const { data: classData, error: classDataErr } = await supabase
       .from('class_teachers')
       .select('class_id, classes(id, name, grade, section, subject, class_code)')
       .eq('teacher_id', teacherId)
+    logQueryError('class_teachers', classDataErr)
 
     if (classData && classData.length > 0) {
       // Get student counts per class. Roster lives in the class_students
@@ -308,10 +361,11 @@ async function handleGetDashboard(
         const cls = (assignment as any).classes
         if (!cls) continue
         let count = 0
-        const { data: roster } = await supabase
+        const { data: roster, error: rosterErr } = await supabase
           .from('class_students')
           .select('student_id')
           .eq('class_id', cls.id)
+        logQueryError('class_students', rosterErr)
         const rosterIds = (roster || [])
           .map((r: any) => r.student_id as string | null)
           .filter((id): id is string => !!id)
@@ -329,12 +383,13 @@ async function handleGetDashboard(
             .is('deleted_at', null)
           count = liveCount ?? 0
 
-          const { data: liveStudents } = await supabase
+          const { data: liveStudents, error: liveStudentsErr } = await supabase
             .from('students')
             .select('id, name, grade, xp_total')
             .in('id', rosterIds)
             .is('deleted_at', null)
             .limit(200)
+          logQueryError('students', liveStudentsErr)
           const liveIds = (liveStudents || []).map((s: any) => String(s.id))
           // Resolve the class-owned curriculum slice before reading mastery.
           // A class metric must not average a student's unrelated grades or
@@ -355,12 +410,13 @@ async function handleGetDashboard(
           let masteryRows: Array<{ student_id: unknown; topic_id: unknown; p_know: unknown }> = []
           if (liveIds.length > 0 && scopedTopicIds.length > 0) {
             try {
-              const { data: cm } = await supabase
+              const { data: cm, error: cmErr } = await supabase
                 .from('concept_mastery')
                 .select('student_id, topic_id, p_know')
                 .in('student_id', liveIds)
                 .in('topic_id', scopedTopicIds)
                 .limit(20000)
+              logQueryError('concept_mastery', cmErr)
               masteryRows = cm || []
             } catch { /* concept_mastery absent -- mastery remains unavailable */ }
           }
@@ -388,12 +444,13 @@ async function handleGetDashboard(
         // Degrade gracefully if the table is absent on this env.
         const dashAssignments: DashAssignment[] = []
         try {
-          const { data: classAssignments } = await supabase
+          const { data: classAssignments, error: classAssignmentsErr } = await supabase
             .from('assignments')
             .select('id, title, assignment_type, due_date')
             .eq('class_id', cls.id)
             .order('due_date', { ascending: false, nullsFirst: false })
             .limit(50)
+          logQueryError('assignments', classAssignmentsErr)
           for (const a of classAssignments || []) {
             dashAssignments.push({
               id: String((a as any).id),
@@ -523,12 +580,13 @@ async function handleGetHeatmap(
       .eq('id', classId)
       .limit(1)
       .maybeSingle()
-  const { data: teacherScope } = await supabase
+  const { data: teacherScope, error: teacherScopeErr } = await supabase
     .from('teachers')
     .select('subjects_taught')
     .eq('id', teacherId)
     .limit(1)
     .maybeSingle()
+  logQueryError('teachers', teacherScopeErr)
   const allowedSubjects = Array.isArray(teacherScope?.subjects_taught)
     ? teacherScope.subjects_taught
     : teacherScope?.subjects_taught != null
@@ -552,30 +610,33 @@ async function handleGetHeatmap(
     // schools' students in their grade.
     const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
     if (schoolId) {
-      const { data } = await supabase
+      const { data, error: dataErr } = await supabase
         .from('students')
         .select('id, name, grade')
         .eq('grade', pseudoGrade)
         .eq('school_id', schoolId)
         .limit(50)
+      logQueryError('students', dataErr)
       students = data
     }
   } else {
     // Roster lives in class_students (no students.class_id column):
     // resolve the class's student ids, then load those students by id.
-    const { data: roster } = await supabase
+    const { data: roster, error: rosterErr2 } = await supabase
       .from('class_students')
       .select('student_id')
       .eq('class_id', classId)
+    logQueryError('class_students', rosterErr2)
     const rosterIds = (roster || [])
       .map((r: any) => r.student_id as string | null)
       .filter((id): id is string => !!id)
     if (rosterIds.length > 0) {
-      const { data } = await supabase
+      const { data, error: dataErr2 } = await supabase
         .from('students')
         .select('id, name, grade')
         .in('id', rosterIds)
         .limit(50)
+      logQueryError('students', dataErr2)
       students = data
     }
   }
@@ -628,12 +689,13 @@ async function handleGetHeatmap(
       let level = 'none'
 
       try {
-        const { data: bkt } = await supabase
+        const { data: bkt, error: bktErr } = await supabase
           .from('concept_mastery')
           .select('p_know, attempts, mastery_level')
           .eq('student_id', student.id)
           .eq('topic_id', concept.id)
           .single()
+        logQueryError('concept_mastery', bktErr)
 
         if (bkt) {
           const observedPKnow = finiteMetricOrNull(bkt.p_know)
@@ -701,28 +763,31 @@ async function handleGetAlerts(
     // schools' students in their grade.
     const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
     if (schoolId) {
-      const { data } = await supabase
+      const { data, error: dataErr3 } = await supabase
         .from('students')
         .select('id, name, grade')
         .eq('grade', grade)
         .eq('school_id', schoolId)
         .limit(100)
+      logQueryError('students', dataErr3)
       students = data
     }
   } else {
-    const { data: roster } = await supabase
+    const { data: roster, error: rosterErr } = await supabase
       .from('class_students')
       .select('student_id')
       .eq('class_id', classId)
+    logQueryError('class_students', rosterErr)
     const rosterIds = (roster || [])
       .map((r: any) => r.student_id as string | null)
       .filter((id): id is string => !!id)
     if (rosterIds.length > 0) {
-      const { data } = await supabase
+      const { data, error: dataErr4 } = await supabase
         .from('students')
         .select('id, name, grade')
         .in('id', rosterIds)
         .limit(100)
+      logQueryError('students', dataErr4)
       students = data
     }
   }
@@ -739,17 +804,19 @@ async function handleGetAlerts(
 
   // Check learning profiles for weak students
   try {
-    const { data: profiles } = await supabase
+    const { data: profiles, error: profilesErr } = await supabase
       .from('student_learning_profiles')
       .select('student_id, subject, total_questions_asked, total_questions_answered_correctly, xp, streak_days')
       .in('student_id', studentIds)
+    logQueryError('student_learning_profiles', profilesErr)
 
     // P12: Pre-compute allowed subjects per student so the teacher view only
     // surfaces alerts for subjects the student is currently enrolled in.
     const allowedBySid = new Map<string, Set<string>>()
     for (const sid of studentIds) {
       try {
-        const { data: allowedRows } = await supabase.rpc('get_available_subjects', { p_student_id: sid })
+        const { data: allowedRows, error: allowedRowsErr } = await supabase.rpc('get_available_subjects', { p_student_id: sid })
+        logQueryError('get_available_subjects', allowedRowsErr)
         if (Array.isArray(allowedRows)) {
           allowedBySid.set(
             sid,
@@ -962,12 +1029,13 @@ async function resolveRemediationStatusByStudent(
   const rank: Record<RemediationStatus, number> = { resolved: 0, assigned: 1, in_progress: 2 }
 
   try {
-    const { data: rows } = await supabase
+    const { data: rows, error: rowsErr } = await supabase
       .from('teacher_remediation_assignments')
       .select('student_id, status')
       .eq('teacher_id', teacherId)
       .in('student_id', studentIds)
       .in('status', ['assigned', 'in_progress', 'resolved'])
+    logQueryError('teacher_remediation_assignments', rowsErr)
 
     for (const r of rows || []) {
       const sid = (r as { student_id?: string }).student_id
@@ -1008,11 +1076,12 @@ async function handleResolveAlert(
   try {
     // Resolve teacher.auth_user_id so audit_logs.auth_user_id is the
     // canonical Supabase user UUID, not the internal teachers.id.
-    const { data: t } = await supabase
+    const { data: t, error: tErr } = await supabase
       .from('teachers')
       .select('auth_user_id')
       .eq('id', teacherId)
       .maybeSingle()
+    logQueryError('teachers', tErr)
 
     await supabase.from('audit_logs').insert({
       auth_user_id: t?.auth_user_id ?? null,
@@ -1098,10 +1167,15 @@ async function handleClosePoll(
       .eq('id', pollId)
 
     // Get responses
-    const { data: responses, count } = await supabase
+    const { data: responses, count, error: responsesErr } = await supabase
       .from('classroom_poll_responses')
       .select('*', { count: 'exact' })
       .eq('poll_id', pollId)
+    // The poll is already closed above, so this cannot be retried — a failure
+    // here reports "0 responses, 0% accuracy" for a poll students DID answer.
+    // Same shape as the catch below (which supabase-js could never trigger),
+    // but the teacher's live-poll result is no longer a silent fabrication.
+    logQueryError('classroom_poll_responses', responsesErr)
 
     const correctCount = (responses || []).filter((r: any) => r.is_correct).length
     const totalCount = count ?? 0
@@ -1151,26 +1225,29 @@ async function resolveStudentsForTeacher(
   // resolve the student ids for the teacher's classes, then load the live
   // student rows by id.
   try {
-    const { data: assignments } = await supabase
+    const { data: assignments, error: assignmentsErr } = await supabase
       .from('class_teachers')
       .select('class_id')
       .eq('teacher_id', teacherId)
+    logQueryError('class_teachers', assignmentsErr)
     const classIds = (assignments || []).map((a: any) => a.class_id).filter(Boolean)
     if (classIds.length > 0) {
-      const { data: roster } = await supabase
+      const { data: roster, error: rosterErr } = await supabase
         .from('class_students')
         .select('student_id')
         .in('class_id', classIds)
+      logQueryError('class_students', rosterErr)
       const rosterIds = (roster || [])
         .map((r: any) => r.student_id as string | null)
         .filter((id): id is string => !!id)
       if (rosterIds.length > 0) {
-        const { data: classStudents } = await supabase
+        const { data: classStudents, error: classStudentsErr } = await supabase
           .from('students')
           .select('id, name, grade')
           .in('id', rosterIds)
           .is('deleted_at', null)
           .limit(1000)
+        logQueryError('students', classStudentsErr)
         for (const s of classStudents || []) {
           if (s?.id && !seen.has(s.id)) {
             seen.add(s.id)
@@ -1187,11 +1264,12 @@ async function resolveStudentsForTeacher(
   // nothing, mirroring handleGetDashboard's behavior.
   if (out.length === 0) {
     try {
-      const { data: teacher } = await supabase
+      const { data: teacher, error: teacherErr } = await supabase
         .from('teachers')
         .select('grades_taught, school_id')
         .eq('id', teacherId)
         .maybeSingle()
+      logQueryError('teachers', teacherErr)
       const schoolId = (teacher as { school_id?: string | null } | null)?.school_id
       const grades = Array.isArray(teacher?.grades_taught)
         ? teacher!.grades_taught.map(String)
@@ -1203,13 +1281,14 @@ async function resolveStudentsForTeacher(
       // teacher gets an EMPTY set here rather than every grade-6–12 student
       // across all schools. `idx_students_school_grade` covers (school_id, grade).
       if (schoolId && grades.length > 0) {
-        const { data: gradeStudents } = await supabase
+        const { data: gradeStudents, error: gradeStudentsErr } = await supabase
           .from('students')
           .select('id, name, grade')
           .in('grade', grades)
           .eq('school_id', schoolId)
           .is('deleted_at', null)
           .limit(1000)
+        logQueryError('students', gradeStudentsErr)
         for (const s of gradeStudents || []) {
           if (s?.id && !seen.has(s.id)) {
             seen.add(s.id)
@@ -1293,10 +1372,11 @@ async function handleGetClassOverview(
   for (const id of studentIds) agg.set(id, { xp: 0, asked: 0, correct: 0, lastSession: null })
 
   try {
-    const { data: profiles } = await supabase
+    const { data: profiles, error: profilesErr } = await supabase
       .from('student_learning_profiles')
       .select('student_id, xp, total_questions_asked, total_questions_answered_correctly, last_session_at')
       .in('student_id', studentIds)
+    logQueryError('student_learning_profiles', profilesErr)
     for (const p of profiles || []) {
       const a = agg.get(p.student_id)
       if (!a) continue
@@ -1313,12 +1393,13 @@ async function handleGetClassOverview(
   let activeThisWeek = 0
   try {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    const { data: recent } = await supabase
+    const { data: recent, error: recentErr } = await supabase
       .from('quiz_sessions')
       .select('student_id, completed_at')
       .in('student_id', studentIds)
       .gte('completed_at', weekAgo)
       .limit(5000)
+    logQueryError('quiz_sessions', recentErr)
     const seen = new Set<string>()
     for (const r of recent || []) {
       if (r.student_id && !seen.has(r.student_id)) seen.add(r.student_id)
@@ -1398,12 +1479,13 @@ async function handleGetClassOverview(
   const fastProgress: Array<{ student_id: string; name: string; mastered_this_week: number }> = []
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    const { data: mastered } = await supabase
+    const { data: mastered, error: masteredErr } = await supabase
       .from('concept_mastery')
       .select('student_id')
       .in('student_id', studentIds)
       .eq('mastery_level', 'mastered')
       .gte('updated_at', sevenDaysAgo)
+    logQueryError('concept_mastery', masteredErr)
 
     const countBy = new Map<string, number>()
     for (const r of (mastered || []) as Array<{ student_id: string | null }>) {
@@ -1463,10 +1545,11 @@ async function handleGetStudentReport(
   let totalAsked = 0
   let totalCorrect = 0
   try {
-    const { data: profiles } = await supabase
+    const { data: profiles, error: profilesErr2 } = await supabase
       .from('student_learning_profiles')
       .select('subject, xp, streak_days, total_questions_asked, total_questions_answered_correctly')
       .eq('student_id', studentId)
+    logQueryError('student_learning_profiles', profilesErr2)
     for (const p of profiles || []) {
       const subj = String(p.subject || '')
       const asked = Number(p.total_questions_asked || 0)
@@ -1591,13 +1674,14 @@ async function handleGetClassTrends(
   }
   let sessions: QS[] = []
   try {
-    const { data } = await supabase
+    const { data, error: dataErr } = await supabase
       .from('quiz_sessions')
       .select('student_id, completed_at, score_percent, correct_answers, total_questions, time_taken_seconds, time_spent_seconds')
       .in('student_id', studentIds)
       .gte('completed_at', windowStart.toISOString())
       .not('completed_at', 'is', null)
       .limit(5000)
+    logQueryError('quiz_sessions', dataErr)
     sessions = (data || []) as QS[]
   } catch { /* table may not exist */ }
 
@@ -1745,11 +1829,12 @@ async function teacherOwnsAssignment(
   // previously named a non-existent `type` column, which supabase-js does not
   // throw on — it returns `data: null` — so every call silently fell through
   // to `{ owns: false, assignment: null }`, 403'ing legitimate owners.
-  const { data: a } = await supabase
+  const { data: a, error: aErr } = await supabase
     .from('assignments')
     .select('id, class_id, teacher_id, title, subject, grade, chapter, difficulty, question_count, due_date, type:assignment_type, created_at')
     .eq('id', assignmentId)
     .maybeSingle()
+  logQueryError('assignments', aErr)
   if (!a) return { owns: false, assignment: null }
 
   // Direct ownership: teacher_id matches on the assignment row.
@@ -1763,13 +1848,14 @@ async function teacherOwnsAssignment(
   if (!classId) return { owns: false, assignment: a as Record<string, unknown> }
 
   try {
-    const { data: link } = await supabase
+    const { data: link, error: linkErr } = await supabase
       .from('class_teachers')
       .select('class_id')
       .eq('class_id', classId)
       .eq('teacher_id', teacherId)
       .limit(1)
       .maybeSingle()
+    logQueryError('class_teachers', linkErr)
     if (link) return { owns: true, assignment: a as Record<string, unknown> }
   } catch { /* table may not exist on this env */ }
 
@@ -1987,10 +2073,11 @@ async function handleGetAssignmentSubmissions(
   if (classId) {
     try {
       // class_students join table (used by /api/teacher/classes wiring).
-      const { data: cs } = await supabase
+      const { data: cs, error: csErr } = await supabase
         .from('class_students')
         .select('student_id, students(id, name, grade, deleted_at)')
         .eq('class_id', classId)
+      logQueryError('class_students', csErr)
       for (const row of cs || []) {
         const s = (row as any).students
         if (s && s.id && !s.deleted_at && !seen.has(s.id)) {
@@ -2004,10 +2091,11 @@ async function handleGetAssignmentSubmissions(
   // Submissions for these students on this assignment.
   const submissions: SubmissionRow[] = []
   try {
-    const { data: subs } = await supabase
+    const { data: subs, error: subsErr } = await supabase
       .from('assignment_submissions')
       .select('id, student_id, score, questions_total, questions_correct, time_spent_seconds, status, submitted_at, graded_at')
       .eq('assignment_id', assignmentId)
+    logQueryError('assignment_submissions', subsErr)
     const byStudent = new Map<string, any>()
     for (const s of subs || []) byStudent.set(String(s.student_id), s)
 
@@ -2116,13 +2204,14 @@ async function handleGetGradingQueue(
   }
   let rawSubs: RawSub[] = []
   try {
-    const { data } = await supabase
+    const { data, error: dataErr } = await supabase
       .from('assignment_submissions')
       .select('id, assignment_id, student_id, score, questions_total, questions_correct, time_spent_seconds, status, submitted_at, graded_at, responses')
       .in('assignment_id', assignmentIds)
       .is('graded_at', null)
       .in('status', ['submitted', 'completed'])
       .limit(5000)
+    logQueryError('assignment_submissions', dataErr)
     rawSubs = (data || []) as RawSub[]
   } catch { /* table absent — empty queue */ }
 
@@ -2135,10 +2224,11 @@ async function handleGetGradingQueue(
   const studentIds = Array.from(new Set(rawSubs.map((s) => String(s.student_id))))
   const studentNameById = new Map<string, string>()
   try {
-    const { data: studs } = await supabase
+    const { data: studs, error: studsErr } = await supabase
       .from('students')
       .select('id, name')
       .in('id', studentIds)
+    logQueryError('students', studsErr)
     for (const s of studs || []) {
       studentNameById.set(String(s.id), (s as { name?: string }).name || 'Student')
     }
@@ -2183,11 +2273,12 @@ async function handleGetSubmissionDetail(
   }
 
   // Student profile (single).
-  const { data: student } = await supabase
+  const { data: student, error: studentErr } = await supabase
     .from('students')
     .select('id, name, grade')
     .eq('id', sub.student_id)
     .maybeSingle()
+  logQueryError('students', studentErr)
 
   // The `responses` column is jsonb — typically an array of
   // { question_id, question_text, student_answer, correct_answer,
@@ -2275,11 +2366,12 @@ async function handleMarkSubmissionReviewed(
 
   // Resolve the teacher's auth_user_id for the event envelope's actor.
   // We have teacher_id (resolved by JWT binding); look up the auth row.
-  const { data: teacher } = await supabase
+  const { data: teacher, error: teacherErr } = await supabase
     .from('teachers')
     .select('id, auth_user_id, school_id')
     .eq('id', teacherId)
     .maybeSingle()
+  logQueryError('teachers', teacherErr)
   if (!teacher) return errorResponse('Teacher account not found', 403, origin)
 
   const now = new Date().toISOString()
@@ -2308,11 +2400,12 @@ async function handleMarkSubmissionReviewed(
   const eventId = crypto.randomUUID()
   let busFlagOn = false
   try {
-    const { data: flag } = await supabase
+    const { data: flag, error: flagErr } = await supabase
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', 'ff_event_bus_v1')
       .maybeSingle()
+    logQueryError('feature_flags', flagErr)
     busFlagOn = flag?.is_enabled === true
   } catch { /* flag absent — bus stays off, same default as publishEvent() */ }
 
@@ -2465,13 +2558,14 @@ async function resolveStudentsForClass(
     const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
     if (!schoolId) return out
     try {
-      const { data } = await supabase
+      const { data, error: dataErr2 } = await supabase
         .from('students')
         .select('id, name, grade')
         .eq('grade', grade)
         .eq('school_id', schoolId)
         .is('deleted_at', null)
         .limit(1000)
+      logQueryError('students', dataErr2)
       for (const s of data || []) {
         if (s?.id && !seen.has(s.id)) {
           seen.add(s.id)
@@ -2484,10 +2578,11 @@ async function resolveStudentsForClass(
 
   // Real class: roster lives in the class_students join table.
   try {
-    const { data: cs } = await supabase
+    const { data: cs, error: csErr } = await supabase
       .from('class_students')
       .select('student_id, students(id, name, grade, deleted_at)')
       .eq('class_id', classId)
+    logQueryError('class_students', csErr)
     for (const row of cs || []) {
       const s = (row as any).students
       if (s && s.id && !s.deleted_at && !seen.has(s.id)) {
@@ -2523,11 +2618,12 @@ async function handleGetGradeBook(
     className = `Grade ${classId.replace('grade-', '')}`
   } else {
     try {
-      const { data: cls } = await supabase
+      const { data: cls, error: clsErr } = await supabase
         .from('classes')
         .select('id, name, grade, section')
         .eq('id', classId)
         .maybeSingle()
+      logQueryError('classes', clsErr)
       className = cls?.name || (cls ? `${cls.grade || ''}-${cls.section || ''}` : 'Class')
     } catch { /* table absent — graceful empty */ }
   }
@@ -2548,11 +2644,12 @@ async function handleGetGradeBook(
   // for these students.
   const subjects = new Set<string>()
   try {
-    const { data: t } = await supabase
+    const { data: t, error: tErr } = await supabase
       .from('teachers')
       .select('subjects_taught')
       .eq('id', teacherId)
       .maybeSingle()
+    logQueryError('teachers', tErr)
     const subs = Array.isArray((t as any)?.subjects_taught)
       ? (t as any).subjects_taught
       : (t as any)?.subjects_taught
@@ -2568,13 +2665,14 @@ async function handleGetGradeBook(
   type ScoreRow = { student_id: string; subject: string; score: number | null; recorded_at: string }
   let scoreRows: ScoreRow[] = []
   try {
-    const { data } = await supabase
+    const { data, error: dataErr } = await supabase
       .from('score_history')
       .select('student_id, subject, score, recorded_at')
       .in('student_id', studentIds)
       .gte('recorded_at', bounds.start)
       .lt('recorded_at', bounds.end)
       .limit(5000)
+    logQueryError('score_history', dataErr)
     scoreRows = (data || []) as ScoreRow[]
     for (const r of scoreRows) if (r.subject) subjects.add(String(r.subject).toLowerCase())
   } catch { /* table absent — empty cells below */ }
@@ -2612,7 +2710,7 @@ async function handleGetGradeBook(
   try {
     const termStartDate = bounds.start.slice(0, 10)
     const termEndDate = new Date().toISOString().slice(0, 10) // up to today
-    const { data: attRows } = await supabase
+    const { data: attRows, error: attRowsErr } = await supabase
       .from('student_attendance')
       .select('student_id, status')
       .eq('class_id', classId)
@@ -2620,6 +2718,7 @@ async function handleGetGradeBook(
       .gte('date', termStartDate)
       .lte('date', termEndDate)
       .limit(50000)
+    logQueryError('student_attendance', attRowsErr)
 
     const attByStudent = new Map<string, { present: number; total: number }>()
     for (const row of ((attRows || []) as Array<{ student_id: string; status: string }>)) {
@@ -2655,12 +2754,13 @@ async function handleGetGradeBook(
   // matrix stays rectangular and the saved cell is actually rendered.
   // Migration: 20260620001000_grade_book_entries.sql (apply + redeploy on merge).
   try {
-    const { data: savedRows } = await supabase
+    const { data: savedRows, error: savedRowsErr } = await supabase
       .from('grade_book_entries')
       .select('student_id, column_key, score, max_score')
       .eq('class_id', classId)
       .in('student_id', studentIds)
       .limit(20000)
+    logQueryError('grade_book_entries', savedRowsErr)
     for (const r of (savedRows || []) as Array<{
       student_id: string
       column_key: string
@@ -2776,24 +2876,26 @@ async function handleSetGradeBookCell(
     const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
     if (schoolId) {
       try {
-        const { data: s } = await supabase
+        const { data: s, error: sErr } = await supabase
           .from('students')
           .select('grade')
           .eq('id', studentId)
           .eq('school_id', schoolId)
           .maybeSingle()
+        logQueryError('students', sErr)
         studentInClass = !!s && String((s as { grade?: string }).grade) === grade
       } catch { studentInClass = false }
     }
   } else {
     try {
-      const { data: link } = await supabase
+      const { data: link, error: linkErr } = await supabase
         .from('class_students')
         .select('student_id')
         .eq('class_id', classId)
         .eq('student_id', studentId)
         .limit(1)
         .maybeSingle()
+      logQueryError('class_students', linkErr)
       if (link) studentInClass = true
     } catch { /* fall through */ }
   }
@@ -2808,11 +2910,12 @@ async function handleSetGradeBookCell(
     columnKeyRaw === 'attendance' ? 'attendance' : 'subject'
 
   // Resolve teacher for actor + tenant fields on the event envelope.
-  const { data: teacher } = await supabase
+  const { data: teacher, error: teacherErr } = await supabase
     .from('teachers')
     .select('id, auth_user_id, school_id')
     .eq('id', teacherId)
     .maybeSingle()
+  logQueryError('teachers', teacherErr)
   if (!teacher) return errorResponse('Teacher account not found', 403, origin)
 
   const now = new Date().toISOString()
@@ -2823,11 +2926,12 @@ async function handleSetGradeBookCell(
   // STEP 1 (mandatory): publish to bus BEFORE canonical write.
   let busFlagOn = false
   try {
-    const { data: flag } = await supabase
+    const { data: flag, error: flagErr } = await supabase
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', 'ff_event_bus_v1')
       .maybeSingle()
+    logQueryError('feature_flags', flagErr)
     busFlagOn = flag?.is_enabled === true
   } catch { /* flag absent — bus off, same default as publishEvent() */ }
 
@@ -3058,12 +3162,13 @@ async function handleGetAttendanceRecord(
   try {
     if (!classId.startsWith('grade-')) {
       // Real class ID: query class_students join → students
-      const { data: rosterRows } = await supabase
+      const { data: rosterRows, error: rosterRowsErr } = await supabase
         .from('class_students')
         .select('students(id, name)')
         .eq('class_id', classId)
         .eq('is_active', true)
         .limit(300)
+      logQueryError('class_students', rosterRowsErr)
       students = ((rosterRows || []) as Array<{ students: RosterStudent | null }>)
         .map(r => r.students)
         .filter((s): s is RosterStudent => s !== null && !!s.id)
@@ -3074,12 +3179,13 @@ async function handleGetAttendanceRecord(
       const grade = classId.replace('grade-', '')
       const schoolId = await resolveTeacherSchoolId(supabase, teacherId)
       if (schoolId) {
-        const { data: gradeRows } = await supabase
+        const { data: gradeRows, error: gradeRowsErr } = await supabase
           .from('students')
           .select('id, name')
           .eq('grade', grade)
           .eq('school_id', schoolId)
           .limit(300)
+        logQueryError('students', gradeRowsErr)
         students = ((gradeRows || []) as RosterStudent[]).filter(s => !!s.id)
       }
     }
@@ -3338,11 +3444,12 @@ async function readStudentConceptMastery(
 ): Promise<Array<{ topic_id: string; concept: string; p_know: number; attempts: number }>> {
   const out: Array<{ topic_id: string; concept: string; p_know: number; attempts: number }> = []
   try {
-    const { data: bktRows } = await supabase
+    const { data: bktRows, error: bktRowsErr } = await supabase
       .from('concept_mastery')
       .select('topic_id, p_know, attempts')
       .eq('student_id', studentId)
       .limit(500)
+    logQueryError('concept_mastery', bktRowsErr)
     if (!bktRows || bktRows.length === 0) return out
 
     // Resolve concept titles for the topic ids in one batch.
@@ -3352,10 +3459,11 @@ async function readStudentConceptMastery(
     const titleById = new Map<string, string>()
     if (topicIds.length > 0) {
       try {
-        const { data: topics } = await supabase
+        const { data: topics, error: topicsErr } = await supabase
           .from('curriculum_topics')
           .select('id, title')
           .in('id', topicIds)
+        logQueryError('curriculum_topics', topicsErr)
         for (const t of topics || []) {
           titleById.set(String((t as { id: string }).id), String((t as { title?: string }).title || ''))
         }
@@ -3386,12 +3494,13 @@ async function readStudentBloomResponses(
   studentId: string,
 ): Promise<Array<{ bloom_level: string | null; is_correct: boolean | null }>> {
   try {
-    const { data } = await supabase
+    const { data, error: dataErr } = await supabase
       .from('quiz_responses')
       .select('bloom_level, is_correct')
       .eq('student_id', studentId)
       .not('bloom_level', 'is', null)
       .limit(5000)
+    logQueryError('quiz_responses', dataErr)
     return (data || []) as Array<{ bloom_level: string | null; is_correct: boolean | null }>
   } catch {
     return []
@@ -3418,12 +3527,13 @@ async function readStudentRecentActivity(
   let scoreSum = 0
   let scoreCount = 0
   try {
-    const { data: sessions } = await supabase
+    const { data: sessions, error: sessionsErr } = await supabase
       .from('quiz_sessions')
       .select('score_percent, completed_at')
       .eq('student_id', studentId)
       .not('completed_at', 'is', null)
       .limit(5000)
+    logQueryError('quiz_sessions', sessionsErr)
     for (const s of sessions || []) {
       quizzes += 1
       const sp = (s as { score_percent?: number | null }).score_percent
@@ -3436,10 +3546,11 @@ async function readStudentRecentActivity(
 
   let streak = 0
   try {
-    const { data: profiles } = await supabase
+    const { data: profiles, error: profilesErr } = await supabase
       .from('student_learning_profiles')
       .select('streak_days')
       .eq('student_id', studentId)
+    logQueryError('student_learning_profiles', profilesErr)
     for (const p of profiles || []) {
       const s = Number((p as { streak_days?: number }).streak_days || 0)
       if (s > streak) streak = s
@@ -3532,11 +3643,12 @@ async function handleGetClassMasteryBloomSummary(
   // topic. Same concept_mastery shape get_heatmap reads — values verbatim.
   const conceptAgg = new Map<string, { masterySum: number; attemptsSum: number; n: number }>()
   try {
-    const { data: bktRows } = await supabase
+    const { data: bktRows, error: bktRowsErr2 } = await supabase
       .from('concept_mastery')
       .select('topic_id, p_know, attempts')
       .in('student_id', studentIds)
       .limit(20000)
+    logQueryError('concept_mastery', bktRowsErr2)
     for (const r of bktRows || []) {
       const topicId = String((r as { topic_id?: string }).topic_id || '')
       if (!topicId) continue
@@ -3553,10 +3665,11 @@ async function handleGetClassMasteryBloomSummary(
   const titleById = new Map<string, string>()
   if (topicIds.length > 0) {
     try {
-      const { data: topics } = await supabase
+      const { data: topics, error: topicsErr2 } = await supabase
         .from('curriculum_topics')
         .select('id, title')
         .in('id', topicIds)
+      logQueryError('curriculum_topics', topicsErr2)
       for (const t of topics || []) {
         titleById.set(String((t as { id: string }).id), String((t as { title?: string }).title || ''))
       }
@@ -3584,12 +3697,13 @@ async function handleGetClassMasteryBloomSummary(
   // quiz_responses.bloom_level read — pooled across the class. ──
   let bloomRows: Array<{ bloom_level: string | null; is_correct: boolean | null }> = []
   try {
-    const { data } = await supabase
+    const { data, error: dataErr2 } = await supabase
       .from('quiz_responses')
       .select('bloom_level, is_correct')
       .in('student_id', studentIds)
       .not('bloom_level', 'is', null)
       .limit(50000)
+    logQueryError('quiz_responses', dataErr2)
     bloomRows = (data || []) as Array<{ bloom_level: string | null; is_correct: boolean | null }>
   } catch { /* quiz_responses absent — empty bloom rollup */ }
   const bloom = aggregateBloomDistribution(bloomRows)
@@ -3838,10 +3952,11 @@ async function handleGetInTheMomentAlerts(
   const topicsInfo: Record<string, { title: string; chapter_number: number | null; chapter_name?: string | null }> = {}
   
   if (uniqueTopicIds.length > 0) {
-    const { data: topicsData } = await supabase
+    const { data: topicsData, error: topicsDataErr } = await supabase
       .from('curriculum_topics')
       .select('id, title, chapter_number, description')
       .in('id', uniqueTopicIds)
+    logQueryError('curriculum_topics', topicsDataErr)
 
     if (topicsData) {
       for (const t of topicsData) {
@@ -4184,13 +4299,14 @@ async function handleGetMisconceptionClusters(
     for (const c of clusters) for (const s of c.students) exampleIds.add(s.id)
 
     try {
-      const { data: exRows } = await supabase
+      const { data: exRows, error: exRowsErr } = await supabase
         .from('quiz_responses')
         .select('student_id, question_text, student_answer, correct_answer, created_at')
         .in('student_id', [...exampleIds])
         .eq('is_correct', false)
         .order('created_at', { ascending: false })
         .limit(200)
+      logQueryError('quiz_responses', exRowsErr)
 
       const byStudent = new Map<string, Example[]>()
       for (const r of (exRows || []) as Array<{
@@ -4282,11 +4398,12 @@ async function handleRecordInterventionDecision(
   // Verify caller-teacher owns SOME class that enrolls this student.
   let owns = false
   try {
-    const { data: enrolments } = await supabase
+    const { data: enrolments, error: enrolmentsErr } = await supabase
       .from('class_students')
       .select('class_id')
       .eq('student_id', row.student_id)
       .limit(20)
+    logQueryError('class_students', enrolmentsErr)
     for (const e of (enrolments || []) as Array<{ class_id: string | null }>) {
       if (!e?.class_id) continue
       if (await assertTeacherOwnsClass(supabase, teacherId, e.class_id)) {
@@ -4320,11 +4437,12 @@ async function handleRecordInterventionDecision(
     // in which the student is enrolled that this teacher owns.
     let classId: string | null = null
     try {
-      const { data: enrolments } = await supabase
+      const { data: enrolments, error: enrolmentsErr2 } = await supabase
         .from('class_students')
         .select('class_id')
         .eq('student_id', row.student_id)
         .limit(20)
+      logQueryError('class_students', enrolmentsErr2)
       for (const e of (enrolments || []) as Array<{ class_id: string | null }>) {
         if (!e?.class_id) continue
         if (await assertTeacherOwnsClass(supabase, teacherId, e.class_id)) {
@@ -4339,19 +4457,21 @@ async function handleRecordInterventionDecision(
       // effort: if we can't, we still record the decision and skip deployment.
       let chapterId: string | null = null
       try {
-        const { data: subject } = await supabase
+        const { data: subject, error: subjectErr } = await supabase
           .from('subjects')
           .select('id')
           .eq('code', row.subject_code)
           .maybeSingle()
+        logQueryError('subjects', subjectErr)
         if (subject?.id) {
-          const { data: topic } = await supabase
+          const { data: topic, error: topicErr } = await supabase
             .from('curriculum_topics')
             .select('id')
             .eq('subject_id', subject.id)
             .eq('chapter_number', row.chapter_number)
             .limit(1)
             .maybeSingle()
+          logQueryError('curriculum_topics', topicErr)
           chapterId = topic?.id ?? null
         }
       } catch { /* chapterId stays null */ }
@@ -4359,7 +4479,7 @@ async function handleRecordInterventionDecision(
       if (chapterId) {
         const evidenceMap = await buildEvidenceForRosterStudents(supabase, [row.student_id])
         try {
-          const { data: existing } = await supabase
+          const { data: existing, error: existingErr } = await supabase
             .from('teacher_remediation_assignments')
             .select('id')
             .eq('student_id', row.student_id)
@@ -4368,6 +4488,7 @@ async function handleRecordInterventionDecision(
             .in('status', ['assigned', 'in_progress'])
             .limit(1)
             .maybeSingle()
+          logQueryError('teacher_remediation_assignments', existingErr)
           if (existing) {
             deployment = { assignment_id: existing.id as string, idempotent: true }
           } else {
@@ -4435,11 +4556,12 @@ async function handleRecordInterventionDecision(
   } catch { /* bus row is observability, never load-bearing */ }
 
   try {
-    const { data: t } = await supabase
+    const { data: t, error: tErr } = await supabase
       .from('teachers')
       .select('auth_user_id')
       .eq('id', teacherId)
       .maybeSingle()
+    logQueryError('teachers', tErr)
     await supabase.from('audit_logs').insert({
       auth_user_id: t?.auth_user_id ?? null,
       action: 'record_intervention_decision',
@@ -4495,11 +4617,12 @@ async function handleGenerateDraftAssignment(
   const supabase = getServiceClient()
 
   // Verify teacher can teach this (grade, subject).
-  const { data: teacher } = await supabase
+  const { data: teacher, error: teacherErr } = await supabase
     .from('teachers')
     .select('grades_taught, subjects_taught')
     .eq('id', teacherId)
     .maybeSingle()
+  logQueryError('teachers', teacherErr)
   if (!teacher) return errorResponse('Teacher not found', 403, origin)
   const grades = Array.isArray(teacher.grades_taught) ? teacher.grades_taught : []
   const subjects = Array.isArray(teacher.subjects_taught) ? teacher.subjects_taught : []
@@ -4789,11 +4912,12 @@ async function resolveTeacherFromJwt(
     return { errorResponse: errorResponse('Invalid or expired token', 401, origin) }
   }
 
-  const { data: teacher } = await supabase
+  const { data: teacher, error: teacherErr2 } = await supabase
     .from('teachers')
     .select('id')
     .eq('auth_user_id', user.id)
     .single()
+  logQueryError('teachers', teacherErr2)
 
   if (!teacher) {
     return { errorResponse: errorResponse('Caller is not a teacher', 403, origin) }

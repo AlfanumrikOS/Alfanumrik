@@ -21,8 +21,14 @@ import { ANTHROPIC_HAIKU_ID, ANTHROPIC_SONNET_ID } from '@alfanumrik/lib/ai/gate
 
 // The exact pre-registry literals. These are frozen by contract — changing them
 // is an AI-provider/model change (user approval required).
+// 2026-08-31 DEAD-PIN REPAIR: the Sonnet literal moved from the RETIRED
+// 'claude-sonnet-4-20250514' (Anthropic API now answers HTTP 404
+// not_found_error; GET /v1/models no longer lists it) to the verified-available
+// same-generation successor 'claude-sonnet-4-5-20250929'. This test did exactly
+// its job — it is the pin that has to be updated deliberately, in lockstep with
+// registry.ts's ANTHROPIC_SONNET_ID, so the repoint is never silent.
 const HAIKU_LITERAL = 'claude-haiku-4-5-20251001';
-const SONNET_LITERAL = 'claude-sonnet-4-20250514';
+const SONNET_LITERAL = 'claude-sonnet-4-5-20250929';
 
 describe('config.ts model-name byte-identity', () => {
   it('primaryModel.name equals the frozen Haiku literal', () => {

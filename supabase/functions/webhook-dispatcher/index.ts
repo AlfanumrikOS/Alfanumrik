@@ -174,13 +174,26 @@ Deno.serve(async (req: Request) => {
 
     // Cache subscriptions for this batch (one read per distinct subscription).
     const subCache = new Map<string, SubscriptionRow | null>();
-    async function getSubscription(id: string): Promise<SubscriptionRow | null> {
+    /**
+     * `null`          → subscription genuinely absent (terminal for the delivery)
+     * `'read_failed'` → we could not tell; the caller must SKIP, not dead-letter
+     */
+    async function getSubscription(id: string): Promise<SubscriptionRow | null | 'read_failed'> {
       if (subCache.has(id)) return subCache.get(id) ?? null;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('webhook_subscriptions')
         .select('id, target_url, secret_hash, is_active')
         .eq('id', id)
         .maybeSingle();
+      // The caller treats null as "subscription gone or deactivated" and marks
+      // the delivery `dead_letter` — irreversibly dropping a customer webhook.
+      // A transient read failure must never be able to trigger that, and it
+      // must not be cached either. Return an explicit sentinel so the caller
+      // leaves the row pending for the next tick.
+      if (error) {
+        console.error('[webhook-dispatcher] subscription read failed:', error.code, error.message);
+        return 'read_failed';
+      }
       const sub = (data as SubscriptionRow | null) ?? null;
       subCache.set(id, sub);
       return sub;
@@ -188,6 +201,10 @@ Deno.serve(async (req: Request) => {
 
     for (const row of rows) {
       const sub = await getSubscription(row.subscription_id);
+
+      // Could not read the subscription — leave the delivery untouched (still
+      // pending) so the next tick retries it. Never dead-letter on an outage.
+      if (sub === 'read_failed') continue;
 
       // Subscription gone or deactivated → terminal (do not keep retrying).
       if (!sub || !sub.is_active) {

@@ -15,7 +15,7 @@ def test_pricing_has_all_known_models():
     during the origin/main merge — see .claude/regression/00-header.md's
     collision note]): the stale
     'claude-sonnet-4-6-20251022' id was never a real Anthropic model; PRICING's
-    key is now 'claude-sonnet-4-20250514', matching registry.ts
+    key is now 'claude-sonnet-4-5-20250929', matching registry.ts
     (ANTHROPIC_SONNET_ID), config-model-name-identity.test.ts, and
     quality-eval.ts (JUDGE_MODEL).
     """
@@ -23,7 +23,7 @@ def test_pricing_has_all_known_models():
         "openai/gpt-4o-mini",
         "openai/gpt-4o",
         "anthropic/claude-haiku-4-5-20251001",
-        "anthropic/claude-sonnet-4-20250514",
+        "anthropic/claude-sonnet-4-5-20250929",
     }
     assert expected_keys.issubset(PRICING.keys())
 
@@ -83,6 +83,6 @@ def test_compute_cost_for_sonnet():
     Sonnet-ID drift rationale) — using the stale id here would silently miss
     PRICING and return $0.00 instead of exercising this test's whole point.
     """
-    usd, _ = compute_cost("anthropic", "claude-sonnet-4-20250514", 2_000_000, 500_000)
+    usd, _ = compute_cost("anthropic", "claude-sonnet-4-5-20250929", 2_000_000, 500_000)
     # 2M * 3 + 0.5M * 15 = 6 + 7.5 = $13.50
     assert usd == pytest.approx(13.50, rel=1e-9)

@@ -1486,6 +1486,24 @@ safety). REG-306..REG-307 were the prior additions (Master Action Plan Phase
 > below, now REG-335 — were renumbered up during conflict resolution. No
 > content changed; see `00-header.md`'s collision note for the full account.
 
+> **CORRECTION 2026-08-31 (superseded by REG-433 below, NOT removed — per this
+> catalog's "removing an entry requires explicit user approval" rule):** the
+> OpenAI-primary order this entry pins as intentional
+> (`gpt-4o-mini` → `gpt-4o` → `claude-haiku-4-5-*` → `claude-sonnet-4-*`) was
+> reversed by a CEO-directed **quality** swap on **2026-08-26**, which restored
+> **Claude-primary** (`MODEL_ROUTE_REV` 3 → 4). That swap was NEVER
+> catalogued — `grep -rn "2026-08-26" .claude/regression/` returned zero hits
+> until this pass — so for five days the catalog documented the exact opposite
+> of what production shipped, while the BACKING TESTS had already been updated
+> to the new order and still cited "REG-334" in their comments. A reader
+> reconciling test to catalog would have concluded the tests were wrong.
+> Everything ELSE in this section (the swap mechanism, the Sonnet-ID drift
+> companion fix, the eval-harness gate, the "a routing-order change is invisible
+> in a diff unless a test asserts the NEW order" precedent) remains accurate;
+> only the specific ORDER pinned below is now historical. See **REG-433** for
+> the current order, the mirror-value parity guard that would have caught the
+> drift, and the `MODEL_ROUTE_REV` 4 → 5 dead-Sonnet-pin repair on top of it.
+
 CEO-directed cost swap (see the approved plan, "Multi-Provider AI Cost/Quality
 Routing Plan Revision 2," Phase 1): Anthropic's per-token cost does not scale
 with per-student revenue at current volume, so `MODEL_FALLBACK_ORDER`
@@ -2829,3 +2847,554 @@ ledgers) before this can pass Gate 3.
 
 ---
 
+## REG-429 — Foxy safety rails were never reaching the model: `{{foxy_safety_rails}}` wiring gap (2026-08-31)
+
+Added 2026-08-31 (testing agent, Foxy MOL audit requirement 10 close-out).
+Source change: `supabase/functions/grounded-answer/prompts/foxy_tutor_{teach,
+exam,doubt}_v1.txt` + their `prompts/inline.ts` `String.raw` twins (a new
+`## Safety Rails` section carrying `{{foxy_safety_rails}}`, plus a
+`{{mode_instruction}}` slot for `_exam_v1` / `_doubt_v1`),
+`supabase/functions/grounded-answer/config.ts` (`PROMPT_REV` 3 → 4), and
+`packages/lib/src/grounding-config.ts` (the same bump, mirrored).
+
+**The defect.** `/api/foxy` had been sending
+`foxy_safety_rails: FOXY_SAFETY_RAILS` in `template_variables` on **100% of
+Foxy turns** since the grounded-answer cutover. No registered template declared
+a `{{foxy_safety_rails}}` slot. `resolveTemplate` substitutes only tokens that
+EXIST in the template and silently discards every other key — so the nine P12
+rails (CBSE scope, age-appropriateness, bilingual style, honesty, grounding,
+factual integrity under pressure, the bilingual EN/HI RAG-only refusal, the
+no-fake-actions rail, and the prohibited-inferences denylist) reached the model
+on ZERO turns, for months, with a fully green test suite. The same mechanism
+dropped `{{mode_instruction}}` — the service-computed soft-mode grounding
+instruction — on every doubt / homework / practice turn (the pipeline's
+`if (!vars.mode_directive) vars.mode_directive = vars.mode_instruction` fallback
+only fires when `mode_directive` is EMPTY, which it never is on a Foxy turn).
+
+**Why every existing test missed it, and what this entry changes.** The
+pre-existing coverage (`foxy-safety.test.ts` and siblings) asserted on the
+SOURCE CONSTANT: "does `FOXY_SAFETY_RAILS` contain rail 7?" — a question whose
+answer was always yes and was never the question that mattered. The catalog
+lesson is the same one REG-51 (server-shuffle authority) and REG-419 (prompt
+parity) encode from the other direction: **a prompt assertion that does not go
+through the real loader is not a prompt assertion.** Every test filed here
+resolves the template through the REAL `prompts/index.ts` loader — which
+prefers the bundled `inline.ts` twin over the `.txt`, so a `.txt`-only edit is
+a runtime no-op — and asserts on the string the model actually receives.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-429a | `%s declares a {{foxy_safety_rails}} slot` | Each of the three LIVE templates (`foxy_tutor_teach_v1` / `_exam_v1` / `_doubt_v1` — the only ids `selectFoxyPromptTemplate` can return) declares the slot. Without it the route's value is discarded and NOTHING errors. | `apps/host/src/__tests__/lib/foxy/live-template-render-pins.test.ts` | E | P12 |
+| REG-429b | `%s: every one of the 9 rails is present in the RENDERED prompt` | 12 distinct per-rail markers (one or two per rail, incl. the C1 "never as prose" citation ban, the C2 "ONLY source of truth" clause, the C4 self-correction carve-out, and the Devanagari refusal sentence) appear in `resolveTemplate(loadTemplate(id), routeVars)`. Per-rail markers, not a whole-constant containment check — the latter would pass if a rail were dropped from the constant itself. | same file | E | P12, P7 |
+| REG-429c | `%s: the rails render as a binding FLOOR, under the section header` | The rails body renders AFTER the `## Safety Rails (P12 — a binding safety FLOOR` header, i.e. it landed in the Safety Rails section rather than somewhere incidental. | same file | E | P12 |
+| REG-429d | `%s: an empty rails value would be DETECTABLE (negative control)` | Rendering with `foxy_safety_rails: ''` removes the rail markers — proving REG-429b is load-bearing and not satisfied by unrelated template prose that happens to repeat rail wording. | same file | E | P12 |
+| REG-429e | `%s declares a {{mode_instruction}} slot` + `%s: the soft-mode grounding instruction is in the RENDERED prompt` | All three templates carry the slot and render `modeInstructionFor`'s soft-mode/chunks-present text verbatim. | same file | E | P12 |
+| REG-429f | `%s: the strict-mode INSUFFICIENT_CONTEXT sentinel survives substitution` | A strict-mode `mode_instruction` value itself contains `{{INSUFFICIENT_CONTEXT}}`; `resolveTemplate` must not re-scan substituted VALUES, or the sentinel the abstain path keys off would be blanked to `''`. | same file | E | P12 |
+| REG-429g | `%s renders with no "{{" left` + `%s declares only well-formed {{word}} slots` | Zero unresolved `{{...}}` survives a full render, and every declared slot matches the well-formed `{{word}}` shape — `resolveTemplate` only handles `/\{\{(\w+)\}\}/`, so a malformed slot (`{{ foo }}`, `{{foo-bar}}`) ships literal braces to the model. | same file | E | P12, P6 |
+| REG-429h | `foxy_tutor_teach_v1 — .txt <-> inline.ts twin parity` (HARD PIN ×2) | teach_v1 was MISSING from the `.txt` ↔ `inline.ts` parity guard (`CLOSURE_TEMPLATE_IDS` covered only doubt/exam) even though it serves learn / explain / explorer — the largest traffic share. Its twins had ALREADY forked. Pins: (1) the twins are identical once the observed ASCII-safety transforms (U+2026 → `...`, U+2192 → `->`) are applied to BOTH — so any WORD-level edit to one twin and not the other fails; (2) both twins carry the rails + `{{mode_instruction}}` wiring. | `apps/host/src/__tests__/lib/foxy/math-density-drift-guard.test.ts` | E | P12 |
+| REG-429i | `foxy_tutor_teach_v1 — DOCUMENTED fork` (×4) | The existing fork is EXACTLY 3 lines and EXACTLY those two character substitutions; the inline twin is fully ASCII-fied while the `.txt` keeps the Unicode; and `FOXY_TUTOR_V1`'s twin still keeps ITS arrows/ellipsis — proving this is template-LOCAL drift, not house policy (inline.ts's header declares only backtick and ≤/≥ transforms and explicitly says arrows are fine). Deliberately not "fixed" here; deliberately not papered over either. | same file | E | P12 |
+
+Test run (real): `npx vitest run src/__tests__/lib/foxy/live-template-render-pins.test.ts` → **38 passed**;
+`npx vitest run src/__tests__/lib/foxy/math-density-drift-guard.test.ts` → **85 passed** (78 before, +7 for the teach_v1 block).
+
+**Both pins verified to FAIL when the fix is reverted** (not assumed): removing
+`{{foxy_safety_rails}}` and `{{mode_instruction}}` from the `foxy_tutor_doubt_v1`
+INLINE twin only (the runtime-preferred copy) turned 7 of the 38 render-pin tests
+red; a one-word edit to the teach_v1 inline twin (`These rails NEVER relax` →
+`These rails may relax`) turned 3 of the twin-parity tests red. Both were restored
+and re-verified green.
+
+**Reported, NOT fixed (ai-engineer + assessment):** `foxy_tutor_teach_v1` is
+deliberately NOT added to `CLOSURE_TEMPLATE_IDS`. It carries NONE of the
+delimiter-contract markers those tests assert — no `docs/math-rendering-spec.md`
+reference, no delimiter mandate, no density deferral to
+`buildMathFormatDirective`, no boxing rule. Adding it would produce five real
+failures describing a genuine content gap on the highest-traffic template. That
+is a prompt-content decision for ai-engineer/assessment, not something a test
+file should assert away.
+
+---
+
+## REG-430 — Cross-provider `auth_error` containment + provider prompt/policy parity (2026-08-31)
+
+Added 2026-08-31 (testing agent, Foxy MOL audit requirements 4 + 10h). Source
+change: `supabase/functions/grounded-answer/claude.ts` (provider-scoped auth
+containment in BOTH `callClaude` and `callClaudeStream`, plus Anthropic
+404/429/5xx classified as `server_error` to match the OpenAI branch).
+
+**Two defects, one file.**
+
+*(1) Auth containment.* `MODEL_FALLBACK_ORDER` is CROSS-provider, but an HTTP
+401/403 used to abort the WHOLE chain. Anthropic and OpenAI have separate keys:
+rotating or revoking `ANTHROPIC_API_KEY` took Foxy fully down while a healthy
+OpenAI key sat unused. Auth failure is now conclusive only WITHIN a provider —
+the chain skips that provider's remaining rungs and falls through to the other
+one; only an all-providers auth failure returns `reason:'auth_error'`.
+
+*(2) Provider parity — no test existed anywhere.* The two branches build their
+request bodies in two separate functions (`callOnce` / `callOpenAIOnce`) with no
+shared builder. A rail, a grounding instruction, or a JSON-contract clause added
+to one branch and not the other would ship silently and would only be visible on
+the minority of turns that actually fall through to OpenAI — the traffic slice
+nobody watches. Combined with REG-429, this is the difference between "the rails
+exist" and "the rails reach whichever model answers."
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-430a | `Anthropic 401 → skips remaining Anthropic rungs but FALLS THROUGH to the OpenAI rung` / `...403...` / `Anthropic 401 then OpenAI 401 → auth_error` | Non-streaming containment: Haiku 401 skips Sonnet (same key, same result), OpenAI answers, `fallback_count:1`, `failure_chain:['anthropic:auth_error']`. Both providers 401 → terminal `auth_error`, and neither provider's SECOND rung is ever attempted. | `supabase/functions/grounded-answer/__tests__/claude.test.ts` | E | P12 |
+| REG-430b | `stream: pre-first-token Anthropic 401 → falls through to the OpenAI rung and streams` / `stream: Anthropic 401 then OpenAI 401 → auth_error terminal` | Same containment in `callClaudeStream`. A fallback can only occur BEFORE the first `text_delta`; once tokens ship the generator commits to its model. | same file | E | P12 |
+| REG-430c | `Anthropic 429 → server_error label anthropic:5xx (not anthropic:unknown)` / `stream: Anthropic 503 → ...` | Anthropic 404/429/≥500 classify as `server_error`, matching the OpenAI branch. Previously they fell into `unknown`, so `failureLabel()` emitted `anthropic:unknown` and dashboards under-reported Anthropic rate limits and 5xx **entirely**. Fallthrough behaviour unchanged. | same file | E | P12, observability |
+| REG-430d | `Anthropic 401 -> the OpenAI rung receives the SAME system prompt AND the full conversation history` (non-streaming + streaming) | **Scenario (h)'s missing half.** The pre-existing containment tests captured only the url and the model id — a fallback that silently dropped the system prompt or the conversation history would have passed every one of them. These capture the outbound BODIES and assert the OpenAI rung gets a byte-identical system prompt and `[...priorTurns, {user, currentMessage}]` in order. A student mid-conversation whose Anthropic rung 401s must keep their thread. | same file (2 new tests, 25 → 27) | E | P12 |
+| REG-430e | `parity: the OpenAI rung receives a BYTE-IDENTICAL system prompt to the Anthropic rung` | Forces a real Anthropic → OpenAI fallback (haiku 500 → sonnet 500 → gpt-4o-mini 200) on ONE fixed request whose system prompt is a genuine `foxy_tutor_doubt_v1` render through the real loader, and compares the captured bodies. | `supabase/functions/grounded-answer/__tests__/provider-parity.test.ts` (NEW) | E | P12 |
+| REG-430f | `parity: the safety rails and the grounding instruction reach BOTH providers` | The REG-429 rails and the soft-mode grounding instruction are present in BOTH outbound bodies. Rails that only reach rung 1 are not rails. | same file | E | P12 |
+| REG-430g | `parity: user message + conversation turns survive the fallback identically (session context)` / `parity: generation params ... identical` / `parity holds on the sonnet rung too` | Turn array (role + content, in order) is identical across providers and across both Anthropic rungs; `max_tokens` / `temperature` identical; only the model id differs between haiku and sonnet. | same file | E | P12 |
+| REG-430h | `known asymmetry (a): systemSegments is Anthropic-only and is CONTENT-NEUTRAL` | Anthropic gets a `system` BLOCK ARRAY with 1-4 `cache_control:'ephemeral'` breakpoints (prompt caching); OpenAI gets one plain string and the word `cache_control` appears nowhere in its body. Asserted as intended-and-known, with the content-neutrality proof: the concatenation of the Anthropic blocks is byte-identical to the OpenAI system string. If that ever fails, prompt-cache segmentation has started ALTERING prompt text. | same file | E | P12 |
+| REG-430i | `known asymmetry (b): neither provider is sent response_format` | The JSON output contract is PROMPT-ONLY on both providers — OpenAI is deliberately not sent `response_format:{type:'json_object'}`. Pinned so that adding it later forces an explicit decision about whether the two rungs are still under the same contract. | same file | E | P12 |
+| REG-430j | `fixture guard: the rendered system prompt really carries the rails and the grounding instruction` | Anti-vacuity guard: if the fixture prompt did not actually contain the rails, every "both providers got the same thing" assertion would be comparing two copies of the same hole. Also asserts the prompt segments reconstruct the prompt exactly (`buildSystemBlocks`' own precondition — otherwise Anthropic silently drops to a single block and REG-430h would pass for the wrong reason). | same file | E | P12 |
+
+Test run (real): `deno test --allow-env --allow-read supabase/functions/grounded-answer/__tests__/provider-parity.test.ts` → **ok | 8 passed | 0 failed**;
+`... claude.test.ts` → **ok | 27 passed | 0 failed** (25 before, +2).
+
+**Verified to FAIL when parity is broken** (not assumed): temporarily patching
+`callOpenAIOnce` to strip the rails marker from its system message turned 3 of
+the 8 provider-parity tests red, including the explicit
+`openai lost the safety rails` assertion. `claude.ts` was restored byte-for-byte
+and re-verified green.
+
+**Known gap (CI enforcement, flagged to ops):** the new
+`provider-parity.test.ts` must be added to `DENO_TEST_TARGETS` in
+`.github/workflows/ci.yml` or it will pass locally and never run in CI — the
+same failure class REG-317 pins, and the same gap REG-335 recorded for
+`model-rollout-flag.test.ts`.
+
+---
+
+## REG-431 — Foxy request-timeout budget: hop-vs-maxDuration and the 3-rung chain invariant (2026-08-31)
+
+Added 2026-08-31 (testing agent, Foxy MOL audit). Source change:
+`PER_PLAN_TIMEOUT_MS` in BOTH `supabase/functions/grounded-answer/config.ts`
+and `packages/lib/src/grounding-config.ts` (20/35/55/75s → 41/43/45/47s),
+`apps/host/vercel.json` (`/api/foxy` `maxDuration` → 60s), and `claude.ts`'s
+chain planner (`perCall = clamp(chainBudget / 3, 12s, 45s)` with a hard chain
+deadline, replacing a flat `min(timeoutMs * 0.6, 45s)` applied per rung).
+
+**Two student-visible defects, both arithmetic.**
+
+*D1 — a paying student lost a quota unit for an answer they never received.*
+The hop timeout is `PER_PLAN_TIMEOUT_MS + 2s`, so on paid plans it ran to
+37/57/77s while `/api/foxy` inherited the generic **30s** `maxDuration`. On
+every paid plan the Vercel function was killed with
+`FUNCTION_INVOCATION_TIMEOUT` BEFORE the Edge Function's own abstain payload
+could return AND before the route's `refundQuota` ran.
+
+*D2 — cross-provider fallback was arithmetically dead code on every plan.*
+`MODEL_FALLBACK_ORDER.auto` has 4 rungs and the old planner gave EACH rung up
+to 60% of the whole budget, so 4 sequential attempts needed 48/84/132/180s
+against budgets of 20/35/55/75s. The two OpenAI rungs were unreachable on a
+timeout — which means REG-430's cross-provider containment, and the entire
+OpenAI tier, existed only for the fail-fast (401/404/429/5xx) path.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-431a | `%s: hop (budget + 2s) fits inside the 60s /api/foxy maxDuration` | Per plan (free/starter/pro/unlimited), `budget + 2000 <= 60000`. This is D1's ceiling. | `apps/host/src/__tests__/grounding/config-parity-values.test.ts` | E | P11-adjacent (quota integrity), P12 |
+| REG-431b | `%s: three sequential model rungs + retrieval reserve fit in the budget` | Per plan, `CHAIN_RESERVE_MS + 3 * clamp((budget - 5000)/3, 12s, 45s) <= budget`. Three is deliberate, not four: three is what `auto` needs to reach its FIRST cross-provider rung (`anthropic:haiku → anthropic:sonnet → openai:gpt-4o-mini`), which is the property that has to hold on a pure-timeout chain. Rung 4 stays best-effort, reachable when earlier rungs fail fast. | same file | E | P12 |
+| REG-431c | `%s: the per-rung slice is at or above the 12s floor` | `(budget - 5000)/3 >= 12000` on every plan — no caller drops below the per-attempt time Foxy's free tier has been running on in production. Without this floor, "fit three rungs" could be satisfied by slicing the budget into three useless attempts. | same file | E | P12 |
+| REG-431d | `the pre-repair budgets (20/35/55/75s) cannot return` | Explicit negative pin on all four retired values. | same file | E | P12 |
+
+The planner constants (`CHAIN_RESERVE_MS`, `PLANNED_FALLBACK_RUNGS`, the 12s
+floor / 45s cap) and the 60s `maxDuration` are mirrored as literals in the test
+ON PURPOSE: `claude.ts` is Deno-only and `vercel.json` is outside the test's
+import graph, and the point of the pin is to fail loudly if either side moves
+alone. Filed here rather than in `11-infrastructure.md` because the failure is
+Foxy-specific (it is `MODEL_FALLBACK_ORDER`'s rung count that makes the
+arithmetic bind) and because D1's blast radius is a Foxy quota unit.
+
+---
+
+## REG-432 — Homework mode answered the student's assigned work: Socratic hint-ladder directive (2026-08-31)
+
+Added 2026-08-31 (testing agent, Foxy MOL audit requirement 10, scenario (e)).
+Source change: `MODE_DIRECTIVES.homework` added in
+`packages/lib/src/foxy/prompt-sections.ts`.
+
+**This is an ACADEMIC-INTEGRITY defect, not a pedagogy preference.** `homework`
+has no template of its own — `selectFoxyPromptTemplate` routes it to
+`foxy_tutor_doubt_v1`, whose `## Output Format — Direct Answers` section says
+"Answer the student's question directly and completely." Platform policy says
+the opposite for homework in three other places, including
+`MODE_ADJUSTERS.homework` in `packages/lib/src/goals/goal-personas.ts`
+("Socratic only. Never solve outright."), which DOES reach the live prompt via
+`{{academic_goal_section}}`. A single homework turn could therefore carry both
+instructions at once — and the "answer directly" one was the template's own
+Output Format section, i.e. the stronger position. The observable outcome is
+Foxy completing a student's graded assignment on request.
+
+The fix is the smallest reliable one: give `homework` its own directive. In
+`foxy_tutor_doubt_v1` the `{{mode_directive}}` slot renders AFTER Persona /
+Output Format / Grounding Rules / Safety Rails / Language, so it is the last
+word on turn shape — and it fires ONLY on homework turns.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-432a | `renders the no-final-answer rule` | The RENDERED `foxy_tutor_doubt_v1` prompt (real loader, real `resolveTemplate`) carries "Do NOT solve the assigned", "do NOT state its final answer, in any turn, however the [student phrases the request]", and "Your job is to make sure THEY write each step." | `apps/host/src/__tests__/lib/foxy/live-template-render-pins.test.ts` | E | Academic integrity, P12 |
+| REG-432b | `renders all three rungs of the hint ladder, one per turn` | "give exactly ONE rung per turn, then stop and wait", "Never skip ahead just because the student asks you to.", and rungs 1 Comprehension / 2 Setup / 3 Parallel worked example — with ORDER asserted by index (a ladder that starts at rung 3 is an answer dump with extra steps), and rung 3 gated on "ONLY after the student has made two genuine attempts". | same file | E | Academic integrity |
+| REG-432c | `renders the ALWAYS-ALLOWED carve-out` | Explaining the concept/formula/NCERT definition in full; CHECKING work the student already did (including "NEVER refuse to check or confirm the student['s own answer]"); fully solving a DIFFERENT analogous problem. Without this carve-out the fix over-corrects into a tutor that stonewalls a student who has done the work — worse for the student than saying nothing. | same file | E | Academic integrity, P12 |
+| REG-432d | `renders the warm-refusal path for a direct-answer demand` | "do not refuse coldly" + "Never leave the student stuck with [nothing]" — a refusal that abandons the student is not an acceptable resolution of scenario (e). | same file | E | P7 (tone), academic integrity |
+| REG-432e | `is the LAST word on turn shape — it renders AFTER the "Direct Answers" output contract it overrides` | Index of `## Mode Directive (HOMEWORK` > index of `## Output Format — Direct Answers`, and > `## Safety Rails`, and > `## Language`. This is the whole mechanism by which the fix beats the contradicting instruction. | same file | E | Academic integrity |
+| REG-432f | `does NOT weaken the rails — they still render on a homework turn` | All 12 REG-429 rail markers still present on a homework render. A turn-shape override must not become a rails bypass. | same file | E | P12 |
+| REG-432g | `MODE_DIRECTIVES has NO "doubt" key — the absence IS the guarantee` / `a doubt render is byte-identical to a render with an empty mode_directive` / `a doubt render carries NONE of the homework ladder` | The route reads `MODE_DIRECTIVES[mode] ?? ''`. The ABSENCE of a `doubt` key is the structural guarantee that genuine doubt-clearing is unchanged. Pinned three ways, including a byte-identity comparison against an explicitly empty directive. **Do NOT "complete the record" by adding a `doubt` key.** | same file | E | Academic integrity (scope containment) |
+| REG-432h | `practice / learn keys stay independent of homework` | `learn`/`explain`/`revise` remain `''`; `practice` does not gain the hint ladder and `homework` does not gain the 5-MCQ shape. | same file | E | — |
+
+Test run (real): part of the same **38 passed** run as REG-429
+(`live-template-render-pins.test.ts`).
+
+**Scenarios NOT covered, recorded rather than faked** — Foxy MOL requirement 10
+asked for eight end-to-end teaching scenarios. (e) is closed here; (f)/(g)
+already existed; (h) is REG-430d-g. The remaining four cannot be honestly
+tested and are filed as `.skip` / `.todo` with named blockers in
+`apps/host/src/__tests__/lib/foxy/teaching-scenario-coverage-gaps.test.ts`,
+together with THREE GREEN TRIPWIRES that turn red the moment the blocker is
+removed (so the gap cannot quietly persist and the skipped tests cannot quietly
+rot):
+
+- **(a) correct answer / (b) misconception / (c) repeated struggle** — all three
+  are assertions about how the NEXT turn changes in response to the PREVIOUS
+  turn, which needs server-side turn-to-turn tutor state. The only such
+  mechanism is `foxy_pending_expectations` + the ANSWERING_NOW block, gated by
+  `ff_foxy_pending_expectations_v1`, which is seeded OFF
+  (`is_enabled=false, rollout_percentage=0`) and has never been ramped — most
+  recently re-seeded OFF by
+  `20260831031808_m7_restore_foxy_pending_expectations_ledger_drift.sql`. There
+  is no `tutor_state` module/table/column anywhere (zero grep hits).
+  **Tripwires:** the flag is asserted seeded-OFF in every migration that seeds
+  it, and a source walk asserts `tutor_state` still does not exist.
+- **(d) frustration / SEL** — no `.skip`, no test at all, `it.todo` only.
+  Unlike (a)-(c) there is no named implementation to wait for: the entire SEL
+  surface is ONE line ("If the student seems frustrated, be extra encouraging")
+  in `buildFoxySystemPrompt`, and that prompt is NOT on the live path — no
+  registered template declares `{{foxy_system_prompt}}`, so `resolveTemplate`
+  discards it on every grounded turn (it is consumed only by the legacy
+  intent-router fallback). `packages/lib/src/companion/casel-map.ts` exists but
+  has no importer outside the barrel and its own unit test. **Assessment must
+  define the expected behaviour before this can become a test.** Filed as a
+  product gap, not test debt.
+
+---
+
+## REG-433 — Claude-primary provider swap (2026-08-26) + dead-Sonnet-pin repair, and the mirror-VALUE parity guard that would have caught both (2026-08-31)
+
+Added 2026-08-31 (testing agent, Foxy MOL audit). **Supersedes REG-334's pinned
+order** (see the CORRECTION block on that entry). Source: the 2026-08-26
+CEO-directed **quality** swap back to Claude-primary
+(`MODEL_ROUTE_REV` 3 → 4) and the 2026-08-31 dead-pin repair
+(`MODEL_ROUTE_REV` 4 → 5).
+
+**Catalog defect this closes.** `grep -rn "2026-08-26" .claude/regression/`
+returned **zero hits** before this pass. The swap back to Claude-primary shipped
+on 2026-08-26 and was never catalogued, so REG-334 — the entry whose entire
+stated purpose is "a routing-order change is invisible in a diff review unless a
+test explicitly asserts the NEW order as intentional" — sat documenting the
+exact opposite of production for five days, while the BACKING TESTS
+(`router.test.ts`, `deno-parity.test.ts`) had already been updated to
+Claude-primary and still cited "REG-334" in their comments. A reader
+reconciling test against catalog would have concluded the tests were wrong.
+
+**Current order** (`MODEL_FALLBACK_ORDER` / `LEGACY_FALLBACK_ORDER`, both sides
+of the mirror): `anthropic:claude-haiku-4-5-20251001` →
+`anthropic:claude-sonnet-4-5-20250929` → `openai:gpt-4o-mini` → `openai:gpt-4o`.
+OpenAI is RETAINED as the fallback tier, not deleted. The pre-2026-08-26
+OpenAI-primary order survives as the rollback target in
+`CLAUDE_PRIMARY_FALLBACK_ORDER` — an identifier whose NAME is now the opposite
+of its CONTENTS (a leftover from before the swap). **Do not trust that
+identifier; read the array.**
+
+**The `MODEL_ROUTE_REV` 4 → 5 repair on top of it:** the sonnet tier's Anthropic
+id was `claude-sonnet-4-20250514`, which the live API answers with HTTP 404
+`not_found_error` (and `GET /v1/models` no longer lists). Every rev-4
+sonnet-tier cache entry was therefore produced by whatever the chain degraded to
+after the dead pin 404'd — in practice OpenAI — not by the Sonnet the request
+asked for.
+
+**Why the drift was invisible, and the new guard.** Both existing parity
+mechanisms compare constant **NAMES** only:
+`scripts/pre-rollout-checklist.ts` (a `^export const NAME` regex) and
+`scripts/check-config-parity.sh` — which was **DEAD**: it pointed at pre-monorepo
+paths (`src/lib/grounding-config.ts`), exited 1 on any current checkout, and was
+invoked by no workflow, package script, or hook (both `grounding-config.ts`
+headers still advertise it as the CI enforcement). **That script was DELETED on
+2026-08-31** — see the RESOLVED note at the end of this entry. The pre-existing
+`grounding/config-parity.test.ts` DOES compare values, but only for 7
+retrieval/threshold constants — neither cache-generation revision, nor the
+timeout budget. Consequence: `packages/lib/src/grounding-config.ts` silently
+diverged **twice** — `MODEL_ROUTE_REV` stuck at 3 vs the authority's 4
+(2026-08-26 → 2026-08-31), and `PROMPT_REV` stuck at 3 vs the authority's 4
+(2026-08-31, same day as the REG-429 bump). Both revisions are hashed into the
+response-cache `gen_ctx` tuple, so a stale mirror is a cache-KEYING defect.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-433a | `%s has an identical value on both sides` (every shared constant) | Parses BOTH mirrors from source (comment-stripped, bracket-depth + string-aware initializer scanner) and compares the parsed VALUE of every constant the two files share — the assertion neither name-only mechanism can make. | `apps/host/src/__tests__/grounding/config-parity-values.test.ts` (NEW) | E | P12 |
+| REG-433b | `PROMPT_REV matches` + `PROMPT_REV is at least 4` | Value parity plus a FLOOR at the REG-429 safety-rails wiring rev. A value below 4 means the rails wiring was reverted; reverting the wiring without reverting the rev would serve rails-less cached answers. | same file | E | P12 |
+| REG-433c | `MODEL_ROUTE_REV matches` + `MODEL_ROUTE_REV is at least 5` | Value parity plus a floor at the dead-Sonnet-pin repair rev. | same file | E | P12 |
+| REG-433d | `PER_PLAN_TIMEOUT_MS matches plan-for-plan (parsed numbers, not just text)` | The REG-431 budget, compared as a parsed numeric record rather than as source text. | same file | E | P12 |
+| REG-433e | `every TS constant exists in the Deno mirror` / `the Deno mirror adds only the two known model-routing tables` | Name-set parity, with `MODEL_FALLBACK_ORDER` + `CLAUDE_PRIMARY_FALLBACK_ORDER` allow-listed as legitimately Deno-only (they mirror the TS gateway registry, not grounding-config, and are value-pinned by `deno-parity.test.ts`). | same file | E | P12 |
+| REG-433f | anti-vacuity guards: `parses a non-trivial number of exported constants`, `captures multi-line object/array initializers whole`, `actually strips // comments (a CRLF checkout defeats a naive stripper)` | Without these the suite could pass while parsing nothing. The comment-stripper guard is not hypothetical: JS `.` does not match CR, so on a `core.autocrlf` checkout the first version of this test stripped NOTHING and compared comment prose — caught during authoring, pinned so it cannot recur. | same file | E | — |
+| REG-433g | (already-updated companions, re-verified this pass) `default chain is Claude-primary post 2026-08-26 quality directive` / `auto chain is Claude-primary on both sides` / `CLAUDE_PRIMARY_FALLBACK_ORDER ... is the rollback target` | The TS-side and Deno↔TS order pins were correctly updated on 2026-08-26; only the CATALOG was not. Recorded here so the two agree. | `apps/host/src/__tests__/lib/ai/gateway/router.test.ts`, `deno-parity.test.ts` | E | P12 |
+
+Test run (real): `npx vitest run src/__tests__/grounding/` → **4 files, 75
+passed** (`config-parity-values.test.ts` contributes 44).
+
+**Verified to FAIL when desynced** (not assumed), three separate runs, each
+restored afterwards:
+- `PROMPT_REV` 4 → 3 in the TS mirror → **2 failed | 42 passed**
+  (`expected '3' to be '4'`, `expected 3 to be 4`).
+- `MODEL_ROUTE_REV` 5 → 4 **and** `PER_PLAN_TIMEOUT_MS.unlimited` 47_000 →
+  75_000 → **4 failed | 40 passed** (`expected '4' to be '5'`, plus both the
+  text-level and parsed-record budget comparisons).
+- Restored → **44 passed**.
+
+**Source fix shipped with this entry:** `packages/lib/src/grounding-config.ts`
+`PROMPT_REV` 3 → 4, with the mirror-drift history recorded in its comment block.
+**Reported, not fixed (architect/ops):** both `grounding-config.ts` headers still
+say "CI parity check enforces via `scripts/check-config-parity.sh`" — a script
+that cannot run. Either repoint it at the monorepo paths and wire it into CI, or
+delete it and point the headers at this test.
+
+> **RESOLVED 2026-08-31 (architect).** The second option was taken:
+> `scripts/check-config-parity.sh` is **DELETED**. Repairing it would have added
+> a second, strictly weaker mechanism (NAME-only) to maintain alongside
+> `config-parity-values.test.ts`, which already compares VALUES and already runs
+> in the `unit-tests` shards. The two `grounding-config.ts` / `config.ts` headers
+> that advertise the dead script are **still stale** — they are owned by
+> ai-engineer and were being edited concurrently, so they were left alone. They
+> should be repointed at
+> `apps/host/src/__tests__/grounding/config-parity-values.test.ts`.
+> `scripts/pre-rollout-checklist.ts`'s `checkConfigParity()` is unaffected (it
+> never shelled out — it is a pure-TS reimplementation), and is still NAME-only
+> by design.
+>
+> Deleting the script also unblocked a SECOND, unrelated dead gate that had been
+> chained behind it: `lint:ai-boundary` ran
+> `bash scripts/check-config-parity.sh && eslint …`, so the `&&` meant the
+> AI-boundary ESLint **never executed** — three architectural rules
+> (`no-direct-ai-calls`, `no-direct-rag-rpc`,
+> `no-canonical-write-outside-projector`) sat at `error` enforcing nothing, and
+> `lint:ai-boundary` was referenced by no workflow either. That gate is now in
+> CI as the `quality` job's "AI boundary gate" step, blocking, baseline-ratcheted
+> via `scripts/ai-boundary-baseline.json` (8 recorded real violations; a 9th
+> fails the build). See `scripts/check-ai-boundary.mjs`.
+
+---
+
+## REG-434 — SEL (`ff_foxy_sel_v1`): render proof + the four suppression gates (2026-08-31)
+
+Added 2026-08-31 (testing agent). Source change: `buildSelSection` in
+`packages/lib/src/foxy/prompt-sections.ts`, wired into
+`apps/host/src/app/api/foxy/route.ts` behind `ff_foxy_sel_v1` (seeded OFF).
+
+**Why a flag-gated, default-OFF section still needs pins today.** The gates are
+the entire safety argument for ever turning this flag ON, and they are written
+as ordinary `&&` conditions in the middle of a 2,500-line route. Nothing else in
+the suite would notice if one were dropped: the section would simply start
+appearing on turns it was designed to stay out of, and the failure is invisible
+in aggregate metrics. The most consequential of the four is the **safeguarding
+suppression** — a Tier-1 screen hit whose Tier-2 classifier THREW leaves the
+turn's risk status unresolved, and SEL (deliberately silent about wellbeing, and
+forbidden from crisis copy) must not speak into that blind spot. Losing that gate
+means the one turn where a child may be in distress is also the turn where an
+unvalidated empathy section gets injected.
+
+The harness was adopted verbatim from the ai-engineer's throwaway wiring proof
+rather than rewritten, so the pins are the ones the implementer actually used to
+convince themselves the wiring was correct.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-434a | `flag ON: real route vars carry the SEL section, and it renders after Safety Rails + Language with zero unresolved slots` | The REAL route's `template_variables.cognitive_context_section` equals base + `buildSelSection('explicit_confusion')` EXACTLY; rendering `foxy_tutor_teach_v1` through the REAL loader puts `## SEL MOMENT` AFTER both `## Safety Rails` and `## Language` (ordering asserted by index), with zero surviving `{{...}}`. Assert on the RENDERED artifact, never the source constant. | `apps/host/src/__tests__/api/foxy/sel-render-proof.test.ts` | E | P12 |
+| REG-434b | `flag OFF: cognitive_context_section is byte-identical to the pre-change composition` | With `ff_foxy_sel_v1` OFF the value is byte-identical to the pre-change base section. This is the "additive, default-OFF" claim made testable rather than asserted in a comment. | same file | E | P12 |
+| REG-434c | `GATE: edge-transition only — prior turn already confused => NO SEL (anti-spam)` | A student confused on consecutive turns gets SEL at most on the transition, not every turn. Without this, sustained struggle produces sustained empathy boilerplate. | same file | E | P12 |
+| REG-434d | `GATE: non-teaching turn (mode=practice) => NO SEL` | `isTeachingTurn(mode)` gates injection; an MCQ-emitting turn has no "first block" for SEL to open. | same file | E | P12 |
+| REG-434e | `GATE: safeguarding Tier-1 hit + Tier-2 classifier failure => SEL SUPPRESSED` | The load-bearing gate. Screen hit + classifier THROWS ⇒ section is byte-identical to the base (SEL fully absent), not merely "shortened". | same file | E | P12, safeguarding |
+| REG-434f | `CONTROL: safeguarding Tier-1 hit + classifier returns ambiguous => SEL still injected` | Discrimination control for REG-434e: proves the suppression is keyed on classifier FAILURE, not on any Tier-1 hit. Without it, REG-434e would also pass if SEL were suppressed on every screened turn — over-suppression masquerading as correctness. | same file | E | P12 |
+| REG-434g | `SEL section contains no crisis vocabulary and no prohibited phrases` | For both signals, `buildSelSection` matches no crisis vocabulary (helpline / 1098 / trusted adult / counsellor / "you are not alone" / हेल्पलाइन) and returns `[]` from `findProhibitedPhrases`. SEL is NOT a safeguarding surface and must never impersonate one — crisis routing is a separate, audited path. | same file | E | P12, P7 |
+
+---
+
+## REG-435 — an SEL-bearing turn must never be cached as `cache_scope: 'shared'` (2026-08-31)
+
+Added 2026-08-31 (testing agent), filed separately from REG-434 because the
+defect class is **disclosure**, not prompt correctness.
+
+**The hazard.** The SEL section is derived from THIS student's observed struggle
+signal, so an SEL-bearing turn is personal by construction. `selSection !== ''`
+is a term of the route's `cognitiveSectionIsPersonal` predicate for exactly that
+reason. Delete that one term and the turn is declared `'shared'` — and a response
+shaped by one child's confusion is served to a different child. That is a P13
+disclosure, not a caching inefficiency.
+
+**Why the existing coverage does not catch it.**
+`apps/host/src/__tests__/regressions/response-cache-v2-callers.test.ts` asserts
+that `!cognitiveSectionIsPersonal` is a conjunct of `foxyCacheScope` by matching
+the declaration's SOURCE TEXT. That assertion **still passes** with
+`selSection !== ''` removed from the predicate, because the conjunct it greps for
+is still right there in the source. The hole is one level down, inside the
+predicate being delegated to. These pins are behavioural — they read `cache_scope`
+off the REAL outbound `GroundedRequest`, not off source text.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-435a | `flag OFF on an otherwise-shareable turn: cache_scope is "shared" (discrimination control)` | Same request, same fixtures, SEL absent ⇒ `'shared'`. This is what makes REG-435b load-bearing: it proves every OTHER personal-section term is empty on this fixture, so the scope flip below can only be SEL. | `apps/host/src/__tests__/api/foxy/sel-render-proof.test.ts` | E | P13 |
+| REG-435b | `flag ON + SEL-bearing turn: cache_scope is "none" — SEL alone forces it` | SEL present (asserted, guarding against a vacuous pass where SEL never rendered) ⇒ `'none'`. | same file | E | P13 |
+| REG-435c | `a suppressed-SEL turn returns to "shared" — the scope tracks the SECTION, not the flag` | Flag ON but the `isTeachingTurn` gate trips ⇒ back to `'shared'`. If the scope keyed off the FLAG instead of `selSection !== ''`, this would read `'none'` — wrong in the conservative direction, which would mask a later regression in the dangerous one. | same file | E | P13 |
+
+**Revert-proof.** Established by paired A/B on identical fixtures rather than by
+source mutation: REG-435a and REG-435b differ ONLY in the flag, and empirically
+produce `'shared'` vs `'none'`. Removing the `selSection !== ''` term collapses
+REG-435b onto REG-435a's result and fails it. Direct source mutation was not
+performed because `apps/host/src/app/api/foxy/route.ts` was being edited
+concurrently by another agent during this session.
+
+---
+
+## REG-436 — the homework Socratic ladder must survive the ENTRY surfaces (snap + scan) (2026-08-31)
+
+Added 2026-08-31 (testing agent). **Filed as an ACADEMIC-INTEGRITY entry, not a
+pedagogy preference** — same classification as REG-432, and for the same reason:
+the failure mode is Foxy completing a student's graded assignment.
+
+REG-432 pins the ladder in the RENDERED prompt. It does **not** pin that the two
+surfaces which photograph a problem actually ASK for that mode. That is a
+separate, and quieter, failure.
+
+**The silent-downgrade mechanism.** `apps/host/src/app/api/foxy/route.ts` resolves
+the mode as `VALID_MODES.includes(body.mode) ? body.mode : 'learn'`. An
+unrecognised mode is **not rejected — it is silently rewritten to `learn`**. So a
+one-character typo in the mobile literal (`'homwork'`), or a server-side
+rename/removal of `homework` from `VALID_MODES`, produces no error, no 4xx, and
+no log line. It produces a Foxy that quietly goes back to answering a
+photographed assigned problem end-to-end: REG-432's hole, re-opened through the
+transport layer instead of the prompt layer.
+
+**Why the mobile half is pinned from the HOST suite.**
+`.github/workflows/mobile-ci.yml` is path-filtered to `mobile/**`,
+`openapi/v2.json`, and itself. A PR that renames the mode server-side touches
+none of those paths, so the Flutter suite never runs — a Dart-side widget test is
+structurally incapable of catching that direction of drift. The host suite runs
+on every PR and catches both directions.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-436a | `"explain" stays mode=doubt` / `"steps" hands off as mode=homework, NOT doubt` / `"hint" hands off as mode=homework, NOT doubt` | Web `/foxy/snap` CTA mapping. A photographed problem is not automatically homework: a snapped worked textbook example (`explain`) still gets a direct explanation, while the two taps a student reaches for on assigned work route to the ladder. | `apps/host/src/__tests__/foxy/snap-page-flag-gate.test.tsx` | E | Academic integrity |
+| REG-436b | `the EN "steps" prompt no longer requests a full solution` / `the HI "steps" prompt translates the NEW intent, not the retired one` | The old `steps` text asked for exactly what `MODE_DIRECTIVES.homework` forbids; shipping it under `mode=homework` would put two opposing instructions in one prompt. Pinned in BOTH languages — a Hindi student must not get the retired intent. | same file | E | Academic integrity, P7 |
+| REG-436c | `source=snap_doubt rides along but is NOT the enforcement point — mode is` | `source` is analytics-only and is never read by `/api/foxy`, so it can never be what enforces integrity. Pinned so nobody later "hardens" the wrong parameter. | same file | E | Academic integrity |
+| REG-436d | `the Scan & Solve CTA pushes mode=homework, NOT doubt` | Mobile Flutter surface. Parsed from `mobile/lib/ui/screens/scan_solve/scan_solve_result_screen.dart` with line-comments STRIPPED first — the file's doc comments discuss both `homework` and `doubt` at length, so a naive containment check would pass on prose alone. | `apps/host/src/__tests__/cross-cutting/mobile-web-foxy-homework-mode-drift.test.ts` | E | Academic integrity |
+| REG-436e | `the pushed route really carries the mode as a query parameter, on the /chat push` | Pins the transport, not just the literal: a params map built and then not passed to the push would satisfy REG-436d and still ship `learn`. **Scoped to a window from the mode literal to the next `context.push`** — the screen has TWO push-with-params sites (`/chat` and `/quiz`), and a file-wide regex passes while the Foxy CTA is broken. Confirmed empirically: the first draft of this test did exactly that and was rewritten. | same file | E | Academic integrity |
+| REG-436f | `the mode the CTA sends survives the server whitelist (cross-repo drift guard)` | THE load-bearing assertion. `VALID_MODES` (imported real, not mirrored) contains the parsed mobile literal. Catches the server-side rename that mobile CI cannot see. | same file | E | Academic integrity |
+| REG-436g | `the server fallback for an unknown mode really is SILENT — which is why the above matters` | Anti-vacuity for REG-436f: pins that the route rewrites to `'learn'` rather than rejecting. If it ever started returning 4xx, drift would be self-announcing and REG-436f would be far less critical — so changing this forces a re-read of this entry. | same file | E | Academic integrity |
+| REG-436h | `the mode maps to a NON-EMPTY MODE_DIRECTIVES entry (a valid mode is not enough)` + `that directive is the Socratic ladder, not some other override` | The route reads `MODE_DIRECTIVES[mode] ?? ''`, so a missing key degrades silently to no directive — a `doubt`-shaped direct answer under a `homework` label. Passing the whitelist is necessary but not sufficient. Identity kept to two stable structural markers; REG-432 owns the full wording pins. | same file | E | Academic integrity, P12 |
+
+**Revert-proof (executed, all four scenarios).** Ran against mutated copies of the
+real Dart source: (A) `'mode': 'doubt'` — REG-436d fails and `MODE_DIRECTIVES`
+has no `doubt` key, so the ladder is gone entirely; (B) `'mode': 'homwork'` —
+REG-436f fails (the silent-fallback case); (C) `homework` removed from
+`VALID_MODES` — REG-436f fails; (D) `queryParameters: params` decoupled —
+REG-436e fails. Plus a comment-vacuity check confirming that deleting the CODE
+while leaving the (homework-mentioning) comments does not pass the parser.
+
+**Known gap — the Dart-side tap test is NOT written.** A widget test asserting the
+actual tap behaviour (rather than the source literal) would complement REG-436d/e.
+It was not added because the Flutter SDK is absent from this checkout (both PATH
+entries point at non-existent directories), so it could be neither compiled nor
+run, and the "no vacuous tests" rule cannot be satisfied for an unexecutable test.
+Tracked as an open gap, not claimed as coverage.
+
+---
+
+## REG-437 — the AI-boundary gate: a blocking lint that had never once executed (2026-08-31)
+
+Added 2026-08-31 (testing agent). Restoration described in REG-433's writeup;
+promoted here to its own entry because the artifact is a standing CI gate with a
+ratcheted baseline, not a one-off fix.
+
+**What was wrong.** `lint:ai-boundary` ran
+`bash scripts/check-config-parity.sh && eslint …`. The `&&` meant that whenever
+the (since-deleted) parity script exited non-zero, the ESLint invocation **never
+ran at all** — and `lint:ai-boundary` was referenced by no workflow either. Three
+architectural rules sat configured at `error` while enforcing precisely nothing:
+`no-direct-ai-calls`, `no-direct-rag-rpc`,
+`no-canonical-write-outside-projector`. This is the same defect shape as REG-429
+(the rails the route sent that no template declared): a control that is present,
+configured, and inert, whose green signal is indistinguishable from a working one.
+
+**Baseline, not amnesty.** The gate is ratcheted rather than clean-at-zero: 8
+real pre-existing violations are recorded in `scripts/ai-boundary-baseline.json`
+so the gate can block a 9th today instead of waiting on 8 refactors. The
+baselined files are named, not aggregated — 7 × `no-direct-ai-calls`
+(`packages/lib/src/ai/validation/synthesis-quality-eval.ts`,
+`packages/lib/src/foxy/quality-eval.ts`,
+`packages/lib/src/rag/pack-quality-oracle.ts`,
+`supabase/functions/_shared/mol/grader.ts`,
+`supabase/functions/alfabot-answer/retrieval.ts`,
+`supabase/functions/grade-experiment-conclusion/index.ts`,
+`supabase/functions/grade-written-answer/index.ts`) and 1 ×
+`no-canonical-write-outside-projector`
+(`supabase/functions/queue-consumer/index.ts`). **These 8 are real boundary
+violations that remain unfixed** — the baseline freezes them, it does not
+absolve them.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-437a | AI-boundary gate executes and blocks | `node scripts/check-ai-boundary.mjs` runs ESLint with `.eslintrc.ai-boundary.json` over the repo and exits non-zero on any violation beyond the baseline. Verified real: `3566 files linted. live violations: 8 baseline: 8 → PASS`. | `scripts/check-ai-boundary.mjs`, wired as the `quality` job's "AI boundary gate" step in `.github/workflows/ci.yml` | E | P12, architecture |
+| REG-437b | The baseline is exact-count, not a mute | The baseline records per-file/per-rule COUNTS (8 entries, 8 total). A 9th violation — including a second violation in an already-baselined file — fails the build. | `scripts/ai-boundary-baseline.json` | E | P12 |
+
+**Standing risk.** The gate is a script + CI step, not a vitest test, so it is
+not covered by `npm test`. It is only as live as its CI wiring — which is exactly
+how it died the first time. Any future edit to the `quality` job must be audited
+per Gate 4.5 (parse the workflow, do not grep it).
+
+---
+
+## REG-438 — the Deno suites that only passed on a developer's ambient credentials (2026-08-31)
+
+Added 2026-08-31 (testing agent). Source: `import.meta.main` guard in
+`supabase/functions/grounded-answer/index.ts:633` +
+`supabase/functions/grounded-answer/__tests__/_security-harness.ts`.
+
+**Two distinct non-hermeticity defects, 11 failing tests between them.**
+
+*(1) The module served on import.* `index.ts` called `Deno.serve()` at module
+top level, so merely importing it from a test bound a port. Now guarded by
+`if (import.meta.main)`, which is true when the function is the main module in
+production and false under `deno test`.
+
+*(2) Admission was never actually exercised.* `handleRequest` admits every
+request through `resolveSecurityPrincipal` BEFORE the pipeline runs. `e2e.test.ts`
+and `pipeline.test.ts` sent a bare unauthenticated `Request`, so admission
+returned **401** and every assertion downstream of it — abstain reasons,
+citations, 500-on-throw — was never reached. **They looked green only for a
+developer whose ambient shell happened to carry real service credentials.** That
+is the defect: not "the environment", but a suite whose result depended on it.
+
+**The harness provisions REAL credentials; it does not bypass admission.** It adds
+no test-only branch to `index.ts` or to the security module. It computes a real
+HMAC-SHA256 signature using the same `signInternalRequest()` /
+`buildCanonicalInternalRequest()` pair the production verifier uses, over the same
+canonical string, so all five checks in the `internal_service` branch (service
+token constant-time compare, timestamp presence/skew, signing secret configured,
+registered+active caller, signature verification) still execute for real. A
+weakening of any of them would fail these suites — which is the opposite of what a
+stubbed-admission harness would do.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-438a | Suite is hermetic and green | `deno test --allow-env --allow-read supabase/functions/grounded-answer/__tests__/` reports **325 passed / 0 failed** with no ambient credentials. | `supabase/functions/grounded-answer/__tests__/` | E | test integrity |
+| REG-438b | Importing the function does not start a server | `Deno.serve()` is reached only under `import.meta.main`. | `supabase/functions/grounded-answer/index.ts` | E | test integrity |
+| REG-438c | Admission runs for real on the driven paths | The harness signs a genuine canonical request; the full `internal_service` branch executes rather than being stubbed, so the ~11 previously-unreachable downstream assertions now actually run. | `supabase/functions/grounded-answer/__tests__/_security-harness.ts` | E | P12, test integrity |
+
+**The generalisable lesson, and it is the same one as REG-429 and REG-437.** All
+three are controls that were present, configured, and inert, whose green signal
+was indistinguishable from a working one: rails no template declared, a lint
+behind a short-circuiting `&&`, and assertions behind a 401. A passing test is
+evidence only if you have checked that it *can* fail.
+
+---

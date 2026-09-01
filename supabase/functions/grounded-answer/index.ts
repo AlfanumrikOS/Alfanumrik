@@ -615,6 +615,23 @@ function buildStreamingResponse(args: {
   });
 }
 
-Deno.serve(handleRequest);
+// Bind the socket ONLY when this module is the process entrypoint.
+//
+// Deployed behaviour is unchanged: Supabase's edge runtime (and
+// `supabase functions serve`, and `deno run index.ts`) load this file as the
+// MAIN module, so `import.meta.main` is true and Deno.serve runs exactly as
+// before. It is false only when the module is IMPORTED by something else --
+// which, in this repo, is only the Deno test suites in ./__tests__/.
+//
+// Why this guard exists: an unconditional Deno.serve() at module scope meant
+// that merely IMPORTING index.ts started a server on 0.0.0.0:8000. That forced
+// every test touching handleRequest to run with --allow-net and leaked a live
+// listener across the whole test process, which is why e2e.test.ts and
+// pipeline.test.ts were excluded from CI's DENO_TEST_TARGETS. This is a
+// module side-effect guard, NOT a test-only branch: it carries no
+// test-specific condition and changes nothing about how the function serves.
+if (import.meta.main) {
+  Deno.serve(handleRequest);
+}
 
 export { getSb as __sbForTests };

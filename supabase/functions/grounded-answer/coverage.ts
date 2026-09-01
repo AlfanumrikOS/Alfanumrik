@@ -112,7 +112,7 @@ export async function checkCoverage(
   // subject but not a specific chapter (e.g. general "ask Foxy" with subject
   // context only).
   if (scope.chapter_number == null) {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('cbse_syllabus')
       .select('chapter_number, chapter_title')
       .eq('grade', scope.grade)
@@ -122,14 +122,22 @@ export async function checkCoverage(
       .order('chapter_number')
       .limit(1);
 
-    if (!data || data.length === 0) {
+    // Fail CLOSED (abstain) is already the right outcome for a P12 coverage
+    // gate and is preserved. But "this chapter has no ingested content" and
+    // "we could not read cbse_syllabus" are different facts: the second would
+    // make Foxy abstain on EVERY question, platform-wide, with no signal.
+    if (error) {
+      console.error('[coverage] cbse_syllabus subject probe failed:', error.code, error.message);
+    }
+
+    if (error || !data || data.length === 0) {
       return { ready: false, abstain_reason: 'chapter_not_ready', alternatives: [] };
     }
     return { ready: true, alternatives: [] };
   }
 
   // Specific chapter check.
-  const { data } = await sb
+  const { data, error } = await sb
     .from('cbse_syllabus')
     .select('chunk_count')
     .eq('grade', scope.grade)
@@ -137,7 +145,13 @@ export async function checkCoverage(
     .eq('chapter_number', scope.chapter_number)
     .maybeSingle();
 
-  if (hasEnoughChunks(data?.chunk_count)) {
+  // Same reasoning as the subject-level probe above: abstain on failure
+  // (correct, unchanged), but record why.
+  if (error) {
+    console.error('[coverage] cbse_syllabus chapter probe failed:', error.code, error.message);
+  }
+
+  if (!error && hasEnoughChunks(data?.chunk_count)) {
     return { ready: true, alternatives: [] };
   }
 
@@ -153,7 +167,7 @@ export async function suggestAlternatives(
   grade: string,
   subject_code: string,
 ): Promise<SuggestedAlternative[]> {
-  const { data } = await sb
+  const { data, error } = await sb
     .from('cbse_syllabus')
     .select('grade, subject_code, chapter_number, chapter_title')
     .eq('grade', grade)
@@ -162,6 +176,12 @@ export async function suggestAlternatives(
     .eq('is_in_scope', true)
     .order('chapter_number')
     .limit(3);
+
+  // Degrades to "no alternatives to suggest" — safe, but otherwise
+  // indistinguishable from a subject that genuinely has none ready.
+  if (error) {
+    console.error('[coverage] alternative-chapter probe failed:', error.code, error.message);
+  }
 
   // deno-lint-ignore no-explicit-any
   return (data ?? []).map((d: any) => ({

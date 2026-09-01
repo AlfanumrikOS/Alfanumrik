@@ -23,7 +23,17 @@ import type { ModelDescriptor, ProviderId, RoutingPolicy } from './types';
 // ─── Model id constants (the ONE place these strings live) ──────────────────
 
 export const ANTHROPIC_HAIKU_ID = 'claude-haiku-4-5-20251001';
-export const ANTHROPIC_SONNET_ID = 'claude-sonnet-4-20250514';
+// 2026-08-31 EMERGENCY REPAIR: 'claude-sonnet-4-20250514' was RETIRED and now
+// returns HTTP 404 not_found_error from the Anthropic API (verified live against
+// the production key; GET /v1/models no longer lists it). Because claude.ts
+// treats 404 as a retriable server_error, every sonnet-tier request silently
+// burned a guaranteed-failing round trip before degrading to OpenAI — adding
+// latency AND answering with a model the Foxy prompts are not calibrated for.
+// Replaced with the nearest verified-available successor in the same generation
+// (temperature + prefill still supported, so no request-shape changes needed).
+// NOTE: this is a repair of a dead pin, not a model upgrade — but it still
+// touches P12 / the model-approval gate, so flag it in review.
+export const ANTHROPIC_SONNET_ID = 'claude-sonnet-4-5-20250929';
 export const OPENAI_MINI_ID = 'gpt-4o-mini';
 export const OPENAI_FULL_ID = 'gpt-4o';
 export const GEMINI_FLASH_ID = 'gemini-1.5-flash';

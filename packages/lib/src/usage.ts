@@ -213,13 +213,27 @@ export async function checkDailyUsage(
   const limit = getLimitForPlan(plan, feature);
 
   // Query DB
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('student_daily_usage')
     .select('usage_count')
     .eq('student_id', studentId)
     .eq('feature', feature)
     .eq('usage_date', today)
     .maybeSingle();
+
+  // A failed read is not "0 used today". The displayed number stays optimistic
+  // (this is the UI badge — the hard gate lives server-side in /api/foxy, see
+  // recordUsage below), but the fabricated count must NOT be cached, or one
+  // blip pins the badge at "0 used" for the whole TTL. P13: no student id.
+  if (error) {
+    console.warn('[usage] daily usage read failed:', error.code, error.message);
+    return {
+      allowed: true,
+      remaining: limit,
+      limit,
+      count: 0,
+    };
+  }
 
   const count = data?.usage_count ?? 0;
 
@@ -279,11 +293,18 @@ export async function getDailyUsageSummary(
 ): Promise<Record<Feature, UsageResult>> {
   const today = todayISO();
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('student_daily_usage')
     .select('feature, usage_count')
     .eq('student_id', studentId)
     .eq('usage_date', today);
+
+  // Display-only summary: an error degrades to all-zero counts, exactly as
+  // before, but is no longer indistinguishable from a genuinely unused day.
+  // P13: no student id in the log.
+  if (error) {
+    console.warn('[usage] daily usage summary read failed:', error.code, error.message);
+  }
 
   const rows = data ?? [];
   const features: Feature[] = ['foxy_chat', 'quiz'];

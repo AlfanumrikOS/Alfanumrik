@@ -69,14 +69,25 @@ export async function registerSessionOnResponse(
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
 
     // Enforce MAX_SESSIONS — revoke oldest if at limit
-    const { data: active } = await admin
+    const { data: active, error: activeErr } = await admin
       .from('user_active_sessions')
       .select('id, created_at, device_label')
       .eq('auth_user_id', userId)
       .eq('is_active', true)
       .order('created_at', { ascending: true });
 
-    if (active && active.length >= MAX_SESSIONS) {
+    // supabase-js never throws, so this failure would otherwise read as
+    // "no active sessions" and silently disable the 2-device limit.
+    // Fail-open (P15) but observable. Metadata only (P13).
+    if (activeErr) {
+      console.error(
+        '[Auth Session] active-session lookup failed:',
+        activeErr.code,
+        activeErr.message
+      );
+    }
+
+    if (!activeErr && active && active.length >= MAX_SESSIONS) {
       const toRevoke = active.slice(0, active.length - MAX_SESSIONS + 1);
       for (const s of toRevoke) {
         await admin
@@ -86,7 +97,7 @@ export async function registerSessionOnResponse(
       }
     }
 
-    const { data: newSession } = await admin
+    const { data: newSession, error: newSessionErr } = await admin
       .from('user_active_sessions')
       .insert({
         auth_user_id: userId,
@@ -97,6 +108,16 @@ export async function registerSessionOnResponse(
       })
       .select('id')
       .single();
+
+    // A failed insert previously produced no cookie and no signal at all — the
+    // device-session row just never existed. Fail-open (P15), but surface it.
+    if (newSessionErr) {
+      console.error(
+        '[Auth Session] session row insert failed:',
+        newSessionErr.code,
+        newSessionErr.message
+      );
+    }
 
     if (newSession) {
       response.cookies.set(SESSION_COOKIE, newSession.id, {
@@ -181,6 +202,26 @@ function normalizeFunnelRole(role: string): 'student' | 'teacher' | 'guardian' |
 }
 
 /**
+ * Log a profile-existence probe failure.
+ *
+ * These probes use `.single()`, which resolves with PGRST116 ("no rows") when
+ * the profile simply does not exist yet — that is the EXPECTED, ignorable case
+ * and is exactly what these probes are asking about, so it is deliberately not
+ * logged. Any OTHER error (permission, missing column, network) means the probe
+ * itself failed; that previously read as "no profile", which silently re-runs
+ * bootstrap (idempotent, harmless) or mis-resolves the redirect role (not
+ * harmless). Behaviour is unchanged and still fail-soft per P15 — the failure is
+ * merely made observable. P13: code + message only, never the row or the email.
+ */
+function logProfileProbeError(
+  step: string,
+  error: { code?: string | null; message?: string } | null
+): void {
+  if (!error || error.code === 'PGRST116') return;
+  console.warn(`[Complete Signup] profile probe failed (${step}):`, error.code, error.message);
+}
+
+/**
  * Complete a confirmed signup: create the profile if missing (institution_admin
  * via ensureSchoolAdminOnboarding, else the bootstrap_user_profile RPC), resolve
  * the redirect role, and fire the best-effort welcome email.
@@ -208,26 +249,30 @@ export async function completeSignupBootstrap(
     redirectRole = params.role;
 
     // Check if a profile already exists (bootstrap may have run during signup).
-    const { data: existingStudent } = await supabase
+    const { data: existingStudent, error: existingStudentErr } = await supabase
       .from('students')
       .select('id')
       .eq('auth_user_id', user.id)
       .single();
-    const { data: existingTeacher } = await supabase
+    logProfileProbeError('students', existingStudentErr);
+    const { data: existingTeacher, error: existingTeacherErr } = await supabase
       .from('teachers')
       .select('id')
       .eq('auth_user_id', user.id)
       .single();
-    const { data: existingGuardian } = await supabase
+    logProfileProbeError('teachers', existingTeacherErr);
+    const { data: existingGuardian, error: existingGuardianErr } = await supabase
       .from('guardians')
       .select('id')
       .eq('auth_user_id', user.id)
       .single();
-    const { data: existingSchoolAdmin } = await supabase
+    logProfileProbeError('guardians', existingGuardianErr);
+    const { data: existingSchoolAdmin, error: existingSchoolAdminErr } = await supabase
       .from('school_admins')
       .select('id')
       .eq('auth_user_id', user.id)
       .single();
+    logProfileProbeError('school_admins', existingSchoolAdminErr);
 
     const hasProfile = !!(
       existingStudent ||
@@ -274,16 +319,18 @@ export async function completeSignupBootstrap(
           // invited via link without a role set in metadata). Only override
           // redirectRole if the DB confirms a specific profile — a null result
           // (network blip, test mock) keeps the meta.role value set above.
-          const { data: postBootstrapTeacher } = await supabase
+          const { data: postBootstrapTeacher, error: postBootstrapTeacherErr } = await supabase
             .from('teachers')
             .select('id')
             .eq('auth_user_id', user.id)
             .single();
-          const { data: postBootstrapGuardian } = await supabase
+          logProfileProbeError('teachers(post-bootstrap)', postBootstrapTeacherErr);
+          const { data: postBootstrapGuardian, error: postBootstrapGuardianErr } = await supabase
             .from('guardians')
             .select('id')
             .eq('auth_user_id', user.id)
             .single();
+          logProfileProbeError('guardians(post-bootstrap)', postBootstrapGuardianErr);
           if (postBootstrapTeacher) redirectRole = 'teacher';
           else if (postBootstrapGuardian) redirectRole = 'parent';
         } catch (bootstrapErr) {

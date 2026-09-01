@@ -227,11 +227,22 @@ export async function claimAdminToken(
 
     // Resolve the auth user behind the linked school_admins row (needed for the
     // response + the optional password set). A missing link is unrecoverable here.
-    const { data: linkRow } = await admin
+    const { data: linkRow, error: linkErr } = await admin
       .from('school_admins')
       .select('id, auth_user_id, is_active')
       .eq('id', row.school_admin_id)
       .maybeSingle();
+    // A failed read previously surfaced to the principal as the permanent,
+    // misleading "Admin link not found." — which reads as "your claim is
+    // invalid" rather than "retry". Report it distinctly. P13: school id only.
+    if (linkErr) {
+      logger.error('school_admin_claim_link_read_failed', {
+        schoolId: row.school_id,
+        code: linkErr.code,
+        reason: linkErr.message,
+      });
+      return { status: 'failed', error: 'Could not verify admin link. Please retry.' };
+    }
     const link = linkRow as { id: string; auth_user_id: string; is_active: boolean } | null;
     if (!link) {
       logger.error('school_admin_claim_missing_link', { schoolId: row.school_id });
@@ -371,12 +382,26 @@ export async function establishPrincipalAdmin(
 
   // Idempotent link: reuse an existing row for this auth user + school.
   let schoolAdminId: string | null = null;
-  const { data: existing } = await admin
+  const { data: existing, error: existingErr } = await admin
     .from('school_admins')
     .select('id, is_active')
     .eq('school_id', schoolId)
     .eq('auth_user_id', authUserId)
     .maybeSingle();
+
+  // This read IS the idempotency guard for the link. Reading a failure as "no
+  // existing link" falls into the INSERT branch and creates a duplicate
+  // school_admins row for the same (school, auth user). Return the documented
+  // `empty` (linked: false) instead — the caller already treats that as
+  // non-fatal and the operation is safely retryable. P13: no email/name.
+  if (existingErr) {
+    logger.error('school_admin_link_probe_failed', {
+      schoolId,
+      code: existingErr.code,
+      reason: existingErr.message,
+    });
+    return empty;
+  }
 
   if (existing) {
     schoolAdminId = (existing as { id: string }).id;
@@ -572,11 +597,22 @@ export async function provisionTrialSchool(
     let slugAttempt = 0;
     const MAX_SLUG_ATTEMPTS = 10;
     while (slugAttempt < MAX_SLUG_ATTEMPTS) {
-      const { data: existing } = await admin
+      const { data: existing, error: existingErr } = await admin
         .from('schools')
         .select('id')
         .eq('code', finalSlug)
         .maybeSingle();
+      // A failed probe would read as "slug is free" and break the loop with a
+      // possibly-taken code. Stop probing and fall through to the time-suffixed
+      // slug below, which is collision-safe without another round-trip.
+      if (existingErr) {
+        logger.warn('school_provisioning_slug_probe_failed', {
+          code: existingErr.code,
+          reason: existingErr.message,
+        });
+        slugAttempt = MAX_SLUG_ATTEMPTS;
+        break;
+      }
       if (!existing) break;
       slugAttempt++;
       finalSlug = `${baseSlug}-${slugAttempt}`;
@@ -586,11 +622,23 @@ export async function provisionTrialSchool(
     }
 
     // 2. Duplicate-email check (idempotent skip path for bulk callers)
-    const { data: existingSchool } = await admin
+    const { data: existingSchool, error: existingSchoolErr } = await admin
       .from('schools')
       .select('id')
       .eq('email', principal_email)
       .maybeSingle();
+
+    // This read IS the duplicate guard. Reading a failure as "no duplicate"
+    // would create a SECOND school for the same principal email — an
+    // irreversible write. Refuse instead; the caller can safely retry.
+    // P13: never log principal_email.
+    if (existingSchoolErr) {
+      logger.error('school_provisioning_duplicate_check_failed', {
+        code: existingSchoolErr.code,
+        reason: existingSchoolErr.message,
+      });
+      return { status: 'failed', error: 'Could not verify existing school. Please retry.' };
+    }
 
     if (existingSchool) {
       return {

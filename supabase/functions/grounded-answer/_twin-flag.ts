@@ -25,11 +25,20 @@ export async function isDigitalTwinEnabled(sb: any): Promise<boolean> {
   if (twinFlagCache && twinFlagCache.expiresAt > now) return twinFlagCache.value;
 
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', 'ff_digital_twin_v1')
       .single();
+    // supabase-js resolves instead of throwing, so the fail-CLOSED catch below
+    // never ran for a query error — the flag resolved OFF and was cached as a
+    // SUCCESS with no log. Same outcome, now recorded. PGRST116 ("no rows") is
+    // the documented missing-row case and stays deliberately silent.
+    if (error && error.code !== 'PGRST116') {
+      console.warn(`ff_digital_twin_v1 lookup failed — ${error.code}: ${error.message}`);
+      twinFlagCache = { value: false, expiresAt: now + TWIN_FLAG_CACHE_TTL_MS };
+      return false;
+    }
     // Default OFF: only a row with is_enabled === true enables the behavior.
     // A missing row (migration not applied / dev DB) → OFF (fail-closed).
     const value = data?.is_enabled === true;

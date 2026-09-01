@@ -62,6 +62,13 @@ on:
       # or, once CONTENT_GAP_MODE=escalate, a catastrophic content gap. This
       # string must byte-match content-quality-nightly.yml's `name:`.
       - "Content Quality — Nightly"
+      # Added 2026-08-31: the model-id canary is the ONLY thing that can see a
+      # model retirement, because a retirement happens at the provider with no
+      # commit here to trigger CI. It is a daily unattended cron, so without a
+      # watcher a red run lives in a tab nobody opens — which is how the
+      # `claude-sonnet-4-20250514` pin stayed dead until a manual audit found
+      # it. This string must byte-match model-id-canary.yml's `name:`.
+      - "Model ID Canary — pinned models still resolve"
     types: [completed]
     branches: [main]
 
@@ -114,6 +121,8 @@ jobs:
               HINT="Main is red: the merge quality gate is broken and Deploy Production will not get a green build to ship." ;;
             "Content Quality — Nightly")
               HINT="The content-gap detector is red. This is EITHER a detector outage (missing/expired Supabase reporting credential — the scan then reports nothing and content health is UNKNOWN, not healthy) OR a catastrophic content gap (a subject/grade pair at 0 RAG chunks AND 0 questions). Every question generator on this platform is manual-only, so a real gap cannot self-heal. Open the run artifact 'content-quality-<run_id>' for the per-pair table, then follow docs/runbooks/content-gap-detection.md. Do NOT silence this by re-suspending the workflow — that is how the previous month-long blind spot happened." ;;
+            "Model ID Canary — pinned models still resolve")
+              HINT="A model id pinned in this repo may no longer resolve at its provider. Read the run log for the exit code — it distinguishes two DIFFERENT failures. Exit 1 = DEAD PIN: the named id 404s, so every request routed to it burns a guaranteed-failing round trip and then silently degrades to the next fallback rung (the 2026-08-31 Foxy Sonnet incident, verbatim). Repin it — that is a P12 model-approval change (ai-engineer implements, assessment reviews, user approves). Exit 3 = COULD NOT VERIFY: a provider key did not resolve or the API was unreachable, so model liveness is UNKNOWN, not healthy. Do NOT resolve a 3 by disabling the schedule or loosening the allowlist. Runbook: docs/runbooks/model-id-canary.md" ;;
             *)
               HINT="Main-branch pipeline failure — investigate before the next deploy." ;;
           esac

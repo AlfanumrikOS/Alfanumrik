@@ -85,11 +85,22 @@ export async function writeSubscriberOffset(
   newOffset: SubscriberOffset,
   delta: { processed: number; deadLettered: number },
 ): Promise<void> {
-  const { data: existing } = await sb
+  const { data: existing, error: existingErr } = await sb
     .from('subscriber_offsets')
     .select('events_processed, events_dead_lettered, kind_filter')
     .eq('subscriber_name', subscriberName)
     .maybeSingle();
+  // This read is NOT optional: the upsert below rebuilds the whole row from it.
+  // Treating a failed read as "no existing row" silently BLANKS `kind_filter`
+  // and RESETS the `events_processed` / `events_dead_lettered` counters to this
+  // tick's delta — a destructive write, not a degraded one. Refuse to write.
+  // The caller re-runs on the next tick and subscribers are idempotent, so
+  // re-processing is the strictly safer failure mode.
+  if (existingErr) {
+    throw new Error(
+      `subscriber_offsets read failed for "${subscriberName}" (${existingErr.code}): ${existingErr.message}`,
+    );
+  }
   await sb.from('subscriber_offsets').upsert(
     {
       subscriber_name: subscriberName,

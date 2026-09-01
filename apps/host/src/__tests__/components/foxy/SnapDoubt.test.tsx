@@ -167,4 +167,29 @@ describe('SnapDoubt — three-intent hand-off', () => {
     expect(onIntent).toHaveBeenNthCalledWith(2, 'steps', blocks[0]);
     expect(onIntent).toHaveBeenNthCalledWith(3, 'hint', blocks[0]);
   });
+
+  // The page routes `steps` through Foxy's `homework` mode, which will not
+  // solve an assigned problem end-to-end. The button must not promise one.
+  it('the "steps" CTA label does not promise a full solution (EN + HI parity)', () => {
+    const { rerender } = render(<SnapDoubt {...baseProps({ blocks, selectedBlockId: 'b1' })} />);
+    const en = screen.getByTestId('snap-intent-steps');
+    expect(en).toHaveTextContent(/how to start/i);
+    expect(en).not.toHaveTextContent(/just the steps/i);
+    expect(en).not.toHaveTextContent(/solution/i);
+
+    rerender(<SnapDoubt {...baseProps({ blocks, selectedBlockId: 'b1', isHi: true })} />);
+    const hi = screen.getByTestId('snap-intent-steps');
+    expect(hi).toHaveTextContent('कैसे शुरू करें');
+    expect(hi).not.toHaveTextContent('सिर्फ़ स्टेप्स');
+  });
+
+  it('the other two CTA labels are unchanged (EN + HI)', () => {
+    const { rerender } = render(<SnapDoubt {...baseProps({ blocks, selectedBlockId: 'b1' })} />);
+    expect(screen.getByTestId('snap-intent-explain')).toHaveTextContent('Explain');
+    expect(screen.getByTestId('snap-intent-hint')).toHaveTextContent('Hint only');
+
+    rerender(<SnapDoubt {...baseProps({ blocks, selectedBlockId: 'b1', isHi: true })} />);
+    expect(screen.getByTestId('snap-intent-explain')).toHaveTextContent('समझाओ');
+    expect(screen.getByTestId('snap-intent-hint')).toHaveTextContent('सिर्फ़ संकेत');
+  });
 });

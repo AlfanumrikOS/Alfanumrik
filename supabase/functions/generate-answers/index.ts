@@ -388,15 +388,24 @@ async function handleGet(origin: string | null): Promise<Response> {
 
   let breakdown: Record<string, { total: number; with_answer: number; without_answer: number }> | null = null
 
-  if (!gsErr && gradeSubject) {
-    // Build breakdown manually since we don't have a dedicated RPC
-    // Fetch questions with answers for the breakdown
-    const { data: withAnswerRows } = await supabase
-      .from('question_bank')
-      .select('grade, subject')
-      .eq('is_active', true)
-      .not('answer_text', 'is', null)
+  // Build breakdown manually since we don't have a dedicated RPC.
+  // Fetch questions with answers for the breakdown.
+  const { data: withAnswerRows, error: withAnswerErr } = await supabase
+    .from('question_bank')
+    .select('grade, subject')
+    .eq('is_active', true)
+    .not('answer_text', 'is', null)
 
+  // Stats-only breakdown, but a failure here would report "0 questions have
+  // answers" for EVERY grade/subject — a number an operator would act on by
+  // launching a redundant (paid) answer-generation run. Suppress the whole
+  // breakdown (it stays null, an already-supported shape) rather than publish
+  // a fabricated zero.
+  if (withAnswerErr) {
+    console.error('[generate-answers] with-answer breakdown read failed:', withAnswerErr.code, withAnswerErr.message)
+  }
+
+  if (!gsErr && gradeSubject && !withAnswerErr) {
     const withAnswerSet = new Set(
       (withAnswerRows || []).map((r: { grade: string; subject: string }) => `${r.grade}|${r.subject}`),
     )

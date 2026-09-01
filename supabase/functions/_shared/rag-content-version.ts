@@ -107,12 +107,23 @@ export async function bumpRagContentVersion(
       return;
     }
 
-    const { data: existing } = await sb
+    const { data: existing, error: existingErr } = await sb
       .from('rag_content_versions')
       .select('version')
       .eq('grade', gradeShort)
       .eq('subject_code', subjectCode)
       .maybeSingle();
+    // This read is NOT optional: the upsert below derives the next version
+    // from it. Treating a failed read as "no row yet" writes version 1 over a
+    // live counter, REGRESSING a cache-invalidation key — which resurrects
+    // already-invalidated RAG answers. Skip the bump instead; the caller
+    // re-ingests / re-bumps and the version keeps moving forward only.
+    if (existingErr) {
+      console.warn(
+        `[rag-content-version] bump skipped — current-version read failed: ${existingErr.code} ${existingErr.message}`,
+      );
+      return;
+    }
     const nextVersion = (typeof existing?.version === 'number' ? existing.version : 0) + 1;
 
     const { error } = await sb

@@ -638,11 +638,10 @@ async function writeGraderTelemetry(
       provider: 'anthropic',
       // Aligned to the id already pinned by config-model-name-identity.test.ts,
       // packages/lib/src/ai/gateway/registry.ts (ANTHROPIC_SONNET_ID), and
-      // packages/lib/src/foxy/quality-eval.ts (JUDGE_MODEL) — this
-      // environment has no ANTHROPIC_API_KEY, so this was NOT confirmed
-      // against a live Anthropic model-catalog check; get a final live
-      // confirmation at the next review.
-      model: result?.model ?? 'claude-sonnet-4-20250514',
+      // packages/lib/src/foxy/quality-eval.ts (JUDGE_MODEL). 2026-08-31:
+      // repinned to claude-sonnet-4-5-20250929 after the previous id was
+      // RETIRED (HTTP 404 not_found_error); replacement confirmed live.
+      model: result?.model ?? 'claude-sonnet-4-5-20250929',
       passes: 1,
       fallback_count: 0,
       failure_chain: failed ? 'grader:no_result' : null,

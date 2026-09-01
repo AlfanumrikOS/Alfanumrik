@@ -203,11 +203,22 @@ async function resolveSchoolIdForAdmin(
   schoolAdminId: string
 ): Promise<string | null> {
   try {
-    const { data } = await admin
+    const { data, error } = await admin
       .from('school_admins')
       .select('school_id')
       .eq('id', schoolAdminId)
       .maybeSingle();
+    // Null-safe by contract (the caller treats null as "no school yet"), but
+    // the catch below could never see a query error because supabase-js
+    // resolves instead of throwing. Same null, now attributable. P13: no PII.
+    if (error) {
+      console.warn(
+        '[school-admin-bootstrap] resolveSchoolIdForAdmin failed:',
+        error.code,
+        error.message,
+      );
+      return null;
+    }
     return (data as { school_id?: string } | null)?.school_id ?? null;
   } catch {
     return null;
@@ -240,11 +251,23 @@ async function resolveUniqueSchoolSlug(
 ): Promise<string | null> {
   try {
     // Never overwrite an existing slug (idempotency).
-    const { data: current } = await admin
+    const { data: current, error: currentErr } = await admin
       .from('schools')
       .select('slug')
       .eq('id', schoolId)
       .maybeSingle();
+    // This read IS the "never overwrite an existing slug" idempotency guard.
+    // Reading a failure as "no slug yet" would let a later write clobber a
+    // live subdomain. Abort (null = "no slug to write"), matching the
+    // non-fatal contract this helper already documents.
+    if (currentErr) {
+      console.error(
+        `${logPrefix} slug idempotency read failed (non-fatal):`,
+        currentErr.code,
+        currentErr.message,
+      );
+      return null;
+    }
     if ((current as { slug?: string | null } | null)?.slug) return null;
 
     let base = normalizeSlug(schoolName);
@@ -253,11 +276,22 @@ async function resolveUniqueSchoolSlug(
     let candidate = base;
     const MAX_ATTEMPTS = 10;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const { data: clash } = await admin
+      const { data: clash, error: clashErr } = await admin
         .from('schools')
         .select('id')
         .eq('slug', candidate)
         .maybeSingle();
+      // A failed probe would read as "slug is free" and return a possibly
+      // taken candidate. Stop probing and fall through to the time-suffixed
+      // slug below, which is collision-safe without another round-trip.
+      if (clashErr) {
+        console.warn(
+          `${logPrefix} slug clash probe failed:`,
+          clashErr.code,
+          clashErr.message,
+        );
+        break;
+      }
       if (!clash) return candidate;
       candidate = `${base}-${attempt}`;
     }
@@ -325,13 +359,27 @@ async function directSchoolAdminInsert(
 ): Promise<string | null> {
   try {
     // Idempotent reuse: earliest membership wins.
-    const { data: existing } = await admin
+    const { data: existing, error: existingErr } = await admin
       .from('school_admins')
       .select('id')
       .eq('auth_user_id', params.authUserId)
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
+    // This read IS the idempotency guard the function header describes
+    // ("school_admins has no unique key on auth_user_id, so a naive insert on
+    // the retry path would duplicate"). Reading a failure as "no membership"
+    // creates a duplicate SCHOOL plus a duplicate admin row. Return the
+    // documented null-on-failure instead — P15 keeps the funnel alive and the
+    // next attempt retries cleanly. P13: no email/name.
+    if (existingErr) {
+      console.error(
+        `${logPrefix} existing-membership probe failed:`,
+        existingErr.code,
+        existingErr.message,
+      );
+      return null;
+    }
     const existingId = (existing as { id?: string } | null)?.id;
     if (existingId) return existingId;
 

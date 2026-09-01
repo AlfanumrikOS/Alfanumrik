@@ -448,11 +448,22 @@ async function resolveTenantIdForStudent(
   studentId: string,
 ): Promise<string | null> {
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('students')
       .select('school_id')
       .eq('id', studentId)
       .maybeSingle();
+    // supabase-js resolves rather than throws, so the catch below was
+    // unreachable for query errors — the tenant silently became null. Same
+    // null result (this is a best-effort tag, not a gate), now logged with the
+    // same shape the catch uses.
+    if (error) {
+      logger.warn('quiz.submit: resolveTenantIdForStudent failed', {
+        studentId,
+        error: error.message,
+      });
+      return null;
+    }
     const schoolId = (data as { school_id?: string | null } | null)?.school_id ?? null;
     return schoolId;
   } catch (err) {

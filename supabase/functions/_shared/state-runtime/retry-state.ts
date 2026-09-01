@@ -10,12 +10,21 @@ export async function readRetryCount(
   eventId: string,
   subscriberName: string,
 ): Promise<number> {
-  const { data } = await sb
+  const { data, error } = await sb
     .from('subscriber_retry_state')
     .select('attempt_count')
     .eq('event_id', eventId)
     .eq('subscriber_name', subscriberName)
     .maybeSingle()
+  // A failed read is NOT "zero prior attempts". Returning 0 would keep the
+  // attempt counter pinned below maxRetries forever, so the poison event never
+  // dead-letters and the subscriber sticks on it indefinitely. Surface it and
+  // let the caller's tick fail loudly and retry on the next cycle.
+  if (error) {
+    throw new Error(
+      `subscriber_retry_state read failed for "${subscriberName}" (${error.code}): ${error.message}`,
+    )
+  }
   return (data?.attempt_count as number | undefined) ?? 0
 }
 
@@ -27,12 +36,20 @@ export async function upsertRetryState(
   lastError: string,
 ): Promise<void> {
   const now = new Date().toISOString()
-  const { data: existing } = await sb
+  const { data: existing, error: existingErr } = await sb
     .from('subscriber_retry_state')
     .select('first_attempted_at')
     .eq('event_id', eventId)
     .eq('subscriber_name', subscriberName)
     .maybeSingle()
+  // Non-fatal: only `first_attempted_at` is at stake, and `now` is an
+  // acceptable (if slightly late) substitute — the retry itself must still be
+  // recorded, which is the load-bearing part. Log rather than abort.
+  if (existingErr) {
+    console.warn(
+      `[retry-state] first_attempted_at read failed for "${subscriberName}" (${existingErr.code}): ${existingErr.message} — using now()`,
+    )
+  }
   await sb.from('subscriber_retry_state').upsert(
     {
       event_id: eventId,
@@ -66,12 +83,19 @@ export async function insertDeadLetter(
   lastError: string,
 ): Promise<void> {
   const now = new Date().toISOString()
-  const { data: retry } = await sb
+  const { data: retry, error: retryErr } = await sb
     .from('subscriber_retry_state')
     .select('first_attempted_at')
     .eq('event_id', eventId)
     .eq('subscriber_name', subscriberName)
     .maybeSingle()
+  // Same reasoning as upsertRetryState: only `first_attempted_at` degrades.
+  // Recording the dead letter at all is what matters, so never abort on this.
+  if (retryErr) {
+    console.warn(
+      `[retry-state] dead-letter first_attempted_at read failed for "${subscriberName}" (${retryErr.code}): ${retryErr.message} — using now()`,
+    )
+  }
   await sb.from('subscriber_dead_letters').upsert(
     {
       event_id: eventId,

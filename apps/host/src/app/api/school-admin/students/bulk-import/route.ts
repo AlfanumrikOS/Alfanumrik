@@ -168,7 +168,26 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Resolve class refs (tenant-scoped index) ──────────────────────────────
-  const classIndex = await loadClassIndex(schoolId);
+  // loadClassIndex THROWS on a classes-lookup failure by design (an empty index
+  // would silently mis-file every row). The only try in this handler wraps
+  // request.json(), so it must be caught here or a DB blip escapes as an
+  // unhandled 500 instead of this route's { success, error } shape. Nothing has
+  // been written at this point — the import loop starts below.
+  // P13: the thrown message carries school id + PostgREST code/message only.
+  let classIndex: Awaited<ReturnType<typeof loadClassIndex>>;
+  try {
+    classIndex = await loadClassIndex(schoolId);
+  } catch (err) {
+    logger.error('school_admin_students_bulk_import_class_index_failed', {
+      route: '/api/school-admin/students/bulk-import',
+      schoolId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { success: false, error: 'Could not load classes for this school. Please try again.' },
+      { status: 503 },
+    );
+  }
 
   // ── Seat ceiling: enforced ATOMICALLY per row (fix S1) ─────────────────────
   // Each enrollment goes through enroll_student_with_seat_check, which takes a

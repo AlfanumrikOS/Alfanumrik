@@ -293,11 +293,19 @@ export class Orchestrator {
     if (this.orchestratorFlagCache && now - this.orchestratorFlagCache.at < 30_000) {
       return this.orchestratorFlagCache.value;
     }
-    const { data } = await this.sb
+    const { data, error } = await this.sb
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', ORCHESTRATOR_FLAG)
       .maybeSingle();
+    // Fail SAFE (treat as OFF) without caching a value derived from a failed
+    // read — a single blip must not pin the orchestrator off for the full TTL.
+    if (error) {
+      console.warn(
+        `[orchestrator] ${ORCHESTRATOR_FLAG} read failed (${error.code}): ${error.message} — treating as OFF`,
+      );
+      return false;
+    }
     const value = data?.is_enabled === true;
     this.orchestratorFlagCache = { value, at: now };
     return value;

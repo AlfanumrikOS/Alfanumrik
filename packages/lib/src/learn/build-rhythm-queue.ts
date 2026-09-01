@@ -179,14 +179,23 @@ export async function buildRhythmQueue(
   // fall back to the first active subject if not set.
   let subjectCode: string | null = studentRow.preferred_subject ?? null;
   if (!subjectCode) {
-    const { data: subj } = await supabase
+    const { data: subj, error: subjErr } = await supabase
       .from('subjects')
       .select('code')
       .eq('is_active', true)
       .order('display_order', { ascending: true })
       .limit(1)
       .maybeSingle();
-    subjectCode = subj?.code ?? null;
+    // Degrades to a subject-less ZPD pool (the existing null path), which is
+    // safe but was previously indistinguishable from "no active subjects".
+    if (subjErr) {
+      console.warn(
+        '[rhythm-queue] default subject lookup failed:',
+        subjErr.code,
+        subjErr.message,
+      );
+    }
+    subjectCode = subjErr ? null : subj?.code ?? null;
   }
 
   // ── Real student ability (A3) ───────────────────────────────────────────
@@ -235,11 +244,21 @@ export async function buildRhythmQueue(
   const dueTopicIds = dueRows.map((r) => r.topic_id).filter(Boolean);
   const conceptToQuestion = new Map<string, string>();
   if (dueTopicIds.length > 0) {
-    const { data: qbRows } = await supabase
+    const { data: qbRows, error: qbErr } = await supabase
       .from('question_bank')
       .select('id, topic_id')
       .in('topic_id', dueTopicIds)
       .eq('is_active', true);
+    // Without this map every due topic silently loses its SRS question, so the
+    // rhythm queue quietly shrinks and the student's review slot disappears —
+    // a plausible-looking "nothing due" rather than a visible failure.
+    if (qbErr) {
+      console.error(
+        '[rhythm-queue] SRS question lookup failed:',
+        qbErr.code,
+        qbErr.message,
+      );
+    }
     // First question per topic_id wins (Postgres returns rows in undefined order;
     // for deterministic picks the route can later sort by IRT info, but for v1
     // any active question is sufficient since the SRS slot is about retention,
@@ -258,10 +277,20 @@ export async function buildRhythmQueue(
   if (dueTopicIds.length > 0 && studentGrade) {
     const studentGradeNum = parseInt(studentGrade, 10);
     if (Number.isFinite(studentGradeNum)) {
-      const { data: ctRows } = await supabase
+      const { data: ctRows, error: ctErr } = await supabase
         .from('curriculum_topics')
         .select('id, grade')
         .in('id', dueTopicIds);
+      // On failure no topic is marked ahead-of-grade, so above-grade content
+      // can reach the queue unflagged. Non-fatal (the queue still builds) but
+      // it must not be silent.
+      if (ctErr) {
+        console.error(
+          '[rhythm-queue] ahead-of-grade topic lookup failed:',
+          ctErr.code,
+          ctErr.message,
+        );
+      }
       for (const t of ctRows ?? []) {
         const tGradeNum = parseInt(String((t as { grade?: string }).grade ?? ''), 10);
         if (Number.isFinite(tGradeNum) && tGradeNum > studentGradeNum) {
@@ -312,10 +341,20 @@ export async function buildRhythmQueue(
       .filter(Boolean);
     if (candidateIds.length > 0) {
       try {
-        const { data: diffRows } = await supabase
+        const { data: diffRows, error: diffErr } = await supabase
           .from('question_bank')
           .select('id, irt_difficulty, difficulty')
           .in('id', candidateIds);
+        // Non-fatal: an empty difficulty map degrades ZPD ranking to the
+        // default. The enclosing try/catch could never see this because
+        // supabase-js resolves rather than throws.
+        if (diffErr) {
+          console.warn(
+            '[rhythm-queue] ZPD difficulty lookup failed:',
+            diffErr.code,
+            diffErr.message,
+          );
+        }
         for (const r of diffRows ?? []) {
           const row = r as {
             id: string;

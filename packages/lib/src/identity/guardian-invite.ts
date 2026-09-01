@@ -175,7 +175,7 @@ export async function createGuardianInvite(
 
     if (insertErr) {
       // Race: a concurrent invite won the partial unique index. Re-read it.
-      const { data: raceRow } = await admin
+      const { data: raceRow, error: raceErr } = await admin
         .from('guardian_student_links')
         .select('id')
         .eq('student_id', studentId)
@@ -183,12 +183,16 @@ export async function createGuardianInvite(
         .eq('status', 'pending')
         .limit(1)
         .maybeSingle();
-      if (raceRow) {
+      // A failed re-read is NOT "no concurrent row"; it just means we could not
+      // tell. The existing typed DB_ERROR return is still the right outcome —
+      // only the recorded cause was wrong (it always blamed the insert).
+      if (!raceErr && raceRow) {
         linkId = raceRow.id as string;
         reused = true;
       } else {
         logger.error('guardian_invite_insert_failed', {
           error: new Error(insertErr.message),
+          raceRereadError: raceErr ? `${raceErr.code}: ${raceErr.message}` : null,
           studentId,
         });
         return { ok: false, error: 'Failed to create invite', code: 'DB_ERROR' };

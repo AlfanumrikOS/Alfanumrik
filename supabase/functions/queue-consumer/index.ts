@@ -137,12 +137,22 @@ async function processQuizTask(supabase: SupabaseClient, payload: QuizPayload): 
     if (creditError) {
       console.warn('credit_quiz_xp RPC unavailable, using upsert fallback:', creditError.message)
       const now = new Date().toISOString()
-      const { data: profile } = await supabase
+      const { data: profile, error: profileErr } = await supabase
         .from('student_learning_profiles')
         .select('id, xp_total, total_questions_asked, total_questions_answered_correctly')
         .eq('student_id', student_id)
         .eq('subject', subject)
         .maybeSingle()
+
+      // P2: this read decides UPDATE-vs-INSERT. Treating a failed read as "no
+      // profile" takes the INSERT branch and writes xp_total = xp_earned,
+      // DISCARDING the student's accumulated XP for this subject. Throw so the
+      // queue records the failure and retries (attempts < 3) instead.
+      if (profileErr) {
+        throw new Error(
+          `credit_quiz_xp fallback: profile read failed (${profileErr.code}): ${profileErr.message}`,
+        )
+      }
 
       if (profile) {
         await supabase
@@ -306,12 +316,27 @@ async function processAiResponseTask(
 
     // Canonical numeric posterior lives in mastery_probability (= p_know), 0-1.
     // mastery_level is a TEXT band label, never a number.
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .from('concept_mastery')
       .select('id, mastery_probability')
       .eq('student_id', student_id)
       .eq('topic_id', signal.topic_id)
       .maybeSingle()
+
+    // A failed read is NOT "never practised". Falling through would restart the
+    // posterior from the 0.1 prior and then UPSERT it, permanently destroying
+    // the student's accumulated mastery for this topic. Skip this signal — the
+    // next quiz re-derives it from the true stored value.
+    if (existingErr) {
+      console.error(
+        '[queue-consumer] concept_mastery read failed for topic',
+        signal.topic_id,
+        '-',
+        existingErr.code,
+        existingErr.message,
+      )
+      continue
+    }
 
     const currentMastery = (Number(existing?.mastery_probability) || 0) || 0.1
     const newMastery = Math.min(

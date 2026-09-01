@@ -54,11 +54,19 @@ let ncertStoreFlagCache: FlagCache | null = null;
 
 // deno-lint-ignore no-explicit-any
 async function readFlag(sb: any, flagName: string): Promise<boolean> {
-  const { data } = await sb
+  const { data, error } = await sb
     .from('feature_flags')
     .select('is_enabled')
     .eq('flag_name', flagName)
     .single();
+  // Every caller below wraps this in a try/catch that fails CLOSED and logs —
+  // but supabase-js resolves instead of throwing, so none of those handlers
+  // could ever fire for a query error. Throwing restores them. PGRST116
+  // ("no rows") is the documented missing-row case and must NOT throw: it is
+  // the normal state on a DB where the seed migration has not run.
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`${flagName} read failed (${error.code}): ${error.message}`);
+  }
   // Default OFF: only a row with is_enabled === true enables the behavior.
   // A missing row (migration not applied / dev DB) → OFF (fail-closed).
   return data?.is_enabled === true;

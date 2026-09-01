@@ -84,11 +84,21 @@ export async function getDueReviews(
   const dueTopicIds = rows.map((r) => r.topic_id);
   if (dueTopicIds.length > 0) {
     try {
-      const { data: sm2Rows } = await sb
+      const { data: sm2Rows, error: sm2Err } = await sb
         .from('concept_mastery')
         .select('topic_id, ease_factor, next_review_at')
         .eq('student_id', studentId)
         .in('topic_id', dueTopicIds);
+      // Explicitly NON-FATAL (see the section header): the SM-2 merge is
+      // additive, so an empty result just leaves the base rows unenriched. The
+      // enclosing catch could never see this because supabase-js resolves.
+      if (sm2Err) {
+        console.warn(
+          '[due-reviews] SM-2 merge read failed:',
+          sm2Err.code,
+          sm2Err.message,
+        );
+      }
       const sm2ByTopic = new Map<
         string,
         { ease_factor: number | null; next_review_at: string | null }

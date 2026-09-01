@@ -145,12 +145,19 @@ function normalizeQuotaDecision(input: { allowed?: boolean; decision?: string; e
 
 async function resolveAuthorizedStudentId(sb: SupabaseClient, principal: SecurityPrincipal, body: Record<string, unknown>): Promise<string | null> {
   if (principal.role === 'student' && principal.userId) {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('students')
       .select('id')
       .eq('auth_user_id', principal.userId)
       .eq('is_active', true)
       .maybeSingle()
+    // Access resolver — null denies. Fail-closed is correct and preserved; the
+    // missing piece was any way to tell a denied caller from a broken lookup.
+    // P13: no ids in the log.
+    if (error) {
+      console.error('[ncert-question-engine] student self-resolution failed:', error.code, error.message)
+      return null
+    }
     return data?.id ? String(data.id) : null
   }
 
@@ -164,7 +171,7 @@ async function resolveAuthorizedStudentId(sb: SupabaseClient, principal: Securit
   if (!principal.userId || !principal.schoolId) return null
 
   if (principal.role === 'parent') {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('guardian_student_links')
       .select('student_id, guardians!inner(auth_user_id), students!inner(school_id, is_active)')
       .eq('student_id', requestedStudentId)
@@ -173,17 +180,29 @@ async function resolveAuthorizedStudentId(sb: SupabaseClient, principal: Securit
       .eq('students.is_active', true)
       .eq('status', 'active')
       .maybeSingle()
+    // Guardian-link boundary — null denies. Fail-closed preserved; logged so a
+    // systematic lockout of every linked parent is not invisible.
+    if (error) {
+      console.error('[ncert-question-engine] guardian link check failed:', error.code, error.message)
+      return null
+    }
     return data?.student_id ? requestedStudentId : null
   }
 
   if (principal.role === 'teacher' || principal.role === 'school_admin') {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('students')
       .select('id')
       .eq('id', requestedStudentId)
       .eq('school_id', principal.schoolId)
       .eq('is_active', true)
       .maybeSingle()
+    // Tenant-scoped teacher/school-admin boundary — null denies. Fail-closed
+    // preserved; logged.
+    if (error) {
+      console.error('[ncert-question-engine] school-scope check failed:', error.code, error.message)
+      return null
+    }
     return data?.id ? requestedStudentId : null
   }
 
@@ -293,24 +312,35 @@ async function fetchQuestions(body: Record<string, unknown>): Promise<Response> 
   const seenIds = new Set<string>()
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    const { data: attempts } = await supabase
+    const { data: attempts, error: attemptsErr } = await supabase
       .from('student_ncert_attempts')
       .select('question_id')
       .eq('student_id', student_id)
       .gte('created_at', thirtyDaysAgo)
       .not('question_id', 'is', null)
+    // Best-effort dedupe: the worst case is the student re-sees a question.
+    // Preserved, but no longer silent. P13: no ids in the log.
+    if (attemptsErr) {
+      console.warn('[ncert-question-engine] attempt dedupe read failed:', attemptsErr.code, attemptsErr.message)
+    }
+
     if (attempts) {
       for (const row of attempts) {
         if (row.question_id) seenIds.add(row.question_id)
       }
     }
     // Also check user_question_history for unified tracking
-    const { data: historyRows } = await supabase
+    const { data: historyRows, error: historyErr } = await supabase
       .from('user_question_history')
       .select('question_id')
       .eq('student_id', student_id)
       .eq('subject', subject)
       .limit(500)
+    // Same best-effort dedupe contract as the attempts read above.
+    if (historyErr) {
+      console.warn('[ncert-question-engine] history dedupe read failed:', historyErr.code, historyErr.message)
+    }
+
     if (historyRows) {
       for (const row of historyRows) {
         if (row.question_id) seenIds.add(row.question_id)
@@ -440,18 +470,31 @@ async function evaluateAnswer(body: Record<string, unknown>): Promise<Response> 
   let solutionSteps = ''
   let rubricPoints: Array<{ point: string; marks: number }> = []
   if (source_table === 'ncert_exercises') {
-    const { data } = await supabase.from('ncert_exercises').select('answer_text, solution_steps').eq('id', question_id).single()
+    const { data, error } = await supabase.from('ncert_exercises').select('answer_text, solution_steps').eq('id', question_id).single()
+    // The model answer is the reference the examiner grades AGAINST. An empty
+    // one does not fail loudly — it silently downgrades this to an ungrounded
+    // grade. The RAG fallback below still runs (that is the designed net), but
+    // a systematically reference-less grading run must be visible.
+    if (error) {
+      console.error('[ncert-question-engine] ncert_exercises model-answer read failed:', error.code, error.message)
+    }
     modelAnswer   = data?.answer_text ?? ''
     solutionSteps = data?.solution_steps ?? ''
   } else if (source_table === 'question_bank') {
     // Bulk-generated SA/LA + promoted NCERT-into-question_bank rows. The
     // model answer lives in expected_answer (preferred) or answer_text, and
     // a structured rubric lives in answer_rubric jsonb.
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('question_bank')
       .select('expected_answer, answer_text, explanation, answer_rubric')
       .eq('id', question_id)
       .single()
+    // Same reasoning as the ncert_exercises branch — and here the discarded
+    // error ALSO drops the structured marking rubric, so the examiner silently
+    // stops using the per-mark CBSE scheme.
+    if (error) {
+      console.error('[ncert-question-engine] question_bank model-answer read failed:', error.code, error.message)
+    }
     modelAnswer = data?.expected_answer || data?.answer_text || ''
     solutionSteps = data?.explanation ?? ''
     // answer_rubric is stored in TWO shapes:
@@ -474,17 +517,26 @@ async function evaluateAnswer(body: Record<string, unknown>): Promise<Response> 
         .filter((r) => r.point.length > 0)
     }
   } else {
-    const { data } = await supabase.from('rag_content_chunks').select('answer_text, chunk_text').eq('id', question_id).single()
+    const { data, error } = await supabase.from('rag_content_chunks').select('answer_text, chunk_text').eq('id', question_id).single()
+    if (error) {
+      console.error('[ncert-question-engine] rag chunk model-answer read failed:', error.code, error.message)
+    }
     modelAnswer = data?.answer_text ?? data?.chunk_text ?? ''
   }
 
   // If no model answer in DB, use RAG to retrieve context
   if (!modelAnswer) {
-    const { data: ragData } = await supabase
+    const { data: ragData, error: ragErr } = await supabase
       .from('rag_content_chunks')
       .select('chunk_text')
       .ilike('question_text', `%${question_text.slice(0, 40)}%`)
       .limit(2)
+    // Last-resort reference lookup. If this also fails the answer is graded
+    // with NO reference at all, which is the worst grading state available —
+    // it must not be reached silently.
+    if (ragErr) {
+      console.error('[ncert-question-engine] RAG reference fallback failed:', ragErr.code, ragErr.message)
+    }
     modelAnswer = (ragData ?? []).map((r: Record<string, string>) => r.chunk_text).join('\n')
   }
 

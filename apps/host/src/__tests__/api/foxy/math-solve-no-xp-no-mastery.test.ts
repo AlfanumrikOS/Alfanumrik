@@ -250,7 +250,7 @@ function checkManuallyResult(): MathPipelineResult {
   return {
     structured,
     badgeState: 'check_manually',
-    modelUsed: 'claude-sonnet-4-20250514',
+    modelUsed: 'claude-sonnet-4-5-20250929',
     verdict: { is_correct: false, confidence: 1 },
     escalated: true,
   };

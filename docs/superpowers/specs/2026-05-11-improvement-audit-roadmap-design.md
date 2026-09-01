@@ -224,6 +224,7 @@ Differences observed while auditing canonical on 2026-05-11. Constitution should
 
 **Strong:**
 - ESLint with custom `eslint-plugin-alfanumrik` + AI-boundary config (`.eslintrc.ai-boundary.json`) + config-parity script (`scripts/check-config-parity.sh`). `npm run lint:ai-boundary` enforces edge-function-vs-app-code separation.
+  > **CORRECTION 2026-08-31 — this "Strong" assessment was wrong when written.** `npm run lint:ai-boundary` enforced **nothing**: it was declared as `bash scripts/check-config-parity.sh && eslint …`, and that script's pre-monorepo paths made it `exit 1` on every checkout, so the `&&` short-circuited and the ESLint never ran. It was also referenced by no workflow. The parity script has been deleted (superseded by `apps/host/src/__tests__/grounding/config-parity-values.test.ts`, which compares VALUES, not just constant names), the lint is decoupled from it, and the gate is now blocking in CI's `quality` job via `scripts/check-ai-boundary.mjs` against the baseline in `scripts/ai-boundary-baseline.json`. Lesson for future audits in this doc: **a configured rule at `error` is not evidence of enforcement — check that the command actually reaches the linter, and that CI actually invokes the command.**
 - Coverage thresholds enforced per critical file: `xp-rules` 90%, `cognitive-engine` 80%, `exam-engine` 80%, global 60%.
 - 84 test files, 2511 tests, 35/35 regression catalog target reached.
 - 4 enforcement hooks (`guard.sh` 9 blocking rules, `bash-guard.sh`, `review-chain.sh` for 20 file patterns, `post-edit-check.sh`).

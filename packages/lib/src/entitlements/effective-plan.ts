@@ -296,13 +296,26 @@ async function resolvePersonalPlan(studentId: string): Promise<ConsumerPlanCode>
   }
 
   // Fallback: the denormalised plan column on students (webhook-synced).
-  const { data: studentPlan } = await supabaseAdmin
+  const { data: studentPlan, error: studentPlanErr } = await supabaseAdmin
     .from('students')
     .select('subscription_plan')
     .eq('id', studentId)
     .maybeSingle();
 
-  const fallback = normalizePlanCode(studentPlan?.subscription_plan as string | null) as string;
+  // Fail-CLOSED to 'free' (P11: never grant plan access without a verified
+  // paid signal). That was already the effective behaviour, but the reason was
+  // invisible — a lookup failure was indistinguishable from a genuinely free
+  // student. Matches the sibling warn above. P13: message only, no student id.
+  if (studentPlanErr) {
+    logger.warn('effective_plan_student_column_lookup_failed', {
+      route: 'entitlements/effective-plan',
+      error: studentPlanErr.message,
+    });
+  }
+
+  const fallback = normalizePlanCode(
+    (studentPlanErr ? null : studentPlan?.subscription_plan) as string | null,
+  ) as string;
   return toConsumerCode(fallback);
 }
 
@@ -329,11 +342,21 @@ export async function resolveEffectiveEntitlement(
   // Resolve the student's school_id if not supplied.
   let schoolId: string | null = knownSchoolId ?? null;
   if (knownSchoolId === undefined) {
-    const { data: student } = await supabaseAdmin
+    const { data: student, error: studentErr } = await supabaseAdmin
       .from('students')
       .select('id, school_id')
       .eq('id', studentId)
       .maybeSingle<StudentRow>();
+    // Fail-closed: an unresolved school_id means school coverage is not
+    // applied, which under-grants rather than over-grants (P11-safe). Log so a
+    // school-covered student silently dropped to their personal tier is
+    // diagnosable. P13: message only.
+    if (studentErr) {
+      logger.warn('effective_plan_school_lookup_failed', {
+        route: 'entitlements/effective-plan',
+        error: studentErr.message,
+      });
+    }
     schoolId = student?.school_id ?? null;
   }
 

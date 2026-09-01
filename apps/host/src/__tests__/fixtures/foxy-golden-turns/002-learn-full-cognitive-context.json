@@ -49,7 +49,7 @@
     "retrieval": {
       "match_count": 5
     },
-    "timeout_ms": 20000
+    "timeout_ms": 44000
   },
   "wireJson": {
     "success": true,

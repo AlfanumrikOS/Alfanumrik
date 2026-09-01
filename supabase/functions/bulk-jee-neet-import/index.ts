@@ -424,7 +424,7 @@ async function resolveChapterId(
   let resolved: string | null = null
 
   if (chapterNumber !== null) {
-    const { data: exact } = await supabase
+    const { data: exact, error: exactErr } = await supabase
       .from('curriculum_topics')
       .select('id, title, chapter_number')
       .eq('grade', grade)
@@ -433,11 +433,19 @@ async function resolveChapterId(
       .eq('is_active', true)
       .limit(1)
       .maybeSingle<TopicLookup>()
+    // A failed lookup is NOT "no matching topic". Both outcomes end in an
+    // unlinked question, but only one of them means the import ran correctly —
+    // and the null is CACHED below, so a single blip un-links every remaining
+    // question for this chapter in the same run.
+    if (exactErr) {
+      console.error('[bulk-jee-neet-import] exact topic lookup failed:', exactErr.code, exactErr.message)
+      return null
+    }
     if (exact?.id) resolved = exact.id
   }
 
   if (!resolved) {
-    const { data: fuzzy } = await supabase
+    const { data: fuzzy, error: fuzzyErr } = await supabase
       .from('curriculum_topics')
       .select('id, title, chapter_number')
       .eq('grade', grade)
@@ -445,6 +453,11 @@ async function resolveChapterId(
       .eq('is_active', true)
       .limit(1)
       .maybeSingle<TopicLookup>()
+    // Same reasoning as the exact lookup: do not cache a null we cannot trust.
+    if (fuzzyErr) {
+      console.error('[bulk-jee-neet-import] fuzzy topic lookup failed:', fuzzyErr.code, fuzzyErr.message)
+      return null
+    }
     if (fuzzy?.id) resolved = fuzzy.id
   }
 

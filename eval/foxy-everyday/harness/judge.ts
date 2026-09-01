@@ -11,7 +11,7 @@
 // pattern.
 //
 // ── Model ────────────────────────────────────────────────────────────────────
-// `claude-sonnet-4-20250514` — ALREADY REGISTERED
+// `claude-sonnet-4-5-20250929` — ALREADY REGISTERED
 // (packages/lib/src/ai/gateway/registry.ts `ANTHROPIC_SONNET_ID`), already
 // priced, and already the model eval/rag/harness/relevance-judge.ts uses. No new
 // model, no new provider, so this does NOT trip the CEO model-approval gate. Do
@@ -43,7 +43,7 @@ import {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /** Already-registered Sonnet. See the header — not a new model/provider. */
-export const JUDGE_MODEL = 'claude-sonnet-4-20250514';
+export const JUDGE_MODEL = 'claude-sonnet-4-5-20250929';
 
 /** Deterministic scores. Same as the B1 relevance judge. */
 export const JUDGE_TEMPERATURE = 0;

@@ -16,7 +16,7 @@
 // appropriateness + off_grade_scope semantics).
 //
 // ── Machinery patterned on `src/lib/foxy/quality-eval.ts` ─────────────────
-// Sonnet (`claude-sonnet-4-20250514`), temperature 0, strict-JSON output,
+// Sonnet (`claude-sonnet-4-5-20250929`), temperature 0, strict-JSON output,
 // fenced-code recovery parse, clamp, conservative-fail (never throw raw —
 // return a typed result). The RUBRIC is retrieval-specific (relevance 2/1/0 +
 // off_grade_scope), NOT the answer-quality rubric — we reuse the pattern, not
@@ -50,7 +50,7 @@ import type { Grade, Relevance, SubjectCode } from './golden-schema';
  * build time only — spec Q5); rubric fidelity does. Pinned to the same model
  * id `quality-eval.ts` uses so the two judges stay version-consistent.
  */
-export const JUDGE_MODEL = 'claude-sonnet-4-20250514';
+export const JUDGE_MODEL = 'claude-sonnet-4-5-20250929';
 
 /** Deterministic relevance labels — temp 0 (machinery parity with quality-eval). */
 export const JUDGE_TEMPERATURE = 0;

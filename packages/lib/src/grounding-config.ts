@@ -43,11 +43,91 @@ export const CIRCUIT_BREAKER_WINDOW_MS = 10_000;
 export const CIRCUIT_BREAKER_OPEN_MS = 30_000;
 export const CIRCUIT_BREAKER_PROBE_SUCCESS_COUNT = 2;
 
+// ── Per-plan request budget (whole grounded-answer invocation) ───────────────
+//
+// This number is ONE request's total budget inside the Edge Function:
+// retrieval (embed + vector search + rerank) AND every rung of the model
+// fallback chain must fit inside it. Two things are sized off it:
+//   hop timeout          = this + 2s   (caller aborts the transport)
+//   platform maxDuration = 60s         (apps/host/vercel.json pins
+//                                       /api/foxy and /api/concept-engine)
+//
+// P0 REPAIR 2026-08-31 (part 1). These were 20/35/55/75s while `/api/foxy`
+// inherited the generic 30s `maxDuration`, so on EVERY PAID plan the hop
+// (37/57/77s) outlived the Vercel function itself. Consequences, both observed
+// as a student-facing failure rather than a graceful degrade:
+//   D1 — the function was killed with FUNCTION_INVOCATION_TIMEOUT before the
+//        Edge Function's own abstain payload could return AND before the
+//        route's refundQuota ran, so a paying student LOST A QUOTA UNIT for
+//        an answer they never received.
+//   D2 — MODEL_FALLBACK_ORDER.auto has 4 rungs and claude.ts spent up to 60%
+//        of this budget on EACH one, so 4 sequential attempts needed
+//        48/84/132/180s against budgets of 20/35/55/75s. The two OpenAI rungs
+//        were arithmetically unreachable on a timeout: cross-provider fallback
+//        was dead code on every plan.
+//
+// RECALIBRATION 2026-08-31 (part 2). Part 1 set 41/43/45/47s and had claude.ts
+// slice them UNIFORMLY (chainBudget / 3), giving 12.00/12.67/13.33/14.00s per
+// rung. That fit the chain but was never checked against production latency.
+// Measured since — 1000 most recent successful Foxy answers, `grounded_ai_
+// traces` where caller='foxy' AND grounded=true:
+//
+//   p50  5,167ms   p75  7,499ms   p90 11,055ms
+//   p95 14,098ms   p99 20,215ms   max 36,627ms
+//   >12,000ms: 82/1000 (8.2%)   >14,000ms: 51/1000 (5.1%)
+//
+// A uniform ~12-14s slice severs ~8% of answers that succeed TODAY, at rung 1.
+// Those turns then fall to Sonnet — slower than Haiku, on an equally short
+// slice — so they most likely time out again before the cross-provider rung.
+// For that 8% the "fix" traded a working Haiku answer for a longer wait and a
+// worse model. That is a regression, so the SHAPE changed, not just the size:
+// claude.ts now runs a NON-UNIFORM LADDER (see its planChainBudget header).
+//   rung 1   = chainBudget - 2 x 10s  — the attempt that normally succeeds,
+//                                       sized to cover ~p99, not ~p90
+//   rungs 2+ = 10s flat               — recovery attempts, where "an answer,
+//                                       soon" beats "the best answer, later",
+//                                       and a short bound is what keeps the
+//                                       cross-provider rung reachable at all
+//
+// Resulting ladder (chain = budget - CHAIN_RESERVE_MS(5s)):
+//
+//   plan       budget  chain  rung1  rung2+  3 rungs fit  rung1 covers*
+//   free       44s     39s    19s    10s     39 <= 39 ok  ~98.2%
+//   starter    45s     40s    20s    10s     40 <= 40 ok  ~98.9%
+//   pro        46s     41s    21s    10s     41 <= 41 ok  >99%
+//   unlimited  47s     42s    22s    10s     42 <= 42 ok  >99%
+//
+//   * fraction of the measured distribution completing inside the rung-1
+//     budget. CONSERVATIVE: `latency_ms` is stamped from the top of the Edge
+//     Function invocation, so those percentiles already include the retrieval
+//     time that CHAIN_RESERVE_MS pays for separately. Rung 1 only has to cover
+//     latency-minus-retrieval, so real coverage is higher than quoted.
+//
+// Rung 3 is `openai:gpt-4o-mini`, the FIRST cross-provider rung, and it fits on
+// every plan — the P0 property (a reachable OpenAI tier on a pure-timeout
+// chain) is preserved by the ladder, not merely by the old uniform division.
+//
+// maxDuration stays 60s deliberately. The ceiling was NOT the binding
+// constraint: rung 1 only needs ~p99 (~20s), and 19-22s closes inside 60s with
+// 5s of preamble headroom on the worst plan (hop 49s + 6s cleanup reserve =
+// 55s). Raising it would only buy a LONGER rung 1 than the distribution asks
+// for, which makes the timeout tail worse — a student waits longer before the
+// cross-provider rung is even tried. The cost of a bad ladder is paid in
+// latency, not in ceiling.
+//
+// Invariants to preserve when editing: for every plan,
+//   CHAIN_RESERVE_MS + rung1 + (PLANNED_RUNGS-1) * RECOVERY_RUNG_TIMEOUT_MS
+//                                                     <= PER_PLAN_TIMEOUT_MS
+//   rung1                                             >= p95 (14,098ms)
+//   PER_PLAN_TIMEOUT_MS + 2_000 + 6_000 cleanup + preamble headroom <= 60_000
+// (see claude.ts PLANNED_FALLBACK_RUNGS / CHAIN_RESERVE_MS /
+//  RECOVERY_RUNG_TIMEOUT_MS, and apps/host/src/app/api/foxy/route.ts's
+//  FOXY_MAX_DURATION_MS / FOXY_CLEANUP_RESERVE_MS.)
 export const PER_PLAN_TIMEOUT_MS: Record<string, number> = {
-  free: 20_000,
-  starter: 35_000,
-  pro: 55_000,
-  unlimited: 75_000,
+  free: 44_000,
+  starter: 45_000,
+  pro: 46_000,
+  unlimited: 47_000,
 };
 export const VERIFIER_TIMEOUT_MS = 15_000;
 
@@ -93,6 +173,13 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // existing request, and gen_ctx keys on system_prompt_template so it cannot
 // collide with a cached entry. Per the bump rule, this does NOT bump PROMPT_REV
 // (a bump would needlessly flush every Foxy cache tier).
+// PROMPT_REV parity: this mirror has silently diverged from the authoritative
+// constant in supabase/functions/grounded-answer/config.ts before (see the
+// MODEL_ROUTE_REV=4 note below). Both older parity mechanisms compared constant
+// NAMES only (scripts/pre-rollout-checklist.ts's /^export const ([A-Z_]+)\s*=/
+// regex; the dead scripts/check-config-parity.sh), so neither could ever see a
+// VALUE drift. Pinned since 2026-08-31 by apps/host/src/__tests__/grounding/
+// config-parity-values.test.ts, which compares parsed VALUES across both files.
 export const PROMPT_REV = 3;
 // MODEL_ROUTE_REV=2 (2026-08-02): OpenAI-primary provider swap — kept in sync
 // with the authoritative bump in supabase/functions/grounded-answer/config.ts
@@ -104,4 +191,17 @@ export const PROMPT_REV = 3;
 // that file for the full rationale, including the documented KNOWN LIMITATION
 // re: gen_ctx not yet recording which order a cached response was generated
 // under).
-export const MODEL_ROUTE_REV = 3;
+// MODEL_ROUTE_REV=4 (2026-08-26): Claude-primary provider swap — every
+// model_preference resolves to a Claude model first (OpenAI second), reversing
+// the 2026-08-02 OpenAI-primary swap. NOTE: this mirror was NOT updated when
+// the authoritative bump landed in config.ts on 2026-08-26 and sat stale at 3
+// until 2026-08-31. The drift was inert (nothing imports MODEL_ROUTE_REV from
+// this file — gen-ctx.ts reads it from the Deno config, and the CI parity check
+// compares constant NAMES only, never values), but it is exactly the kind of
+// silent divergence this mirror exists to prevent.
+// MODEL_ROUTE_REV=5 (2026-08-31): DEAD-PIN REPAIR — the sonnet tier's Anthropic
+// id changed from the RETIRED 'claude-sonnet-4-20250514' (live API returns HTTP
+// 404 not_found_error) to 'claude-sonnet-4-5-20250929'. Kept in sync with the
+// authoritative bump in supabase/functions/grounded-answer/config.ts; see that
+// file for the full rationale.
+export const MODEL_ROUTE_REV = 5;

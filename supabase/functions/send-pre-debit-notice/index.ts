@@ -337,7 +337,7 @@ Deno.serve(async (req: Request) => {
   // Pre-flight idempotency check: if a 'sent' row already exists, short-circuit.
   // The DB unique index is the authoritative defense against worker races; this
   // pre-flight just saves us a relay call when the row is already there.
-  const { data: existing } = await supabase
+  const { data: existing, error: existingErr } = await supabase
     .from('subscription_events')
     .select('id, event_type')
     .eq('subscription_id', input.subscription_id)
@@ -345,6 +345,19 @@ Deno.serve(async (req: Request) => {
     .filter('metadata->>idempotency_key', 'eq', idempotencyKey)
     .limit(1)
     .maybeSingle()
+
+  // Non-fatal by design: the DB unique index is the authoritative defence
+  // against duplicate notices, so a failed pre-flight only costs a wasted relay
+  // call. Logged rather than aborted so a broken pre-flight (which would send
+  // this regulated pre-debit email on every worker run) is visible.
+  // P13: subscription id + error metadata only, never the recipient email.
+  if (existingErr) {
+    console.error(
+      '[pre-debit-notice] idempotency pre-flight failed:',
+      existingErr.code,
+      existingErr.message,
+    )
+  }
 
   if (existing) {
     return jsonResponse({ success: true, already_sent: true, idempotency_key: idempotencyKey, event_id: existing.id }, 200, {}, origin)

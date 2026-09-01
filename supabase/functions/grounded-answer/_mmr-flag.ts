@@ -24,11 +24,22 @@ export async function isMMRDiversityEnabled(sb: any): Promise<boolean> {
   if (mmrFlagCache && mmrFlagCache.expiresAt > now) return mmrFlagCache.value;
 
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', 'ff_rag_mmr_diversity')
       .single();
+    // supabase-js resolves instead of throwing, so the fail-OPEN catch below
+    // never ran for a query error. The outcome was already `true` by accident
+    // (`undefined !== false`); make the documented fail-open path explicit and
+    // logged. PGRST116 ("no rows") is the missing-migration case handled below.
+    if (error && error.code !== 'PGRST116') {
+      console.warn(`ff_rag_mmr_diversity lookup failed — ${error.code}: ${error.message}`);
+      // Fail-OPEN: MMR is a pure re-ordering of an already-retrieved chunk set,
+      // so there is no unsafe direction (see _everyday-flag.ts's header).
+      mmrFlagCache = { value: true, expiresAt: now + MMR_FLAG_CACHE_TTL_MS };
+      return true;
+    }
     // Treat missing row as "enabled" — the migration is the source of
     // truth for the default and a missing row indicates the migration
     // hasn't run yet (dev/test environments). We default to ON to match

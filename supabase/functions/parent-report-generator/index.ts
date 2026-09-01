@@ -748,12 +748,19 @@ Deno.serve(async (req: Request) => {
         await finalizeAiRoute({ sb, admission, statusCode: 401, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'unauthorized' })
         return errorResponse('Unauthorized', 401, origin)
       }
-      const { data: guardianRow } = await supabase
+      const { data: guardianRow, error: guardianErr } = await supabase
         .from('guardians')
         .select('id')
         .eq('auth_user_id', userId)
         .maybeSingle()
-      if (!guardianRow?.id) {
+      // Fail CLOSED (403, no payload) is already correct for this P8/P13 gate
+      // and is preserved. But "not a guardian" and "we could not check" are
+      // different facts — the second would 403 every parent at once, silently.
+      // P13: no user id / email in the log.
+      if (guardianErr) {
+        console.error('[parent-report-generator] guardian lookup failed:', guardianErr.code, guardianErr.message)
+      }
+      if (guardianErr || !guardianRow?.id) {
         await finalizeAiRoute({ sb, admission, statusCode: 403, actualInputTokens: null, actualOutputTokens: null, actualCost: null, errorCode: 'no_guardian_profile' })
         return errorResponse('No guardian profile for this user', 403, origin)
       }
@@ -778,11 +785,18 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Fetch student name (no PII in logs per P13) ──
-    const { data: studentProfile } = await supabase
+    const { data: studentProfile, error: studentProfileErr } = await supabase
       .from('students')
       .select('name')
       .eq('id', student_id)
       .single()
+
+    // Non-fatal: the report still generates with the generic 'Your child'
+    // salutation, which is the documented degrade. Logged so a systematically
+    // impersonal report run is diagnosable. P13: NEVER log the name itself.
+    if (studentProfileErr) {
+      console.warn('[parent-report-generator] student name lookup failed:', studentProfileErr.code, studentProfileErr.message)
+    }
 
     const studentName = studentProfile?.name || 'Your child'
 

@@ -58,7 +58,7 @@ describe('selectProviderChain', () => {
 
   it('routes reasoning to anthropic claude-sonnet primary', () => {
     const chain = selectProviderChain('reasoning', { hybrid_enabled: true, openai_default: false, weights: {} })
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-20250514' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' })
   })
 
   it('returns two passes for doubt_solving when hybrid enabled', () => {
@@ -75,7 +75,7 @@ describe('selectProviderChain', () => {
 
   it('uses claude-sonnet as primary and claude-haiku as fallback for doubt_solving non-hybrid', () => {
     const chain = selectProviderChain('doubt_solving', { hybrid_enabled: false, openai_default: false, weights: {} })
-    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-20250514' })
+    expect(chain.passes[0].chain[0]).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' })
     expect(chain.passes[0].chain[1]).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' })
   })
 

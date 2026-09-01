@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { logger } from '@alfanumrik/lib/logger';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { MAINTENANCE_FLAGS } from '@alfanumrik/lib/feature-flags';
 
@@ -26,11 +27,20 @@ export default function MaintenanceBanner() {
 
     async function check() {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('feature_flags')
           .select('is_enabled, metadata')
           .eq('flag_name', MAINTENANCE_FLAGS.MAINTENANCE_BANNER)
           .maybeSingle();
+        // supabase-js resolves {data, error} and never throws, so the catch
+        // below cannot see a query failure. The banner still fails safe
+        // (stays hidden), but a broken flag read must not be invisible —
+        // it would silently suppress every maintenance notice.
+        if (error) {
+          // P13: pg error code only.
+          logger.warn('maintenance flag read failed', { code: error.code });
+          return;
+        }
         if (active && data) setFlag(data as FlagRow);
       } catch { /* silent — banner is non-critical */ }
     }

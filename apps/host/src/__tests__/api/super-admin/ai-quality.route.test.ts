@@ -160,7 +160,7 @@ describe('/api/super-admin/ai-quality', () => {
           age_appropriateness_score: 90,
           cbse_scope_score: 95,
           rubric_version: 'v1',
-          judge_model: 'claude-sonnet-4-20250514',
+          judge_model: 'claude-sonnet-4-5-20250929',
         },
         {
           overall_score: 70,
@@ -169,7 +169,7 @@ describe('/api/super-admin/ai-quality', () => {
           age_appropriateness_score: 80,
           cbse_scope_score: 85,
           rubric_version: 'v1',
-          judge_model: 'claude-sonnet-4-20250514',
+          judge_model: 'claude-sonnet-4-5-20250929',
         },
       ],
       error: null,
@@ -186,7 +186,7 @@ describe('/api/super-admin/ai-quality', () => {
     expect(body.data.judge.avgScaffold).toBeCloseTo(70, 1);
     expect(body.data.judge.avgAge).toBeCloseTo(85, 1);
     expect(body.data.judge.avgScope).toBeCloseTo(90, 1);
-    expect(body.data.judge.judgeModels['claude-sonnet-4-20250514']).toBe(2);
+    expect(body.data.judge.judgeModels['claude-sonnet-4-5-20250929']).toBe(2);
     expect(body.data.judge.rubricVersions['v1']).toBe(2);
   });
 

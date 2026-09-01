@@ -23,7 +23,7 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
     primary: { provider: 'openai', model: 'o3-mini' },
     fallbacks: [
       { provider: 'openai', model: 'o1' },
-      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     ],
   },
   physics_derivations: {
@@ -31,7 +31,7 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
     primary: { provider: 'openai', model: 'o3-mini' },
     fallbacks: [
       { provider: 'openai', model: 'o1' },
-      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     ],
   },
   numerical_problem_solving: {
@@ -39,7 +39,7 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
     primary: { provider: 'openai', model: 'o3-mini' },
     fallbacks: [
       { provider: 'openai', model: 'o1' },
-      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     ],
   },
   fast_practice_solving: {
@@ -51,7 +51,7 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
   },
   doubt_solving_students: {
     name: 'Doubt Solving for Students',
-    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     fallbacks: [
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
       { provider: 'openai', model: 'gpt-4o' },
@@ -61,13 +61,13 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
     name: 'Content Generation for Coaching',
     primary: { provider: 'openai', model: 'o1' },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
       { provider: 'openai', model: 'gpt-4o' },
     ],
   },
   deep_theory_explanation: {
     name: 'Deep Theory Explanation',
-    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     fallbacks: [
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
       { provider: 'openai', model: 'gpt-4o' },
@@ -75,7 +75,7 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
   },
   student_tutoring: {
     name: 'Student Tutoring',
-    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     fallbacks: [
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
       { provider: 'openai', model: 'gpt-4o' },
@@ -83,7 +83,7 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
   },
   creating_question_banks: {
     name: 'Creating Question Banks',
-    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     fallbacks: [
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
       { provider: 'openai', model: 'gpt-4o' },
@@ -93,13 +93,13 @@ export const USE_CASES: Record<string, UseCaseConfig> = {
     name: 'Generating Hints',
     primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
     fallbacks: [
-      { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
       { provider: 'openai', model: 'gpt-4o-mini' },
     ],
   },
   long_pdf_analysis: {
     name: 'Long PDF/Book Analysis',
-    primary: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    primary: { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
     fallbacks: [
       { provider: 'openai', model: 'gpt-4o' },
     ],

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useTenant } from '@alfanumrik/lib/tenant-context';
+import { logger } from '@alfanumrik/lib/logger';
 import { supabase } from '@alfanumrik/lib/supabase';
 
 function t(isHi: boolean, en: string, hi: string): string { return isHi ? hi : en; }
@@ -60,19 +61,32 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const primaryColor = branding.primaryColor;
 
   const fetchNotifications = useCallback(async () => {
     if (!authUserId) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
       .select('id, title, body, notification_type, is_read, created_at')
       .eq('recipient_id', authUserId)
       .order('created_at', { ascending: false })
       .limit(maxItems);
 
+    // supabase-js resolves {data, error} and never throws. Ignoring `error`
+    // here would render the "No notifications" empty state on a real query
+    // failure — a plausible-looking lie. Surface it instead.
+    if (error) {
+      // P13: pg error code only — never notification bodies or recipient id.
+      logger.warn('notifications fetch failed', { code: error.code });
+      setLoadFailed(true);
+      setLoading(false);
+      return;
+    }
+
     const items = (data || []) as Notification[];
+    setLoadFailed(false);
     setNotifications(items);
     setUnreadCount(items.filter(n => !n.is_read).length);
     setLoading(false);
@@ -187,6 +201,17 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
             {loading ? (
               <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 13 }}>
                 {t(isHi, 'Loading...', 'लोड हो रहा है...')}
+              </div>
+            ) : loadFailed ? (
+              <div role="alert" style={{ padding: 24, textAlign: 'center', color: '#B91C1C', fontSize: 13 }}>
+                {t(isHi, "Couldn't load notifications", 'सूचनाएँ लोड नहीं हो सकीं')}
+                <button
+                  type="button"
+                  onClick={fetchNotifications}
+                  style={{ display: 'block', margin: '8px auto 0', minHeight: 44, padding: '0 16px', fontSize: 12, fontWeight: 600, color: primaryColor, background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  {t(isHi, 'Try again', 'फिर कोशिश करें')}
+                </button>
               </div>
             ) : notifications.length === 0 ? (
               <div style={{ padding: 32, textAlign: 'center', color: '#888', fontSize: 13 }}>

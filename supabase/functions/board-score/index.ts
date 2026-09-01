@@ -128,11 +128,18 @@ function buildActionLabel(chapter_name: string, status: string): string {
 
 async function isBoardScoreEnabled(supabase: ReturnType<typeof createClient>): Promise<boolean> {
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('feature_flags')
       .select('is_enabled')
       .eq('flag_name', 'ff_board_score_v1')
       .maybeSingle()
+    // supabase-js resolves rather than throwing, so the fail-closed catch below
+    // never ran for a query error — the flag resolved OFF with no log, making a
+    // DB fault indistinguishable from a deliberate operator disable.
+    if (error) {
+      console.warn(`ff_board_score_v1 lookup failed — ${error.code}: ${error.message}`)
+      return false // fail-closed
+    }
     return data?.is_enabled === true
   } catch {
     return false // fail-closed
@@ -337,7 +344,7 @@ async function computeBoardScore(
     }))
 
   // 5. Get subject label from weights (carry through for display)
-  const { data: subjectRow } = await supabase
+  const { data: subjectRow, error: subjectRowErr } = await supabase
     .from('cbse_chapter_weights')
     .select('subject_label')
     .eq('board', 'CBSE')
@@ -345,6 +352,13 @@ async function computeBoardScore(
     .eq('subject_code', subject_code)
     .limit(1)
     .maybeSingle()
+
+  // Cosmetic degrade (the raw subject code is shown instead of the friendly
+  // label), so the existing fallback is kept — but a systematically unlabelled
+  // prediction table should not require a human to notice it.
+  if (subjectRowErr) {
+    console.warn('[board-score] subject_label lookup failed:', subjectRowErr.code, subjectRowErr.message)
+  }
 
   const subjectLabel = subjectRow?.subject_label ?? subject_code
 
@@ -414,10 +428,17 @@ async function getBoardScores(
   // stray board_score_predictions row exists from before subject-scoping was
   // enforced upstream (§4/§7.1). We exclude by subject_kind rather than
   // trusting that no such row will ever be written.
-  const { data: platformElectiveRows } = await supabase
+  const { data: platformElectiveRows, error: platformElectiveErr } = await supabase
     .from('subjects')
     .select('code')
     .eq('subject_kind', 'platform_elective')
+
+  // An empty code list changes which predictions are filtered, so a failed read
+  // silently alters what the student is shown. The existing behaviour is kept
+  // (this is a display filter, not a security boundary) but no longer silent.
+  if (platformElectiveErr) {
+    console.error('[board-score] platform-elective code lookup failed:', platformElectiveErr.code, platformElectiveErr.message)
+  }
 
   const platformElectiveCodes = (platformElectiveRows ?? []).map((r: any) => r.code as string)
 
