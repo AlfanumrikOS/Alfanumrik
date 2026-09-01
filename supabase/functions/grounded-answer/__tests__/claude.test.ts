@@ -1184,3 +1184,84 @@ Deno.test('stream: Anthropic 401 -> the OpenAI rung receives the SAME system pro
     restoreFetch();
   }
 });
+
+// ── Prompt-cache token capture (2026-09-01) ─────────────────────────────────
+//
+// Regression pin for a defect that survived a first attempted fix. claude.ts
+// sets cache_control in 12 places, so Anthropic reports a cached turn as a
+// SMALL input_tokens plus large cache_read_input_tokens /
+// cache_creation_input_tokens. This file used to read only input_tokens.
+//
+// Measured consequence in production (mol_request_logs, 7 days, same
+// doubt_solving/foxy task): Anthropic logged 12-78 prompt tokens while OpenAI
+// logged 8,327-12,518 for identical work — a ~479x under-count, with the
+// remainder priced at zero. A real Foxy turn on 2026-09-01 08:31 recorded
+// 22 prompt tokens and $0.004367 against ~11,500 tokens actually sent.
+//
+// PR #1686 fixed the MOL provider (_shared/mol/providers/anthropic.ts) but NOT
+// this file, which is the path Foxy answers actually take. Hence this pin.
+Deno.test('callClaude captures Anthropic prompt-cache counters (blocking path)', async () => {
+  installFetchStub([
+    () => Promise.resolve(new Response(
+      JSON.stringify({
+        id: 'msg_cached',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'a cached answer' }],
+        model: 'claude-test',
+        usage: {
+          input_tokens: 22,
+          output_tokens: 869,
+          cache_read_input_tokens: 9000,
+          cache_creation_input_tokens: 2500,
+        },
+        stop_reason: 'end_turn',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )),
+  ]);
+  try {
+    const res = await callClaude({
+      systemPrompt: 'sys',
+      userMessage: 'q',
+      maxTokens: 1024,
+      temperature: 0,
+      timeoutMs: 30_000,
+      apiKey: 'test-key',
+      modelPreference: 'auto',
+    });
+    assertEquals(res.ok, true);
+    if (!res.ok) return;
+    // input_tokens must stay the UNCACHED remainder — not silently merged,
+    // because reads and writes price differently (0.1x vs 1.25x).
+    assertEquals(res.inputTokens, 22);
+    assertEquals(res.outputTokens, 869);
+    assertEquals(res.cacheReadTokens, 9000);
+    assertEquals(res.cacheWriteTokens, 2500);
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test('callClaude defaults cache counters to 0 when Anthropic omits them', async () => {
+  installFetchStub([() => Promise.resolve(mockAnthropicOkResponse('plain answer', 50, 120))]);
+  try {
+    const res = await callClaude({
+      systemPrompt: 'sys',
+      userMessage: 'q',
+      maxTokens: 1024,
+      temperature: 0,
+      timeoutMs: 30_000,
+      apiKey: 'test-key',
+      modelPreference: 'auto',
+    });
+    assertEquals(res.ok, true);
+    if (!res.ok) return;
+    // 0, not undefined: an uncached call must be distinguishable from one that
+    // was never measured, or the same blindness returns by another route.
+    assertEquals(res.cacheReadTokens, 0);
+    assertEquals(res.cacheWriteTokens, 0);
+  } finally {
+    restoreFetch();
+  }
+});
