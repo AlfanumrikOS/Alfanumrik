@@ -38,6 +38,19 @@ export interface OpsEventInput {
 }
 
 export async function logOpsEvent(input: OpsEventInput): Promise<void> {
+  // This module is Deno-only (Supabase Edge Functions), but trace.ts and
+  // _shared/mol/telemetry.ts — both of which now call this on their error
+  // paths (§5 data-integrity fix) — are also imported directly by vitest
+  // regression tests running under Node, where the `Deno` global does not
+  // exist. Referencing Deno.env unguarded threw a ReferenceError BEFORE this
+  // function's own try/catch (below) could apply its documented "never
+  // throws" contract. Guarding here — not in every caller — keeps that
+  // contract true in every runtime and is a no-op in the real Deno runtime
+  // (typeof Deno !== 'undefined' there, so this branch never executes).
+  if (typeof Deno === 'undefined') {
+    console.warn('[ops-events] Deno runtime not available — skipping ops_events write');
+    return;
+  }
   const url = `${Deno.env.get('SUPABASE_URL')}/rest/v1/ops_events`;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
