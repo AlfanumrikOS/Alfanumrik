@@ -15,6 +15,11 @@
 
 import type { Caller, AbstainReason } from './types.ts';
 import type { ConfidenceV2Source } from './confidence-v2.ts';
+// 2026-09-02 (§5 data-integrity fix): a failed grounded_ai_traces insert used
+// to be a console.warn and a placeholder uuid — invisible unless someone was
+// tailing this exact Edge Function's stdout. logOpsEvent writes into the same
+// ops_events table this repo's alert pipeline already watches.
+import { logOpsEvent } from '../_shared/ops-events.ts';
 
 export interface TraceRow {
   caller: Caller;
@@ -171,12 +176,39 @@ export async function writeTrace(sb: SupabaseLike, row: TraceRow): Promise<strin
           return retry.data.id as string;
         }
       }
-      console.warn(`trace: insert failed — ${error?.message ?? 'no data'}`);
+      const msg = error?.message ?? 'no data';
+      console.warn(`trace: insert failed — ${msg}`);
+      // Awaited: writeTrace is itself always awaited by its callers, so this
+      // adds no new fire-and-forget surface — it's on the same critical path
+      // the console.warn above already was.
+      await logOpsEvent({
+        category: 'ai',
+        source: 'grounded_ai_traces',
+        severity: 'error',
+        message: `grounded_ai_traces insert failed: ${msg}`,
+        subjectType: 'grounded_ai_traces_row',
+        context: {
+          caller: row.caller,
+          grade: row.grade,
+          subject_code: row.subject_code,
+          grounded: row.grounded,
+          error: msg,
+        },
+      });
       return placeholderUuid();
     }
     return data.id as string;
   } catch (err) {
-    console.warn(`trace: insert threw — ${String(err)}`);
+    const msg = String(err);
+    console.warn(`trace: insert threw — ${msg}`);
+    await logOpsEvent({
+      category: 'ai',
+      source: 'grounded_ai_traces',
+      severity: 'error',
+      message: `grounded_ai_traces insert threw: ${msg}`,
+      subjectType: 'grounded_ai_traces_row',
+      context: { caller: row.caller, error: msg },
+    });
     return placeholderUuid();
   }
 }
