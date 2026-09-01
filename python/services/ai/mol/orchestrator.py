@@ -528,7 +528,16 @@ async def generate_response(req: GenerateRequest) -> MolResult:
     usd_total = 0.0
     inr_total = 0.0
     for r in responses:
-        usd, inr = compute_cost(r.provider, r.model, r.tokens.prompt, r.tokens.completion)
+        usd, inr = compute_cost(
+            r.provider,
+            r.model,
+            r.tokens.prompt,
+            r.tokens.completion,
+            # 2026-09-01: without these the cached bulk of an Anthropic prompt
+            # prices at zero. Both are 0 for OpenAI and for uncached calls.
+            r.tokens.cache_read,
+            r.tokens.cache_write,
+        )
         usd_total += usd
         inr_total += inr
 

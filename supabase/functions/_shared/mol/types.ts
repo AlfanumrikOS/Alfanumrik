@@ -118,6 +118,25 @@ export interface GenerateRequest {
 export interface TokenUsage {
   prompt: number
   completion: number
+  /**
+   * Anthropic prompt-caching counters. BOTH OPTIONAL — OpenAI never sets them
+   * and pre-2026-09-01 callers omit them, so every existing consumer keeps
+   * working with `prompt`/`completion` alone.
+   *
+   * Why they exist: Anthropic reports a cached request as a SMALL
+   * `input_tokens` plus a large `cache_read_input_tokens` /
+   * `cache_creation_input_tokens`. The provider used to read only
+   * `input_tokens`, so a cached call logged ~15-35 prompt tokens while the
+   * identical uncached call on OpenAI logged ~9,000-12,500 — and calcCost
+   * billed the difference at zero. Anthropic spend was therefore
+   * systematically under-reported, and no amount of caching work could be
+   * verified from telemetry.
+   *
+   * cache_read  — tokens served from an existing cache entry (billed 0.1x input)
+   * cache_write — tokens written into the cache this call  (billed 1.25x input)
+   */
+  cache_read?: number
+  cache_write?: number
 }
 
 export interface ProviderResponse {

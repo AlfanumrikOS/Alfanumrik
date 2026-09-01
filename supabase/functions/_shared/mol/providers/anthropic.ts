@@ -81,7 +81,17 @@ export class AnthropicProvider implements ModelProvider {
 
     const data = await res.json() as {
       content: Array<{ type: string; text?: string }>
-      usage: { input_tokens: number; output_tokens: number }
+      usage: {
+        input_tokens: number
+        output_tokens: number
+        // Present only when prompt caching engages (we set cache_control on the
+        // system block above whenever it is >= 1024 chars). Anthropic reports a
+        // cache HIT as a small input_tokens + a large cache_read_input_tokens,
+        // so reading input_tokens alone under-reports a cached call by orders
+        // of magnitude — measured 15-35 logged vs ~11,000 actually sent.
+        cache_read_input_tokens?: number
+        cache_creation_input_tokens?: number
+      }
       stop_reason: string
     }
 
@@ -95,7 +105,12 @@ export class AnthropicProvider implements ModelProvider {
       text,
       provider: 'anthropic',
       model,
-      tokens: { prompt: data.usage.input_tokens, completion: data.usage.output_tokens },
+      tokens: {
+        prompt: data.usage.input_tokens,
+        completion: data.usage.output_tokens,
+        cache_read: data.usage.cache_read_input_tokens ?? 0,
+        cache_write: data.usage.cache_creation_input_tokens ?? 0,
+      },
       finish_reason: data.stop_reason,
       raw: data,
     }

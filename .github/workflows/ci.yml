@@ -2235,6 +2235,7 @@ jobs:
         supabase/functions/grounded-answer/__tests__/foxy-python-generation.test.ts
         supabase/functions/grounded-answer/__tests__/gen-ctx.test.ts
         supabase/functions/grounded-answer/__tests__/grounding-check.test.ts
+        supabase/functions/grounded-answer/__tests__/grounding-gate-flag.test.ts
         supabase/functions/grounded-answer/__tests__/model-rollout-flag.test.ts
         supabase/functions/grounded-answer/__tests__/output-screen.test.ts
         supabase/functions/grounded-answer/__tests__/prompt-segments.test.ts

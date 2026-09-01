@@ -35,6 +35,37 @@ def test_compute_cost_for_haiku():
     assert inr == pytest.approx(6.0 * 83.0, rel=1e-9)
 
 
+def test_cache_reads_bill_at_one_tenth_of_input():
+    """1M cache-read tokens on haiku ($1/1M input) = $0.10.
+
+    Regression pin (2026-09-01): compute_cost read only prompt_tokens, so the
+    cached bulk of an Anthropic prompt priced at ZERO. This service sends
+    cache_control for prompts >= 1024 chars, so that was the common path.
+    """
+    usd, _ = compute_cost(
+        "anthropic", "claude-haiku-4-5-20251001", 0, 0, 1_000_000, 0
+    )
+    assert usd == pytest.approx(0.10, rel=1e-9)
+
+
+def test_cache_writes_bill_at_one_and_a_quarter_input():
+    """1M cache-write tokens on haiku = $1.25 — MORE than an uncached token.
+
+    Omitting writes would bias every estimate low, i.e. in the direction that
+    hides a cost regression rather than surfacing one.
+    """
+    usd, _ = compute_cost(
+        "anthropic", "claude-haiku-4-5-20251001", 0, 0, 0, 1_000_000
+    )
+    assert usd == pytest.approx(1.25, rel=1e-9)
+
+
+def test_cache_args_default_to_zero_for_legacy_callers():
+    """Every pre-2026-09-01 caller passes 4 positional args and must be unchanged."""
+    usd, _ = compute_cost("openai", "gpt-4o-mini", 1_000_000, 1_000_000)
+    assert usd == pytest.approx(0.75, rel=1e-9)
+
+
 def test_compute_cost_for_gpt_4o_mini():
     """1k prompt + 1k completion @ $0.15 / $0.60 per 1M = $0.00075."""
     usd, inr = compute_cost("openai", "gpt-4o-mini", 1_000, 1_000)

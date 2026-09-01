@@ -21,6 +21,14 @@ logger = structlog.get_logger(__name__)
 #   - public.model_pricing seed
 # Adding a model in one place but not the others returns 0.0 here and silently
 # undercounts cost in dashboards.
+# Anthropic prompt-caching price multipliers, relative to the model's base
+# input rate. MUST stay in sync with CACHE_READ_MULTIPLIER /
+# CACHE_WRITE_MULTIPLIER in supabase/functions/_shared/mol/telemetry.ts —
+# the two cost models are twins and a divergence here silently makes the
+# Python-served and Deno-served halves of the same dashboard disagree.
+CACHE_READ_MULTIPLIER = 0.1
+CACHE_WRITE_MULTIPLIER = 1.25
+
 PRICING: dict[str, dict[str, float]] = {
     "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "openai/gpt-4o": {"input": 2.50, "output": 10.00},
@@ -44,6 +52,8 @@ def compute_cost(
     model: str,
     prompt_tokens: int,
     completion_tokens: int,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> tuple[float, float]:
     """Return ``(usd, inr)`` for a single provider call.
 
@@ -53,6 +63,19 @@ def compute_cost(
     Behavior on missing PRICING entry: returns ``(0.0, 0.0)`` and emits a
     single ``WARN`` structured log line with the provider/model. Matches TS
     defensive default — telemetry must never break the user request.
+
+    Prompt-cache pricing (2026-09-01, mirrors calcCost in telemetry.ts):
+    this module sends ``cache_control`` on the system block for prompts
+    >= 1024 chars, and Anthropic then reports a SMALL ``input_tokens`` plus a
+    large ``cache_read_input_tokens`` / ``cache_creation_input_tokens``.
+    Pricing only ``prompt_tokens`` therefore billed the cached bulk at ZERO —
+    measured on the TS twin as a ~400x under-count of a Foxy turn. Cache reads
+    bill at 0.1x the input rate; cache writes at 1.25x (a write costs MORE than
+    an uncached token, so omitting writes biases the estimate low, in exactly
+    the direction that hides a regression).
+
+    Both new args default to 0, so every existing caller — and OpenAI, which
+    never reports these counters — prices identically to before.
     """
     exact_key = f"{provider}/{model}"
     pricing = PRICING.get(exact_key)
@@ -68,9 +91,12 @@ def compute_cost(
         )
         return (0.0, 0.0)
 
-    usd = (prompt_tokens / 1_000_000.0) * pricing["input"] + (
-        completion_tokens / 1_000_000.0
-    ) * pricing["output"]
+    usd = (
+        (prompt_tokens / 1_000_000.0) * pricing["input"]
+        + (cache_read_tokens / 1_000_000.0) * pricing["input"] * CACHE_READ_MULTIPLIER
+        + (cache_write_tokens / 1_000_000.0) * pricing["input"] * CACHE_WRITE_MULTIPLIER
+        + (completion_tokens / 1_000_000.0) * pricing["output"]
+    )
     inr = to_inr(usd)
     return (usd, inr)
 
