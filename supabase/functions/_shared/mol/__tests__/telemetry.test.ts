@@ -23,6 +23,34 @@ describe('calcCost', () => {
     expect(calcCost('openai', 'imaginary-model-9000', { prompt: 100, completion: 100 })).toBe(0)
   })
 
+  // ── Prompt-cache pricing (2026-09-01) ──────────────────────────────────────
+  // These three pin the defect that made cached Anthropic calls look free:
+  // calcCost read only `prompt`, so tokens Anthropic reported under
+  // cache_read_input_tokens / cache_creation_input_tokens were billed at zero.
+  it('bills cache reads at 0.1x the input rate', () => {
+    // haiku input 1/1M → 1M cache-read tokens = 0.10
+    const usd = calcCost('anthropic', 'claude-haiku-4-5-20251001', {
+      prompt: 0, completion: 0, cache_read: 1_000_000,
+    })
+    expect(usd).toBeCloseTo(0.10, 4)
+  })
+
+  it('bills cache writes at 1.25x the input rate', () => {
+    // A cache write costs MORE than an uncached token. Omitting it would bias
+    // every estimate low in exactly the direction that hides a regression.
+    const usd = calcCost('anthropic', 'claude-haiku-4-5-20251001', {
+      prompt: 0, completion: 0, cache_write: 1_000_000,
+    })
+    expect(usd).toBeCloseTo(1.25, 4)
+  })
+
+  it('is unchanged for callers that omit the cache counters (OpenAI, legacy)', () => {
+    // Back-compat guard: every pre-2026-09-01 caller passes {prompt, completion}
+    // only, and must price identically to before.
+    const usd = calcCost('openai', 'gpt-4o-mini', { prompt: 1_000_000, completion: 1_000_000 })
+    expect(usd).toBeCloseTo(0.75, 4)
+  })
+
   // ── PR audit 2026-05-19: date-pinned model alias prefix matching ──
   // OpenAI's response `model` field is the date-pinned variant (e.g.
   // `gpt-4o-2024-08-06`), not the alias we send in the request (`gpt-4o`).

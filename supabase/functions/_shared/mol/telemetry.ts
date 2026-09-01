@@ -22,6 +22,16 @@ const PRICING: Record<string, { input: number; output: number }> = {
   'anthropic/claude-3-opus-20240229':    { input: 15.00, output: 75.00 },
 }
 
+/**
+ * Anthropic prompt-caching price multipliers, relative to the model's base
+ * input rate. Cache reads are 10% of input; cache writes are 125% (you pay a
+ * premium once to populate the entry, then read cheaply for the TTL).
+ * Provider-agnostic by construction: OpenAI responses never set the cache
+ * counters, so these multiply zero there.
+ */
+const CACHE_READ_MULTIPLIER = 0.1
+const CACHE_WRITE_MULTIPLIER = 1.25
+
 function usdToInrRate(): number {
   return Number(Deno.env.get('USD_TO_INR') ?? '83')
 }
@@ -37,7 +47,22 @@ export function calcCost(provider: string, model: string, t: TokenUsage): number
     p = PRICING[`${provider}/${baseModel}`]
   }
   if (!p) return 0
-  return (t.prompt / 1_000_000) * p.input + (t.completion / 1_000_000) * p.output
+  // Anthropic prompt-caching multipliers (published rates, relative to the
+  // model's base input price): a cache READ bills at 0.1x, a cache WRITE at
+  // 1.25x. Both default to 0 so OpenAI and every pre-caching caller compute
+  // exactly as before.
+  //
+  // Omitting these is what made cached Anthropic calls look almost free: the
+  // bulk of the prompt moved out of `input_tokens` into the cache counters and
+  // then priced at zero. A cache read is cheap, not free, and a cache write
+  // costs MORE than an uncached token — so leaving writes out biases the
+  // estimate in the most misleading direction available.
+  const cacheRead = t.cache_read ?? 0
+  const cacheWrite = t.cache_write ?? 0
+  return (t.prompt / 1_000_000) * p.input
+    + (cacheRead / 1_000_000) * p.input * CACHE_READ_MULTIPLIER
+    + (cacheWrite / 1_000_000) * p.input * CACHE_WRITE_MULTIPLIER
+    + (t.completion / 1_000_000) * p.output
 }
 
 export function toInr(usd: number): number {
@@ -129,6 +154,12 @@ export function recordMolRequest(p: LogPayload): void {
       latency_ms: p.latency_ms,
       prompt_tokens: p.tokens.prompt,
       completion_tokens: p.tokens.completion,
+      // Added 2026-09-01 (migration 20260901150000). Default 0 rather than
+      // null so `sum(cache_read_tokens)` never silently drops rows, and so a
+      // provider that reports no caching is distinguishable from one that was
+      // never asked. See TokenUsage's header for why these were missing.
+      cache_read_tokens: p.tokens.cache_read ?? 0,
+      cache_write_tokens: p.tokens.cache_write ?? 0,
       usd_cost: p.usd_cost,
       inr_cost: p.inr_cost,
       grade: p.grade,
@@ -152,8 +183,15 @@ export function recordMolRequest(p: LogPayload): void {
 /** Combine pass-1 and pass-2 token usage into a single MolResult tokens block. */
 export function sumTokens(responses: ProviderResponse[]): TokenUsage {
   return responses.reduce(
-    (acc, r) => ({ prompt: acc.prompt + r.tokens.prompt, completion: acc.completion + r.tokens.completion }),
-    { prompt: 0, completion: 0 } as TokenUsage,
+    (acc, r) => ({
+      prompt: acc.prompt + r.tokens.prompt,
+      completion: acc.completion + r.tokens.completion,
+      // `?? 0` on BOTH sides: a mixed hybrid pass can pair an Anthropic
+      // response carrying cache counters with an OpenAI one that never does.
+      cache_read: (acc.cache_read ?? 0) + (r.tokens.cache_read ?? 0),
+      cache_write: (acc.cache_write ?? 0) + (r.tokens.cache_write ?? 0),
+    }),
+    { prompt: 0, completion: 0, cache_read: 0, cache_write: 0 } as TokenUsage,
   )
 }
 

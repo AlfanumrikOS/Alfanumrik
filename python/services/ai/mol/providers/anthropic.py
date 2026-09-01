@@ -137,6 +137,11 @@ class AnthropicProvider(ModelProvider):
             tokens=TokenUsage(
                 prompt=int(usage.get("input_tokens", 0)),
                 completion=int(usage.get("output_tokens", 0)),
+                # Present only when the cache_control block above engages.
+                # Without these two, a cached call reports a tiny input_tokens
+                # and compute_cost bills the cached bulk at zero.
+                cache_read=int(usage.get("cache_read_input_tokens", 0)),
+                cache_write=int(usage.get("cache_creation_input_tokens", 0)),
             ),
             finish_reason=str(data.get("stop_reason", "stop")),
             raw={"latency_ms": latency_ms, **(data if isinstance(data, dict) else {})},

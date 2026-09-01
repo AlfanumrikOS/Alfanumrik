@@ -202,16 +202,34 @@ class SelectedChain(BaseModel):
 
 
 class TokenUsage(BaseModel):
-    """Prompt + completion token counts. Summed across passes for MolResult."""
+    """Prompt + completion token counts. Summed across passes for MolResult.
+
+    ``cache_read`` / ``cache_write`` (added 2026-09-01) carry Anthropic's
+    prompt-caching counters. This service sends ``cache_control`` on the system
+    block for prompts >= 1024 chars, and Anthropic then reports a SMALL
+    ``input_tokens`` plus a large ``cache_read_input_tokens`` /
+    ``cache_creation_input_tokens``. Reading only ``input_tokens`` therefore
+    under-counted cached calls by orders of magnitude and priced the remainder
+    at zero — measured on the TS twin as ~15-35 logged prompt tokens against
+    ~11,000 actually sent.
+
+    Both default to 0, so OpenAI (which never reports them) and every existing
+    caller behave exactly as before. Mirrors TokenUsage in
+    supabase/functions/_shared/mol/types.ts.
+    """
 
     model_config = ConfigDict(extra="forbid")
     prompt: int = 0
     completion: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
 
     def __add__(self, other: TokenUsage) -> TokenUsage:
         return TokenUsage(
             prompt=self.prompt + other.prompt,
             completion=self.completion + other.completion,
+            cache_read=self.cache_read + other.cache_read,
+            cache_write=self.cache_write + other.cache_write,
         )
 
 

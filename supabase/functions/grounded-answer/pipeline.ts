@@ -50,9 +50,14 @@ import { generateFoxyViaPython } from './foxy-python-generation.ts';
 import { isAnswerContinuationEnabled } from './_continuation-flag.ts';
 import {
   runGroundingCheck,
-  GROUNDING_CHECK_SYSTEM_PROMPT,
+  buildGroundingCheckSystemPrompt,
   buildGroundingCheckUserMessage,
 } from './grounding-check.ts';
+import {
+  isGroundingConfidenceGateEnabled,
+  shouldSkipGroundingCheck,
+  groundingGateMinCosine,
+} from './_grounding-gate-flag.ts';
 // C3 (MOL grounded-answer integration, 2026-05-18). Telemetry-only shadow
 // log of every primary callClaude invocation into mol_request_logs.
 // Default-OFF feature flag (ff_grounded_answer_mol_telemetry_v1) is checked
@@ -1719,8 +1724,32 @@ export async function runPipeline(
   }
 
   // Step 12. Strict-mode grounding check.
+  //
+  // 2026-09-01 cost work: this second Anthropic call was 63% of the day's
+  // total AI spend (6,213 input tokens avg for a 56-token verdict). The
+  // confidence gate below can skip it when retrieval similarity is already
+  // high — but it is a P12 safety rail, so the flag ships OFF and every
+  // failure path leaves the check RUNNING. With the flag off this block
+  // behaves exactly as before.
   let groundingPassRatio = 1;
-  if (request.mode === 'strict') {
+  const groundingGateOn = request.mode === 'strict'
+    ? await isGroundingConfidenceGateEnabled(sb)
+    : false;
+  const skipGroundingCheck = shouldSkipGroundingCheck(
+    groundingGateOn,
+    ctx.topCosineSimilarity,
+    groundingGateMinCosine(),
+  );
+  if (request.mode === 'strict' && skipGroundingCheck) {
+    // Skipped by the gate: treat as grounded. We do NOT fabricate a verdict
+    // object or a shadow log — no LLM call happened, and inventing telemetry
+    // for a call that never ran is how a cost saving disguises itself as a
+    // quality result.
+    console.info(
+      `grounding-check: skipped by confidence gate (topCosine=${ctx.topCosineSimilarity} >= ${groundingGateMinCosine()})`,
+    );
+    groundingPassRatio = 1;
+  } else if (request.mode === 'strict') {
     const verdict = await runGroundingCheck(
       claude.content,
       request.query,
@@ -1774,12 +1803,18 @@ export async function runPipeline(
       // 'grounding_check' so primary-answer telemetry is the focus.
       fireShadowAndForget({
         request_id: newMolRequestId(),
-        systemPrompt: GROUNDING_CHECK_SYSTEM_PROMPT,
-        userMessage: buildGroundingCheckUserMessage(
-          claude.content,
-          request.query,
+        // 2026-09-01: SOURCE_CHUNKS moved from the user message into the
+        // system prompt so the ~6k-token payload becomes a cacheable prefix
+        // (grounding_check was 63% of that day's AI spend, entirely
+        // uncacheable). Both halves must move together — sending the bare
+        // GROUNDING_CHECK_SYSTEM_PROMPT here would hand the grader a
+        // fact-check request with no sources, which passes vacuously.
+        // MOL's Anthropic provider applies its own cache_control to this
+        // string, so the shadow leg gets the same saving as the direct call.
+        systemPrompt: buildGroundingCheckSystemPrompt(
           chunks.map((c) => ({ id: c.id, content: c.content })),
         ),
+        userMessage: buildGroundingCheckUserMessage(claude.content, request.query),
         // Mirror runGroundingCheck's token budget (MAX_OUTPUT_TOKENS=512)
         // so the grader compares like-for-like resource budgets.
         maxTokens: 512,
