@@ -70,51 +70,32 @@ Be strict — don't extrapolate. If the chunk says "elements" and the answer
 says "chemical elements," that's supported. If the chunk doesn't mention
 something at all, that's unsupported.`;
 
-/**
- * Minimum system-prompt length before we attach cache_control.
- *
- * Anthropic will not cache a prefix shorter than its per-model minimum
- * (2048 tokens on the Haiku tier this check runs on). ~8000 chars is a
- * deliberately conservative stand-in for 2048 tokens — asking to cache a
- * shorter prefix is silently ignored, which would leave a cache_control
- * marker in the request implying a saving that never happens.
- */
-const CACHE_MIN_SYSTEM_CHARS = 8000;
-
-/**
- * SOURCE_CHUNKS moved OUT of the user message and INTO the system prompt
- * (2026-09-01), because the user message is not cacheable and the chunks are
- * ~99% of the payload.
- *
- * Measured before this change (mol_request_logs, 2026-09-01): grounding_check
- * averaged 6,213 input tokens to produce 56 output tokens, and was 63% of that
- * day's total AI spend across every surface. The static instruction block above
- * is only ~200 tokens — far below Anthropic's 2048-token minimum cacheable
- * prefix — so NOTHING in this request was cacheable, and every repeat paid full
- * input price for the same chunks.
- *
- * Putting instructions + chunks together in the system block makes the whole
- * ~6k-token prefix cacheable, so a repeat within the cache TTL bills at 0.1x.
- * Repeats are real here: the re-grounding retry re-checks the SAME chunks, and
- * consecutive questions within one chapter reuse the same retrieval.
- *
- * Returned as a STRING, not pre-built blocks, so the MOL shadow path can pass
- * it straight through as `system_prompt_override` — MOL's Anthropic provider
- * applies its own cache_control once the string clears its length gate. One
- * builder, both paths, no parity drift.
- */
-export function buildGroundingCheckSystemPrompt(
-  chunks: { id: string; content: string }[],
-): string {
-  return `${GROUNDING_CHECK_SYSTEM_PROMPT}\n\n${formatSourceChunks(chunks)}`;
-}
-
-function formatSourceChunks(chunks: { id: string; content: string }[]): string {
-  const chunksText = chunks
-    .map((c, i) => `[${i + 1}] (${c.id})\n${c.content}`)
-    .join('\n\n---\n\n');
-  return `SOURCE_CHUNKS:\n${chunksText}`;
-}
+// ── PROMPT CACHING WAS EVALUATED HERE AND REJECTED ON MEASUREMENT ────────────
+//
+// 2026-09-01: grounding_check averaged 6,213 input tokens for a 56-token
+// verdict and was 63% of that day's AI spend, so moving SOURCE_CHUNKS from the
+// (uncacheable) user message into a cache_control'd system block looked like
+// the obvious win. It is not, at this traffic.
+//
+// Anthropic bills a cache WRITE at 1.25x input and a cache READ at 0.1x, so
+// caching only pays above a hit rate of:
+//     1.25 - 1.15h = 1.0  →  h = 21.7%
+//
+// Measured hit rate (grounded_ai_traces, 48h, "same chunk set already seen
+// within the prior 5 min" — Anthropic's TTL, not merely the previous call):
+//     quiz-generator   983 calls   1.9%   → would cost ~1.23x  (+23%)
+//     foxy              29 calls  13.8%   → would cost ~1.09x   (+9%)
+//
+// NEITHER clears break-even, because each verification retrieves a different
+// chunk set. Enabling caching here would have INCREASED the largest line item
+// on the bill by roughly a fifth while appearing to be a cost optimisation.
+//
+// Chunks therefore stay in the user message: identical token count, no 1.25x
+// write premium, and no change to a P12 safety check's prompt shape for no
+// benefit. Re-evaluate if concurrency rises enough that many students hit the
+// same chapter inside one 5-minute window — re-run the query above first and
+// require h > 21.7% with margin. The real cost lever for this workload is not
+// caching; it is not making the call at all (see _grounding-gate-flag.ts).
 
 export async function runGroundingCheck(
   answer: string,
@@ -128,13 +109,7 @@ export async function runGroundingCheck(
     return { verdict: 'fail', unsupportedSentences: [] };
   }
 
-  const userMessage = buildUserMessage(answer, question);
-  const systemText = buildGroundingCheckSystemPrompt(chunks);
-  // Only mark the block cacheable once it clears Anthropic's minimum prefix —
-  // below that the marker is ignored and would imply a saving that never lands.
-  const systemBlocks = systemText.length >= CACHE_MIN_SYSTEM_CHARS
-    ? [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }]
-    : [{ type: 'text', text: systemText }];
+  const userMessage = buildUserMessage(answer, question, chunks);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -152,7 +127,7 @@ export async function runGroundingCheck(
         model: GROUNDING_CHECK_MODEL,
         max_tokens: MAX_OUTPUT_TOKENS,
         temperature: 0.0, // deterministic fact-check
-        system: systemBlocks,
+        system: GROUNDING_CHECK_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userMessage }],
       }),
       signal: controller.signal,
@@ -236,25 +211,24 @@ export async function runGroundingCheck(
 export function buildGroundingCheckUserMessage(
   answer: string,
   question: string,
+  chunks: { id: string; content: string }[],
 ): string {
-  // `chunks` was dropped from this signature 2026-09-01 when SOURCE_CHUNKS
-  // moved into the system prompt. Shadow callers must now pair this with
-  // buildGroundingCheckSystemPrompt(chunks) to keep prompt parity — passing
-  // the bare GROUNDING_CHECK_SYSTEM_PROMPT would send the grader a fact-check
-  // request with no sources at all.
-  return buildUserMessage(answer, question);
+  return buildUserMessage(answer, question, chunks);
 }
 
-/**
- * The VARIABLE half of the request: question + candidate answer only.
- * SOURCE_CHUNKS deliberately live in the system prompt now — see
- * buildGroundingCheckSystemPrompt. Keeping this side small is the whole point:
- * it is the part that changes per call and therefore can never be cached.
- */
-function buildUserMessage(answer: string, question: string): string {
+function buildUserMessage(
+  answer: string,
+  question: string,
+  chunks: { id: string; content: string }[],
+): string {
+  const chunksText = chunks
+    .map((c, i) => `[${i + 1}] (${c.id})\n${c.content}`)
+    .join('\n\n---\n\n');
+
   return [
     `STUDENT_QUESTION:\n${question}`,
     `CANDIDATE_ANSWER:\n${answer}`,
+    `SOURCE_CHUNKS:\n${chunksText}`,
     'Respond with JSON only.',
   ].join('\n\n');
 }

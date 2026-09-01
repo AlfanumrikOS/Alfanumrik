@@ -50,7 +50,7 @@ import { generateFoxyViaPython } from './foxy-python-generation.ts';
 import { isAnswerContinuationEnabled } from './_continuation-flag.ts';
 import {
   runGroundingCheck,
-  buildGroundingCheckSystemPrompt,
+  GROUNDING_CHECK_SYSTEM_PROMPT,
   buildGroundingCheckUserMessage,
 } from './grounding-check.ts';
 import {
@@ -1803,18 +1803,12 @@ export async function runPipeline(
       // 'grounding_check' so primary-answer telemetry is the focus.
       fireShadowAndForget({
         request_id: newMolRequestId(),
-        // 2026-09-01: SOURCE_CHUNKS moved from the user message into the
-        // system prompt so the ~6k-token payload becomes a cacheable prefix
-        // (grounding_check was 63% of that day's AI spend, entirely
-        // uncacheable). Both halves must move together — sending the bare
-        // GROUNDING_CHECK_SYSTEM_PROMPT here would hand the grader a
-        // fact-check request with no sources, which passes vacuously.
-        // MOL's Anthropic provider applies its own cache_control to this
-        // string, so the shadow leg gets the same saving as the direct call.
-        systemPrompt: buildGroundingCheckSystemPrompt(
+        systemPrompt: GROUNDING_CHECK_SYSTEM_PROMPT,
+        userMessage: buildGroundingCheckUserMessage(
+          claude.content,
+          request.query,
           chunks.map((c) => ({ id: c.id, content: c.content })),
         ),
-        userMessage: buildGroundingCheckUserMessage(claude.content, request.query),
         // Mirror runGroundingCheck's token budget (MAX_OUTPUT_TOKENS=512)
         // so the grader compares like-for-like resource budgets.
         maxTokens: 512,
