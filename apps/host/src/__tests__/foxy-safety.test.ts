@@ -333,45 +333,13 @@ describe('FOXY_SAFETY_RAILS — D3 Step 4 ported rules (P12)', () => {
     expect(routeSrc).toContain('walk through their reasoning');
   });
 
-  // ── UPDATED 2026-08-31 (assessment verdict APPROVE WITH CONDITIONS, C3) ──
-  //
-  // WHY THESE ASSERTIONS CHANGED — intentional reconciliation, NOT a weakening.
-  //
-  // Rail 7 used to mandate its OWN exact English refusal string:
-  //   "I don't have a verified source for this in your textbook. Let me know
-  //    which chapter you're studying and I'll look again."
-  // The three live Foxy templates (foxy_tutor_{teach,exam,doubt}_v1) and the
-  // pipeline's `modeInstructionFor` mandate a DIFFERENT exact string:
-  //   "This topic is not covered in the reference material I have. Please
-  //    refer to your NCERT textbook directly."
-  // Until PROMPT_REV 4 those two never met: no template declared a
-  // `{{foxy_safety_rails}}` slot, so the rails text was silently discarded on
-  // every grounded-answer turn and the conflict was invisible. PROMPT_REV 4
-  // wires the slot in, so the rails now render on 100% of turns — which would
-  // put two competing "say exactly" refusal strings in one prompt and leave
-  // the model to pick.
-  //
-  // Rail 7 now DEFERS to the Grounding Rules sentence for English/Hinglish and
-  // states no second English phrasing of its own. The refusal contract is
-  // therefore unchanged in strength (one exact sentence, still mandatory) and
-  // is now single-sourced. The old English literals are asserted ABSENT from
-  // the rails so the second string cannot silently come back.
-  //
-  // The Hindi half of rail 7 is untouched — see the P7 parity test below. That
-  // Devanagari sentence is the ONLY Hindi refusal anywhere in the system;
-  // deleting rail 7 outright would have refused every Devanagari question in
-  // English, so the rail is kept and narrowed rather than removed.
-  it('defers to the Grounding Rules refusal sentence for English/Hinglish (C3)', () => {
+  it('includes the RAG-only-refusal rule (legacy foxy-tutor:213)', () => {
     expect(routeSrc).toContain('RAG-only refusal');
-    // The rail points at the templates' sentence instead of restating one.
-    expect(routeSrc).toMatch(
-      /Use the EXACT refusal\s+sentence already mandated by the Grounding Rules section above/,
-    );
-    // …and carries no competing English refusal literal of its own.
-    expect(routeSrc).not.toContain(
+    expect(routeSrc).toContain(
       "I don't have a verified source for this in your textbook",
     );
-    expect(routeSrc).not.toContain("I'll look again");
+    expect(routeSrc).toContain("which chapter you're studying");
+    expect(routeSrc).toContain("I'll look again");
   });
 
   // P7 bilingual parity (launch-readiness, 2026-05-05): the RAG-only
