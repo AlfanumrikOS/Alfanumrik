@@ -331,4 +331,19 @@ export const CLAUDE_PRIMARY_FALLBACK_ORDER: Record<
 // was produced by whatever the fallback chain degraded to after the dead pin
 // 404'd (in practice OpenAI), not by the Sonnet the request asked for, so those
 // entries must not be served under the repaired ordering.
-export const MODEL_ROUTE_REV = 5;
+// MODEL_ROUTE_REV=6 (2026-09-01): ANTHROPIC-PRIMARY FOR TEACHING — CEO-directed
+// provider swap (Pradeep Sharma). No array changed here. What changed is
+// ff_foxy_openai_primary_rollout_v1, returned from is_enabled=true/
+// rollout_percentage=100 to false/0 by migration 20260901140000, so
+// resolveModelOrder() now falls through to MODEL_FALLBACK_ORDER (anthropic
+// first, openai fallback) for every caller instead of bucketing them onto
+// CLAUDE_PRIMARY_FALLBACK_ORDER (openai first — the identifier is an inverted
+// leftover; read the array).
+// Per the bump rule this qualifies: every model_preference now resolves to a
+// different FIRST provider than it did under rev 5. Rev-5 entries were
+// generated OpenAI-primary and must not be served for a request made under the
+// new ordering — the same reasoning rev 4 records for the mirror-image
+// 2026-08-26 swap. This also steps around the rev-3 known limitation (gen_ctx
+// does not record WHICH order produced a cached response): that only bites at
+// intermediate rollout percentages, and 100 -> 0 is uniform on both sides.
+export const MODEL_ROUTE_REV = 6;
