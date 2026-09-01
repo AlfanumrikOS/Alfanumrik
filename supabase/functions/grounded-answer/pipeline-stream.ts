@@ -867,6 +867,16 @@ export async function* runStreamingPipeline(
           provider: evt.provider,
           inputTokens: evt.inputTokens,
           outputTokens: evt.outputTokens,
+          // 2026-09-01: these two MUST be copied. This object is rebuilt field
+          // by field rather than spread, so any field omitted here is silently
+          // dropped before the adapter ever sees it — which is exactly what
+          // happened: claude.ts captured the cache counters correctly and this
+          // literal discarded them, so a streamed Foxy turn still logged
+          // prompt_tokens=22 / cache_read=0 / cache_write=0 and priced ~11,500
+          // real input tokens at zero. Foxy streams, so this is THE Foxy path.
+          // If you add a field to ClaudeResponse, add it here too.
+          cacheReadTokens: evt.cacheReadTokens ?? 0,
+          cacheWriteTokens: evt.cacheWriteTokens ?? 0,
           insufficientContext: evt.insufficientContext,
           fallback_count: evt.fallback_count,
           failure_chain: evt.failure_chain,
