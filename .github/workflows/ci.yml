@@ -1802,7 +1802,17 @@ jobs:
   unit-tests-changed:
     name: Unit Tests (changed)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # TIMEOUT 15 -> 30 (2026-09-01, PR #1681). `--changed` selection scales with
+    # the diff, so on a large PR it degenerates into a full-suite run: #1681
+    # touches 192 files and this job was CANCELLED at 15m18s on two consecutive
+    # runs. A cancelled job is `result !== 'success'`, so CI Gate's fan-in fails
+    # the whole PR on it -- i.e. 15 minutes made a big PR structurally
+    # unmergeable. 15 was sized for a typical PR, not for the degenerate case.
+    # The ceiling is raised rather than the job dropped/soft-failed because the
+    # 4 `Unit Tests (shard N/4)` jobs run the COMPLETE suite and are the
+    # authoritative signal; this tier is fast feedback, and deleting it to go
+    # green would delete a signal instead of giving it room to finish.
+    timeout-minutes: 30
     if: ${{ github.event_name == 'pull_request' }}
     permissions:
       contents: read
