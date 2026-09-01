@@ -4,10 +4,32 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+/**
+ * Repo root, anchored once on a marker that exists ONLY at the root
+ * (apps/host has its own scripts/ dir, but no job-registry.json in it).
+ *
+ * This replaces a PER-PATH fallback — `if (!existsSync(root/rel)) return
+ * resolve(cwd, rel)` — which silently rewrote a missing repo-root path into an
+ * apps/host-relative one. That is how the vercel.json assertion below used to
+ * compare apps/host/vercel.json to ITSELF and could never fail: it asserted a
+ * ROOT vercel.json must exist, while ci.yml's "Root vercel.json drift guard"
+ * fails the build if one does. Two directly contradictory rules, both green,
+ * because the fallback resolved both arguments to the same file.
+ *
+ * Anchoring the root once and resolving from it keeps the dual-cwd support
+ * that fallback was there for (vitest runs from apps/host in CI, repo root
+ * locally) without letting a missing file masquerade as a present one.
+ */
+const REPO_ROOT = ((): string => {
+  const marker = join('scripts', 'job-registry.json');
+  for (const base of [resolve(process.cwd(), '..', '..'), process.cwd()]) {
+    if (existsSync(join(base, marker))) return base;
+  }
+  throw new Error(`cron-job-registry: cannot locate repo root from ${process.cwd()}`);
+})();
+
 function repoPath(rel: string): string {
-  const fromHost = resolve(process.cwd(), '..', '..', rel);
-  if (existsSync(fromHost)) return fromHost;
-  return resolve(process.cwd(), rel);
+  return resolve(REPO_ROOT, rel);
 }
 
 interface VercelCron {
@@ -39,14 +61,18 @@ function readJson<T>(rel: string): T {
 }
 
 describe('Vercel cron job registry (RCA-17)', () => {
-  it('keeps root and host Vercel config in sync', () => {
-    expect(existsSync(repoPath('vercel.json'))).toBe(true);
+  it('keeps apps/host/vercel.json the single deploy config', () => {
+    // 7ce6e38a deleted the root copy ("byte-identical duplicate"; Vercel's
+    // project root dir IS apps/host) and added the ci.yml drift guard that
+    // fails the build when a root vercel.json reappears. Mirror that guard
+    // here — the assertion this replaced demanded the opposite and only
+    // passed because repoPath's old fallback aliased both paths to one file.
     expect(existsSync(repoPath('apps/host/vercel.json'))).toBe(true);
+    expect(existsSync(repoPath('vercel.json'))).toBe(false);
 
-    const rootVercel = readJson<VercelConfig>('vercel.json');
     const hostVercel = readJson<VercelConfig>('apps/host/vercel.json');
-
-    expect(hostVercel).toEqual(rootVercel);
+    expect(Array.isArray(hostVercel.crons)).toBe(true);
+    expect(hostVercel.crons.length).toBeGreaterThan(0);
   });
 
   it('has an operations registry for every scheduled Vercel cron path', () => {

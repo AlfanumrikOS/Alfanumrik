@@ -83,24 +83,6 @@
       "alertThreshold": "no success for 26h"
     },
     {
-      "path": "/api/cron/foxy-quality-sample",
-      "platform": "vercel",
-      "owner": "ai-quality",
-      "schedule": "40 3 * * *",
-      "idempotencyKey": "foxy-quality-sample:yyyy-mm-dd",
-      "lastSuccessMetric": "ops.cron.foxy_quality_sample.last_success_at",
-      "alertThreshold": "no success for 26h"
-    },
-    {
-      "path": "/api/internal/cron/fix-failed-questions",
-      "platform": "vercel",
-      "owner": "content-quality",
-      "schedule": "*/15 * * * *",
-      "idempotencyKey": "fix-failed-questions:question_id",
-      "lastSuccessMetric": "ops.cron.fix_failed_questions.last_success_at",
-      "alertThreshold": "no success for 45m"
-    },
-    {
       "path": "/api/cron/streak-guardian",
       "platform": "vercel",
       "owner": "learning-platform",
@@ -134,15 +116,6 @@
       "schedule": "20 4 * * *",
       "idempotencyKey": "synthesis-delivery-monitor:yyyy-mm-dd",
       "lastSuccessMetric": "ops.cron.synthesis_delivery_monitor.last_success_at",
-      "alertThreshold": "no success for 26h"
-    },
-    {
-      "path": "/api/cron/synthesis-quality-sample",
-      "platform": "vercel",
-      "owner": "backend",
-      "schedule": "50 4 * * *",
-      "idempotencyKey": "synthesis-quality-sample:synthesis_run_id:rubric_version",
-      "lastSuccessMetric": "ops.cron.synthesis_quality_sample.last_success_at",
       "alertThreshold": "no success for 26h"
     },
     {

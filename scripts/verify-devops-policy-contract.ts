@@ -86,6 +86,30 @@ function workflowChoiceOptions(text: string, inputName: string): string[] {
   return values;
 }
 
+/**
+ * The `case "$JOB_PATH" in` allowlist that actually gates the break-glass run.
+ *
+ * This is a SECOND allowlist, independent of the `job_path` choice options
+ * above, and until 2026-09-01 nothing compared the two. They had drifted:
+ * `/api/cron/governance-health` was offered in the dropdown but missing here,
+ * so picking it always died on "JOB_PATH is not one allowlisted production
+ * cron route". The dropdown is only UI; this `case` is the enforcement — a
+ * path present in one and not the other is either a dead menu entry or an
+ * ungated route, and both are bugs.
+ */
+function workflowCaseAllowlist(text: string): string[] {
+  const line = text
+    .split(/\r?\n/)
+    .find((candidate) => /^\s*\/api\/\S*\)\s*;;\s*$/.test(candidate));
+  if (!line) return [];
+  return line
+    .trim()
+    .replace(/\)\s*;;$/, '')
+    .split('|')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 export function productionDeploymentAuthorityIsSafe(
   vercelText: string,
   workflowText = readFileSync(repoPath('.github/workflows/deploy-production.yml'), 'utf8'),
@@ -251,11 +275,17 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
         const registry = JSON.parse(readFileSync(repoPath('scripts/job-registry.json'), 'utf8')) as { jobs: Array<{ path: string }> };
         const expected = registry.jobs.map((job) => job.path).sort();
         const choices = workflowChoiceOptions(text, 'job_path').sort();
+        const allowlist = workflowCaseAllowlist(text).sort();
         const gate = mappingEntryBlock(text, 'gate', 2);
         const run = mappingEntryBlock(text, 'run', 2);
         return workflowDispatchOnly(text)
           && JSON.stringify(expected) === JSON.stringify(choices)
+          // The enforcing `case` allowlist must name the same set as both the
+          // registry and the dropdown — see workflowCaseAllowlist above for the
+          // drift this closes.
+          && JSON.stringify(expected) === JSON.stringify(allowlist)
           && !choices.includes('all')
+          && !allowlist.includes('all')
           && includesAll('ENABLE_PRODUCTION_CRON_BREAK_GLASS', 'RUN_ONE_PRODUCTION_CRON', 'refs/heads/main')(gate)
           && includesAll('needs: gate', 'environment: production-break-glass')(run)
           // Least-privilege after the 2026-08-03 AWS decommission (P2-6): AWS OIDC
