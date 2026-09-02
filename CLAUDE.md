@@ -74,7 +74,7 @@ As of 2026-07-28 that reads **47 on disk / 49 dirs**. This number has drifted ev
 
 **Database migrations**: `supabase/migrations/` ordered by timestamp. Every new table must have RLS enabled and policies in the same migration file.
 
-**`/quiz` route**: `/quiz` is a live, heavily-linked page (quiz orchestrator) — it does NOT redirect. `next.config.js`'s `headers()` includes `/quiz` in a shared route group that gets a `Cache-Control: public, max-age=60, stale-while-revalidate=300` header; there is no redirect entry for `/quiz` in `next.config.js`'s `redirects()`.
+**`/quiz` route**: `/quiz` is a live, heavily-linked page (quiz orchestrator) — it does NOT redirect. `next.config.js`'s `headers()` includes `/quiz` in a shared route group (authenticated, per-student pages: dashboard/foxy/quiz/progress/review/study-plan/leaderboard/simulations/profile/notifications/reports/scan/exams/help) that gets a `Cache-Control: private, max-age=60, stale-while-revalidate=300` header (`private`, not `public`, since 2026-09-02 — P2-11 launch audit fix, matches the convention already used for equivalent authenticated content elsewhere, e.g. the school-admin reports API); there is no redirect entry for `/quiz` in `next.config.js`'s `redirects()`.
 
 **Sentry tunnel**: Client errors route through `/monitoring` to bypass ad-blockers (configured in `next.config.js` Sentry options).
 
