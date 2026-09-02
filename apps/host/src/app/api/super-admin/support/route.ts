@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
 
 // POST — support intervention actions
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   try {

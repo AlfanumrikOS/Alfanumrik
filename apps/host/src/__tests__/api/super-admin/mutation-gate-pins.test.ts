@@ -24,11 +24,11 @@
  *   1. super-admin/rbac POST                       authorizeAdmin('super_admin')
  *   2. school-admin/rbac POST                      authorizeSchoolAdmin('institution.manage')
  *   3. super-admin/alfabot/denylist POST + DELETE  authorizeAdmin('super_admin')
- *   4. super-admin/oauth-apps POST                 authorizeAdmin('support')
+ *   4. super-admin/oauth-apps POST                 authorizeAdmin('super_admin') (fixed 2026-09-02, P1-1)
  *   5. school-admin/data-export POST               authorizeSchoolAdmin(<resolved code>)
- *   6. super-admin/projectors/replay POST          authorizeAdmin('support')
+ *   6. super-admin/projectors/replay POST          authorizeAdmin('super_admin') (fixed 2026-09-02, P1-1)
  *   7. super-admin/subscribers/[name]/dead-letters/[event_id]/retry POST
- *                                                  authorizeAdmin('support')
+ *                                                  authorizeAdmin('super_admin') (fixed 2026-09-02, P1-1)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -286,18 +286,19 @@ describe('super-admin/alfabot/denylist — super_admin gate (abuse blocklist mut
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 4. super-admin/oauth-apps POST — authorizeAdmin('support')
+// 4. super-admin/oauth-apps POST — authorizeAdmin('super_admin')
+// P0/P1-1 (2026-09-02 launch audit): raised from 'support' — this issues real
+// OAuth client secrets and was reachable by the lowest admin tier.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('POST /api/super-admin/oauth-apps — support gate (issues OAuth client secrets)', () => {
-  it('denies below the support floor and never reaches getSupabaseAdmin', async () => {
+describe('POST /api/super-admin/oauth-apps — super_admin gate (issues OAuth client secrets)', () => {
+  it('denies below the super_admin floor and never reaches getSupabaseAdmin', async () => {
     authorizeAdmin.mockResolvedValue(denyAdmin);
     const { POST } = await import('@/app/api/super-admin/oauth-apps/route');
     const res = await POST(
       req('/api/super-admin/oauth-apps', 'POST', { action: 'approve_app', appId: UUID }),
     );
     expect(res.status).toBe(403);
-    // EXACT CURRENT level — see under-leveled observation in the report.
-    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('support');
+    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('super_admin');
     expect(getSupabaseAdminFn).not.toHaveBeenCalled();
   });
 
@@ -309,7 +310,7 @@ describe('POST /api/super-admin/oauth-apps — support gate (issues OAuth client
     );
     // Proceeds past the gate (DB seam touched); status is whatever the stubbed
     // chain yields — we only assert the gate was passed + the seam reached.
-    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('support');
+    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('super_admin');
     expect(getSupabaseAdminFn).toHaveBeenCalled();
     expect(res.status).not.toBe(403);
   });
@@ -352,11 +353,11 @@ describe('POST /api/school-admin/data-export — export-data gate (bulk student 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 6. super-admin/projectors/replay POST — authorizeAdmin('support'),
-//    destructive event replay
+// 6. super-admin/projectors/replay POST — authorizeAdmin('super_admin'),
+//    destructive event replay (raised from 'support', 2026-09-02, P1-1)
 // ═══════════════════════════════════════════════════════════════════════════
-describe('POST /api/super-admin/projectors/replay — support gate (destructive replay)', () => {
-  it('denies below the support floor and never invokes the dispatcher', async () => {
+describe('POST /api/super-admin/projectors/replay — super_admin gate (destructive replay)', () => {
+  it('denies below the super_admin floor and never invokes the dispatcher', async () => {
     authorizeAdmin.mockResolvedValue(denyAdmin);
     const { POST } = await import('@/app/api/super-admin/projectors/replay/route');
     const res = await POST(
@@ -366,7 +367,7 @@ describe('POST /api/super-admin/projectors/replay — support gate (destructive 
       }),
     );
     expect(res.status).toBe(403);
-    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('support');
+    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('super_admin');
     expect(replayForStudent).not.toHaveBeenCalled();
   });
 
@@ -380,21 +381,22 @@ describe('POST /api/super-admin/projectors/replay — support gate (destructive 
       }),
     );
     expect(res.status).toBe(200);
-    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('support');
+    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('super_admin');
     expect(replayForStudent).toHaveBeenCalledTimes(1);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 7. super-admin/subscribers/[name]/dead-letters/[event_id]/retry POST —
-//    authorizeAdmin('support'), dead-letter replay (re-triggers side effects)
+//    authorizeAdmin('super_admin'), dead-letter replay (re-triggers side
+//    effects; raised from 'support', 2026-09-02, P1-1)
 // ═══════════════════════════════════════════════════════════════════════════
-describe('POST /api/super-admin/subscribers/[name]/dead-letters/[event_id]/retry — support gate', () => {
+describe('POST /api/super-admin/subscribers/[name]/dead-letters/[event_id]/retry — super_admin gate', () => {
   const ctx = {
     params: Promise.resolve({ name: 'mastery-state-writer', event_id: UUID }),
   };
 
-  it('denies below the support floor and never deletes the dead-letter row', async () => {
+  it('denies below the super_admin floor and never deletes the dead-letter row', async () => {
     authorizeAdmin.mockResolvedValue(denyAdmin);
     const { POST } = await import(
       '@/app/api/super-admin/subscribers/[name]/dead-letters/[event_id]/retry/route'
@@ -408,7 +410,7 @@ describe('POST /api/super-admin/subscribers/[name]/dead-letters/[event_id]/retry
       ctx,
     );
     expect(res.status).toBe(403);
-    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('support');
+    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('super_admin');
     expect(getSupabaseAdminFn).not.toHaveBeenCalled();
     expect(supabaseFrom).not.toHaveBeenCalled();
     expect(logAdminAudit).not.toHaveBeenCalled();
@@ -428,7 +430,7 @@ describe('POST /api/super-admin/subscribers/[name]/dead-letters/[event_id]/retry
       ctx,
     );
     expect(res.status).toBe(200);
-    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('support');
+    expect((authorizeAdmin.mock.calls[0] as unknown[])[1]).toBe('super_admin');
     expect(getSupabaseAdminFn).toHaveBeenCalled();
     expect(supabaseFrom).toHaveBeenCalledWith('subscriber_dead_letters');
   });

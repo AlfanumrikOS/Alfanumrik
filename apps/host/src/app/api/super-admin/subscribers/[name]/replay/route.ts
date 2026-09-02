@@ -87,7 +87,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ name: string }> },
 ) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'super_admin');
   if (!auth.authorized) return auth.response;
 
   const { name: rawName } = await context.params;
