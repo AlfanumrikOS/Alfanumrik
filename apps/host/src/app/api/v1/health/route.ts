@@ -1,8 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { cacheStats } from '@alfanumrik/lib/cache';
 import { SLO } from '@alfanumrik/lib/slo';
 import { getRedis } from '@alfanumrik/lib/redis';
+import { secureEqual } from '@alfanumrik/lib/secure-compare';
 
 /**
  * GET /api/v1/health
@@ -271,8 +272,30 @@ function getMemoryUsage(): { rss_mb: number; heap_used_mb: number; heap_total_mb
   }
 }
 
-export async function GET() {
+/**
+ * P2-7 fix (2026-09-02 launch audit): this endpoint is genuinely
+ * unauthenticated (uptime monitors, load balancer probes, and — critically —
+ * .github/workflows/deploy-production.yml's own post-deploy verification
+ * and rollback-SHA comparison all hit it with no admin secret). It was
+ * returning git SHA, Node version, region, memory (RSS/heap), cache size,
+ * and raw dependency-probe error TEXT to any caller. `version.git_sha`
+ * cannot move behind the secret — the deploy workflow parses
+ * `body.version.git_sha` directly, unauthenticated, at multiple steps
+ * (baseline capture, post-deploy health poll, rollback comparison); gating
+ * it would break the deploy pipeline, not just tighten this endpoint. Only
+ * the fields no external consumer needs (node_version, region, memory,
+ * cache size, SLO thresholds, and the raw error/detail strings from each
+ * dependency probe) move behind x-admin-secret.
+ */
+function hasValidAdminSecret(request: NextRequest): boolean {
+  const provided = request.headers.get('x-admin-secret');
+  const expected = process.env.SUPER_ADMIN_SECRET;
+  return Boolean(provided && expected && secureEqual(provided, expected));
+}
+
+export async function GET(request: NextRequest) {
   const requestStart = performance.now();
+  const includeDetail = hasValidAdminSecret(request);
 
   const [database, auth, edge_functions, redis, razorpay] = await Promise.all([
     checkDatabase(),
@@ -323,67 +346,87 @@ export async function GET() {
   const memory = getMemoryUsage();
   const cache = cacheStats();
 
+  // status-only view of a probe result for unauthenticated callers — strips
+  // latency_ms and any error/detail text (which can carry raw upstream
+  // error strings) without touching the fields deploy-production.yml and
+  // uptime monitors actually read (status/ok/git_sha).
+  const publicCheck = (c: CheckResult) => ({ status: c.status });
+  const publicDependency = (d: DependencyResult) => ({ status: d.status });
+
   const response = {
     ok,
     status,
     timestamp: new Date().toISOString(),
     response_time_ms: responseTimeMs,
 
+    // git_sha stays public unconditionally — deploy-production.yml parses
+    // body.version.git_sha with NO admin secret at multiple steps (baseline
+    // capture, post-deploy health poll, rollback-SHA comparison).
     version: {
       app: APP_VERSION,
       git_sha: GIT_SHA,
     },
 
-    environment: {
-      name: DEPLOY_ENV,
-      region: DEPLOY_REGION,
-      node_version: process.version || 'unknown',
-    },
+    environment: includeDetail
+      ? { name: DEPLOY_ENV, region: DEPLOY_REGION, node_version: process.version || 'unknown' }
+      : { name: DEPLOY_ENV },
 
-    uptime_seconds: uptimeSeconds,
+    ...(includeDetail ? { uptime_seconds: uptimeSeconds } : {}),
 
-    checks: {
-      database,
-      auth,
-    },
+    checks: includeDetail
+      ? { database, auth }
+      : { database: publicCheck(database), auth: publicCheck(auth) },
 
     // External dependency probes (Audit F21)
-    dependencies: {
-      edge_functions,
-      redis,
-      razorpay,
-    },
+    dependencies: includeDetail
+      ? { edge_functions, redis, razorpay }
+      : {
+          edge_functions: publicDependency(edge_functions),
+          redis: publicDependency(redis),
+          razorpay: publicDependency(razorpay),
+        },
 
     ...(ok ? {} : { unhealthy_components }),
 
-    // Memory usage (null if unavailable in Edge runtime)
-    memory,
+    // Memory usage — admin-secret only (internal resource fingerprinting).
+    ...(includeDetail ? { memory } : {}),
 
-    // In-memory cache stats
-    cache: {
-      entries: cache.size,
-    },
+    // In-memory cache stats — admin-secret only.
+    ...(includeDetail ? { cache: { entries: cache.size } } : {}),
 
-    // SLO thresholds for dashboard reference
-    slo: {
-      uptime_target: SLO.UPTIME_TARGET,
-      api_p95_latency_ms: SLO.API_P95_LATENCY_MS,
-      error_rate_threshold: SLO.ERROR_RATE_THRESHOLD,
-      health_check_interval_ms: SLO.HEALTH_CHECK_INTERVAL_MS,
-    },
+    // SLO thresholds — admin-secret only (no external consumer needs these).
+    ...(includeDetail
+      ? {
+          slo: {
+            uptime_target: SLO.UPTIME_TARGET,
+            api_p95_latency_ms: SLO.API_P95_LATENCY_MS,
+            error_rate_threshold: SLO.ERROR_RATE_THRESHOLD,
+            health_check_interval_ms: SLO.HEALTH_CHECK_INTERVAL_MS,
+          },
+        }
+      : {}),
   };
 
-  return NextResponse.json(response, {
-    status: 200,
-    headers: {
-      'Cache-Control': 'no-store, max-age=0',
-      'Server-Timing': [
+  // Per-dependency latency breakdown is also admin-secret only (Audit F21
+  // named "dependency latencies" explicitly as part of the leak) — the
+  // total stays public, useful for basic response-time monitoring.
+  const serverTiming = includeDetail
+    ? [
         `total;dur=${responseTimeMs}`,
         `db;dur=${database.latency_ms}`,
         `auth;dur=${auth.latency_ms}`,
         `edge;dur=${edge_functions.latency_ms}`,
         `redis;dur=${redis.latency_ms}`,
         `razorpay;dur=${razorpay.latency_ms}`,
+      ]
+    : [`total;dur=${responseTimeMs}`];
+
+  return NextResponse.json(response, {
+    status: 200,
+    headers: {
+      'Cache-Control': 'no-store, max-age=0',
+      'Server-Timing': [
+        ...serverTiming,
       ].join(', '),
     },
   });

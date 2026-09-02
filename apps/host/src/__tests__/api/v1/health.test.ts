@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { NextRequest } from 'next/server';
 
 // ── supabaseAdmin mock — DB + auth probes always succeed in this suite. ──
 vi.mock('@alfanumrik/lib/supabase-admin', () => {
@@ -82,9 +83,13 @@ afterEach(() => {
   }
 });
 
-async function callHealth() {
+function healthReq(headers: Record<string, string> = {}): NextRequest {
+  return new NextRequest('http://localhost/api/v1/health', { headers });
+}
+
+async function callHealth(headers: Record<string, string> = {}) {
   const mod = await import('@/app/api/v1/health/route');
-  return mod.GET();
+  return mod.GET(healthReq(headers));
 }
 
 describe('GET /api/v1/health — dependency probes', () => {
@@ -247,7 +252,7 @@ describe('GET /api/v1/health — dependency probes', () => {
       expect(res.status).toBe(200);
     });
 
-    it('returns Server-Timing header with all probe latencies', async () => {
+    it('returns ONLY the total in Server-Timing for an unauthenticated caller (P2-7)', async () => {
       _redisClient = { ping: async () => 'PONG', set: async () => 'OK' };
       setFetchResponse('/functions/v1/grounded-answer', () =>
         new Response('', { status: 200 }),
@@ -259,11 +264,88 @@ describe('GET /api/v1/health — dependency probes', () => {
       const res = await callHealth();
       const timing = res.headers.get('Server-Timing') || '';
       expect(timing).toMatch(/total;/);
+      expect(timing).not.toMatch(/db;/);
+      expect(timing).not.toMatch(/auth;/);
+      expect(timing).not.toMatch(/edge;/);
+      expect(timing).not.toMatch(/redis;/);
+      expect(timing).not.toMatch(/razorpay;/);
+    });
+
+    it('returns the full per-dependency Server-Timing breakdown with a valid x-admin-secret (P2-7)', async () => {
+      process.env.SUPER_ADMIN_SECRET = 'test-secret-value';
+      _redisClient = { ping: async () => 'PONG', set: async () => 'OK' };
+      setFetchResponse('/functions/v1/grounded-answer', () =>
+        new Response('', { status: 200 }),
+      );
+      setFetchResponse('api.razorpay.com', () =>
+        new Response('{}', { status: 404 }),
+      );
+
+      const res = await callHealth({ 'x-admin-secret': 'test-secret-value' });
+      const timing = res.headers.get('Server-Timing') || '';
+      expect(timing).toMatch(/total;/);
       expect(timing).toMatch(/db;/);
       expect(timing).toMatch(/auth;/);
       expect(timing).toMatch(/edge;/);
       expect(timing).toMatch(/redis;/);
       expect(timing).toMatch(/razorpay;/);
+      delete process.env.SUPER_ADMIN_SECRET;
+    });
+  });
+
+  describe('P2-7 — unauthenticated response redacts internals, keeps deploy-critical fields', () => {
+    it('omits memory, cache, slo, uptime_seconds, node_version/region, and per-check error/detail text for an unauthenticated caller', async () => {
+      _redisClient = { ping: async () => 'PONG', set: async () => 'OK' };
+      const res = await callHealth();
+      const body = await res.json();
+
+      // Deploy-critical / uptime-monitor fields MUST still be present —
+      // deploy-production.yml parses body.version.git_sha with no secret.
+      expect(typeof body.ok).toBe('boolean');
+      expect(typeof body.status).toBe('string');
+      expect(typeof body.timestamp).toBe('string');
+      expect(typeof body.version.git_sha).toBe('string');
+      expect(body.version.git_sha.length).toBeGreaterThan(0);
+      expect(body.checks.database.status).toBeDefined();
+      expect(body.checks.auth.status).toBeDefined();
+
+      // Internal/system-fingerprinting fields must be absent.
+      expect(body.memory).toBeUndefined();
+      expect(body.cache).toBeUndefined();
+      expect(body.slo).toBeUndefined();
+      expect(body.uptime_seconds).toBeUndefined();
+      expect(body.environment.node_version).toBeUndefined();
+      expect(body.environment.region).toBeUndefined();
+      expect(body.checks.database.latency_ms).toBeUndefined();
+      expect(body.checks.database.error).toBeUndefined();
+      expect(body.dependencies.redis.detail).toBeUndefined();
+      expect(body.dependencies.redis.latency_ms).toBeUndefined();
+    });
+
+    it('includes memory, cache, slo, and per-check detail when a valid x-admin-secret is presented', async () => {
+      process.env.SUPER_ADMIN_SECRET = 'test-secret-value';
+      _redisClient = { ping: async () => 'PONG', set: async () => 'OK' };
+      const res = await callHealth({ 'x-admin-secret': 'test-secret-value' });
+      const body = await res.json();
+
+      expect(body.memory === null || typeof body.memory === 'object').toBe(true);
+      expect(body.cache).toBeDefined();
+      expect(body.slo).toBeDefined();
+      expect(typeof body.uptime_seconds).toBe('number');
+      expect(body.environment.node_version).toBeDefined();
+      expect(body.environment.region).toBeDefined();
+      expect(typeof body.checks.database.latency_ms).toBe('number');
+      delete process.env.SUPER_ADMIN_SECRET;
+    });
+
+    it('does NOT leak details when the secret header is wrong', async () => {
+      process.env.SUPER_ADMIN_SECRET = 'test-secret-value';
+      _redisClient = { ping: async () => 'PONG', set: async () => 'OK' };
+      const res = await callHealth({ 'x-admin-secret': 'wrong-value' });
+      const body = await res.json();
+      expect(body.memory).toBeUndefined();
+      expect(body.checks.database.latency_ms).toBeUndefined();
+      delete process.env.SUPER_ADMIN_SECRET;
     });
   });
 });
