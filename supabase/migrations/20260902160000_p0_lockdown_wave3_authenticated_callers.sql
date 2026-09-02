@@ -44,20 +44,30 @@
 --     directly). Only the redundant PUBLIC grant is removed.
 --
 -- FOLLOW-UP FINDING (not fixed in this migration — flagged separately):
--- live inspection of these 21 function bodies found 11 with NO auth.uid()
--- check of any kind (get_board_exam_questions, get_chapter_rag_content,
--- get_competition_leaderboard, get_competitions, get_due_reviews,
--- get_hall_of_fame, get_leaderboard, get_ncert_coverage_report,
--- get_school_classes, get_school_students, get_school_teachers,
--- track_ai_quality, plus assert_seat_capacity and get_adaptive_questions
--- from group A above). Several take a raw p_school_id/p_student_id argument
--- with no ownership check, meaning ANY authenticated account can call them
--- directly via PostgREST with someone else's id and read their data,
--- independent of what the Next.js API route in front of them enforces.
--- This is a P8/P9 gap in the function bodies themselves, not a grant issue,
--- and needs a per-function correctness review (which callers are legitimate
--- non-self callers, e.g. a teacher reading their own school's roster) before
--- patching — tracked as a follow-up, not rushed into this grant-layer fix.
+-- live inspection of all 21 function bodies (correcting an initial overbroad
+-- read that flagged 11 by a plain `ilike '%auth.uid()%'` text search, which
+-- missed indirection through helper functions): get_school_classes/
+-- get_school_students/get_school_teachers ARE properly guarded via
+-- is_school_admin_of(p_school_id) (itself a NULL-safe auth.uid() check, same
+-- pattern as group B above); check_formative_answer and
+-- update_chapter_progress ARE properly guarded via inline NULL-safe
+-- auth.uid() checks; get_board_exam_questions, get_chapter_rag_content,
+-- get_competition_leaderboard, get_hall_of_fame, get_leaderboard,
+-- get_ncert_coverage_report, and track_ai_quality take no per-user/per-
+-- school id at all (content or aggregate-counter endpoints — no ownership
+-- boundary needed by design). Only THREE of the 21 have a genuine gap:
+-- assert_seat_capacity and get_adaptive_questions (group A, no auth.uid()
+-- check anywhere) and get_due_reviews (same). All three take a raw
+-- p_school_id/p_student_id argument with zero ownership verification, so
+-- once this migration lands, any authenticated account (not just anon) can
+-- still call them directly via PostgREST with someone else's id and read
+-- their seat-capacity/adaptive-question-queue/spaced-repetition data —
+-- independent of what the Next.js route in front of them enforces.
+-- get_competitions has a much lower-severity version of the same gap
+-- (discloses only join-status/score for an arbitrary student id). Fixing
+-- these needs a per-function ownership-check addition, verified against
+-- their real callers first — tracked as a follow-up, not rushed into this
+-- grant-layer fix.
 
 -- (A) revoke PUBLIC and anon; authenticated is untouched.
 REVOKE EXECUTE ON FUNCTION public.check_formative_answer     FROM PUBLIC, anon;
