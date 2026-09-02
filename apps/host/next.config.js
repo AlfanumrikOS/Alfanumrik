@@ -280,9 +280,20 @@ const nextConfig = {
         ],
       },
       {
+        // P2-11 fix (2026-09-02 launch audit): these are all authenticated,
+        // per-student-personalized pages — `public` told every intermediary
+        // cache (a school computer lab's proxy, an ISP cache) it's safe to
+        // serve the SAME cached response to a different user, and invited
+        // browser back-forward-cache reuse across a login/logout on a
+        // shared machine. `private` keeps the identical max-age/stale-
+        // while-revalidate caching benefit, scoped to the requesting
+        // browser's own cache only — matching the convention already used
+        // for equivalent authenticated content elsewhere in this codebase
+        // (school-admin reports API: 'private, max-age=60, stale-while-
+        // revalidate=120').
         source: '/(dashboard|foxy|quiz|progress|review|study-plan|leaderboard|simulations|profile|notifications|reports|scan|exams|help)',
         headers: [
-          { key: 'Cache-Control', value: 'public, max-age=60, stale-while-revalidate=300' },
+          { key: 'Cache-Control', value: 'private, max-age=60, stale-while-revalidate=300' },
         ],
       },
     ];
