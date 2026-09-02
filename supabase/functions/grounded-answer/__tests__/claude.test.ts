@@ -63,6 +63,17 @@ function installFetchStub(
 ) {
   let idx = 0;
   globalThis.fetch = ((url: string | URL, init?: RequestInit) => {
+    // P1-4 fix (2026-09-02): the terminal auth_error branches now call
+    // logOpsEvent(), which fetches SUPABASE_URL + '/rest/v1/ops_events'.
+    // That's an incidental side effect these tests aren't asserting on and
+    // predates none of the `responses` stubs below — short-circuit it here
+    // (not counted in `calls`, doesn't consume a `responses` slot) rather
+    // than teach every existing test about a fetch call it doesn't care
+    // about. logOpsEvent itself swallows any rejection, so any response
+    // shape is fine.
+    if (String(url).includes('/rest/v1/ops_events')) {
+      return Promise.resolve(new Response(null, { status: 200 }));
+    }
     const body = init?.body ? JSON.parse(init.body as string) : {};
     const call: FetchCall = { url: String(url), model: body.model };
     onCall?.(call);

@@ -573,6 +573,22 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
         (t.provider === 'openai' ? !!req.openaiApiKey : !!req.apiKey)
       );
       if (!hasAlternateProvider) {
+        // P1-4 fix (2026-09-02 launch audit): this was the ONE terminal path
+        // with zero ops_events logging in the whole file — every other
+        // failure kind ('unknown', unparseable body, network exception) logs
+        // via logOpsEvent above; this is the ONLY branch where ALL providers
+        // in the fallback chain are simultaneously auth-dead, i.e. Foxy is
+        // fully down for every student. That silence is why the 2026-08-26
+        // ANTHROPIC_API_KEY outage ran 5 days / 442 errors / 262 users before
+        // anyone noticed — nothing existed to alert on. severity:'critical'
+        // so alert-deliverer's default rule set fires on it.
+        await logOpsEvent({
+          category: 'ai',
+          source: 'grounded-answer',
+          severity: 'critical',
+          message: 'All AI providers in the fallback chain returned 401/403 — Foxy is down for every student',
+          context: { failedAttempts: failedAttempts.slice() },
+        });
         return { ok: false, reason: 'auth_error', failedAttempts: failedAttempts.slice() };
       }
       continue;
@@ -968,6 +984,23 @@ export async function* callClaudeStream(
         (t.provider === 'openai' ? !!req.openaiApiKey : !!req.apiKey)
       );
       if (result.firstTokenSent || !hasAlternateProvider) {
+        // P1-4 fix (2026-09-02 launch audit): mirrors the non-streaming
+        // callClaude fix above — this file's streaming path had the same
+        // zero-logging gap on the terminal auth_error branch. Only the
+        // !hasAlternateProvider case is a real all-providers outage
+        // (severity:'critical'); the firstTokenSent case is a normal
+        // mid-stream provider hiccup where a healthy alternate exists but
+        // cannot be used once tokens shipped to the browser — logged at
+        // 'warning' so it doesn't spam the same critical alert rule.
+        await logOpsEvent({
+          category: 'ai',
+          source: 'grounded-answer-stream',
+          severity: hasAlternateProvider ? 'warning' : 'critical',
+          message: hasAlternateProvider
+            ? 'Provider auth-failed mid-stream after first token; could not fall back to the alternate provider for this turn'
+            : 'All AI providers in the fallback chain returned 401/403 — Foxy streaming is down for every student',
+          context: { failedAttempts: failedAttempts.slice() },
+        });
         yield {
           type: 'final',
           ok: false,
