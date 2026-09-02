@@ -31,13 +31,25 @@ jobs:
     name: Unauthenticated probe (production)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # CATEGORY (i) — DELIBERATE ADVISORY. Audited 2026-07-28 and LEFT AS-IS.
-    # This IS a real P9 security gate (it probes deployed Edge Functions for
-    # unauthenticated access) and it currently CANNOT fail the workflow. That is
-    # intentional per the advisory-first rollout in the header: flip to `false`
-    # after 5 consecutive clean nightly runs. Flagged in the CI-gate audit as a
-    # known, time-boxed exception rather than an oversight — if the flip date has
-    # passed without action, that is the thing to fix, not this comment.
+    # SECURITY FIX (2026-09-02, P0-4/P1-8 launch audit): this job had no
+    # `environment:` key, so it could never see `secrets.SUPABASE_PROJECT_REF`
+    # (an environment secret scoped to the `production` GitHub Environment,
+    # not a repo secret) or SUPABASE_ACCESS_TOKEN from that scope. Every
+    # single nightly run since this workflow was added exited immediately
+    # with "CONFIG: SUPABASE_PROJECT_REF is required" (exit 2) — it never
+    # once actually sent a probe. `continue-on-error: true` painted every one
+    # of those config-error runs green, which is exactly how the previously
+    # "5 consecutive clean nightly runs" bar for flipping this flag was
+    # already satisfied without a single real probe ever executing. Live-
+    # verified via `gh run view --log` on the last 3 scheduled runs before
+    # this fix.
+    environment: production
+    # Advisory-first rollout, mirroring rag-eval.yml: keep `continue-on-error`
+    # true until this job has produced 5 consecutive CLEAN runs that actually
+    # executed the probe (verify via the step summary / logs, not just the
+    # green checkmark — see the comment above for why the checkmark alone is
+    # not sufficient evidence). Then flip to `false` so a regression (a
+    # function serving unauthenticated traffic) goes red loudly.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
