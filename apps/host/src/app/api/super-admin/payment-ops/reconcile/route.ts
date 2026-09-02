@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, type AdminAuth } from '@alfanumrik/lib/admin-auth';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
+import {
+  findStuckPayments as findStuckPaymentsShared,
+  reconcileStuckPayment,
+  type StuckPayment,
+} from '@alfanumrik/lib/reconcile-stuck-payments';
 
 /**
  * POST /api/super-admin/payment-ops/reconcile
@@ -9,99 +14,33 @@ import { logOpsEvent } from '@alfanumrik/lib/ops-events';
  * Fixes stuck payments by syncing student entitlements to match captured payments.
  *
  * Accepts either:
- *   { studentId, paymentId } — fix a single stuck payment
- *   { all: true }           — fix all stuck payments in batch
+ *   { studentId, paymentId, dryRun? } — preview or fix a single stuck payment
+ *   { all: true, dryRun? }            — preview or fix all stuck payments in batch
  *
- * For each stuck payment it:
- * 1. Updates students.subscription_plan to the payment's plan_code
- * 2. Updates students.subscription_expiry (+30d monthly, +365d yearly)
- * 3. Upserts student_subscriptions with status='active'
- * 4. Logs to ops_events and admin_audit_log
+ * dryRun:true (or the `all` path with no dryRun key defaulting to false — see
+ * below) returns what WOULD be reconciled without writing anything.
+ *
+ * P1-5 fix (2026-09-02 launch audit): this route used to run its own copy of
+ * the stuck-payment filter (no recency bound, no terminal-state guard, no
+ * latest-payment-per-student guard) and wrote via two independent raw
+ * UPDATE/UPSERT calls instead of the atomic activation RPC — it could
+ * resurrect a cancelled subscription or downgrade a student who had since
+ * upgraded. Now shares @alfanumrik/lib/reconcile-stuck-payments with the
+ * cron self-heal job and the /stuck preview route, and adds the dry-run
+ * mode called for in the audit's acceptance criteria.
  */
 
-interface StuckPayment {
-  id: string;
-  student_id: string;
-  plan_code: string;
-  billing_cycle: string;
-  razorpay_payment_id: string;
-  razorpay_order_id: string | null;
-  created_at: string;
-}
-
-/** Compute subscription expiry from payment date and billing cycle. */
-function computeExpiry(paymentCreatedAt: string, billingCycle: string): string {
-  const base = new Date(paymentCreatedAt);
-  const days = billingCycle === 'yearly' ? 365 : 30;
-  base.setDate(base.getDate() + days);
-  return base.toISOString();
-}
-
-/** Fix a single stuck payment: sync student plan + upsert subscription. */
+/** Fix a single stuck payment via the shared atomic RPC + audit trail. */
 async function reconcileOne(
   payment: StuckPayment,
   admin: AdminAuth,
   ipAddress: string | undefined,
 ): Promise<{ studentId: string; plan: string; ok: boolean; error?: string }> {
-  const expiry = computeExpiry(payment.created_at, payment.billing_cycle);
-
-  // 1. Update students.subscription_plan and subscription_expiry
-  const { error: studentErr } = await supabaseAdmin
-    .from('students')
-    .update({
-      subscription_plan: payment.plan_code,
-      subscription_expiry: expiry,
-    })
-    .eq('id', payment.student_id);
-
-  if (studentErr) {
-    return {
-      studentId: payment.student_id,
-      plan: payment.plan_code,
-      ok: false,
-      error: `students update failed: ${studentErr.message}`,
-    };
+  const result = await reconcileStuckPayment(supabaseAdmin, payment);
+  if (!result.ok) {
+    return { studentId: payment.student_id, plan: payment.plan_code, ok: false, error: result.error };
   }
 
-  // 2. Look up plan_id from subscription_plans
-  const { data: planRow } = await supabaseAdmin
-    .from('subscription_plans')
-    .select('id')
-    .eq('plan_code', payment.plan_code)
-    .limit(1)
-    .maybeSingle();
-
-  // 3. Upsert student_subscriptions (matches webhook fallback pattern: onConflict student_id)
-  const periodEnd = expiry;
-  const periodStart = payment.created_at;
-
-  const { error: subErr } = await supabaseAdmin
-    .from('student_subscriptions')
-    .upsert(
-      {
-        student_id: payment.student_id,
-        plan_id: planRow?.id ?? null,
-        plan_code: payment.plan_code,
-        status: 'active',
-        billing_cycle: payment.billing_cycle,
-        current_period_start: periodStart,
-        current_period_end: periodEnd,
-        razorpay_payment_id: payment.razorpay_payment_id,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'student_id' },
-    );
-
-  if (subErr) {
-    return {
-      studentId: payment.student_id,
-      plan: payment.plan_code,
-      ok: false,
-      error: `student_subscriptions upsert failed: ${subErr.message}`,
-    };
-  }
-
-  // 4. Log ops event
   await logOpsEvent({
     category: 'payment',
     source: 'payment-ops/reconcile',
@@ -114,12 +53,11 @@ async function reconcileOne(
       razorpay_payment_id: payment.razorpay_payment_id,
       plan_code: payment.plan_code,
       billing_cycle: payment.billing_cycle,
-      expiry,
       admin_name: admin.name,
+      reconciled_at_stamp_warning: result.error, // set only on the non-blocking stamp-failure path
     },
   });
 
-  // 5. Log admin audit
   await logAdminAudit(
     admin,
     'payment_reconcile',
@@ -130,7 +68,6 @@ async function reconcileOne(
       plan_code: payment.plan_code,
       billing_cycle: payment.billing_cycle,
       razorpay_payment_id: payment.razorpay_payment_id,
-      expiry,
     },
     ipAddress,
   );
@@ -138,32 +75,9 @@ async function reconcileOne(
   return { studentId: payment.student_id, plan: payment.plan_code, ok: true };
 }
 
-/** Find all stuck payments (same logic as the stuck detection route). */
+/** Find stuck payments (shared filter — no recency bound: a human reviews every match here). */
 async function findStuckPayments(): Promise<StuckPayment[]> {
-  const { data: capturedPayments, error: phError } = await supabaseAdmin
-    .from('payment_history')
-    .select('id, student_id, plan_code, billing_cycle, razorpay_payment_id, razorpay_order_id, created_at')
-    .eq('status', 'captured')
-    .order('created_at', { ascending: false });
-
-  if (phError || !capturedPayments || capturedPayments.length === 0) {
-    return [];
-  }
-
-  const studentIds = [...new Set(capturedPayments.map((p) => p.student_id))];
-  const { data: students } = await supabaseAdmin
-    .from('students')
-    .select('id, subscription_plan')
-    .in('id', studentIds);
-
-  const studentMap = new Map((students || []).map((s) => [s.id, s]));
-
-  return capturedPayments.filter((p) => {
-    const student = studentMap.get(p.student_id);
-    if (!student) return true;
-    const currentPlan = student.subscription_plan;
-    return !currentPlan || currentPlan === 'free' || currentPlan !== p.plan_code;
-  }) as StuckPayment[];
+  return findStuckPaymentsShared(supabaseAdmin);
 }
 
 export async function POST(request: NextRequest) {
@@ -173,8 +87,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const ipAddress = request.headers.get('x-forwarded-for') || undefined;
+    const dryRun = body.dryRun === true;
 
-    // Single reconciliation: { studentId, paymentId }
+    // Single reconciliation: { studentId, paymentId, dryRun? }
     if (body.studentId && body.paymentId) {
       const { data: payment, error: payErr } = await supabaseAdmin
         .from('payment_history')
@@ -189,6 +104,18 @@ export async function POST(request: NextRequest) {
           { success: false, error: 'Payment not found or not in captured status' },
           { status: 404 },
         );
+      }
+
+      // dryRun: report the payment as a candidate WITHOUT checking it against
+      // the shared safety guards (recency/terminal-state/latest-per-student)
+      // — the admin explicitly named this exact payment, so those guards
+      // apply at write time (findStuckPayments below, for the {all} path)
+      // rather than gating what a preview can even show for a single id.
+      if (dryRun) {
+        return NextResponse.json({
+          success: true,
+          data: { wouldReconcile: 1, dryRun: true, results: [payment] },
+        });
       }
 
       const result = await reconcileOne(payment as StuckPayment, auth, ipAddress);
@@ -206,7 +133,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Batch reconciliation: { all: true }
+    // Batch reconciliation: { all: true, dryRun? }
     if (body.all === true) {
       const stuckPayments = await findStuckPayments();
 
@@ -214,6 +141,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           data: { reconciled: 0, results: [], message: 'No stuck payments found' },
+        });
+      }
+
+      if (dryRun) {
+        return NextResponse.json({
+          success: true,
+          data: { wouldReconcile: stuckPayments.length, dryRun: true, results: stuckPayments },
         });
       }
 
