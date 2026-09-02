@@ -68,7 +68,14 @@ const TIMEOUT_MS = Number(process.env.SWEEP_TIMEOUT_MS || 15000);
  */
 const PUBLIC_BY_DESIGN = new Set([
   'alfabot-answer', // marketing-site bot; admitAiRoute + alfabot_denylist + rate limits
-  'alfabot-send-inquiry', // marketing-site lead capture; validated + rate limited
+  // alfabot-send-inquiry REMOVED 2026-09-02 (P0-4 launch audit): it is NOT
+  // public-by-design — its own docstring says "service-role-only" — it was
+  // only listed here because its auth check was broken (decoded an unsigned
+  // JWT payload instead of verifying a real bearer secret; live-confirmed
+  // forgeable). Now fixed to constant-time-compare against
+  // SUPABASE_SERVICE_ROLE_KEY (matching send-transactional-email et al.), so
+  // it correctly returns 401 to this probe's anonymous POST and needs no
+  // exemption.
 ]);
 
 /**

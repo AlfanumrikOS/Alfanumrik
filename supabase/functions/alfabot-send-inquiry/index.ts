@@ -28,6 +28,9 @@ import { edgeLog, getRequestId, type EdgeLogContext } from '../_shared/edge-audi
 import { getCorsHeaders } from '../_shared/cors.ts'
 import { hasEmailTransportConfig, sendEmail } from '../_shared/relay-mailer.ts'
 import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
+import { checkBearerToken } from '../_shared/auth.ts'
+
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
 // ─── Hardcoded recipient ─────────────────────────────────────────────────────
 // CHANGE THIS LINE to re-route AlfaBot inquiries. Single source of truth.
@@ -251,38 +254,27 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ ok: false, error: 'method_not_allowed' }, 405, origin)
   }
 
-  // ── Auth: require a Supabase service-role JWT ──
-  // Strict-equality against env-SRK was brittle (key rotations / multi-env
-  // mismatches caused 401s). We now decode the bearer JWT and check the
-  // `role` claim — same security model as the rest of the AI Edge Functions
-  // in this repo. The Supabase platform also validates the JWT signature
-  // upstream before our code runs, so unsigned bearers can never reach here.
-  const authHeader = req.headers.get('Authorization') ?? ''
-  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
-  if (!bearer) {
-    logEvent(context, 'alfabot_inquiry.unauthorized', 'denied', { reason: 'no_bearer' })
+  // ── Auth: require a Supabase service-role bearer token ──
+  // SECURITY FIX (2026-09-02, P0-4 launch audit): this used to base64-decode
+  // the bearer's JWT *payload* and trust whatever `role` claim it carried,
+  // on the premise that "the Supabase platform validates the JWT signature
+  // upstream before our code runs." That premise is false for this function
+  // — it is deployed with `--no-verify-jwt` (see deploy-production.yml),
+  // like every function in this repo except daily-cron's gateway override.
+  // A trivially forged unsigned token (`{"alg":"none"}.{"role":"service_role"}.`)
+  // decoded to role=service_role and passed. Live-confirmed 2026-09-02: a
+  // forged token cleared this check and was stopped only by body validation.
+  // Constant-time comparison against the real env secret (same pattern as
+  // send-transactional-email, send-renewal-reminder, invoice-generator in
+  // this same repo) is the correct check — a JWT's payload is attacker-
+  // readable and attacker-writable; only its signature (which nothing here
+  // verifies) or a real shared-secret comparison proves anything.
+  const authHeader = req.headers.get('Authorization')
+  if (!SERVICE_ROLE_KEY || !checkBearerToken(authHeader, SERVICE_ROLE_KEY)) {
+    logEvent(context, 'alfabot_inquiry.unauthorized', 'denied', { reason: 'bad_bearer' })
     return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
   }
-  const parts = bearer.split('.')
-  if (parts.length !== 3) {
-    logEvent(context, 'alfabot_inquiry.unauthorized', 'denied', { reason: 'bad_jwt_shape' })
-    return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
-  }
-  let role = ''
-  try {
-    // base64url decode the JWT payload (middle segment)
-    const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((parts[1].length + 3) % 4)
-    const decoded = JSON.parse(atob(padded)) as { role?: string }
-    role = String(decoded.role ?? '')
-  } catch {
-    logEvent(context, 'alfabot_inquiry.unauthorized', 'denied', { reason: 'jwt_decode_failed' })
-    return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
-  }
-  context.role = role || 'unknown'
-  if (role !== 'service_role') {
-    logEvent(context, 'alfabot_inquiry.unauthorized', 'denied', { reason: 'role_not_service', role })
-    return jsonResponse({ ok: false, error: 'unauthorized' }, 401, origin)
-  }
+  context.role = 'service_role'
 
   // ── Parse + validate body ──
   let raw: unknown
