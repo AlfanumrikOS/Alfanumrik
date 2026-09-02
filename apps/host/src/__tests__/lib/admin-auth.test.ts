@@ -42,6 +42,16 @@ vi.mock('@alfanumrik/lib/logger', () => ({
   },
 }));
 
+// P1-10: ff_admin_aal2_enforcement_v1 defaults OFF everywhere in this file
+// (matching the flag's real seeded default) so existing fixtures — most of
+// which use admin_level 'admin'/'super_admin' — stay byte-identical to
+// pre-P1-10 behavior: no extra network fetch, no ADMIN_MFA_REQUIRED denial.
+// See admin-auth-aal2.test.ts for the dedicated coverage of the flag-ON path.
+const _isFeatureEnabled = vi.fn().mockResolvedValue(false);
+vi.mock('@alfanumrik/lib/feature-flags', () => ({
+  isFeatureEnabled: (...args: unknown[]) => _isFeatureEnabled(...args),
+}));
+
 import {
   requireAdminSecret,
   isValidUUID,
