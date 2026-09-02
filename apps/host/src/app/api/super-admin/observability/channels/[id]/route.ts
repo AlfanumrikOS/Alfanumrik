@@ -56,7 +56,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   const { id } = await params;
@@ -119,7 +119,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   const { id } = await params;

@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
 // ── POST — Run monitors on demand ───────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   const ip = getIp(request);

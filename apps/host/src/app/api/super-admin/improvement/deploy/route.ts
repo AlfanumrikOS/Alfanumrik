@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
 // ── POST — Deploy an approved execution ─────────────────────────
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   const supabase = getSupabaseAdmin();
@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
 // ── PATCH — Rollback a deployed execution ───────────────────────
 
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   const supabase = getSupabaseAdmin();

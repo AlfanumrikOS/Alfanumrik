@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
 // ─── PATCH ──────────────────────────────────────────────────────────────────
 
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   try {

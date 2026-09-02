@@ -221,7 +221,7 @@ async function getDashboard(supabase: ReturnType<typeof getSupabaseAdmin>) {
 // ── POST ─────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   const supabase = getSupabaseAdmin();
@@ -381,7 +381,7 @@ async function createExecution(
 // ── PATCH ────────────────────────────────────────────────────────
 
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request, 'support');
+  const auth = await authorizeAdmin(request, 'admin');
   if (!auth.authorized) return auth.response;
 
   const supabase = getSupabaseAdmin();
