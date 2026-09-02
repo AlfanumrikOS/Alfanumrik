@@ -75,9 +75,22 @@ async function writeSkillThetas(): Promise<WriteSkillThetasResult> {
 
   // 1. Learning-objective maps: code → id (primary), and
   //    subject|grade|chapter → id[] (fallback). One read, reused for all students.
+  //
+  // SECURITY/RELIABILITY FIX (2026-09-02, P1-3 launch audit): this used to
+  // embed `subjects!inner(code)` through `chapters`, but `chapters` carries
+  // TWO foreign keys into `subjects` (chapters_subject_id_fkey via
+  // subject_id, and fk_chapters_subject_code via subject_code) — live-
+  // confirmed via pg_constraint. PostgREST can't pick one automatically, so
+  // every run failed with "more than one relationship was found for
+  // 'chapters' and 'subjects'" and this cron has not completed successfully
+  // since 2026-08-06 (Vercel runtime-error log, 7 occurrences, last
+  // 2026-09-02 02:50 UTC). Fix: chapters.subject_code already IS the
+  // subject code (live-confirmed: populated on all 551 rows) — read it
+  // directly and drop the nested subjects embed entirely, which removes the
+  // ambiguity at its root instead of picking one FK name to disambiguate.
   const { data: loRows, error: loError } = await supabaseAdmin
     .from('learning_objectives')
-    .select('id, code, chapters!inner(grade, chapter_number, subjects!inner(code))');
+    .select('id, code, chapters!inner(grade, chapter_number, subject_code)');
   if (loError) throw new Error(`learning_objectives read failed: ${loError.message}`);
 
   const loByCode = new Map<string, string>();
@@ -87,14 +100,13 @@ async function writeSkillThetas(): Promise<WriteSkillThetasResult> {
       id: string;
       code: string;
       chapters:
-        | { grade: string; chapter_number: number; subjects: { code: string } | { code: string }[] }
-        | { grade: string; chapter_number: number; subjects: { code: string } | { code: string }[] }[];
+        | { grade: string; chapter_number: number; subject_code: string | null }
+        | { grade: string; chapter_number: number; subject_code: string | null }[];
     };
     if (typeof lo.code === 'string' && lo.code) loByCode.set(lo.code, lo.id);
     const ch = Array.isArray(lo.chapters) ? lo.chapters[0] : lo.chapters;
-    const subj = ch ? (Array.isArray(ch.subjects) ? ch.subjects[0] : ch.subjects) : null;
-    if (ch && subj?.code) {
-      const key = `${subj.code}|${ch.grade}|${ch.chapter_number}`;
+    if (ch && ch.subject_code) {
+      const key = `${ch.subject_code}|${ch.grade}|${ch.chapter_number}`;
       const list = losByChapter.get(key) ?? [];
       list.push(lo.id);
       losByChapter.set(key, list);
