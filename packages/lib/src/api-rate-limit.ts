@@ -7,6 +7,7 @@
  */
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
+import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 
 export interface ApiRateLimitResult {
   allowed: boolean;
@@ -122,9 +123,36 @@ export async function checkApiRateLimit(
         remaining: result.remaining,
         resetAt: Math.ceil(result.reset / 1000),
       };
-    } catch {
+    } catch (err) {
+      // P1-11 fix (2026-09-02 launch audit): a Redis outage silently
+      // dropped every caller to the in-memory fallback with no signal —
+      // that fallback is process-local (not shared across Vercel
+      // instances/regions), so an abuse-prone unauthenticated route like
+      // /api/schools/trial effectively loses its real rate limit for the
+      // duration, unnoticed. Fire-and-forget (severity:'warning', matching
+      // this module's own hot-path latency contract) so a sustained outage
+      // is visible without adding latency to every degraded request.
+      void logOpsEvent({
+        category: 'infra',
+        source: 'api-rate-limit',
+        severity: 'warning',
+        message: 'Upstash Redis rate limiter call failed — falling back to process-local in-memory limiting',
+        context: { reason: 'call_failed', error: err instanceof Error ? err.message : String(err) },
+      });
       // Redis unavailable -- fall through to in-memory
     }
+  } else if (redis === null && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    // Env vars present but client construction itself failed at module load
+    // (see the try/catch around `new Redis(...)` above) — a persistent
+    // config problem, not a transient blip, but still fire-and-forget here
+    // since this function is on the hot path for every unauthenticated call.
+    void logOpsEvent({
+      category: 'infra',
+      source: 'api-rate-limit',
+      severity: 'warning',
+      message: 'Upstash Redis client failed to initialize despite configured credentials — every call is running on the in-memory fallback',
+      context: { reason: 'client_construction_failed' },
+    });
   }
   return checkLocal(keyId, limit, windowMs);
 }
