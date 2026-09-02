@@ -55,6 +55,7 @@ import { logAudit } from '@alfanumrik/lib/rbac';
 import { isFeatureEnabled, PRINCIPAL_AI_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { authorizeSchoolAdmin } from '@alfanumrik/lib/school-admin-auth';
 import { callClaude, isCircuitBreakerOpen } from '@alfanumrik/lib/ai/clients/claude';
+import { neutralizeInjectionAttempt } from '@alfanumrik/lib/ai/validation/input-guard';
 import {
   buildContextSection,
   buildPrincipalAiSystemPrompt,
@@ -258,6 +259,18 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
+  // P1-6 fix (2026-09-02 launch audit): neutralize assistant-directed
+  // prompt-injection overrides before this message reaches Claude — mirrors
+  // /api/foxy's exact pattern (packages/lib/src/ai/validation/input-guard.ts).
+  // `message` (original) is still what gets persisted via persistUserMessage
+  // below; `safeMessage` is what goes into the prompt as the user turn.
+  const injectionGuard = neutralizeInjectionAttempt(message);
+  const safeMessage = injectionGuard.text;
+  if (injectionGuard.neutralized) {
+    // P13: boolean/category only — never the admin's message text.
+    logger.warn('principal_ai.input.injection_neutralized', { schoolId, role });
+  }
+
   // 4. Daily cap per school-admin (server-side, P12). We count the principal's
   //    OWN user-role turns persisted today across this school.
   //
@@ -351,7 +364,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   // 9. Build the scope-locked system prompt + native history.
   const systemPrompt = buildPrincipalAiSystemPrompt({ contextSection, lang });
   const history = await loadHistory(sessionId, userRowId);
-  const messages: PrincipalAiTurn[] = [...history, { role: 'user', content: message }];
+  const messages: PrincipalAiTurn[] = [...history, { role: 'user', content: safeMessage }];
 
   // 10. Call Claude via the unified client (model fallback + circuit breaker +
   //     model provenance). NEVER throw on upstream failure → graceful abstain.
