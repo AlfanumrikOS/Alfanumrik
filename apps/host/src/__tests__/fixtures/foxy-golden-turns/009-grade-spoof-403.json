@@ -24,6 +24,22 @@
     {
       "table": "students",
       "op": "select"
+    },
+    {
+      "table": "ops_events",
+      "op": "insert",
+      "patchKeys": [
+        "category",
+        "context",
+        "environment",
+        "message",
+        "occurred_at",
+        "request_id",
+        "severity",
+        "source",
+        "subject_id",
+        "subject_type"
+      ]
     }
   ]
 }

@@ -67,11 +67,16 @@ const FORBIDDEN_RPCS = ['atomic_quiz_profile_update', 'submit_quiz_results'] as 
 //     foxy_ask). These are telemetry only — NOT XP, mastery, or any business
 //     state. The forbidden-mastery-table + forbidden-RPC assertions below remain
 //     the real wall (a math turn still grants 0 XP and moves 0 mastery).
+//   - ops_events: fire-and-forget observability write from the P1-9
+//     observe-only consent-enforcement check (2026-09-02) — logs whether
+//     full enforcement WOULD deny this turn, never blocks it. Same
+//     telemetry-only category as system_metrics/learning_events above.
 const ALLOWED_WRITE_TABLES = [
   'foxy_sessions',
   'foxy_chat_messages',
   'system_metrics',
   'learning_events',
+  'ops_events',
 ] as const;
 
 beforeEach(() => {
