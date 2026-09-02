@@ -61,6 +61,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import {
   logLearningEvent,
   logSystemMetric,
@@ -835,7 +836,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   try {
     const { data: studentRow } = await supabaseAdmin
       .from('students')
-      .select('subscription_plan, account_status, academic_goal, name, grade, onboarding_completed, school_id')
+      .select('subscription_plan, account_status, academic_goal, name, grade, onboarding_completed, school_id, date_of_birth, created_at')
       .eq('id', studentId)
       .single();
     const enrollmentScope = resolveFoxyEnrollmentScope(studentRow ?? null);
@@ -854,6 +855,53 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     if (studentRow?.account_status === 'suspended') {
       return errorJson('Your account is suspended.', 'Aapka account suspend hai.', 403);
     }
+
+    // P1-9 fix (2026-09-02 launch audit, SOFT-LAUNCH mode — CEO-approved
+    // 2026-09-02): parental consent is recorded (parental_consent table,
+    // is_ai_processing_consented RPC) but was never actually checked before
+    // AI processing anywhere in the codebase — is_ai_processing_consented
+    // had zero callers. Live data at the time of this fix: 0 of 75 students
+    // have ANY parental_consent row, and parent accounts are a separate,
+    // optional signup role never required during student onboarding —
+    // hard-enforcing today would block Foxy for nearly every new student
+    // with no path forward, since nothing currently drives a parent to
+    // /parent/consent. So this is OBSERVE-ONLY: it logs what full
+    // enforcement WOULD deny, without denying anything, so the real blast
+    // radius is known before any future PR flips this to a hard block.
+    // Fire-and-forget (no request latency impact) — DOES NOT gate the
+    // response. `date_of_birth` is null for ~99% of students today, so
+    // "under 18" is approximated as "not proven to be an adult" (missing
+    // DOB counts as presumptively a minor) rather than skipped — this K-12
+    // platform's population is grades 6-12, overwhelmingly minors, and
+    // treating unknown-age as adult would silently undercount every
+    // no-DOB student. P13: no per-student identifier logged, only a
+    // day-bucketed signup date, so this cannot be correlated back to a
+    // specific student from the ops_events row alone.
+    void (async () => {
+      try {
+        const dob = studentRow?.date_of_birth as string | null | undefined;
+        const isPresumedMinor = !dob || (Date.now() - new Date(dob).getTime()) < 18 * 365.25 * 24 * 60 * 60 * 1000;
+        if (!isPresumedMinor) return;
+        const { data: consented } = await supabaseAdmin.rpc('is_ai_processing_consented', {
+          p_student_id: studentId,
+          p_purpose: 'ai_inference',
+        });
+        if (consented === true) return;
+        const createdAt = studentRow?.created_at as string | undefined;
+        await logOpsEvent({
+          category: 'consent',
+          source: 'foxy',
+          severity: 'info',
+          message: 'Would deny under full P1-9 consent enforcement (observe-only, not blocking)',
+          context: {
+            account_created_date: createdAt ? createdAt.slice(0, 10) : null,
+            dob_on_file: Boolean(dob),
+          },
+        });
+      } catch {
+        // Never let the observability check affect the request.
+      }
+    })();
   } catch { /* Non-fatal — use default free plan */ }
 
   // P12 grade-spoof HARD BLOCK. Runs after the students fetch resolves and

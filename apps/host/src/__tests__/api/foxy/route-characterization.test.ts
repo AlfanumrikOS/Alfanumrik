@@ -209,6 +209,13 @@ const _rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 // route derives remaining = max(0, planLimit - used_count).
 let _quotaRow: { allowed: boolean; used_count: number } = { allowed: true, used_count: 1 };
 let _planLimit = 10; // get_plan_limit('foxy_chat') return for these tests
+// Name-scoped error injection for the quota RPC specifically — NOT
+// mockImplementationOnce, which intercepts "the next .rpc() call" of ANY
+// name. The route also fires an unrelated, fire-and-forget
+// is_ai_processing_consented RPC (P1-9, observe-only consent check) earlier
+// in the request than the quota check, so "the next call" is no longer
+// reliably the quota check.
+let _forceQuotaCheckError = false;
 // Union of the RPC success-shape (data row[] / scalar limit / error null) and the
 // error-shape (data null / error {message}) so the over-limit + DB-error branches
 // are assignable to the same mock signature.
@@ -219,6 +226,7 @@ type RpcResult = {
 const rpcImpl = vi.fn((name: string, args: Record<string, unknown>): Promise<RpcResult> => {
   _rpcCalls.push({ name, args });
   if (name === 'check_and_record_usage') {
+    if (_forceQuotaCheckError) return Promise.resolve({ data: null, error: { message: 'db down' } });
     return Promise.resolve({ data: [_quotaRow], error: null });
   }
   if (name === 'get_plan_limit') {
@@ -257,6 +265,7 @@ beforeEach(() => {
   _rpcCalls.length = 0;
   _quotaRow = { allowed: true, used_count: 1 };
   _planLimit = 10;
+  _forceQuotaCheckError = false;
   // Default: enrolled grade '8', free plan, onboarding completed — claimed
   // grade '8' so the grade-spoof block never fires unless a test wants it.
   _studentRow = {
@@ -384,10 +393,7 @@ describe('GAP 1 — quota boundary: remaining arithmetic + allow/deny (free, lim
   });
 
   it('RPC error short-circuits to deny (429), never serves an answer', async () => {
-    rpcImpl.mockImplementationOnce((name: string, args: Record<string, unknown>) => {
-      _rpcCalls.push({ name, args });
-      return Promise.resolve({ data: null, error: { message: 'db down' } });
-    });
+    _forceQuotaCheckError = true;
     const { res } = await postFoxy(body());
     expect(res.status).toBe(429);
     expect(_callGroundedAnswer).not.toHaveBeenCalled();
