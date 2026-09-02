@@ -207,6 +207,44 @@ let redisAdminLimiter: RatelimitType | null = null;
 let upstashInitPromise: Promise<void> | null = null;
 let upstashInitialized = false;
 
+// P2-6 fix (2026-09-02 launch audit — same underlying issue as P1-11's
+// api-rate-limit.ts fix, PR #1708, but this is a THIRD, independent
+// Redis+fallback implementation: the middleware's own general/parent/admin
+// limiters). This is the hottest path in the app (proxy() runs on every
+// request), so this is a raw, self-contained, best-effort fire-and-forget
+// fetch — NOT the Node-only @alfanumrik/lib/ops-events helper, which
+// imports Node's `crypto` and would not resolve in the Edge runtime this
+// file executes in. Never awaited by any caller; a dropped event on an
+// unlucky Edge worker recycle is an acceptable trade-off for a low-stakes
+// observability signal on the single hottest path in the app.
+function logRedisFallbackEvent(reason: 'client_construction_failed' | 'call_failed', errorMessage?: string): void {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceKey) return;
+    void fetch(`${supabaseUrl}/rest/v1/ops_events`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({
+        occurred_at: new Date().toISOString(),
+        category: 'infra',
+        source: 'proxy-middleware',
+        severity: 'warning',
+        message: 'Upstash Redis middleware rate limiter falling back to in-memory limiting',
+        context: { reason, error: errorMessage ?? null },
+        environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'production',
+      }),
+    }).catch(() => {});
+  } catch {
+    // Never let the observability call affect the request.
+  }
+}
+
 async function ensureUpstash(): Promise<void> {
   if (upstashInitialized) return;
   if (upstashInitPromise) return upstashInitPromise;
@@ -226,12 +264,19 @@ async function ensureUpstash(): Promise<void> {
         redisParentLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_PARENT_MAX, '1 m'), prefix: 'rl:parent' });
         redisAdminLimiter = new Ratelimit({ redis: redisClient, limiter: Ratelimit.slidingWindow(RATE_LIMIT_ADMIN_MAX, '1 m'), prefix: 'rl:admin' });
       }
-    } catch {
+    } catch (err) {
       // Redis initialization failed (invalid URL, module load, etc.) — fall back to in-memory
       redisClient = null;
       redisRateLimiter = null;
       redisParentLimiter = null;
       redisAdminLimiter = null;
+      // Only alert when creds WERE present (a real misconfiguration) — not
+      // when Redis is simply not configured at all, which is optional infra
+      // and the expected state in dev/CI (see api-rate-limit.ts's identical
+      // reasoning).
+      if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+        logRedisFallbackEvent('client_construction_failed', err instanceof Error ? err.message : String(err));
+      }
     } finally {
       upstashInitialized = true;
     }
@@ -278,8 +323,9 @@ async function checkRateLimit(key: string, max: number, type: 'general' | 'paren
     try {
       const result = await limiter.limit(key);
       return { allowed: result.success, remaining: result.remaining };
-    } catch {
+    } catch (err) {
       // Redis unavailable — fall back to in-memory
+      logRedisFallbackEvent('call_failed', err instanceof Error ? err.message : String(err));
       return checkRateLimitLocal(key, max);
     }
   }

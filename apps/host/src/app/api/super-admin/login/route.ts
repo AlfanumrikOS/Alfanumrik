@@ -37,6 +37,7 @@ import { validateBody } from '@alfanumrik/lib/validation';
 import { logAdminAuditByUserId } from '@alfanumrik/lib/admin-auth';
 import { checkLockout, recordLoginAttempt, LOCKOUT_CONSTANTS } from '@alfanumrik/lib/admin-login-throttle';
 import { logger } from '@alfanumrik/lib/logger';
+import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { createServerClient } from '@supabase/ssr';
 
 const loginSchema = z.object({
@@ -58,8 +59,23 @@ try {
       prefix: 'rl:adminlogin:ip',
     });
   }
-} catch {
+} catch (err) {
   ipLimiter = null;
+  // P2-6 fix (2026-09-02 launch audit): a persistent construction failure
+  // despite configured credentials — a real misconfiguration, not simply
+  // "Redis not configured" (which is optional infra, see api-rate-limit.ts's
+  // identical reasoning). Every subsequent admin-login POST runs on the
+  // in-memory fallback until redeploy, so this is worth a single alert at
+  // module load rather than per-request noise.
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    void logOpsEvent({
+      category: 'infra',
+      source: 'super-admin-login',
+      severity: 'warning',
+      message: 'Upstash Redis client failed to initialize for admin-login IP limiter despite configured credentials',
+      context: { reason: 'client_construction_failed', error: err instanceof Error ? err.message : String(err) },
+    });
+  }
 }
 
 // In-memory IP rate limit fallback (process-local, ~10 attempts / 5 min)
@@ -107,6 +123,17 @@ export async function POST(request: NextRequest) {
       }
     } catch (e) {
       logger.warn('admin_login_ip_limiter_failed', { ip, error: e instanceof Error ? e.message : String(e) });
+      // P2-6 fix: logger.warn only reaches console/structured logs, not the
+      // alert_rules pipeline — this call falls back to the in-memory IP
+      // limiter (not shared across instances) with no way to see it short
+      // of grepping logs. Fire-and-forget, matches api-rate-limit.ts.
+      void logOpsEvent({
+        category: 'infra',
+        source: 'super-admin-login',
+        severity: 'warning',
+        message: 'Upstash Redis call failed for admin-login IP limiter — falling back to in-memory limiting',
+        context: { reason: 'call_failed', error: e instanceof Error ? e.message : String(e) },
+      });
     }
   } else if (!checkIpLocal(ip)) {
     return NextResponse.json(
