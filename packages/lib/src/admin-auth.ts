@@ -15,6 +15,43 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@alfanumrik/lib/logger';
 import { secureEqual } from '@alfanumrik/lib/secure-compare';
 import { getUserPermissions, type UserPermissions } from '@alfanumrik/lib/rbac';
+import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
+
+/**
+ * P1-10 (2026-09-02 launch audit). GoTrue has TOTP enrollment available but
+ * nothing required a verified second factor for admin/super_admin sessions —
+ * a phished or reused password alone was sufficient for full learner-PII
+ * access and impersonation. Flag defaults OFF: as of this fix, 0 of 3 active
+ * super_admin accounts have ANY MFA factor enrolled, so enforcing
+ * immediately would lock out every admin. Enrollment page:
+ * /super-admin/enroll-mfa (client-side supabase.auth.mfa.enroll/challenge/
+ * verify — GoTrue-native, no custom backend). Flip this ON only after the
+ * admin/super_admin population has enrolled.
+ */
+export const ADMIN_AAL2_ENFORCEMENT_FLAG = 'ff_admin_aal2_enforcement_v1';
+
+/**
+ * Reads the `aal` (Authenticator Assurance Level) claim from an ALREADY
+ * GoTrue-VERIFIED access token. This is NOT the alfabot-send-inquiry
+ * anti-pattern (decoding a JWT's payload and trusting it for an auth
+ * decision WITHOUT ever checking its signature) — by the time this is
+ * called, the same token has already been round-tripped through GoTrue's
+ * `/auth/v1/user` endpoint and GoTrue confirmed it valid (see the
+ * `candidates` loop above). This only reads metadata out of a token whose
+ * authenticity is already established; it grants no authority of its own.
+ * Never call this on a token that has not just passed that check.
+ */
+function readAalClaimFromVerifiedToken(accessToken: string): 'aal1' | 'aal2' | null {
+  try {
+    const parts = accessToken.split('.');
+    if (parts.length !== 3) return null;
+    const payloadJson = Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const payload = JSON.parse(payloadJson) as { aal?: string };
+    return payload.aal === 'aal2' ? 'aal2' : payload.aal === 'aal1' ? 'aal1' : null;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -316,6 +353,7 @@ export async function authorizeAdmin(
 
     // Verify candidates with Supabase GoTrue; first valid one wins.
     let userData: { id?: string; email?: string } | null = null;
+    let verifiedAccessToken: string | null = null;
     let denial: AdminAuthFailure | null = null;
     for (const candidate of candidates) {
       const userRes = await fetch(`${url}/auth/v1/user`, {
@@ -334,6 +372,7 @@ export async function authorizeAdmin(
       }
 
       userData = parsed;
+      verifiedAccessToken = candidate;
       break;
     }
 
@@ -379,6 +418,38 @@ export async function authorizeAdmin(
           { status: 403 },
         ),
       };
+    }
+
+    // P1-10 (2026-09-02 launch audit): require a verified second factor for
+    // admin_level 'admin' and above — THIS admin's own level, independent of
+    // requiredLevel, so e.g. a super_admin hitting a support-tier route still
+    // needs aal2. Flag-gated (default OFF, see ADMIN_AAL2_ENFORCEMENT_FLAG's
+    // doc comment) — until the flag is flipped on, this check never runs and
+    // authorizeAdmin's behavior is byte-identical to before this fix.
+    if (hasMinimumLevel(admin.admin_level, 'admin')) {
+      const aal2Enforced = await isFeatureEnabled(ADMIN_AAL2_ENFORCEMENT_FLAG, { role: 'admin', userId });
+      if (aal2Enforced) {
+        const aal = verifiedAccessToken ? readAalClaimFromVerifiedToken(verifiedAccessToken) : null;
+        if (aal !== 'aal2') {
+          logger.warn('admin_auth_aal2_required', {
+            userId,
+            adminLevel: admin.admin_level,
+            aal: aal ?? 'unknown',
+            route: new URL(request.url).pathname,
+          });
+          return {
+            authorized: false,
+            response: NextResponse.json(
+              {
+                error: 'This account requires two-factor authentication. Enroll or verify a second factor to continue.',
+                code: 'ADMIN_MFA_REQUIRED',
+                enroll_url: '/super-admin/enroll-mfa',
+              },
+              { status: 403 },
+            ),
+          };
+        }
+      }
     }
 
     return {
