@@ -270,12 +270,12 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // policy body, so the static detector correctly flags it. No live
   // recursion is possible: no `students` policy reads any of these three
   // tables back. Ledger: 223 - 1 (product_events drain, above) + 6 = 228.
-  'student_ncert_attempts::sna_teacher_select',
-  'student_ncert_attempts::sna_guardian_select',
-  'mock_test_attempts::mta_teacher_select',
-  'mock_test_attempts::mta_guardian_select',
-  'learning_events::learning_events_teacher_select',
-  'learning_events::learning_events_guardian_select',
+  // P2-5 phase 2 batch 4 (migration 20260904060000, 2026-09-04) pruned all
+  // 6 entries here — student_ncert_attempts/mock_test_attempts/
+  // learning_events's teacher_select+guardian_select pairs — OR-merged into
+  // each table's own _select_merged policy (added near the end of this
+  // ledger, alongside their sibling admin_select/own_select halves which
+  // were never grandfathered under any name).
   // ── original quoted-name baseline (214) ──
   'academic_terms::academic_terms_authenticated_select',
   'academic_terms::academic_terms_school_admin_insert',
@@ -288,7 +288,10 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'analytics_events::analytics_insert',
   'analytics_events::analytics_select',
   'api_keys::api_keys_select',
-  'assignment_submissions::assignment_submissions_parent_select',
+  // P2-5 phase 2 batch 4 (migration 20260904060000, 2026-09-04) pruned
+  // assignment_submissions_parent_select here — OR-merged into
+  // assignment_submissions_select_merged, added near the end of this
+  // ledger.
   'assignment_submissions::Students can manage own submissions',
   'assignment_submissions::Teachers can grade submissions',
   'assignment_submissions::Teachers can view assignment submissions',
@@ -343,12 +346,14 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'chapter_progress::cp_student_update',
   'class_enrollments::class_enrollments_school_admin_select',
   'class_enrollments::class_enrollments_student_select',
-  'class_schedule::class_schedule_parent_select',
-  'class_schedule::class_schedule_school_admin_select',
-  'class_schedule::class_schedule_student_select',
+  // P2-5 phase 2 batch 4 (migration 20260904060000, 2026-09-04) pruned the
+  // parent_select/school_admin_select/student_select/teacher_select
+  // entries here — OR-merged into class_schedule_select_merged, added near
+  // the end of this ledger. teacher_delete/teacher_insert/teacher_update
+  // are DIFFERENT, untouched policies (not part of the SELECT merge) and
+  // stay.
   'class_schedule::class_schedule_teacher_delete',
   'class_schedule::class_schedule_teacher_insert',
-  'class_schedule::class_schedule_teacher_select',
   'class_schedule::class_schedule_teacher_update',
   'class_students::School admins can manage school class_students',
   'class_students::Students can insert own enrollment via class code',
@@ -540,7 +545,9 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'teacher_student_notes::teachers_own_notes_insert',
   'teacher_student_notes::teachers_own_notes_select',
   'teacher_student_notes::teachers_own_notes_update',
-  'teachers::School admins can view school teachers',
+  // P2-5 phase 2 batch 4 (migration 20260904060000, 2026-09-04) pruned
+  // "School admins can view school teachers" here — OR-merged into
+  // teachers_select_merged, added near the end of this ledger.
   'tenant_configs::school_admin read own',
   'tenant_configs::school_admin write own',
   'tenant_modules::school_admin read own',
@@ -682,6 +689,47 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'student_attendance::student_attendance_select_merged',
   'student_bookmarks::student_bookmarks_select_merged',
   'student_notes::student_notes_select_merged',
+  // P2-5 phase 2 batch 4 (migration
+  // 20260904060000_p2_5_phase2e_merge_rls_policies_batch4.sql, 2026-09-04):
+  // same OR-merge treatment as batches 1-3, this time for the 14 remaining
+  // 4-policy same-role SELECT groups, including realtime.messages (a
+  // Supabase system-schema table -- same self-contained-clause safety
+  // rationale as storage.objects in batch 2). Not net-zero: only 12 of the
+  // 14 tables' original policy names were previously grandfathered (pruned
+  // above -- assignment_submissions' 1, class_schedule's 4,
+  // learning_events' 2, mock_test_attempts' 2, student_ncert_attempts' 2,
+  // teachers' 1 = 12 stale). The remaining 8 tables' original quads
+  // (ai_interaction_logs, analytics_events, concept_attempts,
+  // foxy_chat_messages, foxy_sessions, quiz_responses, student_achievements,
+  // and realtime.messages) were never on this ledger under their old names
+  // either, even though each one's "_own_*"-style member already inlined a
+  // cross-table subquery live -- the same kind of pre-existing ledger gap
+  // already flagged in batches 1-3 for other tables. None of these 14
+  // merges introduces a NEW recursion risk; every one carries forward SQL
+  // that was already live before this migration, just previously
+  // uncatalogued under its old name(s). The detector keys a
+  // schema-qualified policy (`ON realtime.messages`) by its SCHEMA, not its
+  // table name -- same convention already established for
+  // 'storage::objects_insert_merged' in batch 2 -- hence
+  // 'realtime::messages_select_merged' below. Ledger: 242 - 12 + 14 = 244.
+  'ai_interaction_logs::ai_interaction_logs_select_merged',
+  'analytics_events::analytics_events_select_merged',
+  'assignment_submissions::assignment_submissions_select_merged',
+  'class_schedule::class_schedule_select_merged',
+  'concept_attempts::concept_attempts_select_merged',
+  'foxy_chat_messages::foxy_chat_messages_select_merged',
+  'foxy_sessions::foxy_sessions_select_merged',
+  'learning_events::learning_events_select_merged',
+  'mock_test_attempts::mock_test_attempts_select_merged',
+  'quiz_responses::quiz_responses_select_merged',
+  'realtime::messages_select_merged',
+  'student_achievements::student_achievements_select_merged',
+  'student_ncert_attempts::student_ncert_attempts_select_merged',
+  // teachers' merged policy is deliberately named "teachers_scoped_select_merged",
+  // not "teachers_select_merged" -- that exact name was a documented HIGH-severity
+  // cross-tenant leak (REG-290) closed by migration 20260721000400. See this
+  // batch's migration header for the full rationale.
+  'teachers::teachers_scoped_select_merged',
 ]);
 
 // ── parsing ─────────────────────────────────────────────────────────────────
@@ -1032,8 +1080,16 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // at all, so they need no grandfather entry (only 10 of the 12 merged
     // tables appear in the ledger). 9 stale entries pruned, 10 new
     // merged-name entries added. Ledger: 241 - 9 + 10 = 242.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(242);
-    expect(detectedRiskKeys().length).toBe(242);
+    // P2-5 phase 2 batch 4 (migration 20260904060000, 2026-09-04): 14 more
+    // 4-policy same-role SELECT groups OR-merged, including
+    // realtime.messages (system-schema table, same self-contained-clause
+    // safety rationale as storage.objects in batch 2). NOT net-zero — only
+    // 12 of the 14 tables' original names were previously grandfathered (a
+    // pre-existing ledger gap, not a new risk — see the ledger comment
+    // above). 12 stale entries pruned, 14 new merged-name entries added.
+    // Ledger: 242 - 12 + 14 = 244.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(244);
+    expect(detectedRiskKeys().length).toBe(244);
   });
 });
 
