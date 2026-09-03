@@ -25,14 +25,24 @@
  *     live identity; none → 'phone_unavailable' WITHOUT consuming the
  *     challenge (the user can resend LINK to the live webhook)
  *   - never throws → 'error'
+ *   - P2-10: the SENDER's own phoneHash is rate-limited (OTP_MAX_ATTEMPTS
+ *     guesses per OTP_LOCKOUT_MS) BEFORE the candidate scan runs at all —
+ *     independent of whether any individual guess matches a challenge
  *
  * link-code-otp is REAL: challenge fixtures carry hashOtp(code, rowId) so the
  * verify path exercises the actual constant-time crypto.
+ *
+ * api-rate-limit is REAL too (per its own module-header TEST HAZARD note):
+ * Upstash env vars are absent in tests, so checkApiRateLimit() always hits
+ * the real in-memory fallback. The store is process-lifetime, so beforeEach
+ * resets it — otherwise unrelated earlier tests sharing PHONE_HASH would
+ * silently start tripping the new rate limit.
  *
  * Owner: testing.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { resetRateLimitStoreForTests } from '@alfanumrik/lib/api-rate-limit';
 
 // ─── Module-boundary mocks ──────────────────────────────────────────────────
 
@@ -304,6 +314,7 @@ beforeEach(() => {
   loggerCalls.length = 0;
   opsEvents.length = 0;
   mockAdminImpl = buildMockAdmin();
+  resetRateLimitStoreForTests();
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -626,6 +637,43 @@ describe('cron path — phoneE164 = null (P13: raw phone never in event rows)', 
     st.candidates = [challengeRow()];
     await processLinkBinding(webhookInput());
     expect(seq).not.toContain('identities.phoneRecovery');
+  });
+});
+
+describe('P2-10 — sender-phone guess rate limiting', () => {
+  it('exceeding OTP_MAX_ATTEMPTS guesses from one sender phone → rate_limited, no candidate scan', async () => {
+    // Never-matching candidate: proves the limiter fires on GUESS VOLUME,
+    // not on any particular challenge — the exact gap this fix closes.
+    st.candidates = [challengeRow({ otp_hash: hashOtp('999888', 'chal-1') })];
+    for (let i = 0; i < OTP_MAX_ATTEMPTS; i++) {
+      const r = await processLinkBinding(webhookInput());
+      expect(r.outcome).toBe('invalid');
+    }
+    fromCalls.length = 0;
+    const result = await processLinkBinding(webhookInput());
+    expect(result.outcome).toBe('rate_limited');
+    // Rate-limit check runs BEFORE the DB candidate scan — zero DB I/O.
+    expect(fromCalls).toEqual([]);
+  });
+
+  it('rate limiting is scoped to the sender phoneHash — a different sender is unaffected', async () => {
+    st.candidates = [challengeRow({ otp_hash: hashOtp('999888', 'chal-1') })];
+    for (let i = 0; i < OTP_MAX_ATTEMPTS; i++) {
+      await processLinkBinding(webhookInput());
+    }
+    const exhausted = await processLinkBinding(webhookInput());
+    expect(exhausted.outcome).toBe('rate_limited');
+
+    const other = await processLinkBinding(
+      webhookInput({ phoneHash: 'b'.repeat(64) }),
+    );
+    expect(other.outcome).toBe('invalid');
+  });
+
+  it('a legitimate guess still binds normally while under the limit', async () => {
+    st.candidates = [challengeRow()];
+    const result = await processLinkBinding(webhookInput());
+    expect(result.outcome).toBe('bound');
   });
 });
 

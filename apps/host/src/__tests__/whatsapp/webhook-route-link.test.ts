@@ -80,6 +80,7 @@ const OUTCOMES = [
   'locked',
   'limit',
   'phone_unavailable',
+  'rate_limited',
   'error',
 ] as const;
 

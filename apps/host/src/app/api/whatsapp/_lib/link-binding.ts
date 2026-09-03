@@ -48,9 +48,11 @@ import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { redactPhone } from '@alfanumrik/lib/whatsapp/phone';
+import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
 import {
   verifyOtp,
   OTP_MAX_ATTEMPTS,
+  OTP_LOCKOUT_MS,
   computeLockoutUntil,
 } from '@alfanumrik/lib/link-code-otp';
 
@@ -67,7 +69,30 @@ export type LinkBindingOutcome =
   | 'locked' // matched challenge exhausted OTP_MAX_ATTEMPTS
   | 'limit' // phone already carries MAX_LIVE_STUDENT_BINDINGS_PER_PHONE students
   | 'phone_unavailable' // cron path only: raw phone not recoverable (P13)
+  | 'rate_limited' // this SENDER phone has made too many guesses (P2-10)
   | 'error'; // transient/unexpected DB failure
+
+// P2-10 fix (2026-09-02 launch audit). A miss against the candidate-scan
+// pool (below) has no single challenge row to attribute the failure to, so
+// it was NEVER counted anywhere — the per-challenge OTP_MAX_ATTEMPTS/
+// OTP_LOCKOUT_MS lockout this whole OTP design is built around (see
+// packages/lib/src/link-code-otp.ts's own header: "the 5-attempt lockout
+// buys vastly more [security than the 6-digit space alone]") is completely
+// inert for this flow, and nothing else in the inbound WhatsApp path rate-
+// limits a sender's message volume. With up to CANDIDATE_SCAN_LIMIT (20)
+// simultaneous live 6-digit challenges in the pool at any moment (from
+// unrelated real users), an attacker sending unthrottled "LINK <guess>"
+// messages had roughly a 20-in-1,000,000 chance per guess of hijacking a
+// STRANGER's WhatsApp-Foxy binding, with no volume limit on how many
+// guesses they could send.
+//
+// Fixed by rate-limiting the GUESSING SENDER's own phone (independent of
+// which — if any — challenge a given guess happens to match), mirroring
+// the existing per-challenge numbers (OTP_MAX_ATTEMPTS / OTP_LOCKOUT_MS)
+// for consistency rather than inventing new magic numbers. This does not
+// touch the per-challenge lockout — that stays as the narrower defense for
+// someone targeting one specific known challenge.
+const LINK_GUESS_RATE_LIMIT_PREFIX = 'whatsapp-link-guess';
 
 export interface LinkBindingInput {
   /** The digit code from the inbound `LINK <code>` message. */
@@ -108,6 +133,22 @@ export async function processLinkBinding(
     // non-conforming code can never match a 6-digit OTP; short-circuit.
     if (!/^\d{4,8}$/.test(code)) {
       return { outcome: 'invalid' };
+    }
+
+    // P2-10: rate-limit the GUESSING SENDER before the candidate scan (see
+    // the module-level comment above LINK_GUESS_RATE_LIMIT_PREFIX). Keyed on
+    // the sender's own phoneHash, independent of which — if any — challenge
+    // a given guess happens to match, since a miss can't be attributed to a
+    // specific row. Fails open on a rate-limiter error (matches this
+    // codebase's existing convention — see checkApiRateLimit's own in-memory
+    // fallback) rather than blocking legitimate LINK attempts on infra flake.
+    const rateLimit = await checkApiRateLimit(
+      `${LINK_GUESS_RATE_LIMIT_PREFIX}:${input.phoneHash}`,
+      OTP_MAX_ATTEMPTS,
+      OTP_LOCKOUT_MS,
+    );
+    if (!rateLimit.allowed) {
+      return { outcome: 'rate_limited' };
     }
 
     const nowIso = new Date().toISOString();

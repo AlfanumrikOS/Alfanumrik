@@ -134,6 +134,9 @@ const LINK_REPLIES: Record<LinkBindingOutcome, string> = {
   limit:
     'This WhatsApp number is already connected to the maximum number of student accounts. / ' +
     'यह WhatsApp नंबर पहले से अधिकतम विद्यार्थी खातों से जुड़ा है।',
+  rate_limited:
+    'Too many attempts. Please wait an hour, then get a fresh code from the app. / ' +
+    'बहुत अधिक प्रयास हुए। कृपया एक घंटे बाद ऐप से नया कोड लें।',
   // Cannot occur on the webhook path (the live inbound carries the phone) —
   // mapped defensively to the generic retry copy.
   phone_unavailable:
