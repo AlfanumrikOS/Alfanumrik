@@ -184,9 +184,21 @@ describe('20260816000009 — agreement with the RLS cross-table-recursion ledger
     expect(code).toMatch(/CREATE POLICY "user_roles_admin"/);
   });
 
-  it('the recursion-guard ledger still carries the "user_roles::user_roles_admin" entry (proves no ledger drift was required)', () => {
+  it('the recursion-guard ledger carried "user_roles::user_roles_admin" until it was superseded by an unrelated later merge (2026-09-03)', () => {
+    // As of THIS migration (20260816000009) alone, no ledger edit was needed
+    // — the assertion above proves the name stayed "user_roles_admin". That
+    // remained true in the ledger until migration
+    // 20260903180000_p2_5_phase2b_merge_rls_policies_batch1.sql (P2-5 phase
+    // 2, unrelated RLS-performance cleanup, not a P8 write-policy change)
+    // OR-merged user_roles_admin + user_roles_select into a single
+    // user_roles_select_merged policy, at which point the ledger correctly
+    // dropped the "user_roles_admin" key and gained
+    // "user_roles::user_roles_select_merged" instead. Assert the CURRENT
+    // state rather than the stale literal, so this test doesn't silently
+    // start asserting a fact that's no longer true.
     const guardSrc = readRecursionGuard();
-    expect(guardSrc).toMatch(/'user_roles::user_roles_admin'/);
+    expect(guardSrc).not.toMatch(/'user_roles::user_roles_admin'/);
+    expect(guardSrc).toMatch(/'user_roles::user_roles_select_merged'/);
   });
 });
 

@@ -275,7 +275,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'analytics_events::analytics_insert',
   'analytics_events::analytics_select',
   'api_keys::api_keys_select',
-  'assessment_schedule::assessment_schedule_teacher_select',
   'assignment_submissions::assignment_submissions_parent_select',
   'assignment_submissions::Students can manage own submissions',
   'assignment_submissions::Teachers can grade submissions',
@@ -286,8 +285,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'assignments::Teachers can manage own assignments',
   // (XC-3 Phase 4 first drain removed 'at_risk_alerts::Teachers see own at-risk
   //  alerts' from here — migration 20260702100000. See the note below.)
-  'audit_logs::audit_logs_select',
-  'audit_logs::school_admins_see_school_audit_logs',
   // XC-3 Phase 4 first drain (migration 20260702100000): the at_risk_alerts policy
   // "Teachers see own at-risk alerts" was refactored from an inline
   // `FROM public.teachers` subquery to the SECURITY DEFINER helper
@@ -330,7 +327,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'chapter_progress::cp_student_update',
   'class_enrollments::class_enrollments_school_admin_select',
   'class_enrollments::class_enrollments_student_select',
-  'class_enrollments::class_enrollments_teacher_select',
   'class_schedule::class_schedule_parent_select',
   'class_schedule::class_schedule_school_admin_select',
   'class_schedule::class_schedule_student_select',
@@ -351,9 +347,7 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'classes::Students can view their enrolled classes',
   'classes::Teachers can insert classes',
   'classes::Teachers can view their classes',
-  'classroom_lesson_plans::Students can view classroom lesson plans',
   'classroom_lesson_plans::Teachers can manage classroom lesson plans',
-  'classroom_lesson_plans::Teachers can view classroom lesson plans',
   'classroom_poll_responses::Students submit own poll responses',
   'classroom_polls::Students see live polls for their class',
   'classroom_polls::Teachers see own class polls',
@@ -419,8 +413,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'improvement_recommendations::improvement_recommendations_admin_insert',
   'improvement_recommendations::improvement_recommendations_admin_select',
   'improvement_recommendations::improvement_recommendations_admin_update',
-  'institution_entitlements::school_admin read own',
-  'institution_entitlements::super_admin read all',
   'interleave_queue::Students see own interleave queue',
   'intervention_alerts::teachers_intervention_alerts_select',
   'intervention_alerts::teachers_intervention_alerts_update',
@@ -454,16 +446,12 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'quiz_session_shuffles::quiz_session_shuffles_student_select',
   'quiz_session_shuffles::quiz_session_shuffles_teacher_select',
   'rag_ingestion_failures::rag_ingestion_failures_read_admin',
-  'retrieval_traces::rt_super_admin_select',
   'role_permissions::role_permissions_admin',
   'roles::roles_admin',
   'scheduled_actions::student read own',
-  'school_announcements::announcements_student_select',
   'school_contracts::school_admin_can_read_own_contracts',
-  'school_exams::school_exams_student_select',
   'school_invite_codes::School admins can manage their school codes',
   'school_invite_codes::Teachers can view codes for their school',
-  'school_questions::school_questions_student_select',
   'score_history::score_history_student_select',
   'smart_nudges::students_own_smart_nudges',
   'student_assessment_attempts::attempts_own',
@@ -549,10 +537,60 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'user_question_history::uqh_student_insert',
   'user_question_history::uqh_student_select',
   'user_question_history::uqh_student_update',
-  'user_roles::user_roles_admin',
-  'user_roles::user_roles_select',
   'xp_transactions::xp_txn_student_select',
   'xp_transactions::xp_txn_teacher_select',
+  // P2-5 phase 2 batch 1 (migration
+  // 20260903180000_p2_5_phase2b_merge_rls_policies_batch1.sql, 2026-09-03):
+  // 14 tables' multiple-permissive SELECT policies were OR-merged into a
+  // single "<table>_select_merged" policy each (CEO-approved "full
+  // consolidation" of the multiple_permissive_policies performance
+  // advisory). The merge preserves the exact pre-existing inline
+  // cross-table subqueries verbatim (it only combines existing USING
+  // clauses with OR, never rewrites them) — none of these 14 is a NEW
+  // recursion risk, all 14 already existed in one or both of the policies
+  // being merged. 10 of the 14 replace now-stale grandfather entries
+  // pruned above (assessment_schedule, audit_logs x2,
+  // class_enrollments, classroom_lesson_plans x2, institution_entitlements
+  // x2, retrieval_traces, school_announcements, school_exams,
+  // school_questions, user_roles x2 -- 14 stale entries collapsing to 10
+  // of these merged names, since some tables contributed 2 stale entries
+  // each). The remaining 4 (chapter_progress, chapter_study_sessions,
+  // leaderboard, student_skill_state) are net-new grandfather entries:
+  // their original policies were never on this ledger, but the SAME
+  // inline `FROM public.students` ownership-translation subquery already
+  // present in their surviving "_own_select"-style sibling is present in
+  // the merged policy too, so the detector newly (and correctly) flags a
+  // risk that already existed live, just not previously catalogued.
+  // Ledger: 226 - 14 stale + 14 new = 226 (net unchanged).
+  //
+  // Also NOTE (unrelated pre-existing drift, discovered while verifying
+  // this batch, NOT caused by it): the chain still carries
+  // 'chapter_progress::cp_select_merged' below/above (baseline-era name)
+  // even though live production has never had a policy by that name in
+  // this session's observation -- it has instead had
+  // 'chapter_progress_admin_select' + 'chapter_progress_own_select' (the
+  // two this migration merges). This traces to the SAME 2026-08-29/30
+  // "activity-reporting reconciliation" out-of-band migration
+  // (20260829164102_activity_rls_policies.sql) documented elsewhere in
+  // this ledger -- that migration's parity restoration captured the
+  // admin_select re-creation but not whatever separately renamed
+  // cp_select_merged to chapter_progress_own_select. Left untouched here
+  // (out of scope for a hygiene pass); flagged for a future migration to
+  // formally capture the missing chain step.
+  'assessment_schedule::assessment_schedule_select_merged',
+  'audit_logs::audit_logs_select_merged',
+  'chapter_progress::chapter_progress_select_merged',
+  'chapter_study_sessions::chapter_study_sessions_select_merged',
+  'class_enrollments::class_enrollments_select_merged',
+  'classroom_lesson_plans::classroom_lesson_plans_select_merged',
+  'institution_entitlements::institution_entitlements_select_merged',
+  'leaderboard::leaderboard_select_merged',
+  'retrieval_traces::retrieval_traces_select_merged',
+  'school_announcements::school_announcements_select_merged',
+  'school_exams::school_exams_select_merged',
+  'school_questions::school_questions_select_merged',
+  'student_skill_state::student_skill_state_select_merged',
+  'user_roles::user_roles_select_merged',
 ]);
 
 // ── parsing ─────────────────────────────────────────────────────────────────
