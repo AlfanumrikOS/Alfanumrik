@@ -367,7 +367,12 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // of this ledger. "School admins can view school classes" and
   // "classes_school_admin_select" were byte-identical duplicates; see the
   // migration header for the dedup note.
-  'classroom_lesson_plans::Teachers can manage classroom lesson plans',
+  // P2-5 phase 2 batch 8 (migration 20260904100000, 2026-09-04) pruned
+  // "Teachers can manage classroom lesson plans" here -- split into 3
+  // discrete INSERT/UPDATE/DELETE policies (added near the end of this
+  // ledger), since classroom_lesson_plans_select_merged already covers its
+  // SELECT-implied access. See that migration's header for the full
+  // rationale.
   'classroom_poll_responses::Students submit own poll responses',
   'classroom_polls::Students see live polls for their class',
   'classroom_polls::Teachers see own class polls',
@@ -451,7 +456,10 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'parental_consent::Guardians can view own consent',
   'payment_webhook_events::payment_webhook_events_super_admin_select',
   'performance_scores::perf_scores_student_select',
-  'permissions::permissions_admin',
+  // P2-5 phase 2 batch 8 (migration 20260904100000, 2026-09-04) pruned
+  // permissions_admin here -- split into 3 discrete INSERT/UPDATE/DELETE
+  // policies (added near the end of this ledger), since permissions_select's
+  // unconditional `true` predicate already covers its SELECT-implied access.
   'platform_health_snapshots::Admin read health snapshots',
   'practice_session_log::Students see own practice sessions',
   // (2026-08-29/30 activity-reporting reconciliation, migration
@@ -460,14 +468,22 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // DROPs and re-CREATEs the policy with a clean `USING (public.is_admin())`
   // predicate (no FROM/JOIN of its own), superseding whatever earlier inline
   // shape put it on this ledger. No longer detected — stale entry pruned.
-  'question_misconceptions::qm_super_admin_write',
+  // P2-5 phase 2 batch 8 (migration 20260904100000, 2026-09-04) pruned
+  // qm_super_admin_write here -- split into 3 discrete INSERT/UPDATE/DELETE
+  // policies (added near the end of this ledger), since
+  // question_misconceptions_authenticated_read's unconditional `true`
+  // predicate already covers its SELECT-implied access.
   'question_responses::qr_own_insert',
   'question_responses::qr_own_select',
   'quiz_session_shuffles::quiz_session_shuffles_student_select',
   'quiz_session_shuffles::quiz_session_shuffles_teacher_select',
   'rag_ingestion_failures::rag_ingestion_failures_read_admin',
-  'role_permissions::role_permissions_admin',
-  'roles::roles_admin',
+  // P2-5 phase 2 batch 8 (migration 20260904100000, 2026-09-04) pruned
+  // role_permissions_admin and roles_admin here -- both split into 3
+  // discrete INSERT/UPDATE/DELETE policies each (added near the end of
+  // this ledger), since role_permissions_select/roles_select's
+  // unconditional `true` predicates already cover their SELECT-implied
+  // access.
   'scheduled_actions::student read own',
   'school_contracts::school_admin_can_read_own_contracts',
   'school_invite_codes::School admins can manage their school codes',
@@ -749,6 +765,42 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'classes::classes_select_merged',
   'engagement_events::engagement_events_select_merged',
   'product_events::product_events_select_merged',
+  // P2-5 phase 2 batch 8 (migration
+  // 20260904100000_p2_5_phase2i_split_for_all_policies_batch8.sql,
+  // 2026-09-04): Tier 2 of the batch-7 FOR ALL/per-command overlap
+  // discovery. 8 tables' FOR ALL admin/service policy split into 3
+  // discrete INSERT/UPDATE/DELETE policies each (SELECT access is
+  // unaffected -- see that migration's header for the per-table proof).
+  // 5 of the 8 original FOR ALL policies were previously grandfathered
+  // (pruned above: classroom_lesson_plans, permissions,
+  // question_misconceptions, role_permissions, roles); their splits carry
+  // forward the SAME inline cross-table predicate, so each of the 3 new
+  // policies per table is newly detected = 18 new entries for those same
+  // 6 tables (exam_papers' original was NEVER grandfathered despite
+  // inlining admin_users -- a pre-existing ledger gap, same class already
+  // seen in batches 1-4 -- so its 3 splits are new additions too, not a
+  // stale-prune pairing). foxy_message_dimension_feedback and
+  // synthesis_quality_scores's predicate (`auth.role() = 'service_role'`)
+  // has no inline FROM/JOIN, so their splits need no entry.
+  // Ledger: 240 - 5 + 18 = 253.
+  'exam_papers::exam_papers_admin_insert',
+  'exam_papers::exam_papers_admin_update',
+  'exam_papers::exam_papers_admin_delete',
+  'permissions::permissions_admin_insert',
+  'permissions::permissions_admin_update',
+  'permissions::permissions_admin_delete',
+  'question_misconceptions::qm_super_admin_insert',
+  'question_misconceptions::qm_super_admin_update',
+  'question_misconceptions::qm_super_admin_delete',
+  'role_permissions::role_permissions_admin_insert',
+  'role_permissions::role_permissions_admin_update',
+  'role_permissions::role_permissions_admin_delete',
+  'roles::roles_admin_insert',
+  'roles::roles_admin_update',
+  'roles::roles_admin_delete',
+  'classroom_lesson_plans::Teachers can insert classroom lesson plans',
+  'classroom_lesson_plans::Teachers can update classroom lesson plans',
+  'classroom_lesson_plans::Teachers can delete classroom lesson plans',
 ]);
 
 // ── parsing ─────────────────────────────────────────────────────────────────
@@ -1126,8 +1178,17 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // school_admins subquery); gsl_service_write's with_check is a literal
     // `true`, never grandfathered. 2 stale entries pruned, 0 added.
     // Ledger: 242 - 2 = 240.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(240);
-    expect(detectedRiskKeys().length).toBe(240);
+    // P2-5 phase 2 batch 8 (migration 20260904100000, 2026-09-04): Tier 2
+    // of the batch-7 FOR ALL/per-command overlap discovery -- 8 tables' FOR
+    // ALL admin/service policy split into 3 discrete INSERT/UPDATE/DELETE
+    // policies each (SELECT access provably unaffected -- see the ledger
+    // comment above). 5 stale entries pruned (classroom_lesson_plans,
+    // permissions, question_misconceptions, role_permissions, roles), 18
+    // new split-policy entries added across 6 tables (2 tables' splits
+    // carry no inline FROM/JOIN and need no entry).
+    // Ledger: 240 - 5 + 18 = 253.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(253);
+    expect(detectedRiskKeys().length).toBe(253);
   });
 });
 
