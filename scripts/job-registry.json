@@ -56,6 +56,15 @@
       "alertThreshold": "no success for 14h"
     },
     {
+      "path": "/api/cron/expire-abandoned-checkouts",
+      "platform": "vercel",
+      "owner": "payments",
+      "schedule": "30 */6 * * *",
+      "idempotencyKey": "expire-abandoned-checkouts:yyyy-mm-dd-hh",
+      "lastSuccessMetric": "ops.cron.expire_abandoned_checkouts.last_success_at",
+      "alertThreshold": "no success for 14h"
+    },
+    {
       "path": "/api/cron/pre-debit-notice",
       "platform": "vercel",
       "owner": "payments",

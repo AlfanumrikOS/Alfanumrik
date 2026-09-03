@@ -405,7 +405,7 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // and docs/audit/launch-readiness/dpdp-erasure-removal.md). Their ledger
 // entries are pruned in the SAME change so the guard ratchets DOWN, not
 // drifts.
-const EXPECTED_COUNT = 273;
+const EXPECTED_COUNT = 274;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

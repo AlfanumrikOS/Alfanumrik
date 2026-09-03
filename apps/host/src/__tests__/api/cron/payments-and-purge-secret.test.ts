@@ -1,7 +1,7 @@
 /**
  * Money-moving cron secret/idempotency guards.
  *
- * Two CRON_SECRET-gated routes that move money. Each MUST refuse to do any
+ * Three CRON_SECRET-gated routes that move money. Each MUST refuse to do any
  * work without a valid CRON_SECRET (constant-time compare), and each MUST be
  * safe to re-run.
  *
@@ -19,8 +19,17 @@
  *          implement the grace period — a past_due sub inside its grace window
  *          is not halted (we assert the route reports the RPC's own counts and
  *          does not itself cut access).
+ *   3. /api/cron/expire-abandoned-checkouts (POST)
+ *        - CRON_SECRET required (401 without).
+ *        - P11 fix (2026-09-03): delegates to expire_abandoned_checkout_attempts,
+ *          which moves checkout attempts that never completed (still 'pending'
+ *          72h+ later, no razorpay_payment_id ever attached) to a terminal
+ *          status — added after one such abandoned row generated 4,727
+ *          payments-health false-alarm ops_events over 46 days. The route
+ *          itself does no direct student/subscription writes, matching the
+ *          expired-subscriptions convention.
  *
- * (The third route this file used to cover, /api/cron/account-purge, was
+ * (The fourth route this file used to cover, /api/cron/account-purge, was
  * removed 2026-08-30 with the DPDP erasure subsystem — see
  * supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql.)
  *
@@ -53,6 +62,10 @@ let _capturedPayments: any = { data: [], error: null };
 let _studentsByIds: any = { data: [], error: null };
 let _planIdRow: any = { data: { id: 'plan-1' }, error: null };
 let _expiredRpc: any = { data: { marked_past_due: 0, halted: 0, checked_at: '2026-06-11T00:00:00Z' }, error: null };
+let _expireAbandonedRpc: any = {
+  data: { payments_expired: 0, subscriptions_expired: 0, checked_at: '2026-06-11T00:00:00Z' },
+  error: null,
+};
 // C2 fix (2026-07-29): findStuckPayments()'s terminal-state guard reads each
 // stuck student's student_subscriptions row. Empty by default (no row → no
 // terminal status → the guard is a no-op) so existing tests are unaffected.
@@ -101,6 +114,7 @@ const adminClient = {
   from: (t: string) => fromMock(t),
   rpc: (name: string, ...rest: unknown[]) => {
     rpcCalls.push([name, ...rest]);
+    if (name === 'expire_abandoned_checkout_attempts') return Promise.resolve(_expireAbandonedRpc);
     return Promise.resolve(_expiredRpc);
   },
 };
@@ -130,6 +144,10 @@ beforeEach(() => {
   _subsByStudentId = { data: [], error: null };
   _planIdRow = { data: { id: 'plan-1' }, error: null };
   _expiredRpc = { data: { marked_past_due: 0, halted: 0, checked_at: '2026-06-11T00:00:00Z' }, error: null };
+  _expireAbandonedRpc = {
+    data: { payments_expired: 0, subscriptions_expired: 0, checked_at: '2026-06-11T00:00:00Z' },
+    error: null,
+  };
   // Fetch stub so an accidental Edge invocation is observable, not a network call.
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
 });
@@ -254,5 +272,39 @@ describe('POST /api/cron/expired-subscriptions — CRON_SECRET gate + grace peri
     expect(rpcCalls).toHaveLength(1);
     expect(rpcCalls[0]).toEqual(['check_expired_subscriptions']);
     expect(updateStudentCalls).toHaveLength(0);
+  });
+});
+
+// ── 3. expire-abandoned-checkouts ────────────────────────────────────────────
+
+describe('POST /api/cron/expire-abandoned-checkouts — CRON_SECRET gate', () => {
+  it('returns 401 without a secret and never calls the RPC', async () => {
+    const { POST } = await import('@/app/api/cron/expire-abandoned-checkouts/route');
+    const res = await POST(req('/api/cron/expire-abandoned-checkouts', 'POST'));
+    expect(res.status).toBe(401);
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it('delegates to the RPC and reports its counts verbatim (no direct writes)', async () => {
+    _expireAbandonedRpc = {
+      data: { payments_expired: 1, subscriptions_expired: 1, checked_at: '2026-09-03T00:00:00Z' },
+      error: null,
+    };
+
+    const { POST } = await import('@/app/api/cron/expire-abandoned-checkouts/route');
+    const res = await POST(
+      req('/api/cron/expire-abandoned-checkouts', 'POST', { 'x-cron-secret': SECRET }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.payments_expired).toBe(1);
+    expect(body.data.subscriptions_expired).toBe(1);
+
+    // Exactly one RPC call, and it is the expiry SQL function — the route
+    // does not implement its own cutoff (no direct student/subscription writes).
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0]).toEqual(['expire_abandoned_checkout_attempts']);
+    expect(updateStudentCalls).toHaveLength(0);
+    expect(upsertCalls).toHaveLength(0);
   });
 });
