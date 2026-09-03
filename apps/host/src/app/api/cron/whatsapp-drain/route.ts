@@ -223,8 +223,11 @@ async function drain(): Promise<DrainCounts> {
         });
         counts.failed += 1;
       } else {
-        // bound / invalid / ambiguous / locked / limit — all deterministic,
-        // terminally handled.
+        // bound / invalid / ambiguous / locked / limit / rate_limited — all
+        // deterministic, terminally handled. (rate_limited, P2-10: retrying
+        // this queued event would just re-hit the same sender-phone limiter
+        // — no reply is sent from the cron path anyway, so there's nothing
+        // to gain by requeuing.)
         await setEventStatus(row.id, {
           status: 'done',
           attempts: attemptsAfterClaim,

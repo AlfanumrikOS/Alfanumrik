@@ -342,7 +342,7 @@ describe('link intent — shared binding core on the retry path', () => {
     expect(processLinkBindingMock.mock.calls[0][0].code).toBe('');
   });
 
-  it.each(['bound', 'invalid', 'ambiguous', 'locked', 'limit'] as const)(
+  it.each(['bound', 'invalid', 'ambiguous', 'locked', 'limit', 'rate_limited'] as const)(
     'deterministic outcome %s → done + processed',
     async (outcome) => {
       processLinkBindingMock.mockResolvedValue({ outcome });
