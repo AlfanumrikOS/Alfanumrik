@@ -362,11 +362,11 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'class_students::Teachers can view students in their classes',
   'class_teachers::School admins can manage school class_teachers',
   'class_teachers::Teachers can view own class assignments',
-  'classes::classes_school_admin_select',
-  'classes::Guardians can view childrens classes',
-  'classes::School admins can view school classes',
-  'classes::Students can view their enrolled classes',
-  'classes::Teachers can view their classes',
+  // P2-5 phase 2 batch 5 (migration 20260904070000, 2026-09-04) pruned all 5
+  // entries here — OR-merged into classes_select_merged, added near the end
+  // of this ledger. "School admins can view school classes" and
+  // "classes_school_admin_select" were byte-identical duplicates; see the
+  // migration header for the dedup note.
   'classroom_lesson_plans::Teachers can manage classroom lesson plans',
   'classroom_poll_responses::Students submit own poll responses',
   'classroom_polls::Students see live polls for their class',
@@ -730,6 +730,21 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // cross-tenant leak (REG-290) closed by migration 20260721000400. See this
   // batch's migration header for the full rationale.
   'teachers::teachers_scoped_select_merged',
+  // P2-5 phase 2 batch 5 (migration
+  // 20260904070000_p2_5_phase2f_merge_rls_policies_batch5.sql, 2026-09-04):
+  // same OR-merge treatment as batches 1-4, this time for the final 3
+  // SELECT-only groups in the 5-6 policy tier -- classes (6 policies, 5
+  // distinct clauses -- see the migration header for the byte-identical
+  // duplicate dedup note), engagement_events, and product_events (5 each).
+  // This closes out Category B's multi-policy consolidation except
+  // `students` itself, deliberately deferred to standalone handling. Only
+  // classes' 5 old names were previously grandfathered (pruned above);
+  // engagement_events/product_events's quads were never on this ledger
+  // under their old names either, the same pre-existing ledger-gap pattern
+  // already flagged in batches 1-4. Ledger: 244 - 5 + 3 = 242.
+  'classes::classes_select_merged',
+  'engagement_events::engagement_events_select_merged',
+  'product_events::product_events_select_merged',
 ]);
 
 // ── parsing ─────────────────────────────────────────────────────────────────
@@ -1088,8 +1103,19 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // pre-existing ledger gap, not a new risk — see the ledger comment
     // above). 12 stale entries pruned, 14 new merged-name entries added.
     // Ledger: 242 - 12 + 14 = 244.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(244);
-    expect(detectedRiskKeys().length).toBe(244);
+    // P2-5 phase 2 batch 5 (migration 20260904070000, 2026-09-04): the
+    // final 3 SELECT-only groups in the 5-6 policy tier OR-merged --
+    // classes (6 policies, 5 distinct clauses after deduping a
+    // byte-identical pair -- see the ledger comment above),
+    // engagement_events, and product_events (5 each). Closes out Category
+    // B's multi-policy consolidation except `students` itself, deferred to
+    // standalone handling. Only classes' 5 old names were previously
+    // grandfathered; engagement_events/product_events were never on this
+    // ledger under their old names either (same pre-existing gap pattern).
+    // 5 stale entries pruned, 3 new merged-name entries added.
+    // Ledger: 244 - 5 + 3 = 242.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(242);
+    expect(detectedRiskKeys().length).toBe(242);
   });
 });
 
