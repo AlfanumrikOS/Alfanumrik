@@ -217,10 +217,20 @@ const nextConfig = {
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
           {
+            // P2-3 fix (2026-09-03 launch audit) — LIVE CAUTION: this header
+            // is NOT what actually reaches the browser for almost any route.
+            // `apps/host/src/proxy.ts`'s middleware runs on nearly every
+            // request (its own config.matcher excludes only a few static
+            // paths) and OVERWRITES this exact header on the way out —
+            // verified live via `curl -D- https://alfanumrik.com/`. Keep this
+            // value textually in sync with proxy.ts's copy (which carries the
+            // full rationale, including why 'strict-dynamic' is deliberately
+            // absent); this next.config.js copy only actually applies to the
+            // matcher-excluded static-asset paths.
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'strict-dynamic' https://checkout.razorpay.com https://prod.spline.design",
+              "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://prod.spline.design",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com",

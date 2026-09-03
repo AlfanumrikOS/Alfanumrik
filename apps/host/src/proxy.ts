@@ -1534,7 +1534,52 @@ function addSecurityHeaders(
 
   // Prevent clickjacking — no one should iframe Alfanumrik
   response.headers.set('X-Frame-Options', 'DENY');
-  response.headers.set('Content-Security-Policy', "frame-ancestors 'none'");
+
+  // P2-3 fix (2026-09-03 launch audit). This used to set ONLY
+  // "frame-ancestors 'none'" here. Because this function runs on nearly
+  // every request (see config.matcher below) and its `response.headers.set`
+  // calls are what actually reach the browser, that single-directive value
+  // silently CLOBBERED the full policy declared in next.config.js's
+  // headers() block — verified live: `curl -D- https://alfanumrik.com/`
+  // returned `content-security-policy: frame-ancestors 'none'` with NONE of
+  // next.config.js's script-src/connect-src/img-src/etc. restrictions
+  // present. This is now the single source of truth for the CSP that
+  // actually reaches the browser; next.config.js keeps a same-value copy as
+  // a fallback for the handful of static-asset paths this middleware's
+  // matcher excludes — keep the two in sync (see the comment there).
+  //
+  // NOTE: 'strict-dynamic' is deliberately ABSENT from script-src. Per the
+  // CSP3 spec, in any browser that supports 'strict-dynamic' (effectively
+  // all current Chrome/Firefox/Edge — most of this app's traffic), its
+  // presence makes the browser IGNORE 'unsafe-inline' AND the host
+  // allowlist below (checkout.razorpay.com, prod.spline.design) in
+  // script-src unless a nonce or hash is also present, which this app does
+  // not yet generate. Because this header never actually reached a browser
+  // before this fix, an earlier draft that included 'strict-dynamic' here
+  // was never live-tested and would likely have broken script loading —
+  // including the Razorpay checkout script — for most users the moment it
+  // took effect. Real nonce-based script-src (which would let
+  // 'strict-dynamic' come back safely) is tracked as separate follow-up
+  // work, to be staged via Content-Security-Policy-Report-Only first
+  // rather than shipped blind.
+  response.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://prod.spline.design",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://eu.i.posthog.com https://eu-assets.i.posthog.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net",
+      "media-src 'self' blob:",
+      "worker-src 'self'",
+      "frame-src https://api.razorpay.com https://checkout.razorpay.com",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "upgrade-insecure-requests",
+    ].join('; '),
+  );
 
   // Prevent MIME type sniffing
   response.headers.set('X-Content-Type-Options', 'nosniff');
