@@ -174,9 +174,11 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // reviewed, accepted pattern — not a new risk class. Ledger: 221 → 222.
   'synthesis_quality_scores::synthesis_quality_scores_read_admin',
   'adaptive_interventions::adaptive_interventions_student_select',
-  'board_score_predictions::board_score_predictions_admin_select',
-  'board_score_predictions::board_score_predictions_guardian_select',
-  'board_score_predictions::board_score_predictions_student_select',
+  // P2-5 phase 2 batch 3 (migration 20260903200000, 2026-09-03) pruned the
+  // 3 board_score_predictions_{admin,guardian,student}_select entries here
+  // (OR-merged into board_score_predictions_select_merged, added near the
+  // end of this ledger). See that block's comment for the full batch-3
+  // ledger arithmetic.
   'concept_attempts::concept_attempts_read_own',
   // Phase A.2 dimension feedback (migration
   // 20260818_01_create_foxy_message_dimension_feedback.sql, 2026-08-18):
@@ -290,9 +292,12 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'assignment_submissions::Students can manage own submissions',
   'assignment_submissions::Teachers can grade submissions',
   'assignment_submissions::Teachers can view assignment submissions',
-  'assignments::assignments_teacher_class_teachers_select',
-  'assignments::School admins can view school assignments',
-  'assignments::Students can view class assignments',
+  // P2-5 phase 2 batch 3 (migration 20260903200000, 2026-09-03) pruned the
+  // assignments_teacher_class_teachers_select / "School admins can view
+  // school assignments" / "Students can view class assignments" entries
+  // here (OR-merged into assignments_select_merged, added near the end of
+  // this ledger). 'Teachers can manage own assignments' is a DIFFERENT,
+  // untouched policy (not part of the SELECT merge) and stays.
   'assignments::Teachers can manage own assignments',
   // (XC-3 Phase 4 first drain removed 'at_risk_alerts::Teachers see own at-risk
   //  alerts' from here — migration 20260702100000. See the note below.)
@@ -465,10 +470,12 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'score_history::score_history_student_select',
   'smart_nudges::students_own_smart_nudges',
   'student_assessment_attempts::attempts_own',
-  'student_attendance::student_attendance_parent_select',
-  'student_attendance::student_attendance_student_select',
+  // P2-5 phase 2 batch 3 (migration 20260903200000, 2026-09-03) pruned the
+  // student_attendance_{parent,student,teacher}_select entries here
+  // (OR-merged into student_attendance_select_merged, added near the end of
+  // this ledger). teacher_insert/teacher_update are DIFFERENT, untouched
+  // policies (not part of the SELECT merge) and stay.
   'student_attendance::student_attendance_teacher_insert',
-  'student_attendance::student_attendance_teacher_select',
   'student_attendance::student_attendance_teacher_update',
   'student_burst_progress::Students see own burst progress',
   'student_cluster_assignments::students_own_student_cluster_assignments',
@@ -641,6 +648,40 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'topic_mastery::topic_mastery_insert_merged',
   'topic_mastery::topic_mastery_update_merged',
   'xp_transactions::xp_transactions_select_merged',
+  // P2-5 phase 2 batch 3 (migration
+  // 20260903200000_p2_5_phase2d_merge_rls_policies_batch3.sql, 2026-09-03):
+  // same OR-merge treatment as batches 1-2, this time for the 12 remaining
+  // 3-policy same-role SELECT groups (excluding `students` itself, deferred
+  // to standalone handling). Not net-zero: only 3 of the 12 tables'
+  // original policy names were previously grandfathered under any name
+  // (pruned above -- assignments' 3, board_score_predictions' 3, and
+  // student_attendance's 3 -- all 9 stale). learner_twin_memory and
+  // learner_twin_snapshots merge cleanly into policies with NO inline
+  // FROM/JOIN at all (is_guardian_of/is_teacher_of/get_my_student_id are
+  // all SECURITY DEFINER helpers), so those two tables need no grandfather
+  // entry -- only 10 of the 12 merged tables appear below. The remaining 9
+  // original pairs/triples (adaptive_interventions, challenge_attempts,
+  // foxy_decision_log, foxy_events, foxy_student_state, student_bookmarks,
+  // student_notes) were never on this ledger under their old names either,
+  // even though each one's "_own_*"/"_student_*" half already inlined a
+  // cross-table subquery live -- the same kind of pre-existing ledger gap
+  // already flagged in batches 1-2 for other tables. None of these 10
+  // merges introduces a NEW recursion risk; every one carries forward SQL
+  // that was already live before this migration, just previously
+  // uncatalogued under its old name(s). challenge_attempts_parent_select
+  // (roles {public}) is deliberately excluded from the merge and left
+  // untouched -- see the migration's own header for the role-heterogeneity
+  // rationale. Ledger: 241 - 9 + 10 = 242.
+  'adaptive_interventions::adaptive_interventions_select_merged',
+  'assignments::assignments_select_merged',
+  'board_score_predictions::board_score_predictions_select_merged',
+  'challenge_attempts::challenge_attempts_select_merged',
+  'foxy_decision_log::foxy_decision_log_select_merged',
+  'foxy_events::foxy_events_select_merged',
+  'foxy_student_state::foxy_student_state_select_merged',
+  'student_attendance::student_attendance_select_merged',
+  'student_bookmarks::student_bookmarks_select_merged',
+  'student_notes::student_notes_select_merged',
 ]);
 
 // ── parsing ─────────────────────────────────────────────────────────────────
@@ -982,8 +1023,17 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // (a pre-existing ledger gap, not a new risk — see the ledger comment
     // above). 8 stale entries pruned, 23 new merged-name entries added.
     // Ledger: 226 - 8 + 23 = 241.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(241);
-    expect(detectedRiskKeys().length).toBe(241);
+    // P2-5 phase 2 batch 3 (migration 20260903200000, 2026-09-03): 12 more
+    // 3-policy same-role SELECT groups OR-merged (excluding `students`
+    // itself, deferred). NOT net-zero — only 3 of the 12 tables' original
+    // names were previously grandfathered (a pre-existing ledger gap, not a
+    // new risk — see the ledger comment above). learner_twin_memory and
+    // learner_twin_snapshots merge onto policies with no inline FROM/JOIN
+    // at all, so they need no grandfather entry (only 10 of the 12 merged
+    // tables appear in the ledger). 9 stale entries pruned, 10 new
+    // merged-name entries added. Ledger: 241 - 9 + 10 = 242.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(242);
+    expect(detectedRiskKeys().length).toBe(242);
   });
 });
 
@@ -1194,13 +1244,16 @@ describe('generalized RLS recursion guard: unquoted policy-name coverage (Phase 
     // CREATE POLICY statement — it no longer serves this anchor's specific
     // purpose (proving the UNQUOTED-name detection widening still works) and
     // was removed rather than swapped for a same-shaped replacement.
-    // board_score_predictions_student_select and
-    // parent_cheers_guardian_select are untouched by any P2-5 work and
-    // remain sufficient anchors for the unquoted-name path on their own.
+    // NOTE (P2-5 phase 2 batch 3, migration 20260903200000, 2026-09-03):
+    // board_score_predictions_student_select was OR-merged into
+    // board_score_predictions_select_merged, which is QUOTED — same
+    // reasoning as the batch-2 removal above, removed rather than swapped.
+    // adaptive_interventions_student_select and parent_cheers_guardian_select
+    // are untouched by any P2-5 work and remain sufficient anchors for the
+    // unquoted-name path on their own.
     const detected = new Set(detectedRiskKeys());
     for (const k of [
       'adaptive_interventions::adaptive_interventions_student_select',
-      'board_score_predictions::board_score_predictions_student_select',
       'parent_cheers::parent_cheers_guardian_select',
     ]) {
       expect(detected.has(k), `Phase 0a.1 unquoted-name policy "${k}" should be detected`).toBe(
