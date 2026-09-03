@@ -1,5 +1,6 @@
 {
   "name": "alfanumrik-workspace",
+  "version": "0.0.0",
   "private": true,
   "engines": {
     "node": ">=22.0.0 <23.0.0"
