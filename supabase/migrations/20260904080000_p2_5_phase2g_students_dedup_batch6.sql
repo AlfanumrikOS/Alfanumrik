@@ -1,0 +1,80 @@
+-- 20260904080000_p2_5_phase2g_students_dedup_batch6.sql
+--
+-- P2-5 phase 2, batch 6 of Category B (2026-09-03 launch audit, CEO-approved
+-- "full consolidation, small batches with tests" — follow-up to batches 1-5,
+-- 20260903180000 through 20260904070000).
+--
+-- Scope: `students` — the one table deliberately deferred out of every prior
+-- batch (its own dedicated apex/high-sensitivity recursion-guard test
+-- coverage). This batch is NOT an OR-merge like batches 1-5. Investigation
+-- (see below) found the OR-merge approach is unsafe to apply here without a
+-- separate, explicit decision — so this batch does the one safe, uncontested
+-- action and stops there.
+--
+-- ---------------------------------------------------------------------------
+-- WHY THIS IS NOT A ROUTINE OR-MERGE (investigated, not assumed)
+-- ---------------------------------------------------------------------------
+-- students has 5 live SELECT policies before this migration:
+--   1. "Authenticated users can view scoped students" ({authenticated}) --
+--      auth_user_id = auth.uid() OR (school_id IS NOT NULL AND school_id =
+--      get_jwt_school_id())
+--   2. "School admins can view school students" ({authenticated}) --
+--      is_school_admin_of_student(id)
+--   3. "School staff can view own school students" ({authenticated}) --
+--      BYTE-IDENTICAL to #1 (same exact predicate text)
+--   4. "Teachers can view students in their classes" ({authenticated}) --
+--      is_teacher_of(id)
+--   5. "students_select_merged" ({public}) -- auth_user_id = auth.uid() OR
+--      is_teacher_of(id) OR is_guardian_of(id)
+--
+-- Policy 5 is role-heterogeneous ({public} vs {authenticated}) and, per the
+-- rule already applied throughout batches 1-5 (xp_transactions,
+-- challenge_attempts, teacher_parent_messages), is left unmerged.
+--
+-- Policies 2 and 4 are each individually protected by THREE independent,
+-- incident-driven regression test files that assert their EXACT NAMES are
+-- live/present on the parsed migration chain going forward (not just frozen
+-- historical-file content, which a rename would not break):
+--   - apps/host/src/__tests__/rls-no-cross-table-recursion.test.ts's
+--     "students apex is helper-delegating" describe block
+--   - apps/host/src/__tests__/students-rls-no-recursion.test.ts (an entire
+--     file dedicated to the 2026-07-02 TSB-4 "infinite recursion detected in
+--     policy for relation students" production incident -- the inline
+--     class_students/class_teachers/teachers roster join in the ORIGINAL
+--     "Teachers can view students in their classes" policy caused a real
+--     outage; the fixed is_teacher_of(id) helper form is pinned BY NAME as
+--     the ongoing regression anchor)
+--   - apps/host/src/__tests__/rls-teacher-assigned-students.test.ts (same
+--     TSB-4 lineage, also asserts POLICIES.has('Teachers can view students
+--     in their classes') live)
+--   - apps/host/src/__tests__/track-a-migration-conformance.test.ts
+--     additionally pins "School admins can view school students"'s B2C
+--     school_id IS NOT NULL hardening by name (historical-file pin, would
+--     survive a rename, but corroborates this policy's significance)
+--
+-- Merging policies 2 and 4 into a new combined name would require rewriting
+-- the FIRST THREE files' core assertions -- undoing a deliberate,
+-- multiply-reinforced defense-in-depth decision to keep this specific
+-- production incident's fix independently auditable by name, not just a
+-- naming inconvenience. That is an architecture/regression-policy decision,
+-- not a hygiene merge, so it is left for a separate explicit decision rather
+-- than folded into this batch.
+--
+-- ---------------------------------------------------------------------------
+-- WHAT THIS MIGRATION ACTUALLY DOES
+-- ---------------------------------------------------------------------------
+-- Policies 1 and 3 above are a genuine Category-A-style byte-identical
+-- duplicate (same class of leftover already found and fixed for `classes`
+-- in batch 5) that is NOT referenced by name anywhere in the test suite or
+-- application code (verified via a repo-wide grep before writing this
+-- migration). "School staff can view own school students" is kept (matches
+-- the naming convention of its siblings on teachers/classes, all added
+-- together by migration 20260715110000); "Authenticated users can view
+-- scoped students" is dropped as the redundant duplicate.
+--
+-- Net effect: students goes from 5 live SELECT policies to 4, with zero
+-- behavior change (the dropped policy's predicate is byte-identical to one
+-- that remains). No other command (INSERT has 1 policy, UPDATE has 2
+-- role-heterogeneous policies) is touched.
+
+DROP POLICY IF EXISTS "Authenticated users can view scoped students" ON public.students;
