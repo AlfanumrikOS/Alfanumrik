@@ -1,0 +1,79 @@
+-- 20260904090000_p2_5_phase2h_drop_for_all_redundant_policies_batch7.sql
+--
+-- P2-5 phase 2, batch 7 of Category B (2026-09-03 launch audit, CEO-approved
+-- "full consolidation, small batches with tests" — follow-up to batches 1-6,
+-- 20260903180000 through 20260904080000).
+--
+-- ---------------------------------------------------------------------------
+-- A NEW CATEGORY, DISCOVERED WHILE SCOPING BATCH 7
+-- ---------------------------------------------------------------------------
+-- Batches 1-6 all found their targets by grouping pg_policies rows on
+-- (tablename, cmd, roles) and merging groups with count > 1. That grouping
+-- has a blind spot: a `FOR ALL` policy is stored with cmd='ALL', a bucket
+-- that never gets compared against a table's `FOR SELECT`/`FOR INSERT`/etc.
+-- policies for the same role — even though Postgres genuinely evaluates a
+-- FOR ALL policy alongside every per-command policy that matches its role
+-- for any given action. Re-querying with cmd='ALL' properly expanded into
+-- {SELECT, INSERT, UPDATE, DELETE} before grouping surfaced 22 more
+-- (table, action, roles) overlap groups across ~18 tables that batches 1-6
+-- never saw.
+--
+-- Unlike batches 1-6, "OR the USING clauses together" is not always the
+-- right fix here, because dropping/merging a policy that also grants
+-- INSERT/UPDATE/DELETE (not just SELECT) is a different kind of change than
+-- consolidating several SELECT-only policies. Each of the 22 groups was
+-- individually inspected (exact live qual/with_check text, not assumed from
+-- names) and sorted by risk:
+--   - SAFE, PURE DROP (this batch): the narrower policy's predicate is a
+--     PROVEN subset of (or byte-identical to) the FOR ALL policy's
+--     predicate, so the FOR ALL policy already grants that access
+--     unconditionally — the narrower policy is dead weight, safe to drop
+--     outright with zero access change and no restructuring.
+--   - LOW-RISK RESTRUCTURING (not in this batch — needs splitting a FOR ALL
+--     policy into discrete per-action policies, a bigger mechanical change
+--     even though access-safe): exam_papers, permissions,
+--     question_misconceptions, role_permissions, roles (their SELECT
+--     policy's predicate is unconditionally `true`, already covering
+--     everything), foxy_message_dimension_feedback, synthesis_quality_scores
+--     (their SELECT policy's predicate contains the FOR ALL policy's exact
+--     predicate as one branch), classroom_lesson_plans (its
+--     classroom_lesson_plans_select_merged, from batch 1, already contains
+--     the FOR ALL policy's teacher-branch predicate verbatim). Tracked as a
+--     follow-up batch.
+--   - HIGHER-RISK RESTRUCTURING (not in this batch — the FOR ALL and
+--     per-command policies protect genuinely different, non-overlapping
+--     populations; a real OR-merge requires splitting the FOR ALL policy
+--     and getting each new per-action predicate exactly right):
+--     assignments, cbse_syllabus, class_teachers, classroom_polls,
+--     cms_assets, ff_grounded_ai_enforced_pairs, mock_test_responses (3
+--     actions), school_invite_codes. Tracked as a follow-up batch, likely
+--     warranting closer review given the semantic differences involved.
+--
+-- ---------------------------------------------------------------------------
+-- THIS BATCH: 3 pure-redundant drops
+-- ---------------------------------------------------------------------------
+-- guardian_student_links (INSERT, service_role): "gsl_service_write"
+-- (with_check = true) is redundant with "Service role full access
+-- guardian_student_links" (FOR ALL, service_role, qual/with_check = true) --
+-- the FOR ALL policy already grants unconditional access to every action,
+-- including this one. Dropped.
+--
+-- tenant_configs / tenant_modules (SELECT, authenticated): "school_admin
+-- read own" is BYTE-IDENTICAL to "school_admin write own" (FOR ALL, same
+-- role) -- both check `school_id IN (SELECT sa.school_id FROM school_admins
+-- sa WHERE sa.auth_user_id = auth.uid() AND sa.is_active = true)`. The FOR
+-- ALL policy already grants that exact SELECT access. Dropped on both
+-- tables (verified live pg_policies text is identical on each before
+-- writing this migration -- never assumed from the matching names alone).
+--
+-- Recursion-guard ledger: tenant_configs::"school_admin read own" and
+-- tenant_modules::"school_admin read own" are pruned from
+-- GRANDFATHERED_INLINE_POLICIES (both inline a school_admins subquery,
+-- previously grandfathered) -- their FOR-ALL siblings ("school_admin write
+-- own") remain live and stay grandfathered under their own keys, untouched
+-- by this migration. gsl_service_write's with_check is a literal `true`
+-- (no FROM/JOIN), so it was never on the ledger and needs no prune.
+
+DROP POLICY IF EXISTS "gsl_service_write" ON public.guardian_student_links;
+DROP POLICY IF EXISTS "school_admin read own" ON public.tenant_configs;
+DROP POLICY IF EXISTS "school_admin read own" ON public.tenant_modules;

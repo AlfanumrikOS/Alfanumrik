@@ -548,9 +548,13 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // P2-5 phase 2 batch 4 (migration 20260904060000, 2026-09-04) pruned
   // "School admins can view school teachers" here — OR-merged into
   // teachers_select_merged, added near the end of this ledger.
-  'tenant_configs::school_admin read own',
+  // P2-5 phase 2 batch 7 (migration 20260904090000, 2026-09-04) pruned
+  // tenant_configs::"school_admin read own" and tenant_modules::"school
+  // admin read own" here -- both were byte-identical duplicates of their
+  // FOR ALL sibling "school_admin write own" (which already grants that
+  // exact SELECT access) and were dropped outright, not merged. The FOR ALL
+  // siblings remain live and stay grandfathered below, untouched.
   'tenant_configs::school_admin write own',
-  'tenant_modules::school_admin read own',
   'tenant_modules::school_admin write own',
   'tutor_feedback::feedback_own',
   'tutoring_sessions::sessions_own',
@@ -1114,8 +1118,16 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // ledger under their old names either (same pre-existing gap pattern).
     // 5 stale entries pruned, 3 new merged-name entries added.
     // Ledger: 244 - 5 + 3 = 242.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(242);
-    expect(detectedRiskKeys().length).toBe(242);
+    // P2-5 phase 2 batch 7 (migration 20260904090000, 2026-09-04): pure
+    // redundant-policy drops (a FOR ALL policy already covering a narrower
+    // policy's exact predicate), not an OR-merge -- no new grandfathered
+    // entries. tenant_configs::"school_admin read own" and
+    // tenant_modules::"school_admin read own" pruned (both inline a
+    // school_admins subquery); gsl_service_write's with_check is a literal
+    // `true`, never grandfathered. 2 stale entries pruned, 0 added.
+    // Ledger: 242 - 2 = 240.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(240);
+    expect(detectedRiskKeys().length).toBe(240);
   });
 });
 
