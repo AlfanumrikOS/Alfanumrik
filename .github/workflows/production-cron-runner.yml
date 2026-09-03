@@ -16,6 +16,7 @@ on:
           - /api/cron/reconcile-payments
           - /api/cron/payments-health
           - /api/cron/expired-subscriptions
+          - /api/cron/expire-abandoned-checkouts
           - /api/cron/pre-debit-notice
           - /api/cron/board-score
           - /api/cron/reverify-domains
@@ -81,7 +82,7 @@ jobs:
             exit 1
           fi
           case "$JOB_PATH" in
-            /api/cron/school-operations|/api/cron/daily-cron|/api/cron/irt-calibrate|/api/cron/reconcile-payments|/api/cron/payments-health|/api/cron/expired-subscriptions|/api/cron/pre-debit-notice|/api/cron/board-score|/api/cron/reverify-domains|/api/cron/streak-guardian|/api/cron/flag-posture-canary|/api/cron/adaptive-loops-monitor|/api/cron/governance-health|/api/cron/synthesis-delivery-monitor|/api/cron/whatsapp-drain) ;;
+            /api/cron/school-operations|/api/cron/daily-cron|/api/cron/irt-calibrate|/api/cron/reconcile-payments|/api/cron/payments-health|/api/cron/expired-subscriptions|/api/cron/expire-abandoned-checkouts|/api/cron/pre-debit-notice|/api/cron/board-score|/api/cron/reverify-domains|/api/cron/streak-guardian|/api/cron/flag-posture-canary|/api/cron/adaptive-loops-monitor|/api/cron/governance-health|/api/cron/synthesis-delivery-monitor|/api/cron/whatsapp-drain) ;;
             *) echo "::error::JOB_PATH is not one allowlisted production cron route."; exit 1 ;;
           esac
   run:
