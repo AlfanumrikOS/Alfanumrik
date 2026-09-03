@@ -67,6 +67,10 @@
       "schedule": "15 */6 * * *"
     },
     {
+      "path": "/api/cron/expire-abandoned-checkouts",
+      "schedule": "30 */6 * * *"
+    },
+    {
       "path": "/api/cron/pre-debit-notice",
       "schedule": "0 */6 * * *"
     },
