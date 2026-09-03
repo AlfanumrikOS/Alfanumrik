@@ -251,7 +251,6 @@ const SERVICE_ROLE_ONLY_TABLES = [
   'lessons_learned',
   'link_code_otp_challenges',
   'mass_gen_log',
-  'mock_test_responses',
   'model_pricing',
   'mol_routing_weights',
   'mol_shadow_text_buffer',
