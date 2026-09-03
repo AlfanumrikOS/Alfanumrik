@@ -244,7 +244,6 @@ const SERVICE_ROLE_ONLY_TABLES = [
   'cycle_evaluations',
   'cycles',
   'dive_artifacts',
-  'exam_papers',
   'experiment_observations',
   'foxy_served_items',
   'invite_codes',
