@@ -289,7 +289,10 @@ describe('Bot/scanner blocking patterns', () => {
 // ─── Security Headers ───────────────────────────────────────
 
 describe('Security header expectations', () => {
-  // These test the header values that addSecurityHeaders should set
+  // These document the header values addSecurityHeaders sets; they are a
+  // hand-maintained pin, not a live invocation of proxy.ts (see the P2-3
+  // source-level assertions below for behavioral coverage of the CSP
+  // specifically — the class of bug this constant would NOT have caught).
   const EXPECTED_HEADERS: Record<string, string | RegExp> = {
     'X-Frame-Options': 'DENY',
     'Content-Security-Policy': "frame-ancestors 'none'",
@@ -854,6 +857,54 @@ describe('Phase A.3: proxy.ts forwards tenant via request, not response', () => 
     const matches = file.match(/NextResponse\.next\(\s*\{\s*request:\s*\{\s*headers:\s*requestHeaders\s*\}\s*\}\s*\)/g);
     expect(matches).not.toBeNull();
     expect(matches!.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ─── P2-3: proxy.ts sets the FULL CSP, not a clobbering stub ──────────
+//
+// 2026-09-03 launch audit finding: addSecurityHeaders() used to set
+// Content-Security-Policy to ONLY "frame-ancestors 'none'". Since this
+// function runs on nearly every request (config.matcher below) and its
+// response.headers.set() calls are what the browser actually receives,
+// that single-directive value silently overwrote the full policy declared
+// in next.config.js's headers() block on every real page load — confirmed
+// live via `curl -D- https://alfanumrik.com/`. These assertions read the
+// actual proxy.ts source (the same house pattern as the Phase A.3 block
+// above) so a future edit that reintroduces the stub-only value, or
+// re-adds 'strict-dynamic' without nonce infrastructure, fails CI instead
+// of silently shipping with no live CSP again.
+describe('P2-3: proxy.ts CSP is the full policy, not a clobbering stub', () => {
+  async function readProxySource(): Promise<string> {
+    const fs = await import('fs');
+    const path = await import('path');
+    return fs.readFileSync(path.resolve(process.cwd(), 'src/proxy.ts'), 'utf-8');
+  }
+
+  it('does not set Content-Security-Policy to the bare frame-ancestors stub', async () => {
+    const file = await readProxySource();
+    // The regression this guards: a set() call whose ENTIRE value is just
+    // the frame-ancestors directive (quote style may vary), which used to
+    // clobber every other directive on every real request.
+    expect(file).not.toMatch(
+      /response\.headers\.set\(\s*['"]Content-Security-Policy['"]\s*,\s*["']frame-ancestors 'none'["']\s*\)/,
+    );
+  });
+
+  it('sets Content-Security-Policy with the real script/connect/img restrictions', async () => {
+    const file = await readProxySource();
+    expect(file).toMatch(/script-src 'self' 'unsafe-inline'.*checkout\.razorpay\.com/);
+    expect(file).toMatch(/connect-src 'self'.*supabase\.co/);
+    expect(file).toMatch(/img-src 'self' data: blob:/);
+    expect(file).toMatch(/frame-ancestors 'none'/);
+  });
+
+  it("does not include 'strict-dynamic' in script-src (no nonce infra exists yet)", async () => {
+    const file = await readProxySource();
+    // Extract just the script-src directive's value so this doesn't false
+    // positive on 'strict-dynamic' appearing elsewhere (e.g. a comment).
+    const match = file.match(/"script-src ([^"]*)"/);
+    expect(match).not.toBeNull();
+    expect(match![1]).not.toContain('strict-dynamic');
   });
 });
 
