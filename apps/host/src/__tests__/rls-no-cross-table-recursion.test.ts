@@ -223,10 +223,21 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // ≠ policyTable), so the detector still flags all three — they remain
   // correctly grandfathered, unlike the two adaptive_interventions entries
   // above which had NO remaining inline predicate at all.
+  //
+  // P2-5 phase 2 batch 2 (migration
+  // 20260903190000_p2_5_phase2c_merge_rls_policies_batch2.sql, 2026-09-03):
+  // the teacher_insert/teacher_select/teacher_update entries just above this
+  // comment were pruned — OR-merged with their "_own_*" sibling into
+  // teacher_remediation_assignments_{insert,select,update}_merged (added
+  // near the end of this ledger). teacher_remediation_assignments_student_select
+  // is UNCHANGED here on purpose: it is NOT the same as the live
+  // "_own_select" policy this migration touches — the chain still tracks a
+  // "_student_select" name for this table that this session's live
+  // pg_policies queries never found in production (same chain-vs-prod drift
+  // class as the chapter_progress/class_enrollments note in batch 1's
+  // migration header — flagged, not fixed, here). Left in the ledger
+  // unchanged since the chain still derives it as detected.
   'teacher_remediation_assignments::teacher_remediation_assignments_student_select',
-  'teacher_remediation_assignments::teacher_remediation_assignments_teacher_insert',
-  'teacher_remediation_assignments::teacher_remediation_assignments_teacher_select',
-  'teacher_remediation_assignments::teacher_remediation_assignments_teacher_update',
   // REG-363 (K5 draft quarantine, migration 20260813000004_teacher_assignment_drafts.sql):
   // teacher_assignment_drafts_teacher_own_all is a single-teacher-own-rows FOR ALL policy
   // whose USING/WITH CHECK inline `teacher_id IN (SELECT id FROM public.teachers
@@ -345,7 +356,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'classes::Guardians can view childrens classes',
   'classes::School admins can view school classes',
   'classes::Students can view their enrolled classes',
-  'classes::Teachers can insert classes',
   'classes::Teachers can view their classes',
   'classroom_lesson_plans::Teachers can manage classroom lesson plans',
   'classroom_poll_responses::Students submit own poll responses',
@@ -518,10 +528,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'support_tickets::Users can read own tickets',
   'sync_ledger::Students see own sync ledger',
   'system_metrics::admin_system_metrics_select',
-  'teacher_parent_messages::tp_messages_guardian_insert',
-  'teacher_parent_messages::tp_messages_guardian_select',
-  'teacher_parent_messages::tp_messages_teacher_insert',
-  'teacher_parent_messages::tp_messages_teacher_select',
   'teacher_parent_threads::tp_threads_guardian_select',
   'teacher_parent_threads::tp_threads_teacher_select',
   'teacher_student_notes::teachers_own_notes_insert',
@@ -591,6 +597,50 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'school_questions::school_questions_select_merged',
   'student_skill_state::student_skill_state_select_merged',
   'user_roles::user_roles_select_merged',
+  // P2-5 phase 2 batch 2 (migration
+  // 20260903190000_p2_5_phase2c_merge_rls_policies_batch2.sql, 2026-09-03):
+  // the same OR-merge treatment as batch 1, this time for 19 tables' 2-policy
+  // INSERT/SELECT/UPDATE groups. Unlike batch 1 (net-zero: 14 stale removed,
+  // 14 added), this batch is NOT net-zero: only 8 of the original 2-policy
+  // pairs' names were previously grandfathered under either name (pruned
+  // above -- classes "Teachers can insert classes", the 4
+  // teacher_parent_messages entries, and 3 of
+  // teacher_remediation_assignments's teacher_* entries). The remaining 15
+  // merged tables' original policy PAIRS were never on this ledger at all
+  // under either original name, even though the "_own_*"-style half of each
+  // pair provably already inlined a `student_id IN (SELECT s.id FROM
+  // students s WHERE s.auth_user_id = auth.uid())` cross-table subquery
+  // (verified directly against each pair's live pg_policies qual/with_check
+  // text before writing the migration) -- this is the SAME kind of
+  // pre-existing ledger gap already flagged for
+  // chapter_progress/chapter_study_sessions/leaderboard/student_skill_state
+  // in batch 1, just affecting more tables than expected. None of these 23
+  // merges introduces a NEW recursion risk; every one carries forward SQL
+  // that was already live before this migration, just previously
+  // uncatalogued under its old name(s). Ledger: 226 - 8 + 23 = 241.
+  'bloom_progression::bloom_progression_insert_merged',
+  'bloom_progression::bloom_progression_update_merged',
+  'classes::classes_insert_merged',
+  'engagement_events::engagement_events_insert_merged',
+  'foxy_chat_messages::foxy_chat_messages_insert_merged',
+  'foxy_sessions::foxy_sessions_insert_merged',
+  'foxy_sessions::foxy_sessions_update_merged',
+  'product_events::product_events_insert_merged',
+  'quiz_responses::quiz_responses_insert_merged',
+  'quiz_sessions::quiz_sessions_insert_merged',
+  'quiz_sessions::quiz_sessions_select_merged',
+  'quiz_sessions::quiz_sessions_update_merged',
+  'storage::objects_insert_merged',
+  'student_achievements::student_achievements_insert_merged',
+  'student_learning_profiles::student_learning_profiles_update_merged',
+  'teacher_parent_messages::teacher_parent_messages_insert_merged',
+  'teacher_parent_messages::teacher_parent_messages_select_merged',
+  'teacher_remediation_assignments::teacher_remediation_assignments_insert_merged',
+  'teacher_remediation_assignments::teacher_remediation_assignments_select_merged',
+  'teacher_remediation_assignments::teacher_remediation_assignments_update_merged',
+  'topic_mastery::topic_mastery_insert_merged',
+  'topic_mastery::topic_mastery_update_merged',
+  'xp_transactions::xp_transactions_select_merged',
 ]);
 
 // ── parsing ─────────────────────────────────────────────────────────────────
@@ -922,8 +972,18 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // 2026-08-30: data_erasure_requests dropped entirely (DPDP erasure
     // subsystem removed — supabase/migrations/20260830172610_remove_dpdp_erasure_system.sql),
     // taking its 2 policies with it. Ledger: 228 - 2 = 226.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(226);
-    expect(detectedRiskKeys().length).toBe(226);
+    // P2-5 phase 2 batch 1 (migration 20260903180000, 2026-09-03): 15 tables'
+    // 2-policy SELECT groups OR-merged. Net-zero (14 stale entries pruned,
+    // 14 new merged-name entries added — see the ledger comment above for
+    // the breakdown). Ledger: 226 -> 226.
+    // P2-5 phase 2 batch 2 (migration 20260903190000, 2026-09-03): 19 more
+    // tables' 2-policy INSERT/SELECT/UPDATE groups OR-merged. NOT net-zero —
+    // most of these pairs' original names were never grandfathered at all
+    // (a pre-existing ledger gap, not a new risk — see the ledger comment
+    // above). 8 stale entries pruned, 23 new merged-name entries added.
+    // Ledger: 226 - 8 + 23 = 241.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(241);
+    expect(detectedRiskKeys().length).toBe(241);
   });
 });
 
@@ -1126,13 +1186,20 @@ describe('generalized RLS recursion guard: unquoted policy-name coverage (Phase 
     // adaptive_interventions::adaptive_interventions_teacher_select was
     // refactored to is_teacher_of(student_id) with no remaining inline
     // predicate and is no longer detected (see the ledger comment above) — it
-    // was removed from this anchor list; teacher_remediation_assignments_
-    // teacher_select remains detected (retains an inline teacher-ownership
-    // subquery) and still anchors the same migration's grandfathered survivors.
+    // was removed from this anchor list.
+    // NOTE (P2-5 phase 2 batch 2, migration 20260903190000, 2026-09-03):
+    // teacher_remediation_assignments_teacher_select (this anchor's other
+    // original member) was OR-merged into
+    // teacher_remediation_assignments_select_merged, which is QUOTED in its
+    // CREATE POLICY statement — it no longer serves this anchor's specific
+    // purpose (proving the UNQUOTED-name detection widening still works) and
+    // was removed rather than swapped for a same-shaped replacement.
+    // board_score_predictions_student_select and
+    // parent_cheers_guardian_select are untouched by any P2-5 work and
+    // remain sufficient anchors for the unquoted-name path on their own.
     const detected = new Set(detectedRiskKeys());
     for (const k of [
       'adaptive_interventions::adaptive_interventions_student_select',
-      'teacher_remediation_assignments::teacher_remediation_assignments_teacher_select',
       'board_score_predictions::board_score_predictions_student_select',
       'parent_cheers::parent_cheers_guardian_select',
     ]) {
