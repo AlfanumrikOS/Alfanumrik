@@ -165,6 +165,14 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/cron/expire-abandoned-checkouts",
+      "file": "apps/host/src/app/api/cron/expire-abandoned-checkouts/route.ts",
+      "access": "cron",
+      "owner": "platform-ops",
+      "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",
+      "serviceRoleUse": "P11 fix (2026-09-03): cron with no user session, delegates entirely to the SECURITY DEFINER RPC expire_abandoned_checkout_attempts() (migration 20260903090000) — no direct table reads/writes from the route itself. See scripts/admin-client-allowlist.json's 273 -> 274 entry for the full justification."
+    },
+    {
       "path": "/api/cron/flag-posture-canary",
       "file": "apps/host/src/app/api/cron/flag-posture-canary/route.ts",
       "access": "cron",
