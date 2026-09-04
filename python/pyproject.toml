@@ -92,6 +92,17 @@ filterwarnings = [
   # construction; not our code. Architect's Phase-1 task tracks the swap to a
   # supported supabase-py async surface.
   "ignore::DeprecationWarning:postgrest",
+  # anyio 4.15 (2026-09) deprecated the `anyio.abc.BlockingPortal` alias in
+  # favor of `anyio.from_thread.BlockingPortal` -- but starlette's own
+  # testclient.py (imported by every FastAPI TestClient-based integration
+  # test) still references the old alias at MODULE level, so importing
+  # fastapi.testclient trips this on any environment that resolves anyio
+  # >=4.15 (anyio isn't version-pinned in requirements.txt, so this is a
+  # transitive-dependency drift, not our code). Message-matched (not
+  # module-matched) because anyio._lazyimport's warnings.warn() stacklevel
+  # makes the effective filter-module ambiguous. Safe to drop once starlette
+  # updates its own import.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
 ]
 
 # ─── Coverage ─────────────────────────────────────────────────────────────────
