@@ -2,11 +2,14 @@
 //
 // PATCH — partial update of one announcement, including `is_active` (the
 // soft-delete/archive toggle — see the parent route.ts header for why there
-// is no DELETE endpoint).
+// is no DELETE endpoint). Uses the RLS-scoped client, same rationale as the
+// parent route.ts header comment (admin_announcements' existing RLS already
+// matches this route's access shape; no need for service-role/the frozen
+// admin-client-allowlist.json ledger).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
+import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { logAdminAuditByUserId } from '@alfanumrik/lib/admin-auth';
 import { logger } from '@alfanumrik/lib/logger';
 import { validateUpdatePayload } from '@alfanumrik/lib/super-admin/announcement-validation';
@@ -31,7 +34,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: validated }, { status: 400 });
   }
 
-  const { data: updated, error: updateErr } = await supabaseAdmin
+  const supabase = await createSupabaseServerClient();
+  const { data: updated, error: updateErr } = await supabase
     .from('admin_announcements')
     .update(validated)
     .eq('id', id)

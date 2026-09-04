@@ -17,11 +17,19 @@
 // POST — creates a new announcement.
 //
 // Auth: super_admin.access (same permission code as the comparable
-// super-admin/misconceptions curation route).
+// super-admin/misconceptions curation route) PLUS real RLS: this route
+// deliberately uses the RLS-scoped createSupabaseServerClient, not the
+// service-role supabase-admin client. admin_announcements' existing RLS
+// (announce_read: true; announce_admin_write/update: is_admin()) already
+// matches this route's exact access shape, so service-role isn't genuinely
+// required here -- using it anyway would only have added an entry to the
+// frozen, architect-reviewed admin-client-allowlist.json ledger (XC-3) for
+// no real benefit. RLS is a second, real line of defense behind
+// authorizeRequest(), not just an app-layer check.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
+import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { logAdminAuditByUserId } from '@alfanumrik/lib/admin-auth';
 import { logger } from '@alfanumrik/lib/logger';
@@ -65,7 +73,8 @@ export async function GET(request: NextRequest) {
     const limit = clampLimit(url.searchParams.get('limit'));
     const offset = decodeCursor(url.searchParams.get('cursor'));
 
-    const { data, error, count } = await supabaseAdmin
+    const supabase = await createSupabaseServerClient();
+    const { data, error, count } = await supabase
       .from('admin_announcements')
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
@@ -104,7 +113,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: validated }, { status: 400 });
   }
 
-  const { data: inserted, error: insertErr } = await supabaseAdmin
+  const supabase = await createSupabaseServerClient();
+  const { data: inserted, error: insertErr } = await supabase
     .from('admin_announcements')
     .insert({
       title: validated.title,
