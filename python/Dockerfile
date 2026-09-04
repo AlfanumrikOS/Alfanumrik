@@ -73,6 +73,13 @@ WORKDIR /app
 # imports that rely on package metadata keep working inside the container.
 COPY --chown=appuser:appgroup pyproject.toml ./pyproject.toml
 COPY --chown=appuser:appgroup services ./services
+# Vendored copy of the repo-root cbse_parser/ package (see
+# python/cbse_parser/README.md) -- required for
+# services/ai/api/v1/foxy_tutor.py's `from cbse_parser.generator import
+# generate_answer` to resolve inside the image. The build context is
+# scoped to python/ (see .github/workflows/python-ai-deploy.yml), so the
+# real repo-root package one level up is unreachable by COPY.
+COPY --chown=appuser:appgroup cbse_parser ./cbse_parser
 
 USER appuser
 

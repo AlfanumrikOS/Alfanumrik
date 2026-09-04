@@ -40,18 +40,21 @@ async def post_foxy_tutor(
     if not await check_daily_budget(scope="org"):
         raise BudgetExceeded("daily AI budget exceeded — try again tomorrow")
 
-    # ``cbse_parser`` is a repo-root package that lives ONE LEVEL ABOVE python/.
-    # The Cloud Run image is built with `context: python` and only COPYs
-    # `services/`, so cbse_parser is NOT importable inside the container. A
-    # module-level import here therefore crashes the FastAPI app at startup
-    # (ModuleNotFoundError → container fails its /live startup probe). This
+    # ``cbse_parser`` is a repo-root package; the Cloud Run image is built
+    # with `context: python`, which can't reach a path outside that context
+    # by COPY. Fixed 2026-09-04 (P2-13) by vendoring a copy into
+    # python/cbse_parser/ (see its README.md) and adding it to
+    # python/Dockerfile's COPY step — a CI job
+    # (container-import-smoke in .github/workflows/python-ai-deploy.yml)
+    # now builds the real image on every PR and imports this module inside
+    # it directly, so a regression here fails CI. The import stays lazy
+    # (inside the handler, not at module level) on its own merits: this
     # endpoint is the LAST, student-facing strangler-fig cutover step
-    # (ff_python_foxy_tutor_v1, seeded OFF) and is not yet live, so we import
-    # lazily INSIDE the handler: app startup never touches cbse_parser, and a
-    # call to this dark endpoint surfaces a clean runtime error instead. Make
-    # cbse_parser importable in the image (vendor it / put repo root on
-    # PYTHONPATH) before flipping ff_python_foxy_tutor_v1 to ON — see
-    # docs/runbooks/2026-06-13-mol-python-cutover.md prerequisites.
+    # (ff_python_foxy_tutor_v1, seeded OFF) and is not yet live, so keeping
+    # app startup independent of this import means a problem here still
+    # surfaces as a clean runtime error on this one dark endpoint rather
+    # than failing the whole app's /live probe. See
+    # docs/runbooks/2026-06-13-mol-python-cutover.md.
     from cbse_parser.generator import generate_answer
 
     try:

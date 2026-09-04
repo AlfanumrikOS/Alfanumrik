@@ -40,9 +40,14 @@ green.
   `ff_mol_circuit_breaker_v1` / `ff_mol_semantic_cache`.)*
 - [ ] Confirm the Cloud Run image build installs `upstash-redis` (from `requirements.txt` /
   `pyproject.toml`).
-- [ ] Ensure the Cloud Run entrypoint puts the repo root on `PYTHONPATH` so `cbse_parser` (imported by
-  `foxy_tutor.py`, lives one level above `python/`) resolves at runtime — same path requirement pytest
-  satisfies via `pyproject.toml pythonpath = [".", ".."]`. Without it the FastAPI app does not import.
+- [x] **Done 2026-09-04 (P2-13, launch-audit follow-up).** `cbse_parser` (imported by `foxy_tutor.py`,
+  lives one level above `python/`) is vendored into `python/cbse_parser/` (see its README.md) and copied
+  into the image by `python/Dockerfile` — the PYTHONPATH approach originally sketched here wasn't viable
+  because the Cloud Run image's build context is scoped to `python/` (`context: python` in
+  `.github/workflows/python-ai-deploy.yml`), which can't reach a path outside it via `COPY` regardless of
+  `PYTHONPATH`. A new CI job (`container-import-smoke`) builds the real image on every PR and imports
+  `cbse_parser.generator` directly inside it, so this prerequisite now has a standing regression gate
+  instead of relying on someone re-checking this box by hand before each flag flip.
 - [ ] Set up the parity dashboard (ops): TS-baseline vs Python-shadow — answer-grade delta, cost delta,
   p95 latency delta, fallback-rate delta, and `event: error` rate; plus a ₹/student/day rollup from
   `mol_request_logs.inr_cost`.

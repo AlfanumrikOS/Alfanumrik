@@ -117,7 +117,12 @@ precision = 1
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = [".venv", "build", "dist"]
+# cbse_parser is a vendored, byte-identical copy of the repo-root
+# cbse_parser/ package (see python/cbse_parser/README.md) -- kept in sync
+# with its source of truth by hand, not owned/styled by this codebase, so
+# it's excluded from lint the same way a third-party vendored dependency
+# would be.
+extend-exclude = [".venv", "build", "dist", "cbse_parser"]
 
 [tool.ruff.lint]
 select = [
@@ -153,3 +158,10 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
+
+# Vendored, byte-identical copy of the repo-root cbse_parser/ package (see
+# python/cbse_parser/README.md) -- not owned/type-annotated by this
+# codebase, excluded the same way a third-party dependency would be.
+[[tool.mypy.overrides]]
+module = ["cbse_parser.*"]
+ignore_errors = true
