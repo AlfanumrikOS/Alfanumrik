@@ -1039,8 +1039,12 @@ describe('generalized RLS recursion guard: parser non-vacuity', () => {
 
   it('reduces a large effective policy set across the whole chain', () => {
     expect(POLICIES.size).toBeGreaterThanOrEqual(500);
-    // The fixed students teacher backstop must survive in its non-recursive form.
-    expect(POLICIES.has('students::Teachers can view students in their classes')).toBe(true);
+    // P2-5 phase 2 batch 10 (migration 20260904120000, 2026-09-04) OR-merged
+    // the fixed students teacher backstop, plus 2 sibling {authenticated}
+    // SELECT policies, into students_authenticated_select_merged -- the
+    // non-recursive is_teacher_of(id) delegation survives inside it (see
+    // "students apex is helper-delegating" below).
+    expect(POLICIES.has('students::students_authenticated_select_merged')).toBe(true);
     expect(POLICIES.has('students::students_select_merged')).toBe(true);
   });
 
@@ -1278,42 +1282,45 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
 //    tracked latent edge; the fixed teacher policy delegates to the helper.
 // ════════════════════════════════════════════════════════════════════════════
 describe('generalized RLS recursion guard: students apex is helper-delegating', () => {
-  it('the fixed "Teachers can view students in their classes" policy is NOT flagged (uses is_teacher_of)', () => {
-    const stmt = POLICIES.get('students::Teachers can view students in their classes')!;
+  it('students_authenticated_select_merged carries both incident-fixed boundaries via helpers, not inlined', () => {
+    // P2-5 phase 2 batch 10 (migration 20260904120000, 2026-09-04) OR-merged
+    // the 3 {authenticated} SELECT policies on students -- "Teachers can view
+    // students in their classes" (is_teacher_of(id), TSB-4 fix 20260702080000
+    // / 20260721000100), "School admins can view school students"
+    // (is_school_admin_of_student(id), XC-3 Phase 1 fix 20260702090000), and
+    // "School staff can view own school students" (auth_user_id/school_id,
+    // 20260506000002) -- into students_authenticated_select_merged. Both
+    // helper-delegating, non-recursive boundaries survive as OR-branches; see
+    // students-rls-no-recursion.test.ts and rls-teacher-assigned-students.test.ts
+    // for the companion pins on this same merge.
+    const stmt = POLICIES.get('students::students_authenticated_select_merged')!;
     expect(stmt).toMatch(/public\.is_teacher_of\s*\(\s*id\s*\)/i);
+    expect(stmt).toMatch(/public\.is_school_admin_of_student\s*\(\s*id\s*\)/i);
     expect(detectInlineCrossTable('students', stmt)).toEqual([]);
     // …and because it is non-recursive it is correctly ABSENT from the ledger,
-    // so re-introducing the old inline shape under this same name FAILS the guard.
+    // so re-introducing an inline shape under this name FAILS the guard.
     expect(
-      GRANDFATHERED_INLINE_POLICIES.has('students::Teachers can view students in their classes'),
+      GRANDFATHERED_INLINE_POLICIES.has('students::students_authenticated_select_merged'),
     ).toBe(false);
   });
 
-  it('students_select_merged expresses teacher/parent boundaries via helpers only (not flagged)', () => {
+  it('students_select_merged (the separate {public}-role policy) expresses teacher/parent boundaries via helpers only (not flagged)', () => {
     const stmt = POLICIES.get('students::students_select_merged')!;
     expect(stmt).toMatch(/is_teacher_of/i);
     expect(stmt).toMatch(/is_guardian_of/i);
     expect(detectInlineCrossTable('students', stmt)).toEqual([]);
   });
 
-  it('the apex students table now has ZERO inline cross-table edges (XC-3 Phase 1 drained the last one)', () => {
-    // Before XC-3 Phase 1 the students policy "School admins can view school
-    // students" inlined `FROM school_admins` and was the single grandfathered latent
-    // edge on the apex table. Migration 20260702090000 refactored it to the SECURITY
-    // DEFINER helper is_school_admin_of_student(id), so students now carries NO inline
-    // cross-table policy at all — every cross-table boundary on the apex table
-    // delegates to a helper.
+  it('the apex students table has ZERO inline cross-table edges', () => {
+    // Before XC-3 Phase 1 "School admins can view school students" inlined
+    // `FROM school_admins` and was the single grandfathered latent edge on the
+    // apex table; migration 20260702090000 refactored it to the SECURITY
+    // DEFINER helper is_school_admin_of_student(id). Batch 10 (20260904120000)
+    // then merged it, the fixed teacher backstop, and the school-staff policy
+    // into students_authenticated_select_merged, which also carries no inline
+    // FROM/JOIN -- students still carries ZERO inline cross-table policies.
     const studentsRisks = detectedRiskKeys().filter((k) => k.startsWith('students::'));
     expect(studentsRisks).toEqual([]);
-    // …and the refactored policy delegates to the helper (not inlining), so it is
-    // correctly ABSENT from the ledger — re-introducing the old inline shape under
-    // this same name would FAIL the guard.
-    const stmt = POLICIES.get('students::School admins can view school students')!;
-    expect(stmt).toMatch(/public\.is_school_admin_of_student\s*\(\s*id\s*\)/i);
-    expect(detectInlineCrossTable('students', stmt)).toEqual([]);
-    expect(
-      GRANDFATHERED_INLINE_POLICIES.has('students::School admins can view school students'),
-    ).toBe(false);
   });
 });
 

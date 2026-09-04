@@ -177,11 +177,15 @@ describe('students RLS guard: parser non-vacuity', () => {
 
   it('discovers the known effective students SELECT policies (parse is non-empty)', () => {
     expect(POLICIES.size).toBeGreaterThanOrEqual(3);
-    // The consolidated SELECT policy that carries the teacher/parent boundary via
-    // the SECURITY DEFINER helpers must be present in the final state.
+    // The consolidated {public}-role SELECT policy that carries the
+    // teacher/parent boundary via the SECURITY DEFINER helpers must be
+    // present in the final state.
     expect(POLICIES.has('students_select_merged')).toBe(true);
-    // The discoverable teacher backstop must still exist after the fix.
-    expect(POLICIES.has('Teachers can view students in their classes')).toBe(true);
+    // P2-5 phase 2 batch 10 (migration 20260904120000, 2026-09-04) OR-merged
+    // the named teacher backstop into students_authenticated_select_merged
+    // (an {authenticated}-role policy, distinct from students_select_merged
+    // above) -- the non-recursive is_teacher_of(id) boundary now lives there.
+    expect(POLICIES.has('students_authenticated_select_merged')).toBe(true);
   });
 });
 
@@ -224,8 +228,14 @@ describe('students RLS guard: no inline subquery over an RLS-protected table', (
 //    not just the absence of the wrong one.)
 // ════════════════════════════════════════════════════════════════════════════
 describe('students RLS guard: teacher boundary goes through is_teacher_of (non-recursive)', () => {
-  it('the surviving "Teachers can view students in their classes" policy calls is_teacher_of(id)', () => {
-    const text = POLICIES.get('Teachers can view students in their classes')!;
+  it('the merged students_authenticated_select_merged policy calls is_teacher_of(id)', () => {
+    // P2-5 phase 2 batch 10 (migration 20260904120000, 2026-09-04): the named
+    // "Teachers can view students in their classes" policy that used to carry
+    // this boundary was OR-merged into students_authenticated_select_merged
+    // together with "School admins can view school students" and "School
+    // staff can view own school students". The non-recursive is_teacher_of(id)
+    // delegation survives unchanged inside the merged USING clause.
+    const text = POLICIES.get('students_authenticated_select_merged')!;
     expect(text).toMatch(/public\.is_teacher_of\s*\(\s*id\s*\)/i);
     // And it must NOT inline the class_students roster join (the recursive form).
     expect(containsInlineProtectedSubquery(text).hit).toBe(false);

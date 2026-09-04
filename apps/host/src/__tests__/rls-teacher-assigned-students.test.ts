@@ -47,13 +47,40 @@
  * across the reduced chain, not a runtime SELECT result.
  *
  * Owner: testing. Catalog: REG-209 (reconciled by REG-212).
+ *
+ * ─── HANDOFF (P2-5 phase 2 batch 10, 2026-09-04) ─────────────────────────────
+ * The named backstop policy this file guards was later folded into a merged
+ * policy by an UNRELATED RLS-performance cleanup (migration 20260904120000):
+ * students had 3 separate {authenticated}-role SELECT policies (this
+ * backstop, the school-admin boundary, and a school-staff boundary), each
+ * evaluated on every SELECT, so they were OR-merged into one policy,
+ * `students_authenticated_select_merged`, to remove the redundant per-row
+ * evaluation. This is NOT a P8 boundary change — the is_teacher_of(id)
+ * delegation this file exists to guard is byte-identical inside the merged
+ * predicate. `HISTORICAL_POLICY_NAME` (the retired name) and `POLICY_NAME`
+ * (the current live name) are now split below to keep that distinction
+ * explicit: HISTORICAL_POLICY_NAME reads the FROZEN 20260702080000 fix
+ * migration's own text (never changes), POLICY_NAME reads the live effective
+ * chain (changed by batch 10). See that migration's header and the "boundary
+ * was later folded into a merged policy" describe block below.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const POLICY_NAME = 'Teachers can view students in their classes';
+// Historical name — pinned verbatim inside the FROZEN 20260702080000 fix
+// migration's own text (see the "superseded TSB-4 inline shape is gone"
+// describe block below); must NEVER change even though this name no longer
+// exists as a live policy after P2-5 phase 2 batch 10 folded it into a merge.
+const HISTORICAL_POLICY_NAME = 'Teachers can view students in their classes';
+// Current live/effective policy carrying this boundary. P2-5 phase 2 batch 10
+// (migration 20260904120000, 2026-09-04) OR-merged HISTORICAL_POLICY_NAME +
+// "School admins can view school students" + "School staff can view own
+// school students" -- the 3 {authenticated} SELECT policies on students --
+// into one policy under this name. See that migration's header and the
+// "boundary was later folded into a merged policy" describe block below.
+const POLICY_NAME = 'students_authenticated_select_merged';
 const TSB4_MIGRATION = '20260702010000_teacher_assigned_students_rls.sql';
 const FIX_MIGRATION = '20260702080000_fix_students_rls_infinite_recursion.sql';
 
@@ -195,10 +222,33 @@ describe('TSB-2 reconciled: the superseded TSB-4 inline shape is gone from the e
   });
 
   it('the fix migration itself drops then recreates the policy via the helper', () => {
+    // Uses HISTORICAL_POLICY_NAME deliberately -- this reads the FROZEN
+    // 20260702080000 migration file's own text, which still says "Teachers
+    // can view students in their classes" and always will, regardless of the
+    // later batch-10 merge that folded that policy into POLICY_NAME.
     const fixSql = readFileSync(resolve(MIGRATIONS_ABS!, FIX_MIGRATION), 'utf8');
-    expect(fixSql).toContain(`DROP POLICY IF EXISTS "${POLICY_NAME}"`);
+    expect(fixSql).toContain(`DROP POLICY IF EXISTS "${HISTORICAL_POLICY_NAME}"`);
     expect(fixSql.replace(/\s+/g, ' ')).toMatch(
-      new RegExp(`CREATE POLICY "${POLICY_NAME}".*USING \\( public\\.is_teacher_of\\(id\\) \\)`, 'i'),
+      new RegExp(
+        `CREATE POLICY "${HISTORICAL_POLICY_NAME}".*USING \\( public\\.is_teacher_of\\(id\\) \\)`,
+        'i',
+      ),
     );
+  });
+});
+
+describe('TSB-2 reconciled: the boundary was later folded into a merged policy (2026-09-04)', () => {
+  it('the historically-named policy no longer exists standalone; the boundary now lives in students_authenticated_select_merged', () => {
+    // P2-5 phase 2 batch 10 (migration 20260904120000) OR-merged
+    // HISTORICAL_POLICY_NAME together with "School admins can view school
+    // students" and "School staff can view own school students" -- all 3
+    // {authenticated}-role SELECT policies on students -- into POLICY_NAME.
+    // This is an UNRELATED P2-5 RLS-performance cleanup, not a P8 boundary
+    // change: the is_teacher_of(id) delegation this file exists to guard is
+    // unchanged, just nested inside a merged predicate (proven by the
+    // "EFFECTIVE teacher backstop" describe block above, which now resolves
+    // POLICY_NAME to that merged predicate).
+    expect(POLICIES.has(HISTORICAL_POLICY_NAME)).toBe(false);
+    expect(POLICIES.has(POLICY_NAME)).toBe(true);
   });
 });
