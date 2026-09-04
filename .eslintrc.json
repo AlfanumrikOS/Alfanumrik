@@ -25,7 +25,8 @@
     "alfanumrik/no-inline-taxonomy-reads": "warn",
     "alfanumrik/no-unchecked-supabase-error": "warn",
     "alfanumrik/no-hex-in-tsx": "warn",
-    "alfanumrik/no-inline-color": "warn"
+    "alfanumrik/no-inline-color": "warn",
+    "alfanumrik/no-wonder-blocks-import": "warn"
   },
   "overrides": [
     {
@@ -304,14 +305,6 @@
                   "../../../../eval/**"
                 ],
                 "message": "B1 RAG eval-harness (architect, B6): the offline read-only eval harness under eval/** (esp. eval/rag/harness/**) MUST NEVER be imported by production/client code (apps/host/src/app/**, apps/host/src/lib/**, packages/lib/src/**, packages/ui/src/**). It is build-time/offline-only and must not reach a shipped bundle. Only test files under apps/host/src/__tests__/eval/** may import it. See docs/superpowers/plans/2026-06-13-rag-eval-harness.md (Task 8)."
-              },
-              {
-                "group": [
-                  "@alfanumrik/ui/ui",
-                  "@alfanumrik/ui/ui/wonder-blocks",
-                  "**/ui/wonder-blocks"
-                ],
-                "message": "Gate-2 B2: the legacy \"Wonder Blocks\" component set (@alfanumrik/ui/ui, backed by wonder-blocks.tsx) is superseded by the canonical primitives at @alfanumrik/ui/ui/primitives. New code MUST import from '@alfanumrik/ui/ui/primitives' instead. Existing imports are grandfathered (130 files as of 2026-09-04, tracked for a staged follow-up migration) -- this only flags NEW usage."
               }
             ]
           }
@@ -393,14 +386,6 @@
                   "../../../../eval/**"
                 ],
                 "message": "B1 RAG eval-harness (architect, B6): the offline read-only eval harness under eval/** (esp. eval/rag/harness/**) MUST NEVER be imported by production/client code. It is build-time/offline-only and must not reach a shipped bundle. Only test files under apps/host/src/__tests__/eval/** may import it. See docs/superpowers/plans/2026-06-13-rag-eval-harness.md (Task 8)."
-              },
-              {
-                "group": [
-                  "@alfanumrik/ui/ui",
-                  "@alfanumrik/ui/ui/wonder-blocks",
-                  "**/ui/wonder-blocks"
-                ],
-                "message": "Gate-2 B2: the legacy \"Wonder Blocks\" component set (@alfanumrik/ui/ui, backed by wonder-blocks.tsx) is superseded by the canonical primitives at @alfanumrik/ui/ui/primitives. New code MUST import from '@alfanumrik/ui/ui/primitives' instead. Existing imports are grandfathered (130 files as of 2026-09-04, tracked for a staged follow-up migration) -- this only flags NEW usage. REPEATED here (TIER B) because this tier overlaps TIER A on packages/ui/src/** and would otherwise clobber it -- see the tier note above."
               }
             ]
           }

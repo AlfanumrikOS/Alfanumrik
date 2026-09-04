@@ -20,6 +20,10 @@ const noUncheckedSupabaseError = require('./no-unchecked-supabase-error');
 // Gate-2 B1 — design token boundary (design/06-design-system.md §1)
 const noHexInTsx = require('./no-hex-in-tsx');
 const noInlineColor = require('./no-inline-color');
+// Gate-2 B2 — legacy Wonder Blocks barrel deprecation (standalone rule, not
+// a no-restricted-imports group — see no-wonder-blocks-import.js header for
+// why it can't share a rule instance with TIER A/B's "error"-level bans).
+const noWonderBlocksImport = require('./no-wonder-blocks-import');
 
 // Grounding-boundary rules live at the repo root under eslint-rules/
 // so they can be tested and referenced without mixing with subject rules.
@@ -39,6 +43,7 @@ module.exports = {
       noUncheckedSupabaseError.rules['no-unchecked-supabase-error'],
     'no-hex-in-tsx': noHexInTsx.rules['no-hex-in-tsx'],
     'no-inline-color': noInlineColor.rules['no-inline-color'],
+    'no-wonder-blocks-import': noWonderBlocksImport.rules['no-wonder-blocks-import'],
     // Grounding-boundary rules (Tasks 3.18 / 3.19)
     'no-direct-ai-calls': noDirectAiCalls,
     'no-direct-rag-rpc': noDirectRagRpc,
