@@ -175,6 +175,11 @@ const NAV_ITEMS: SidebarItem[] = [
   { href: '/super-admin/grounding/traces', label: 'Traces', labelHi: 'ट्रेसेस', icon: '⊳' },
   { href: '/super-admin/foxy-quality', label: 'Foxy Quality', labelHi: 'Foxy गुणवत्ता', icon: '◓' },
   { href: '/super-admin/synthesis-quality', label: 'Synthesis Quality', labelHi: 'संश्लेषण गुणवत्ता', icon: '◒' },
+  // Phase A.3 cross-signal dashboard (judge score vs feedback vs ops) — real,
+  // built page (apps/host/src/app/super-admin/ai-quality/page.tsx), just
+  // missing from nav. Gate-2 D1 (2026-09-05): confirmed this is live content,
+  // not a retirement candidate, before adding it here.
+  { href: '/super-admin/ai-quality', label: 'AI Quality', labelHi: 'AI गुणवत्ता', icon: '⊚' },
   { href: '/super-admin/misconceptions', label: 'Misconceptions', labelHi: 'भ्रांतियाँ', icon: '◔' },
   { href: '/super-admin/readiness-rubric', label: 'Readiness Rubric', labelHi: 'तैयारी रूब्रिक', icon: '⊏' },
   { href: '/super-admin/goal-profiles', label: 'Goal Profiles', labelHi: 'लक्ष्य प्रोफ़ाइल', icon: '◉' },
