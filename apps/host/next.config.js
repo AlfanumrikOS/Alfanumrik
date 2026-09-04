@@ -191,6 +191,15 @@ const nextConfig = {
       { source: '/parent/home',     destination: '/parent',          permanent: true },
       { source: '/parent/plan',     destination: '/parent/calendar', permanent: true },
       { source: '/parent/settings', destination: '/parent/profile',  permanent: true },
+
+      // Gate-2 F1 (public site, 2026-09-05). /schools was a standalone,
+      // legacy-pattern marketing page (own duplicated FEATURES/BOARDS arrays,
+      // no shared MarketingShell/V3 components) with zero internal links and
+      // no sitemap entry -- /for-schools is the current, actively-maintained,
+      // V3-system page covering the same audience and is already the one
+      // listed in sitemap.ts. 301 (not deletion without a redirect) preserves
+      // any external backlink/bookmark equity /schools may have accumulated.
+      { source: '/schools', destination: '/for-schools', permanent: true },
     ];
   },
   // PostHog reverse-proxy → EU project 159341 (eu.i.posthog.com). /ingest/static/*
