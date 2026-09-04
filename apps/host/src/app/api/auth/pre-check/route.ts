@@ -45,6 +45,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
+import { logger } from '@alfanumrik/lib/logger';
 
 type Action = 'login' | 'signup' | 'forgot';
 
@@ -111,11 +112,32 @@ async function verifyTurnstile(
       signal: AbortSignal.timeout(10_000),
       body: new URLSearchParams({ secret, response: token, remoteip }),
     });
-    if (!r.ok) throw new Error(`siteverify ${r.status}`);
+    if (!r.ok) {
+      // Cloudflare returns a non-2xx for a malformed REQUEST (most commonly
+      // a bad TURNSTILE_SECRET — e.g. a trailing newline from a dashboard
+      // paste), not for an invalid/expired token (that's a normal 200 with
+      // success:false, handled below). Log the body — it's Cloudflare's own
+      // fixed vocabulary of error-codes, never the secret or the token — so
+      // this class of failure is diagnosable from Vercel logs instead of
+      // requiring live reproduction (2026-09-04 incident: this collapsed
+      // into a generic 503 and took ~40 minutes to root-cause).
+      const errorBody = await r.text().catch(() => '<unreadable>');
+      logger.error('Turnstile siteverify rejected the request', {
+        action,
+        httpStatus: r.status,
+        responseBody: errorBody.slice(0, 500),
+      });
+      throw new Error(`siteverify ${r.status}`);
+    }
     result = await r.json();
-  } catch {
-    // Network/upstream failure talking to Cloudflare — fail closed. This is
-    // a real (if configured) check failing to run, not "not configured".
+  } catch (err) {
+    // Genuine network/timeout failure reaching Cloudflare (the !r.ok branch
+    // above already logged and re-threw its own case) — fail closed either
+    // way. This is a real (if configured) check failing to run, not "not
+    // configured".
+    if (!(err instanceof Error) || !err.message.startsWith('siteverify ')) {
+      logger.error('Turnstile siteverify request failed', { action, error: err });
+    }
     return { ok: false, status: 503, error: 'Verification is temporarily unavailable. Please try again shortly.' };
   }
 
