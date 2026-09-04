@@ -43,8 +43,10 @@ const ignoredRootFiles = new Set([
   'LAUNCH_CHECKLIST.md',
   'README.md',
   'README_LOCAL.md',
-  'alfanumrik_launch_readiness_2026-05-05.html',
 ]);
+// alfanumrik_launch_readiness_2026-05-05.html was moved into docs/audits/
+// (P2-12 doc-drift cleanup, 2026-09-04) -- the `docs/` entry in
+// ignoredPrefixes above already covers it, so no root-file entry is needed.
 
 let changedFiles;
 try {

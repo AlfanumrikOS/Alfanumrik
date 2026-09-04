@@ -390,8 +390,8 @@ record what happened, not what was learned.
 
 The substrate, all live on production:
 
-- `public.state_events` — append-only outbox with a `(event_id, idempotency_key)` unique constraint; 16 typed event kinds registered in `src/lib/state/events/registry.ts`. Producers flag-gated on `ff_event_bus_v1`.
-- **Projectors** — idempotent subscribers under `src/lib/state/subscribers/` (e.g. `concept-mastery-projector`, the legacy chapter-level `mastery-state-writer`); UPSERT on a stable natural key so replay is safe.
+- `public.state_events` — append-only outbox with a `(event_id, idempotency_key)` unique constraint; 16 typed event kinds registered in `packages/lib/src/state/events/registry.ts` (monorepo path — see CLAUDE.md's path-correction table). Producers flag-gated on `ff_event_bus_v1`.
+- **Projectors** — idempotent subscribers under `packages/lib/src/state/subscribers/` (e.g. `concept-mastery-projector`, the legacy chapter-level `mastery-state-writer`); UPSERT on a stable natural key so replay is safe.
 - **`projector-runner` Edge Function** — pg_cron ticks every 1 minute; per-subscriber cursors advance atomically with the projection write; terminal failures land in `subscriber_dead_letters`.
 - **`projector-health-check` Edge Function** — pg_cron ticks every 2 minutes; queries `public.subscriber_lag` and emits `projector_health_degraded` PostHog events on SLO breach.
 

@@ -159,7 +159,7 @@ Stack is current and approved — no replacements proposed.
 - 20260410000001 — Add UNIQUE constraints (closes audit CRITICAL-2)
 - 20260408000001–9 — P4 sprint: IRT, affective state pipeline, RLS init-plan, search_path, service-role RLS, FK covering indexes, redundant-index drops, usage-overload fix
 
-### 2.6 Cognitive Engine Inventory (`src/lib/cognitive-engine.ts`)
+### 2.6 Cognitive Engine Inventory (`packages/lib/src/cognitive-engine.ts`)
 
 Genuinely competitive depth — 15 cognitive-science primitives implemented as pure functions, all unit-testable. This is a defensible asset.
 
@@ -183,7 +183,7 @@ Genuinely competitive depth — 15 cognitive-science primitives implemented as p
 
 ### 2.7 RBAC & Security Posture
 
-Production-grade. `src/lib/rbac.ts` implements `authorizeRequest(request, permission)` used by every admin/v1 API route. Permission cache (5-min TTL, 200-entry cap, in-memory; redis upgrade path documented). Resource ownership checks (`own | linked | assigned | any`). Audit logs piped to `audit_logs` table. SECURITY DEFINER functions have `search_path` locked (migration 20260515000002). RLS WITH CHECK restored (migration 20260506000003).
+Production-grade. `packages/lib/src/rbac.ts` implements `authorizeRequest(request, permission)` used by every admin/v1 API route. Permission cache (5-min TTL, 200-entry cap, in-memory; redis upgrade path documented). Resource ownership checks (`own | linked | assigned | any`). Audit logs piped to `audit_logs` table. SECURITY DEFINER functions have `search_path` locked (migration 20260515000002). RLS WITH CHECK restored (migration 20260506000003).
 
 > **KNOWN IDOR — fix scheduled P0.** `supabase/functions/ml-adaptation/index.ts` reads `student_id` from request body and the RBAC check verifies only role, not identity. Any authenticated student can read/manipulate another student's BKT mastery. Fix is in §6.3.
 

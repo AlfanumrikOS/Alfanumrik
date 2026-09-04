@@ -235,6 +235,6 @@ supabase db push --remote
 
 ## Questions?
 
-- **How do feature flags work?** See `src/lib/feature-flags.ts`
+- **How do feature flags work?** See `packages/lib/src/feature-flags.ts`
 - **Which flags should I use?** Check `.claude/CLAUDE.md` for flag registry
 - **Want to add a new flag?** Create a new migration in `supabase/migrations/`

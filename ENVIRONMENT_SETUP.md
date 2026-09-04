@@ -230,7 +230,7 @@ export RAZORPAY_KEY_ID="<rzp-key-id>"
 - `SUPER_ADMIN_SECRET`
 
 ### Runtime (Node)
-`src/lib/env.ts` offers:
+`packages/lib/src/env.ts` offers:
 - `validatePublicEnv()` — checks the two `NEXT_PUBLIC_SUPABASE_*` vars
 - `validateServerEnv()` — adds `SUPABASE_SERVICE_ROLE_KEY` and scans for leaks
 - `getPublicEnv()` / `getServerEnv()` / `getAIEnv()` / `getPaymentEnv()` / `getAdminEnv()` / `getRedisEnv()` / `getMonitoringEnv()` — zod-typed accessors that throw with explicit, multi-line messages naming every offending variable
@@ -295,7 +295,7 @@ Incrementally migrate call sites as files are touched for other reasons. Do NOT 
 ## 11. References
 - Template: [`.env.example`](.env.example)
 - Local dev template: [`.env.local.example`](.env.local.example)
-- Runtime validator: [`src/lib/env.ts`](src/lib/env.ts)
+- Runtime validator: [`packages/lib/src/env.ts`](packages/lib/src/env.ts)
 - Ops inventory (short form): [`docs/ops/env-vars-inventory.md`](docs/ops/env-vars-inventory.md)
 - Email deliverability setup: [`EMAIL_DELIVERABILITY.md`](EMAIL_DELIVERABILITY.md)
 - Supabase dashboard setup: [`SUPABASE_DASHBOARD_SETUP.md`](SUPABASE_DASHBOARD_SETUP.md)
