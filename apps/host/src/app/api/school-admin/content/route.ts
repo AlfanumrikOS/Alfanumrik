@@ -9,7 +9,7 @@ import {
   validateQuestion,
   type QuestionInput,
   type ValidationError,
-} from '@alfanumrik/lib/school-admin/question-validation';
+} from './_lib/question-validation';
 
 const MAX_BULK_SIZE = 100;
 

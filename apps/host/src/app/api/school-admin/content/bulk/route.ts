@@ -7,7 +7,7 @@ import {
   validateQuestion,
   type QuestionInput,
   type ValidationError,
-} from '@alfanumrik/lib/school-admin/question-validation';
+} from '../_lib/question-validation';
 
 /** Hard cap per request — CSV bulk upload endpoint. */
 const MAX_BULK_SIZE = 500;

@@ -1,17 +1,26 @@
-// packages/lib/src/school-admin/question-validation.ts
+// apps/host/src/app/api/school-admin/content/_lib/question-validation.ts
 //
 // Gate-2 Phase E: extracted from a byte-for-byte duplicate that existed
-// independently in apps/host/src/app/api/school-admin/content/route.ts and
-// .../content/bulk/route.ts — the bulk route's own header comment already
-// said "Mirrors the validator in the sibling route... so both entry points
-// enforce identical P6 quality rules", making the intent to share explicit
-// even though the code itself was still copy-pasted. Both routes now import
-// from here instead.
+// independently in ../route.ts and ../bulk/route.ts — the bulk route's own
+// header comment already said "Mirrors the validator in the sibling
+// route... so both entry points enforce identical P6 quality rules", making
+// the intent to share explicit even though the code itself was still
+// copy-pasted. Both routes now import from here instead.
+//
+// Deliberately located under apps/host/, NOT packages/lib/src/ — this
+// validates `school_questions` (school-admin's own locally-authored content),
+// a SEPARATE, simpler gate from the canonical question_bank P6 validator at
+// packages/lib/src/quiz/question-validation.ts (min-length/garbage-text/
+// weak-explanation checks, no equivalent here). Putting a second
+// validateQuestion() under packages/lib/src/ trips
+// apps/host/src/__tests__/regressions/p6-validator-single-source-canary.test.ts,
+// which exists specifically because a past incident forked that gate three
+// ways and a forensic-audit fix landed in only two of the three copies.
+// This module intentionally is NOT a P6/question_bank fork — it's a
+// same-purpose-different-table validator that never needed to be canonical
+// in the first place, so it lives outside the tree that canary polices.
 //
 // P5: grades are strings "6"-"12", never integers.
-// P6: every served question — non-empty text (no {{/[BLANK]}} placeholders),
-//     exactly 4 distinct non-empty options, correct_answer_index 0-3,
-//     non-empty explanation, valid difficulty and bloom_level.
 
 export const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 export const VALID_DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
@@ -38,8 +47,8 @@ export interface ValidationError {
 }
 
 /**
- * Validates a single question against P6 quality rules and P5 grade format.
- * Returns an array of errors (empty = valid).
+ * Validates a single school_questions row against this table's quality rules
+ * and P5 grade format. Returns an array of errors (empty = valid).
  */
 export function validateQuestion(q: QuestionInput, index: number): ValidationError[] {
   const errors: ValidationError[] = [];
