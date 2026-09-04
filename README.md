@@ -168,7 +168,7 @@ A few product constraints are treated as non-negotiable invariants across the co
 - **Bilingual UI** — all user-facing text supports Hindi and English; technical terms (CBSE, XP, Bloom's) are not translated.
 - **Built for Indian 4G** — strict bundle budgets for shared JS, pages, and middleware target 2-5 Mbps networks.
 - **Fixed score formula** — `Math.round((correct / total) * 100)`, applied identically on the client, on submission, and in the database RPC.
-- **Centralized XP economy** — all XP constants live in `src/lib/xp-rules.ts`; no hardcoded XP values elsewhere.
+- **Centralized XP economy** — all XP constants live in `packages/lib/src/xp-rules.ts`; no hardcoded XP values elsewhere.
 - **Atomic quiz submission** — quiz results are written through a single-transaction RPC, never split into separate operations.
 - **Anti-cheat** — enforced both client-side and server-side (minimum average time per question, no all-same-answer patterns, response count must equal question count).
 - **Grades are strings** — `"6"` through `"12"`, never integers, everywhere (database, RPCs, APIs, TypeScript).
