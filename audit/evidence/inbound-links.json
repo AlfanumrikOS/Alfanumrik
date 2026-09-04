@@ -1,0 +1,1561 @@
+[
+ {
+  "route": "/assignments",
+  "inbound": 2,
+  "hits": [
+   "packages/ui/src/navigation/nav-config.ts:208",
+   "packages/ui/src/navigation/nav-config.ts:353"
+  ]
+ },
+ {
+  "route": "/dashboard",
+  "inbound": 58,
+  "hits": [
+   "apps/host/src/app/(student)/exam-prep/page.tsx:340",
+   "apps/host/src/app/(student)/exams/page.tsx:281",
+   "apps/host/src/app/(student)/leaderboard/page.tsx:557"
+  ]
+ },
+ {
+  "route": "/exam-prep",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/(student)/practice/exam/page.tsx:8",
+   "packages/lib/src/constants.ts:151",
+   "packages/lib/src/routes/study-menu-routes.ts:24"
+  ]
+ },
+ {
+  "route": "/exams/mock/[paperId]",
+  "inbound": 7,
+  "hits": [
+   "apps/host/src/app/(student)/exams/mock/MockTestCatalog.tsx:154",
+   "apps/host/src/app/(student)/exams/page.tsx:324",
+   "packages/ui/src/exams/MockTestRunner.tsx:57"
+  ]
+ },
+ {
+  "route": "/exams/mock/[paperId]/results",
+  "inbound": 11,
+  "hits": [
+   "apps/host/src/app/(student)/exams/mock/MockTestCatalog.tsx:154",
+   "apps/host/src/app/(student)/exams/mock/[paperId]/page.tsx:206",
+   "apps/host/src/app/(student)/exams/mock/[paperId]/page.tsx:235"
+  ]
+ },
+ {
+  "route": "/exams/mock",
+  "inbound": 6,
+  "hits": [
+   "apps/host/src/app/(student)/exams/page.tsx:324",
+   "packages/ui/src/exams/MockTestRunner.tsx:57",
+   "packages/ui/src/exams/PaperCard.tsx:186"
+  ]
+ },
+ {
+  "route": "/exams",
+  "inbound": 10,
+  "hits": [
+   "packages/ui/src/exam-briefing/os/StartExamCTA.tsx:49",
+   "packages/ui/src/exam-briefing/os/UpcomingExamsList.tsx:104",
+   "packages/ui/src/exams/MockTestRunner.tsx:57"
+  ]
+ },
+ {
+  "route": "/leaderboard",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/(student)/rewards/page.tsx:6",
+   "apps/host/src/app/(student)/rewards/page.tsx:14",
+   "packages/ui/src/navigation/nav-config.ts:161"
+  ]
+ },
+ {
+  "route": "/learn/[subject]/[chapter]",
+  "inbound": 20,
+  "hits": [
+   "apps/host/src/app/(student)/learn/page.tsx:463",
+   "apps/host/src/app/(student)/learn/page.tsx:545",
+   "apps/host/src/app/(student)/library/page.tsx:348"
+  ]
+ },
+ {
+  "route": "/learn/foxy-test",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/learn",
+  "inbound": 18,
+  "hits": [
+   "apps/host/src/app/(student)/library/page.tsx:348",
+   "apps/host/src/app/(student)/library/page.tsx:393",
+   "apps/host/src/app/api/diagnostic/start/route.ts:569"
+  ]
+ },
+ {
+  "route": "/library",
+  "inbound": 2,
+  "hits": [
+   "packages/ui/src/navigation/nav-config.ts:218",
+   "packages/ui/src/navigation/nav-config.ts:365"
+  ]
+ },
+ {
+  "route": "/memory",
+  "inbound": 2,
+  "hits": [
+   "packages/ui/src/navigation/nav-config.ts:160",
+   "packages/ui/src/navigation/nav-config.ts:382"
+  ]
+ },
+ {
+  "route": "/practice/exam",
+  "inbound": 1,
+  "hits": [
+   "apps/host/next.config.js:183"
+  ]
+ },
+ {
+  "route": "/practice",
+  "inbound": 3,
+  "hits": [
+   "packages/ui/src/navigation/nav-config.ts:80",
+   "packages/ui/src/navigation/nav-config.ts:311",
+   "apps/host/next.config.js:183"
+  ]
+ },
+ {
+  "route": "/profile",
+  "inbound": 6,
+  "hits": [
+   "apps/host/src/app/me/page.tsx:8",
+   "apps/host/src/app/me/page.tsx:98",
+   "packages/ui/src/dashboard/os/BoardSubjectPicker.tsx:15"
+  ]
+ },
+ {
+  "route": "/progress/dashboard",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/progress",
+  "inbound": 8,
+  "hits": [
+   "apps/host/src/app/(student)/exams/mock/[paperId]/results/page.tsx:124",
+   "packages/ui/src/landing/FooterV2.tsx:19",
+   "packages/ui/src/landing/v3/FooterV3.tsx:27"
+  ]
+ },
+ {
+  "route": "/pyq",
+  "inbound": 2,
+  "hits": [
+   "packages/ui/src/navigation/nav-config.ts:201",
+   "packages/ui/src/navigation/nav-config.ts:351"
+  ]
+ },
+ {
+  "route": "/quiz/ncert",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/quiz",
+  "inbound": 42,
+  "hits": [
+   "apps/host/src/app/(student)/assignments/page.tsx:197",
+   "apps/host/src/app/(student)/exam-prep/page.tsx:697",
+   "apps/host/src/app/(student)/exam-prep/page.tsx:715"
+  ]
+ },
+ {
+  "route": "/reports",
+  "inbound": 1,
+  "hits": [
+   "packages/lib/src/constants.ts:150"
+  ]
+ },
+ {
+  "route": "/revision",
+  "inbound": 4,
+  "hits": [
+   "packages/ui/src/dashboard/os/MasterySnapshot.tsx:370",
+   "packages/ui/src/dashboard/ReviewsDueCard.tsx:173",
+   "packages/ui/src/navigation/nav-config.ts:207"
+  ]
+ },
+ {
+  "route": "/rewards",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/simulations",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/about",
+  "inbound": 8,
+  "hits": [
+   "packages/ui/src/landing/FooterV2.tsx:30",
+   "packages/ui/src/landing/FooterV2.tsx:31",
+   "packages/ui/src/landing/FooterV2.tsx:32"
+  ]
+ },
+ {
+  "route": "/auth/reset",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/billing",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/(student)/profile/page.tsx:1222",
+   "packages/ui/src/PermissionGate.tsx:83"
+  ]
+ },
+ {
+  "route": "/careers",
+  "inbound": 2,
+  "hits": [
+   "packages/ui/src/landing/FooterV2.tsx:34",
+   "packages/ui/src/landing/v3/FooterV3.tsx:46"
+  ]
+ },
+ {
+  "route": "/challenge",
+  "inbound": 3,
+  "hits": [
+   "packages/ui/src/challenge/DailyChallengeCard.tsx:40",
+   "packages/ui/src/challenge/DailyChallengeCard.tsx:119",
+   "packages/ui/src/study-plan/TodaysFocus.tsx:70"
+  ]
+ },
+ {
+  "route": "/contact",
+  "inbound": 20,
+  "hits": [
+   "apps/host/src/app/careers/page.tsx:81",
+   "apps/host/src/app/demo/page.tsx:357",
+   "apps/host/src/app/for-schools/page.tsx:162"
+  ]
+ },
+ {
+  "route": "/demo",
+  "inbound": 7,
+  "hits": [
+   "apps/host/src/app/for-schools/page.tsx:161",
+   "apps/host/src/app/for-schools/page.tsx:207",
+   "apps/host/src/app/for-teachers/page.tsx:149"
+  ]
+ },
+ {
+  "route": "/dev/cosmic-preview",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/dev/ui",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/diagnostic",
+  "inbound": 6,
+  "hits": [
+   "apps/host/src/app/api/diagnostic/start/route.ts:550",
+   "apps/host/src/app/onboarding/page.tsx:253",
+   "packages/lib/src/state/learner-loop/resolve-next-action.ts:653"
+  ]
+ },
+ {
+  "route": "/dive/history",
+  "inbound": 1,
+  "hits": [
+   "packages/ui/src/synthesis/SynthesisRitual.tsx:109"
+  ]
+ },
+ {
+  "route": "/dive",
+  "inbound": 5,
+  "hits": [
+   "packages/ui/src/navigation/nav-config.ts:216",
+   "packages/ui/src/navigation/nav-config.ts:363",
+   "packages/ui/src/synthesis/SynthesisRitual.tsx:109"
+  ]
+ },
+ {
+  "route": "/exam-briefing",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/for-parents",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/for-teachers/page.tsx:188",
+   "packages/ui/src/landing/NavV2.tsx:24",
+   "packages/ui/src/landing/NavV2.tsx:499"
+  ]
+ },
+ {
+  "route": "/for-schools",
+  "inbound": 6,
+  "hits": [
+   "apps/host/src/app/for-teachers/page.tsx:189",
+   "packages/ui/src/landing/Footer.tsx:27",
+   "packages/ui/src/landing/FooterV2.tsx:22"
+  ]
+ },
+ {
+  "route": "/for-teachers",
+  "inbound": 2,
+  "hits": [
+   "packages/ui/src/landing/NavV2.tsx:25",
+   "packages/ui/src/landing/NavV2.tsx:500"
+  ]
+ },
+ {
+  "route": "/foxy",
+  "inbound": 42,
+  "hits": [
+   "apps/host/src/app/(student)/exam-prep/page.tsx:688",
+   "apps/host/src/app/(student)/learn/page.tsx:530",
+   "apps/host/src/app/(student)/learn/page.tsx:647"
+  ]
+ },
+ {
+  "route": "/foxy/snap",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/foxy/page.tsx:1420"
+  ]
+ },
+ {
+  "route": "/help",
+  "inbound": 7,
+  "hits": [
+   "apps/host/src/app/not-found.tsx:60",
+   "apps/host/src/app/parent/support/page.tsx:905",
+   "apps/host/src/app/settings/page.tsx:784"
+  ]
+ },
+ {
+  "route": "/hpc",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/(student)/progress/page.tsx:1346"
+  ]
+ },
+ {
+  "route": "/internal/admin",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/join",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/lab-notebook/[studentId]",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/(student)/progress/page.tsx:1363"
+  ]
+ },
+ {
+  "route": "/login",
+  "inbound": 121,
+  "hits": [
+   "apps/host/src/app/(student)/dashboard/StudentOSDashboard.tsx:146",
+   "apps/host/src/app/(student)/exam-prep/page.tsx:126",
+   "apps/host/src/app/(student)/exams/mock/MockTestCatalog.tsx:136"
+  ]
+ },
+ {
+  "route": "/me",
+  "inbound": 2,
+  "hits": [
+   "packages/ui/src/navigation/nav-config.ts:228",
+   "packages/ui/src/navigation/nav-config.ts:393"
+  ]
+ },
+ {
+  "route": "/notifications",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/(student)/memory/page.tsx:353",
+   "packages/ui/src/navigation/nav-config.ts:158",
+   "packages/ui/src/navigation/nav-config.ts:380"
+  ]
+ },
+ {
+  "route": "/onboarding",
+  "inbound": 6,
+  "hits": [
+   "apps/host/src/app/(student)/dashboard/StudentOSDashboard.tsx:157",
+   "apps/host/src/app/(student)/learn/page.tsx:138",
+   "apps/host/src/app/(student)/library/page.tsx:302"
+  ]
+ },
+ {
+  "route": "/",
+  "inbound": 11,
+  "hits": [
+   "apps/host/src/app/api/school-config/manifest/route.ts:57",
+   "apps/host/src/app/api/school-config/manifest/route.ts:58",
+   "apps/host/src/app/help/page.tsx:304"
+  ]
+ },
+ {
+  "route": "/parent/attendance",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/parent/_components/ParentShell.tsx:20"
+  ]
+ },
+ {
+  "route": "/parent/billing",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/parent/_components/ParentMobileNav.tsx:43",
+   "apps/host/src/app/parent/_components/ParentShell.tsx:21",
+   "packages/ui/src/parent/ParentGlanceHome.tsx:515"
+  ]
+ },
+ {
+  "route": "/parent/calendar",
+  "inbound": 6,
+  "hits": [
+   "apps/host/src/app/(student)/exam-prep/page.tsx:419",
+   "apps/host/src/app/parent/plan/page.tsx:13",
+   "apps/host/src/app/parent/_components/ParentMobileNav.tsx:41"
+  ]
+ },
+ {
+  "route": "/parent/children",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/parent/billing/page.tsx:367",
+   "apps/host/src/app/parent/_components/ParentMobileNav.tsx:35",
+   "apps/host/src/app/parent/_components/ParentShell.tsx:15"
+  ]
+ },
+ {
+  "route": "/parent/consent",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/parent/_components/ParentShell.tsx:174",
+   "apps/host/src/app/settings/whatsapp/page.tsx:424"
+  ]
+ },
+ {
+  "route": "/parent/home",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/parent/messages",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/parent/_components/ParentMobileNav.tsx:37",
+   "apps/host/src/app/parent/_components/ParentShell.tsx:17"
+  ]
+ },
+ {
+  "route": "/parent/notifications",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/parent/_components/ParentMobileNav.tsx:42",
+   "apps/host/src/app/parent/_components/ParentShell.tsx:18"
+  ]
+ },
+ {
+  "route": "/parent",
+  "inbound": 19,
+  "hits": [
+   "apps/host/src/app/(student)/dashboard/StudentOSDashboard.tsx:148",
+   "apps/host/src/app/(student)/exam-prep/page.tsx:419",
+   "apps/host/src/app/api/super-admin/demo-accounts/route.ts:61"
+  ]
+ },
+ {
+  "route": "/parent/plan",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/parent/profile",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/parent/settings/page.tsx:4",
+   "apps/host/src/app/parent/_components/ParentMobileNav.tsx:45",
+   "apps/host/src/app/parent/_components/ParentShell.tsx:23"
+  ]
+ },
+ {
+  "route": "/parent/reports",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/parent/profile/page.tsx:192",
+   "apps/host/src/app/parent/_components/ParentMobileNav.tsx:36",
+   "apps/host/src/app/parent/_components/ParentShell.tsx:19"
+  ]
+ },
+ {
+  "route": "/parent/settings",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/parent/support",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/parent/profile/page.tsx:199",
+   "apps/host/src/app/parent/_components/ParentMobileNav.tsx:44",
+   "apps/host/src/app/parent/_components/ParentShell.tsx:22"
+  ]
+ },
+ {
+  "route": "/press",
+  "inbound": 1,
+  "hits": [
+   "packages/ui/src/landing/FooterV2.tsx:33"
+  ]
+ },
+ {
+  "route": "/pricing",
+  "inbound": 25,
+  "hits": [
+   "apps/host/src/app/(student)/learn/page.tsx:394",
+   "apps/host/src/app/(student)/learn/page.tsx:409",
+   "apps/host/src/app/(student)/library/page.tsx:407"
+  ]
+ },
+ {
+  "route": "/privacy",
+  "inbound": 17,
+  "hits": [
+   "apps/host/src/app/careers/page.tsx:79",
+   "apps/host/src/app/contact/page.tsx:73",
+   "apps/host/src/app/demo/page.tsx:355"
+  ]
+ },
+ {
+  "route": "/product",
+  "inbound": 4,
+  "hits": [
+   "packages/ui/src/landing/NavV2.tsx:178",
+   "packages/ui/src/landing/NavV2.tsx:182",
+   "packages/ui/src/landing/NavV2.tsx:498"
+  ]
+ },
+ {
+  "route": "/refresh",
+  "inbound": 6,
+  "hits": [
+   "packages/lib/src/constants.ts:142",
+   "packages/lib/src/constants.ts:147",
+   "packages/lib/src/routes/study-menu-routes.ts:16"
+  ]
+ },
+ {
+  "route": "/refunds",
+  "inbound": 2,
+  "hits": [
+   "packages/ui/src/landing/FooterV2.tsx:44",
+   "packages/ui/src/landing/v3/FooterV3.tsx:55"
+  ]
+ },
+ {
+  "route": "/research",
+  "inbound": 3,
+  "hits": [
+   "packages/ui/src/landing/NavV2.tsx:252",
+   "packages/ui/src/landing/NavV2.tsx:256",
+   "packages/ui/src/landing/NavV2.tsx:503"
+  ]
+ },
+ {
+  "route": "/scan",
+  "inbound": 1,
+  "hits": [
+   "packages/lib/src/constants.ts:149"
+  ]
+ },
+ {
+  "route": "/school-admin/academics",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/school-admin/ai-assistant",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:159"
+  ]
+ },
+ {
+  "route": "/school-admin/ai-config",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:240"
+  ]
+ },
+ {
+  "route": "/school-admin/announcements",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:204"
+  ]
+ },
+ {
+  "route": "/school-admin/api-keys",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:241"
+  ]
+ },
+ {
+  "route": "/school-admin/audit-log",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/school-admin/governance/page.tsx:10",
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:242"
+  ]
+ },
+ {
+  "route": "/school-admin/billing",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:228"
+  ]
+ },
+ {
+  "route": "/school-admin/branding",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:238"
+  ]
+ },
+ {
+  "route": "/school-admin/classes",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/school-admin/academics/page.tsx:10",
+   "apps/host/src/app/school-admin/CommandCenter.tsx:390",
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:165"
+  ]
+ },
+ {
+  "route": "/school-admin/content",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:167"
+  ]
+ },
+ {
+  "route": "/school-admin/enroll",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/school-admin/CommandCenter.tsx:389",
+   "apps/host/src/app/school-admin/students/page.tsx:440",
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:136"
+  ]
+ },
+ {
+  "route": "/school-admin/escalations",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/school-admin/reports/LeadershipTab.tsx:269",
+   "apps/host/src/app/school-admin/reports/LeadershipTab.tsx:276",
+   "apps/host/src/app/school-admin/reports/LeadershipTab.tsx:283"
+  ]
+ },
+ {
+  "route": "/school-admin/exams",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:166"
+  ]
+ },
+ {
+  "route": "/school-admin/governance",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/school-admin/insights",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/school-admin/invite-codes",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/school-admin/CommandCenter.tsx:388",
+   "apps/host/src/app/school-admin/students/page.tsx:529",
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:137"
+  ]
+ },
+ {
+  "route": "/school-admin/modules",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:239"
+  ]
+ },
+ {
+  "route": "/school-admin/overview",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/school-admin",
+  "inbound": 8,
+  "hits": [
+   "apps/host/src/app/(student)/dashboard/StudentOSDashboard.tsx:149",
+   "apps/host/src/app/page.tsx:48",
+   "packages/lib/src/constants.ts:188"
+  ]
+ },
+ {
+  "route": "/school-admin/parents",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:135"
+  ]
+ },
+ {
+  "route": "/school-admin/people",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/school-admin/rbac",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:148"
+  ]
+ },
+ {
+  "route": "/school-admin/reports-depth",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:185"
+  ]
+ },
+ {
+  "route": "/school-admin/reports",
+  "inbound": 6,
+  "hits": [
+   "apps/host/src/app/school-admin/exams/page.tsx:404",
+   "apps/host/src/app/school-admin/exams/page.tsx:1196",
+   "apps/host/src/app/school-admin/insights/page.tsx:10"
+  ]
+ },
+ {
+  "route": "/school-admin/settings",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/school-admin/setup",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/school-admin/CommandCenter.tsx:387",
+   "apps/host/src/app/school-admin/settings/page.tsx:10",
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:243"
+  ]
+ },
+ {
+  "route": "/school-admin/staff",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:141"
+  ]
+ },
+ {
+  "route": "/school-admin/students",
+  "inbound": 6,
+  "hits": [
+   "apps/host/src/app/school-admin/classes/page.tsx:534",
+   "apps/host/src/app/school-admin/enroll/page.tsx:685",
+   "apps/host/src/app/school-admin/people/page.tsx:10"
+  ]
+ },
+ {
+  "route": "/school-admin/teachers",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:134",
+   "packages/lib/src/constants.ts:189"
+  ]
+ },
+ {
+  "route": "/schools",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/security",
+  "inbound": 1,
+  "hits": [
+   "packages/ui/src/landing/FooterV2.tsx:45"
+  ]
+ },
+ {
+  "route": "/settings",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/settings/whatsapp",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/settings/page.tsx:638"
+  ]
+ },
+ {
+  "route": "/stem-centre",
+  "inbound": 7,
+  "hits": [
+   "apps/host/src/app/(student)/simulations/page.tsx:16",
+   "apps/host/src/app/foxy/page.tsx:1092",
+   "packages/ui/src/navigation/nav-config.ts:162"
+  ]
+ },
+ {
+  "route": "/super-admin/adaptive-loops",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:194"
+  ]
+ },
+ {
+  "route": "/super-admin/ai-quality",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/super-admin/alerts",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/super-admin/alfabot/[sessionId]",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/alfabot/page.tsx:649",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:227"
+  ]
+ },
+ {
+  "route": "/super-admin/alfabot",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:227"
+  ]
+ },
+ {
+  "route": "/super-admin/analytics-b2b",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:213"
+  ]
+ },
+ {
+  "route": "/super-admin/analytics",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:215"
+  ]
+ },
+ {
+  "route": "/super-admin/bulk-actions",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:159"
+  ]
+ },
+ {
+  "route": "/super-admin/bulk-upload",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:160"
+  ]
+ },
+ {
+  "route": "/super-admin/bulk-upload/schools",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/bulk-upload/page.tsx:420"
+  ]
+ },
+ {
+  "route": "/super-admin/cms",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:169",
+   "apps/host/src/app/super-admin/_components/widgets/QuickOperations.tsx:136"
+  ]
+ },
+ {
+  "route": "/super-admin/command-center",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:206"
+  ]
+ },
+ {
+  "route": "/super-admin/content",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:170"
+  ]
+ },
+ {
+  "route": "/super-admin/demo",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:161"
+  ]
+ },
+ {
+  "route": "/super-admin/diagnostics",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:193",
+   "apps/host/src/app/super-admin/_components/widgets/PendingActions.tsx:23",
+   "apps/host/src/app/super-admin/_components/widgets/QuickOperations.tsx:132"
+  ]
+ },
+ {
+  "route": "/super-admin/enroll-mfa",
+  "inbound": 1,
+  "hits": [
+   "packages/lib/src/admin-auth.ts:446"
+  ]
+ },
+ {
+  "route": "/super-admin/entitlements",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:211"
+  ]
+ },
+ {
+  "route": "/super-admin/flags",
+  "inbound": 9,
+  "hits": [
+   "apps/host/src/app/super-admin/alfabot/page.tsx:374",
+   "apps/host/src/app/super-admin/alfabot/page.tsx:600",
+   "apps/host/src/app/super-admin/diagnostics/page.tsx:539"
+  ]
+ },
+ {
+  "route": "/super-admin/foxy-quality",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:158",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:176"
+  ]
+ },
+ {
+  "route": "/super-admin/foxy-report/[studentId]",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/super-admin/goal-profiles",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:180"
+  ]
+ },
+ {
+  "route": "/super-admin/grounding/ai-issues",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:174"
+  ]
+ },
+ {
+  "route": "/super-admin/grounding/coverage",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:172"
+  ]
+ },
+ {
+  "route": "/super-admin/grounding/health",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:171",
+   "apps/host/src/app/super-admin/_components/widgets/AiHealth.tsx:59",
+   "apps/host/src/app/super-admin/_components/widgets/PendingActions.tsx:28"
+  ]
+ },
+ {
+  "route": "/super-admin/grounding/traces",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:175"
+  ]
+ },
+ {
+  "route": "/super-admin/grounding/verification-queue",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:173"
+  ]
+ },
+ {
+  "route": "/super-admin/health",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:205"
+  ]
+ },
+ {
+  "route": "/super-admin/institutions",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/super-admin/bulk-upload/page.tsx:510",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:212",
+   "apps/host/src/app/super-admin/_components/widgets/QuickOperations.tsx:135"
+  ]
+ },
+ {
+  "route": "/super-admin/intelligence/geography",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:220"
+  ]
+ },
+ {
+  "route": "/super-admin/intelligence",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:166",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:216",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:219"
+  ]
+ },
+ {
+  "route": "/super-admin/intelligence/revenue",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:166"
+  ]
+ },
+ {
+  "route": "/super-admin/intelligence/schools/[id]",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/intelligence/schools/page.tsx:333",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:219"
+  ]
+ },
+ {
+  "route": "/super-admin/intelligence/schools",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:219"
+  ]
+ },
+ {
+  "route": "/super-admin/invoices",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:165"
+  ]
+ },
+ {
+  "route": "/super-admin/learning",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:214",
+   "apps/host/src/app/super-admin/_components/widgets/QuickOperations.tsx:131"
+  ]
+ },
+ {
+  "route": "/super-admin/login",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/api/super-admin/demo-accounts/route.ts:71",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:498"
+  ]
+ },
+ {
+  "route": "/super-admin/logs",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/super-admin/alfabot/page.tsx:671",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:226",
+   "apps/host/src/app/super-admin/_components/widgets/DeployAuditBackups.tsx:48"
+  ]
+ },
+ {
+  "route": "/super-admin/marking-integrity/[studentId]",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/marking-integrity/page.tsx:465",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:200"
+  ]
+ },
+ {
+  "route": "/super-admin/marking-integrity",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:200"
+  ]
+ },
+ {
+  "route": "/super-admin/misconceptions",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:178"
+  ]
+ },
+ {
+  "route": "/super-admin/module-overrides",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:185"
+  ]
+ },
+ {
+  "route": "/super-admin/mol-shadow",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:221"
+  ]
+ },
+ {
+  "route": "/super-admin/oauth-apps",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:210"
+  ]
+ },
+ {
+  "route": "/super-admin/observability/channels",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/observability/rules/page.tsx:350",
+   "apps/host/src/app/super-admin/observability/rules/page.tsx:641"
+  ]
+ },
+ {
+  "route": "/super-admin/observability",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/super-admin/alerts/page.tsx:20",
+   "apps/host/src/app/super-admin/subscriptions/_components/PaymentOpsTab.tsx:523",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:188"
+  ]
+ },
+ {
+  "route": "/super-admin/observability/rules",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/super-admin/alerts/page.tsx:20",
+   "apps/host/src/app/super-admin/observability/channels/page.tsx:266",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:191"
+  ]
+ },
+ {
+  "route": "/super-admin/oracle-health",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:195"
+  ]
+ },
+ {
+  "route": "/super-admin",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/api/super-admin/demo-accounts/route.ts:71",
+   "packages/lib/src/admin-auth.ts:446",
+   "packages/lib/src/middleware-helpers.ts:450"
+  ]
+ },
+ {
+  "route": "/super-admin/rbac",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/alfabot/[sessionId]/page.tsx:127",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:209"
+  ]
+ },
+ {
+  "route": "/super-admin/readiness-rubric",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:179"
+  ]
+ },
+ {
+  "route": "/super-admin/reports",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:225",
+   "apps/host/src/app/super-admin/_components/widgets/QuickOperations.tsx:137"
+  ]
+ },
+ {
+  "route": "/super-admin/sla",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:192"
+  ]
+ },
+ {
+  "route": "/super-admin/students/[id]",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/super-admin/foxy-report/[studentId]/page.tsx:347",
+   "apps/host/src/app/super-admin/observability/_components/EventDetailDrawer.tsx:195",
+   "apps/host/src/app/super-admin/subjects/violations/page.tsx:198"
+  ]
+ },
+ {
+  "route": "/super-admin/subjects/grade-map",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/super-admin/subjects",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:181"
+  ]
+ },
+ {
+  "route": "/super-admin/subjects/plan-access",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/super-admin/subjects/violations",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/super-admin/subscribers",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:204"
+  ]
+ },
+ {
+  "route": "/super-admin/subscriptions",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:164",
+   "apps/host/src/app/super-admin/_components/widgets/QuickOperations.tsx:130",
+   "apps/host/src/app/super-admin/_components/widgets/RevenueSnapshot.tsx:35"
+  ]
+ },
+ {
+  "route": "/super-admin/support",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:131",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:148"
+  ]
+ },
+ {
+  "route": "/super-admin/support/tickets",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/support/page.tsx:328",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:148"
+  ]
+ },
+ {
+  "route": "/super-admin/synthesis-health",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:196"
+  ]
+ },
+ {
+  "route": "/super-admin/synthesis-quality",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:177"
+  ]
+ },
+ {
+  "route": "/super-admin/users",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/super-admin/bulk-upload/page.tsx:773",
+   "apps/host/src/app/super-admin/students/[id]/page.tsx:179",
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:123"
+  ]
+ },
+ {
+  "route": "/super-admin/view-as/[studentId]/dashboard",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/view-as/[studentId]/layout.tsx:76"
+  ]
+ },
+ {
+  "route": "/super-admin/view-as/[studentId]/foxy",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/view-as/[studentId]/layout.tsx:76"
+  ]
+ },
+ {
+  "route": "/super-admin/view-as/[studentId]/progress",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/view-as/[studentId]/layout.tsx:76"
+  ]
+ },
+ {
+  "route": "/super-admin/view-as/[studentId]/quizzes",
+  "inbound": 1,
+  "hits": [
+   "apps/host/src/app/super-admin/view-as/[studentId]/layout.tsx:76"
+  ]
+ },
+ {
+  "route": "/super-admin/workbench",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/super-admin/_components/AdminShell.tsx:224",
+   "apps/host/src/app/super-admin/_components/widgets/QuickOperations.tsx:133"
+  ]
+ },
+ {
+  "route": "/support/[ticket_id]",
+  "inbound": 8,
+  "hits": [
+   "apps/host/src/app/support/new/page.tsx:158",
+   "apps/host/src/app/support/new/page.tsx:161",
+   "apps/host/src/app/support/new/page.tsx:229"
+  ]
+ },
+ {
+  "route": "/support/new",
+  "inbound": 2,
+  "hits": [
+   "apps/host/src/app/support/page.tsx:201",
+   "apps/host/src/app/support/page.tsx:276"
+  ]
+ },
+ {
+  "route": "/support",
+  "inbound": 2,
+  "hits": [
+   "packages/ui/src/navigation/nav-config.ts:230",
+   "packages/ui/src/navigation/nav-config.ts:395"
+  ]
+ },
+ {
+  "route": "/synthesis",
+  "inbound": 4,
+  "hits": [
+   "apps/host/src/app/(student)/progress/page.tsx:547",
+   "apps/host/src/app/hpc/page.tsx:300",
+   "packages/ui/src/navigation/nav-config.ts:217"
+  ]
+ },
+ {
+  "route": "/teacher/assign",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/teacher/assignments",
+  "inbound": 6,
+  "hits": [
+   "apps/host/src/app/teacher/assign/page.tsx:6",
+   "apps/host/src/app/teacher/classes/page.tsx:569",
+   "apps/host/src/app/teacher/CommandCenter.tsx:415"
+  ]
+ },
+ {
+  "route": "/teacher/attendance",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:31",
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:61",
+   "apps/host/src/app/teacher/_components/TeacherShell.tsx:107"
+  ]
+ },
+ {
+  "route": "/teacher/classes",
+  "inbound": 8,
+  "hits": [
+   "apps/host/src/app/teacher/CommandCenter.tsx:1067",
+   "apps/host/src/app/teacher/grade-book/page.tsx:697",
+   "apps/host/src/app/teacher/lab-leaderboard/page.tsx:411"
+  ]
+ },
+ {
+  "route": "/teacher/grade-book",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/teacher/CommandCenter.tsx:405",
+   "apps/host/src/app/teacher/grade/page.tsx:6",
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:32"
+  ]
+ },
+ {
+  "route": "/teacher/grade",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/teacher/insights",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/teacher/lab-leaderboard",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:55",
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:67",
+   "apps/host/src/app/teacher/_components/TeacherShell.tsx:115"
+  ]
+ },
+ {
+  "route": "/teacher/messages",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/teacher/CommandCenter.tsx:410",
+   "apps/host/src/app/teacher/students/page.tsx:347",
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:33"
+  ]
+ },
+ {
+  "route": "/teacher/onboarding",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/teacher",
+  "inbound": 12,
+  "hits": [
+   "apps/host/src/app/(student)/dashboard/StudentOSDashboard.tsx:147",
+   "apps/host/src/app/challenge/page.tsx:71",
+   "apps/host/src/app/onboarding/page.tsx:125"
+  ]
+ },
+ {
+  "route": "/teacher/profile",
+  "inbound": 7,
+  "hits": [
+   "apps/host/src/app/teacher/assignments/page.tsx:512",
+   "apps/host/src/app/teacher/settings/page.tsx:6",
+   "apps/host/src/app/teacher/worksheets/page.tsx:548"
+  ]
+ },
+ {
+  "route": "/teacher/reports",
+  "inbound": 7,
+  "hits": [
+   "apps/host/src/app/teacher/classes/page.tsx:584",
+   "apps/host/src/app/teacher/insights/page.tsx:8",
+   "apps/host/src/app/teacher/profile/page.tsx:218"
+  ]
+ },
+ {
+  "route": "/teacher/resources",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/teacher/settings",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/teacher/students",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/teacher/CommandCenter.tsx:819",
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:40",
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:50"
+  ]
+ },
+ {
+  "route": "/teacher/submissions",
+  "inbound": 3,
+  "hits": [
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:52",
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:63",
+   "apps/host/src/app/teacher/_components/TeacherShell.tsx:111"
+  ]
+ },
+ {
+  "route": "/teacher/worksheets",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/teacher/resources/page.tsx:6",
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:53",
+   "apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:65"
+  ]
+ },
+ {
+  "route": "/terms",
+  "inbound": 14,
+  "hits": [
+   "apps/host/src/app/careers/page.tsx:80",
+   "apps/host/src/app/contact/page.tsx:74",
+   "apps/host/src/app/demo/page.tsx:356"
+  ]
+ },
+ {
+  "route": "/tests",
+  "inbound": 1,
+  "hits": [
+   "packages/ui/src/today/v2/TodayHomeV2.tsx:152"
+  ]
+ },
+ {
+  "route": "/today",
+  "inbound": 7,
+  "hits": [
+   "apps/host/src/app/onboarding/page.tsx:199",
+   "apps/host/src/app/tests/page.tsx:8",
+   "apps/host/src/app/tests/page.tsx:54"
+  ]
+ },
+ {
+  "route": "/tutor",
+  "inbound": 0,
+  "hits": []
+ },
+ {
+  "route": "/upgrade",
+  "inbound": 5,
+  "hits": [
+   "apps/host/src/app/(student)/exams/mock/MockTestCatalog.tsx:214",
+   "apps/host/src/app/(student)/exams/mock/MockTestCatalog.tsx:309",
+   "apps/host/src/app/api/exams/papers/[id]/route.ts:12"
+  ]
+ },
+ {
+  "route": "/welcome",
+  "inbound": 40,
+  "hits": [
+   "apps/host/src/app/about/AboutContent.tsx:302",
+   "apps/host/src/app/careers/page.tsx:64",
+   "apps/host/src/app/careers/page.tsx:68"
+  ]
+ }
+]
