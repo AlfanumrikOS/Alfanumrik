@@ -1,0 +1,752 @@
+[
+ {
+  "kind": "public",
+  "path": "/",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/welcome",
+  "title": "AI Tutor for CBSE Students (Class 6–12) — Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/root-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/welcome",
+  "title": "AI Tutor for CBSE Students (Class 6–12) — Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/root-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/pricing",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/pricing",
+  "title": "Pricing — CBSE Learning App, Free & Paid Plans",
+  "err": null,
+  "file": "alfanumrik/pricing-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/pricing",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/pricing",
+  "title": "Pricing — CBSE Learning App, Free & Paid Plans",
+  "err": null,
+  "file": "alfanumrik/pricing-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/login",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/login-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/login",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/login-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/join",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/join",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/join-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/join",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/join",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/join-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/onboarding",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/onboarding-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/onboarding",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/onboarding-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/for-schools",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/for-schools",
+  "title": "For Schools — School Intelligence OS for CBSE | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/for-schools-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/for-schools",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/for-schools",
+  "title": "For Schools — School Intelligence OS for CBSE | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/for-schools-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/for-parents",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/for-parents",
+  "title": "For Parents — Track Your Child's CBSE Progress | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/for-parents-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/for-parents",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/for-parents",
+  "title": "For Parents — Track Your Child's CBSE Progress | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/for-parents-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/for-teachers",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/for-teachers",
+  "title": "For Teachers — CBSE Worksheet Generator & Class Analytics | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/for-teachers-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/for-teachers",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/for-teachers",
+  "title": "For Teachers — CBSE Worksheet Generator & Class Analytics | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/for-teachers-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/product",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/product",
+  "title": "Product — Alfanumrik AI Learning Platform for CBSE (Class 6–12)",
+  "err": null,
+  "file": "alfanumrik/product-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/product",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/product",
+  "title": "Product — Alfanumrik AI Learning Platform for CBSE (Class 6–12)",
+  "err": null,
+  "file": "alfanumrik/product-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/about",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/about",
+  "title": "About Alfanumrik — Cusiosense Learning India",
+  "err": null,
+  "file": "alfanumrik/about-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/about",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/about",
+  "title": "About Alfanumrik — Cusiosense Learning India",
+  "err": null,
+  "file": "alfanumrik/about-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/contact",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/contact",
+  "title": "Contact Alfanumrik — Support & Sales",
+  "err": null,
+  "file": "alfanumrik/contact-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/contact",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/contact",
+  "title": "Contact Alfanumrik — Support & Sales",
+  "err": null,
+  "file": "alfanumrik/contact-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/schools",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/schools",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/schools-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/schools",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/schools",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/schools-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/help",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/help",
+  "title": "Help & Support — Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/help-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/help",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/help",
+  "title": "Help & Support — Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/help-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/support",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/support-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/support",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "err": null,
+  "file": "alfanumrik/support-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/demo",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/demo",
+  "title": "Book a Demo — Alfanumrik for Schools",
+  "err": null,
+  "file": "alfanumrik/demo-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/demo",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/demo",
+  "title": "Book a Demo — Alfanumrik for Schools",
+  "err": null,
+  "file": "alfanumrik/demo-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/parent",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/parent",
+  "title": "Parent Portal | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/parent-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/parent",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/parent",
+  "title": "Parent Portal | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/parent-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/super-admin/login",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/super-admin/login",
+  "title": "System Administration | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/super-admin_login-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/super-admin/login",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/super-admin/login",
+  "title": "System Administration | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/super-admin_login-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/privacy",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/privacy",
+  "title": "Privacy Policy — Alfanumrik | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/privacy-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/privacy",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/privacy",
+  "title": "Privacy Policy — Alfanumrik | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/privacy-d.png"
+ },
+ {
+  "kind": "public",
+  "path": "/terms",
+  "viewport": "m",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/terms",
+  "title": "Terms of Service — Alfanumrik | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/terms-m.png"
+ },
+ {
+  "kind": "public",
+  "path": "/terms",
+  "viewport": "d",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/terms",
+  "title": "Terms of Service — Alfanumrik | Alfanumrik",
+  "err": null,
+  "file": "alfanumrik/terms-d.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/dashboard",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-dashboard.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/today",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-today.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/foxy",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-foxy.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/quiz",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-quiz.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/learn",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-learn.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/progress",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-progress.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/me",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-me.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/settings",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-settings.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/tutor",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-tutor.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/teacher",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-teacher.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/teacher/students",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-teacher_students.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/parent/children",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/parent",
+  "title": "Parent Portal | Alfanumrik",
+  "bodyText": "Skip to content 🧑‍🎓 Parent Dashboard Enter your child's link code to view their progress View Dashboard Ask your child for the link code f",
+  "err": null,
+  "file": "alfanumrik/protected-parent_children.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/school-admin",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-school-admin.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/school-admin/students",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-school-admin_students.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/super-admin",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/super-admin/login?from=session_invalid",
+  "title": "System Administration | Alfanumrik",
+  "bodyText": "Skip to content ALFANUMRIK SUPER ADMIN CONSOLE Email Password Sign In Forgot password? Only authorized administrators can access this consol",
+  "err": null,
+  "file": "alfanumrik/protected-super-admin.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/super-admin/users",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/super-admin/login",
+  "title": "System Administration | Alfanumrik",
+  "bodyText": "Skip to content ALFANUMRIK SUPER ADMIN CONSOLE Email Password Sign In Forgot password? Only authorized administrators can access this consol",
+  "err": null,
+  "file": "alfanumrik/protected-super-admin_users.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/internal/admin",
+  "status": 401,
+  "finalUrl": "https://alfanumrik.com/internal/admin",
+  "title": "",
+  "bodyText": "ðŸ” Access Denied Super admin session required.",
+  "err": null,
+  "file": "alfanumrik/protected-internal_admin.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/dev/ui",
+  "status": 404,
+  "finalUrl": "https://alfanumrik.com/dev/ui",
+  "title": "",
+  "bodyText": "",
+  "err": null,
+  "file": "alfanumrik/protected-dev_ui.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/tests",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-tests.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/school-admin/overview",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-school-admin_overview.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/review",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-review.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/mock-exam",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-mock-exam.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/guardian",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/parent",
+  "title": "Parent Portal | Alfanumrik",
+  "bodyText": "Skip to content 🧑‍🎓 Parent Dashboard Enter your child's link code to view their progress View Dashboard Ask your child for the link code f",
+  "err": null,
+  "file": "alfanumrik/protected-guardian.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/school",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-school.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/upgrade",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/pricing",
+  "title": "Pricing — CBSE Learning App, Free & Paid Plans",
+  "bodyText": "Skip to content Alfanumrik Home › Pricing PRICING Less than a single tuition class a month. Start free, upgrade when you’re ready. Every pla",
+  "err": null,
+  "file": "alfanumrik/protected-upgrade.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/rewards",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-rewards.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/simulations",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-simulations.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/notifications",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/login",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content EN हिंदी 🦊 Alfanumrik AI Tutor for CBSE Students CBSE Grades 6-12 Hindi & English AI-Powered Adaptive 🎓Student 👩‍🏫Teache",
+  "err": null,
+  "file": "alfanumrik/protected-notifications.png"
+ },
+ {
+  "kind": "protected",
+  "path": "/billing",
+  "status": 200,
+  "finalUrl": "https://alfanumrik.com/billing",
+  "title": "Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students",
+  "bodyText": "Skip to content Please log in to view billing. Log In",
+  "err": null,
+  "file": "alfanumrik/protected-billing.png"
+ },
+ {
+  "kind": "portal",
+  "name": "linear",
+  "url": "https://linear.app/",
+  "title": "Linear – The system for product development",
+  "err": null,
+  "file": "portals/linear.png"
+ },
+ {
+  "kind": "portal",
+  "name": "vercel",
+  "url": "https://vercel.com/",
+  "title": "Agentic Infrastructure - Vercel",
+  "err": null,
+  "file": "portals/vercel.png"
+ },
+ {
+  "kind": "portal",
+  "name": "stripe",
+  "url": "https://stripe.com/in",
+  "title": "Stripe | Financial Infrastructure to Grow Your Revenue",
+  "err": null,
+  "file": "portals/stripe.png"
+ },
+ {
+  "kind": "portal",
+  "name": "supabase",
+  "url": "https://supabase.com/",
+  "title": "Supabase | The Postgres Development Platform",
+  "err": null,
+  "file": "portals/supabase.png"
+ },
+ {
+  "kind": "portal",
+  "name": "github",
+  "url": "https://github.com/features",
+  "title": "GitHub Features · GitHub",
+  "err": null,
+  "file": "portals/github.png"
+ },
+ {
+  "kind": "portal",
+  "name": "notion",
+  "url": "https://www.notion.com/",
+  "title": "The AI workspace that works for you. | Notion",
+  "err": null,
+  "file": "portals/notion.png"
+ },
+ {
+  "kind": "portal",
+  "name": "khan",
+  "url": "https://www.khanacademy.org/",
+  "title": "Khan Academy | Free Online Courses, Lessons & Practice",
+  "err": null,
+  "file": "portals/khan.png"
+ },
+ {
+  "kind": "portal",
+  "name": "duolingo",
+  "url": "https://www.duolingo.com/",
+  "title": "Duolingo - The world’s most popular way to learn",
+  "err": null,
+  "file": "portals/duolingo.png"
+ },
+ {
+  "kind": "portal",
+  "name": "posthog",
+  "url": "https://posthog.com/",
+  "title": "PostHog – We make your product self-driving",
+  "err": null,
+  "file": "portals/posthog.png"
+ },
+ {
+  "kind": "portal",
+  "name": "razorpay",
+  "url": "https://razorpay.com/",
+  "title": "Razorpay - Best Payment Solution for Online Payments India",
+  "err": null,
+  "file": "portals/razorpay.png"
+ }
+]

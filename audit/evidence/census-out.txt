@@ -1,0 +1,636 @@
+## A. STUB SCAN (apps/host/src files <= 8 lines that re-export)
+STUB 6L apps/host/src/app/(student)/dashboard/loading.tsx :: import { DashboardSkeleton } from '@alfanumrik/ui/Skeleton'; ⏎  ⏎ export default function Loading() { ⏎   return <DashboardSkeleton />; ⏎ }
+STUB 4L apps/host/src/app/(student)/layout.tsx :: export default function StudentLayout({ children }: { children: React.ReactNode }) { ⏎   return <>{children}</>; ⏎ }
+STUB 4L apps/host/src/app/api/super-admin/institutions/bulk-onboard/constants.ts :: export const MAX_ROWS_PER_CSV = 200; ⏎  ⏎ export type RowStatus = 'created' | 'skipped' | 'failed';
+STUB 4L apps/host/src/app/dive/history/layout.tsx :: export default function DiveHistoryLayout({ children }: { children: React.ReactNode }) { ⏎   return <>{children}</>; ⏎ }
+STUB 4L apps/host/src/app/dive/layout.tsx :: export default function DiveLayout({ children }: { children: React.ReactNode }) { ⏎   return <>{children}</>; ⏎ }
+STUB 8L apps/host/src/app/dive/loading.tsx :: export default function DiveLoading() { ⏎   return ( ⏎     <main className="app-container py-8"> ⏎       <div className="h-32 rounded-3xl animate-pulse" styl
+STUB 3L apps/host/src/app/foxy/_components/MessageInput.tsx :: // Moved to `@alfanumrik/ui/foxy-panel/MessageInput` (Phase 4 U1 — FoxyPanel extraction). ⏎ export * from '@alfanumrik/ui/foxy-panel/MessageInput';
+STUB 3L apps/host/src/app/foxy/_hooks/useFoxyChat.ts :: // Moved to `@alfanumrik/ui/foxy-panel/useFoxyChat` (Phase 4 U1 — FoxyPanel extraction). ⏎ export * from '@alfanumrik/ui/foxy-panel/useFoxyChat';
+STUB 3L apps/host/src/app/foxy/_lib/foxy-constants.ts :: // Moved to `@alfanumrik/ui/foxy-panel/foxy-constants` (Phase 4 U1 — FoxyPanel extraction). ⏎ export * from '@alfanumrik/ui/foxy-panel/foxy-constants';
+STUB 3L apps/host/src/app/foxy/_lib/foxy-types.ts :: // Moved to `@alfanumrik/ui/foxy-panel/foxy-types` (Phase 4 U1 — FoxyPanel extraction). ⏎ export * from '@alfanumrik/ui/foxy-panel/foxy-types';
+STUB 8L apps/host/src/app/notifications/loading.tsx :: export default function NotificationsLoading() { ⏎   return ( ⏎     <div className="flex min-h-screen items-center justify-center"> ⏎       <div className="t
+STUB 6L apps/host/src/app/parent/home/page.tsx :: 'use client'; ⏎ import { useEffect } from 'react'; ⏎ import { useRouter, useSearchParams } from 'next/navigation'; ⏎ function LegacyHomeRedirect() { const ro
+STUB 6L apps/host/src/app/parent/settings/page.tsx :: 'use client'; ⏎ import { useEffect } from 'react'; ⏎ import { useRouter, useSearchParams } from 'next/navigation'; ⏎ function LegacySettingsRedirect() { cons
+STUB 3L apps/host/src/app/super-admin/_components/DataTable.tsx :: export { default } from '@alfanumrik/ui/admin-ui/DataTable'; ⏎ export type { Column, DataTableProps } from '@alfanumrik/ui/admin-ui/DataTable';
+STUB 3L apps/host/src/app/super-admin/_components/DetailDrawer.tsx :: export { default } from '@alfanumrik/ui/admin-ui/DetailDrawer'; ⏎ export type { DetailDrawerProps } from '@alfanumrik/ui/admin-ui/DetailDrawer';
+STUB 4L apps/host/src/app/super-admin/_components/StalenessTag.tsx :: // Re-export shim — canonical implementation lives in src/components/admin-ui/StalenessTag.tsx ⏎ // See docs/superpowers/plans/2026-05-09-dashboard-foundation.
+STUB 4L apps/host/src/app/synthesis/layout.tsx :: export default function SynthesisLayout({ children }: { children: React.ReactNode }) { ⏎   return <>{children}</>; ⏎ }
+STUB 8L apps/host/src/app/synthesis/loading.tsx :: export default function SynthesisLoading() { ⏎   return ( ⏎     <main className="app-container py-8"> ⏎       <div className="h-32 rounded-3xl animate-pulse"
+STUB 8L apps/host/src/app/teacher/assign/page.tsx :: 'use client'; ⏎  ⏎ import { useEffect } from 'react'; ⏎ import { useRouter } from 'next/navigation'; ⏎  ⏎ function LegacyRedirect() { const router = useRou
+STUB 8L apps/host/src/app/teacher/grade/page.tsx :: 'use client'; ⏎  ⏎ import { useEffect } from 'react'; ⏎ import { useRouter } from 'next/navigation'; ⏎  ⏎ function LegacyRedirect() { const router = useRou
+STUB 8L apps/host/src/app/teacher/resources/page.tsx :: 'use client'; ⏎  ⏎ import { useEffect } from 'react'; ⏎ import { useRouter } from 'next/navigation'; ⏎  ⏎ function LegacyRedirect() { const router = useRou
+STUB 8L apps/host/src/app/teacher/settings/page.tsx :: 'use client'; ⏎  ⏎ import { useEffect } from 'react'; ⏎ import { useRouter } from 'next/navigation'; ⏎  ⏎ function LegacyRedirect() { const router = useRou
+STUB 7L apps/host/src/lib/identity/constants.ts :: /** ⏎  * Re-export stub: canonical identity constants live at @alfanumrik/lib/identity/constants. ⏎  * This file exists only for backward compatibility with i
+
+## B. IMPLEMENTATION CANDIDATES PER PRIMITIVE
+
+### Button — 12 candidate definitions (exported=8, local=4)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+79	Y	2	0	0	0	0	0	-	-	CosmicButton	packages/ui/src/cosmic/CosmicButton.tsx:30
+79	local	-	0	0	0	0	0	-	-	CosmicButton	packages/ui/src/cosmic/CosmicButton.tsx:32
+79	Y	1	0	0	0	0	0	-	-	PillButton	packages/ui/src/cosmic/CosmicButton.tsx:51
+79	local	-	0	0	0	0	0	-	-	PillButton	packages/ui/src/cosmic/CosmicButton.tsx:53
+183	Y	1	0	0	0	0	14	-	-	EncourageButton	packages/ui/src/parent/EncourageButton.tsx:47
+546	local	-	0	13	2	0	56	-	-	EncourageButton	packages/ui/src/parent/ParentGlanceHome.tsx:56
+150	Y	1	3	3	2	0	0	-	-	QueueFromScanButton	packages/ui/src/scan/QueueFromScanButton.tsx:66
+584	local	-	0	16	19	0	0	-	-	ToggleButton	packages/ui/src/simulations/WaveOnString.tsx:551
+105	Y	4	2	0	0	8	0	-	-	Button	packages/ui/src/ui/primitives/Button.tsx:53
+80	Y	5	2	0	0	8	0	-	-	IconButton	packages/ui/src/ui/primitives/IconButton.tsx:36
+1525	Y	59	133	13	67	1	0	-	-	Button	packages/ui/src/ui/wonder-blocks.tsx:255
+1525	Y	4	133	13	67	1	0	-	-	GlowButton	packages/ui/src/ui/wonder-blocks.tsx:1393
+
+### Input — 18 candidate definitions (exported=12, local=6)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+3095	local	-	43	23	35	0	23	-	-	WrittenAnswerInput	apps/host/src/app/(student)/quiz/page.tsx:77
+959	local	-	7	0	1	70	0	-	-	Field	apps/host/src/app/super-admin/entitlements/page.tsx:736
+432	local	-	0	22	31	13	0	-	-	Field	apps/host/src/app/super-admin/subjects/page.tsx:409
+123	Y	1	0	0	0	0	0	-	-	AlfaBotInput	packages/ui/src/alfabot/AlfaBotInput.tsx:22
+171	local	-	0	0	0	0	10	-	-	Field	packages/ui/src/dive/ArtifactComposer.tsx:158
+84	Y	2	4	0	3	1	0	-	-	MessageInput	packages/ui/src/foxy-panel/MessageInput.tsx:32
+461	Y	1	39	1	15	0	3	-	-	ChatInput	packages/ui/src/foxy/ChatInput.tsx:51
+273	Y	1	39	1	23	0	0	-	-	WrittenAnswerInput	packages/ui/src/quiz/ncert/WrittenAnswerInput.tsx:50
+123	Y	1	10	3	1	0	1	-	-	PrincipalAiInput	packages/ui/src/school-admin/principal-ai/PrincipalAiInput.tsx:31
+930	local	-	0	0	0	0	0	-	-	MagneticField	packages/ui/src/simulations/index.tsx:67
+207	Y	1	0	18	15	0	0	-	-	MagneticField	packages/ui/src/simulations/MagneticField.tsx:13
+175	Y	1	0	0	0	5	0	-	-	Field	packages/ui/src/ui/primitives/Field.tsx:102
+116	Y	1	0	0	0	2	0	-	-	Input	packages/ui/src/ui/primitives/Input.tsx:51
+45	Y	1	0	0	0	0	0	-	-	Textarea	packages/ui/src/ui/primitives/Textarea.tsx:22
+45	local	-	0	0	0	0	0	-	-	Textarea	packages/ui/src/ui/primitives/Textarea.tsx:24
+1525	Y	17	133	13	67	1	0	-	-	Input	packages/ui/src/ui/wonder-blocks.tsx:384
+1525	Y	0	133	13	67	1	0	-	-	Textarea	packages/ui/src/ui/wonder-blocks.tsx:447
+1525	Y	1	133	13	67	1	0	-	-	FormField	packages/ui/src/ui/wonder-blocks.tsx:572
+
+### Select — 11 candidate definitions (exported=7, local=4)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+119	Y	1	4	0	3	0	0	-	-	LanguagePicker	apps/host/src/app/foxy/_components/FoxySettings.tsx:37
+119	Y	1	4	0	3	0	0	-	-	ModePicker	apps/host/src/app/foxy/_components/FoxySettings.tsx:75
+691	local	-	50	9	7	3	5	-	-	SchoolPicker	apps/host/src/app/school-admin/CommandCenter.tsx:337
+548	local	-	45	10	1	7	2	-	-	SchoolPicker	apps/host/src/app/school-admin/reports-depth/SchoolReports.tsx:207
+849	local	-	62	1	63	0	0	-	-	BoardSubjectPicker	packages/ui/src/dashboard/os/BoardScoreWidget.tsx:188
+103	Y	1	2	1	2	0	0	-	-	BoardSubjectPicker	packages/ui/src/dashboard/os/BoardSubjectPicker.tsx:46
+207	Y	1	0	1	1	0	6	-	-	Picker	packages/ui/src/dive/Picker.tsx:45
+383	local	-	3	0	1	0	0	-	-	Menu	packages/ui/src/navigation/TabletNavRail.tsx:89
+532	Y	2	2	0	2	6	0	-	-	Menu	packages/ui/src/ui/primitives/Menu.tsx:129
+112	Y	1	0	0	0	1	0	-	-	Select	packages/ui/src/ui/primitives/Select.tsx:59
+1525	Y	10	133	13	67	1	0	-	-	Select	packages/ui/src/ui/wonder-blocks.tsx:417
+
+### Toggle — 15 candidate definitions (exported=9, local=6)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+1250	local	-	155	17	84	4	46	-	-	SoundToggle	apps/host/src/app/(student)/profile/page.tsx:17
+548	local	-	45	10	1	7	2	-	-	GroupByToggle	apps/host/src/app/school-admin/reports-depth/SchoolReports.tsx:94
+800	local	-	50	33	37	2	0	-	-	ToggleSwitch	apps/host/src/app/settings/page.tsx:114
+704	local	-	19	39	44	0	0	-	-	StatusToggle	apps/host/src/app/teacher/attendance/page.tsx:144
+171	Y	0	18	11	18	0	0	-	-	ExamModeToggle	packages/ui/src/ExamModeToggle.tsx:65
+83	Y	2	6	0	3	0	0	-	-	LangToggle	packages/ui/src/landing/LangToggle.tsx:52
+211	local	-	0	30	21	0	0	-	-	SignToggle	packages/ui/src/simulations/CoulombsLaw.tsx:146
+131	Y	1	0	0	0	11	0	-	-	Checkbox	packages/ui/src/ui/primitives/Checkbox.tsx:49
+131	local	-	0	0	0	11	0	-	-	Checkbox	packages/ui/src/ui/primitives/Checkbox.tsx:51
+169	Y	1	0	0	0	10	0	-	-	Radio	packages/ui/src/ui/primitives/Radio.tsx:26
+169	Y	1	0	0	0	10	0	-	-	RadioGroup	packages/ui/src/ui/primitives/Radio.tsx:92
+86	Y	1	0	0	0	5	0	-	-	Switch	packages/ui/src/ui/primitives/Switch.tsx:24
+33	Y	0	4	0	1	0	0	-	-	SoundToggle	packages/ui/src/ui/SoundToggle.tsx:4
+1525	Y	0	133	13	67	1	0	-	-	Checkbox	packages/ui/src/ui/wonder-blocks.tsx:487
+1525	Y	0	133	13	67	1	0	-	-	Toggle	packages/ui/src/ui/wonder-blocks.tsx:523
+
+### Card — 77 candidate definitions (exported=35, local=42)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+495	local	-	38	2	17	0	0	-	-	UpgradeCard	apps/host/src/app/(student)/exams/mock/[paperId]/page.tsx:178
+495	local	-	38	2	17	0	0	-	-	NotReadyCard	apps/host/src/app/(student)/exams/mock/[paperId]/page.tsx:216
+495	local	-	38	2	17	0	0	-	-	StartErrorCard	apps/host/src/app/(student)/exams/mock/[paperId]/page.tsx:244
+495	local	-	38	2	17	0	0	-	-	ExamStructureCard	apps/host/src/app/(student)/exams/mock/[paperId]/page.tsx:277
+3028	local	-	52	51	44	0	88	-	-	ChapterReadinessCard	apps/host/src/app/(student)/learn/[subject]/[chapter]/page.tsx:54
+1250	local	-	155	17	84	4	46	-	-	ConnectionsCard	apps/host/src/app/(student)/profile/page.tsx:49
+1583	local	-	98	0	33	3	0	-	-	SessionMetricCard	apps/host/src/app/(student)/progress/page.tsx:271
+1583	local	-	98	0	33	3	0	-	-	DataErrorCard	apps/host/src/app/(student)/progress/page.tsx:407
+1583	local	-	98	0	33	3	0	-	-	DataPendingCard	apps/host/src/app/(student)/progress/page.tsx:428
+529	local	-	29	0	23	0	0	-	-	NoticeCard	apps/host/src/app/foxy/_components/StudyArtifactSheet.tsx:122
+550	local	-	31	0	38	0	0	-	-	Card	apps/host/src/app/hpc/HpcReportBody.tsx:89
+660	local	-	10	7	3	2	64	-	-	SummaryCard	apps/host/src/app/parent/attendance/page.tsx:111
+1399	local	-	9	92	103	0	0	-	-	ChildCard	apps/host/src/app/parent/children/page.tsx:171
+2174	local	-	10	201	181	0	0	-	-	SummaryCard	apps/host/src/app/parent/reports/page.tsx:274
+2174	local	-	10	201	181	0	0	-	-	SubjectCard	apps/host/src/app/parent/reports/page.tsx:291
+284	local	-	20	4	16	0	0	-	-	ConversationPromptsCard	apps/host/src/app/parent/reports/ProgressPanel.tsx:36
+284	local	-	20	4	16	0	0	-	-	ParentShareCard	apps/host/src/app/parent/reports/ProgressPanel.tsx:40
+922	local	-	35	6	29	0	0	-	-	AnnouncementCard	apps/host/src/app/school-admin/announcements/page.tsx:97
+735	local	-	31	10	22	0	0	-	-	KeyCard	apps/host/src/app/school-admin/api-keys/page.tsx:186
+817	local	-	45	4	28	0	0	-	-	ClassCard	apps/host/src/app/school-admin/classes/page.tsx:123
+95	Y	1	4	1	1	0	0	-	-	ClassMasteryBarCard	apps/host/src/app/school-admin/command-center/ClassMasteryBarCard.tsx:31
+115	Y	1	4	1	1	0	0	-	-	MasteryDistributionCard	apps/host/src/app/school-admin/command-center/MasteryDistributionCard.tsx:46
+691	local	-	50	9	7	3	5	-	-	MasteryDistributionCard	apps/host/src/app/school-admin/CommandCenter.tsx:68
+691	local	-	50	9	7	3	5	-	-	ClassMasteryBarCard	apps/host/src/app/school-admin/CommandCenter.tsx:72
+385	local	-	10	2	2	0	0	-	-	EscalationCard	apps/host/src/app/school-admin/escalations/page.tsx:105
+1349	local	-	51	19	47	0	0	-	-	UpcomingExamCard	apps/host/src/app/school-admin/exams/page.tsx:270
+931	local	-	23	12	15	0	0	-	-	CodeCard	apps/host/src/app/school-admin/invite-codes/page.tsx:175
+1069	local	-	65	3	33	0	0	-	-	StatCard	apps/host/src/app/school-admin/parents/page.tsx:128
+548	local	-	45	10	1	7	2	-	-	SectionCard	apps/host/src/app/school-admin/reports-depth/SchoolReports.tsx:153
+540	local	-	22	3	16	0	0	-	-	StudentCard	apps/host/src/app/school-admin/students/page.tsx:104
+637	local	-	34	1	14	0	0	-	-	TeacherCard	apps/host/src/app/school-admin/teachers/page.tsx:245
+662	local	-	0	3	1	0	80	-	-	LabCard	apps/host/src/app/stem-centre/page.tsx:614
+786	local	-	0	18	56	8	0	-	-	SectionCard	apps/host/src/app/super-admin/foxy-report/[studentId]/page.tsx:170
+362	local	-	1	0	0	13	65	-	-	ProfileCard	apps/host/src/app/super-admin/goal-profiles/page.tsx:69
+1087	local	-	23	87	94	0	0	-	-	StudentCard	apps/host/src/app/teacher/students/page.tsx:133
+80	Y	40	0	2	0	7	0	-	-	StatCard	packages/ui/src/admin-ui/StatCard.tsx:24
+167	Y	1	20	1	9	0	0	-	-	DailyChallengeCard	packages/ui/src/challenge/DailyChallengeCard.tsx:22
+123	Y	1	12	0	4	0	0	-	-	ShareResultCard	packages/ui/src/challenge/ShareResultCard.tsx:20
+27	Y	2	0	0	0	0	0	-	-	GlowCard	packages/ui/src/cosmic/GlowCard.tsx:17
+113	local	-	5	0	5	0	0	-	-	ReviewsDueCard	packages/ui/src/dashboard/os/RevisionRail.tsx:34
+218	Y	1	14	3	9	0	0	-	-	ReviewsDueCard	packages/ui/src/dashboard/ReviewsDueCard.tsx:116
+127	local	-	4	0	3	0	0	-	-	PredictedScoreCard	packages/ui/src/exam-briefing/os/ExamBriefingHub.tsx:39
+133	Y	1	10	2	9	0	0	-	-	PredictedScoreCard	packages/ui/src/exam-briefing/os/PredictedScoreCard.tsx:43
+281	Y	1	37	15	24	0	0	-	-	ScoreCard	packages/ui/src/exams/MockTestResultsParts.tsx:99
+281	Y	1	37	15	24	0	0	-	-	ReviewCard	packages/ui/src/exams/MockTestResultsParts.tsx:189
+202	Y	1	15	0	4	0	0	-	-	PaperCard	packages/ui/src/exams/PaperCard.tsx:95
+275	Y	0	45	0	23	0	0	-	-	ExamScheduleCard	packages/ui/src/exams/v2/ExamSchedule.tsx:83
+71	Y	1	5	0	5	1	0	-	-	HelplineCard	packages/ui/src/foxy/HelplineCard.tsx:23
+392	local	-	36	2	26	0	0	-	-	BlockCard	packages/ui/src/foxy/v2/SnapDoubt.tsx:213
+195	Y	1	0	0	0	0	19	-	-	HardAbstainCard	packages/ui/src/grounding/HardAbstainCard.tsx:45
+163	local	-	42	28	48	0	0	-	-	FoxyCard	packages/ui/src/landing/ProductShowcase.tsx:6
+163	local	-	42	28	48	0	0	-	-	ParentCard	packages/ui/src/landing/ProductShowcase.tsx:38
+163	local	-	42	28	48	0	0	-	-	QuizCard	packages/ui/src/landing/ProductShowcase.tsx:90
+142	Y	1	10	3	4	0	0	-	-	PercentileBandCard	packages/ui/src/leaderboard/PercentileBandCard.tsx:93
+262	Y	1	2	12	9	0	0	-	-	ChapterReadinessCard	packages/ui/src/learn/ChapterReadinessCard.tsx:258
+139	Y	1	12	0	11	0	0	-	-	NextStepCard	packages/ui/src/learn/os/NextStepCard.tsx:46
+172	local	-	2	0	0	0	0	-	-	NextStepCard	packages/ui/src/learn/os/SubjectsOSHub.tsx:34
+70	Y	1	8	6	4	0	0	-	-	MemoryLayerCard	packages/ui/src/memory/MemoryLayerCard.tsx:21
+67	Y	2	8	0	4	0	0	-	-	ConversationPromptsCard	packages/ui/src/parent/ConversationPromptsCard.tsx:13
+102	Y	0	9	1	7	0	0	-	-	MissionCard	packages/ui/src/play/MissionCard.tsx:28
+126	Y	1	16	3	9	0	0	-	-	DuePracticeCard	packages/ui/src/practice/os/DuePracticeCard.tsx:27
+264	Y	1	21	0	8	0	0	-	-	SubjectMasteryCard	packages/ui/src/progress/SubjectMasteryCard.tsx:119
+204	Y	1	7	6	7	0	0	-	-	PulseStatusCard	packages/ui/src/pulse/PulseStatusCard.tsx:70
+180	Y	1	4	8	5	0	0	-	-	NextActionCard	packages/ui/src/quiz/NextActionCard.tsx:88
+262	Y	0	7	5	12	0	0	-	-	UpcomingExamCard	packages/ui/src/school/UpcomingExamCard.tsx:96
+155	Y	2	8	0	9	0	0	-	-	ScoreCard	packages/ui/src/score/ScoreCard.tsx:65
+163	local	-	9	20	16	0	0	-	-	SimulationCard	packages/ui/src/SimulationCard.tsx:26
+107	Y	1	2	0	4	0	0	-	-	TodayLoopCard	packages/ui/src/study-plan/TodayLoopCard.tsx:33
+194	Y	2	1	10	3	0	6	-	-	ParentShareCard	packages/ui/src/synthesis/ParentShareCard.tsx:33
+272	Y	1	28	4	16	0	0	-	-	InterventionApprovalCard	packages/ui/src/teacher/InterventionApprovalCard.tsx:63
+118	Y	1	10	0	5	0	0	-	-	MisconceptionClusterCard	packages/ui/src/teacher/MisconceptionClusterCard.tsx:41
+568	local	-	41	0	26	0	0	-	-	PrimaryCard	packages/ui/src/today/v2/TodayHomeV2.tsx:180
+98	Y	8	0	0	0	7	0	-	-	Card	packages/ui/src/ui/primitives/Card.tsx:37
+1525	Y	61	133	13	67	1	0	-	-	Card	packages/ui/src/ui/wonder-blocks.tsx:26
+1525	Y	2	133	13	67	1	0	-	-	LockedCard	packages/ui/src/ui/wonder-blocks.tsx:68
+1525	Y	5	133	13	67	1	0	-	-	StatCard	packages/ui/src/ui/wonder-blocks.tsx:670
+1525	Y	5	133	13	67	1	0	-	-	PremiumCard	packages/ui/src/ui/wonder-blocks.tsx:1339
+
+### Modal — 42 candidate definitions (exported=23, local=19)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+176	Y	1	17	3	16	1	0	-	-	ReportDialog	apps/host/src/app/foxy/_components/ReportDialog.tsx:42
+529	Y	1	29	0	23	0	0	-	-	StudyArtifactSheet	apps/host/src/app/foxy/_components/StudyArtifactSheet.tsx:306
+2602	local	-	78	1	69	0	0	-	-	FoxyStudySheet	apps/host/src/app/foxy/page.tsx:78
+2602	local	-	78	1	69	0	0	-	-	FoxyToolsSheet	apps/host/src/app/foxy/page.tsx:85
+2602	local	-	78	1	69	0	0	-	-	UpgradeModal	apps/host/src/app/foxy/page.tsx:99
+2602	local	-	78	1	69	0	0	-	-	StudyArtifactSheet	apps/host/src/app/foxy/page.tsx:121
+351	Y	1	18	0	0	47	4	-	-	UserDrawer	apps/host/src/app/internal/admin/_components/UserDrawer.tsx:44
+329	local	-	0	0	0	0	0	-	-	PlanModal	apps/host/src/app/me/page.tsx:61
+1399	local	-	9	92	103	0	0	-	-	UnlinkConfirmModal	apps/host/src/app/parent/children/page.tsx:840
+1399	local	-	9	92	103	0	0	-	-	DownloadDataConfirmModal	apps/host/src/app/parent/children/page.tsx:924
+637	local	-	34	1	14	0	0	-	-	InviteModal	apps/host/src/app/school-admin/teachers/page.tsx:86
+422	local	-	0	0	0	3	67	-	-	DetailDrawer	apps/host/src/app/super-admin/foxy-quality/SafeguardingQueue.tsx:91
+1790	local	-	0	169	150	40	0	-	-	ProvisionModal	apps/host/src/app/super-admin/institutions/page.tsx:224
+1790	local	-	0	169	150	40	0	-	-	PauseResumeModal	apps/host/src/app/super-admin/institutions/page.tsx:548
+535	local	-	0	17	29	15	0	-	-	ForensicModal	apps/host/src/app/super-admin/marking-integrity/page.tsx:175
+269	Y	1	0	10	30	0	1	-	-	EventDetailDrawer	apps/host/src/app/super-admin/observability/_components/EventDetailDrawer.tsx:75
+478	local	-	0	11	40	0	0	-	-	EditSubjectsModal	apps/host/src/app/super-admin/students/[id]/page.tsx:279
+424	local	-	0	25	30	20	0	-	-	ConfirmDisableModal	apps/host/src/app/super-admin/subjects/grade-map/page.tsx:353
+439	local	-	2	17	30	21	0	-	-	ConfirmModal	apps/host/src/app/super-admin/subjects/plan-access/page.tsx:390
+460	local	-	0	10	27	0	0	-	-	Modal	apps/host/src/app/super-admin/subjects/violations/page.tsx:409
+888	local	-	0	10	56	1	0	-	-	ReplayModal	apps/host/src/app/super-admin/subscribers/page.tsx:341
+888	local	-	0	10	56	1	0	-	-	DeadLetterDrawer	apps/host/src/app/super-admin/subscribers/page.tsx:560
+59	Y	2	0	0	0	0	0	-	-	ConfirmActionDialog	apps/host/src/app/super-admin/users/_components/ConfirmActionDialog.tsx:29
+81	Y	1	0	0	0	4	0	-	-	TypedConfirmDialog	apps/host/src/app/super-admin/users/_components/TypedConfirmDialog.tsx:28
+847	local	-	32	56	73	0	0	-	-	CellEditModal	apps/host/src/app/teacher/grade-book/page.tsx:79
+254	Y	1	9	0	8	1	0	-	-	LevelUpModal	packages/ui/src/achievements/LevelUpModal.tsx:28
+78	Y	10	0	0	1	9	0	-	-	DetailDrawer	packages/ui/src/admin-ui/DetailDrawer.tsx:31
+504	Y	1	36	3	29	1	0	-	-	PlanModal	packages/ui/src/billing/v2/PlanModal.tsx:193
+444	Y	1	21	0	13	0	0	-	F	FoxyStudySheet	packages/ui/src/foxy/mobile/FoxyStudySheet.tsx:93
+345	Y	1	34	0	24	0	0	-	F	FoxyToolsSheet	packages/ui/src/foxy/mobile/FoxyToolsSheet.tsx:87
+216	Y	1	0	0	0	0	19	-	-	ReportIssueModal	packages/ui/src/foxy/ReportIssueModal.tsx:39
+346	Y	2	26	0	16	0	0	-	-	NavMoreSheet	packages/ui/src/navigation/NavMoreSheet.tsx:67
+56	Y	0	0	0	0	0	0	-	-	RoleMoreSheet	packages/ui/src/navigation/RoleShell.tsx:28
+327	Y	2	11	0	9	0	0	-	-	CelebrationOverlay	packages/ui/src/quiz/CelebrationOverlay.tsx:31
+104	Y	1	1	2	4	0	0	-	-	FeedbackOverlay	packages/ui/src/quiz/FeedbackOverlay.tsx:16
+213	Y	1	19	2	17	0	0	-	-	EvidenceDrawer	packages/ui/src/teacher/EvidenceDrawer.tsx:102
+225	Y	2	1	0	2	7	0	-	-	BottomSheet	packages/ui/src/ui/primitives/BottomSheet.tsx:69
+280	Y	2	1	0	1	5	0	-	-	Dialog	packages/ui/src/ui/primitives/Dialog.tsx:74
+280	Y	3	1	0	1	5	0	-	-	ConfirmDialog	packages/ui/src/ui/primitives/Dialog.tsx:240
+160	Y	1	1	0	1	6	0	-	-	Drawer	packages/ui/src/ui/primitives/Drawer.tsx:63
+1525	Y	13	133	13	67	1	0	-	-	SheetModal	packages/ui/src/ui/wonder-blocks.tsx:1081
+186	Y	1	20	5	21	1	0	-	-	UpgradeModal	packages/ui/src/UpgradeModal.tsx:40
+
+### Table — 12 candidate definitions (exported=6, local=6)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+474	local	-	37	0	22	1	2	-	-	ChapterGrid	apps/host/src/app/(student)/library/page.tsx:154
+660	local	-	10	7	3	2	64	-	-	CalendarGrid	apps/host/src/app/parent/attendance/page.tsx:136
+259	local	-	21	12	19	0	0	-	-	ItemGrid	apps/host/src/app/research/page.tsx:114
+172	Y	1	14	1	0	3	1	-	-	TeacherEngagementTable	apps/host/src/app/school-admin/command-center/TeacherEngagementTable.tsx:35
+691	local	-	50	9	7	3	5	-	-	TeacherEngagementTable	apps/host/src/app/school-admin/CommandCenter.tsx:62
+298	local	-	28	16	36	0	0	-	-	ItemGrid	apps/host/src/app/security/page.tsx:86
+734	local	-	5	52	5	45	0	-	-	OracleLatestTable	apps/host/src/app/super-admin/grounding/health/page.tsx:675
+97	Y	1	0	5	8	0	0	-	-	SubjectMasteryGrid	apps/host/src/app/super-admin/students/[id]/_components/SubjectMasteryGrid.tsx:12
+161	Y	24	0	0	2	11	0	-	-	DataTable	packages/ui/src/admin-ui/DataTable.tsx:28
+89	Y	1	0	0	0	0	12	-	-	AlternativesGrid	packages/ui/src/grounding/AlternativesGrid.tsx:39
+224	Y	1	0	0	3	14	0	-	-	Table	packages/ui/src/ui/primitives/Table.tsx:82
+1525	Y	4	133	13	67	1	0	-	-	ResponsiveTable	packages/ui/src/ui/wonder-blocks.tsx:1196
+
+### NavShell — 47 candidate definitions (exported=26, local=21)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+247	local	-	29	15	26	0	0	-	-	Navbar	apps/host/src/app/careers/page.tsx:58
+431	local	-	33	19	34	0	0	-	-	Navbar	apps/host/src/app/contact/page.tsx:52
+2602	local	-	78	1	69	0	0	-	-	FoxyTopBar	apps/host/src/app/foxy/page.tsx:74
+301	Y	1	11	7	15	1	0	-	-	ParentMobileNav	apps/host/src/app/parent/_components/ParentMobileNav.tsx:46
+263	Y	1	1	1	0	5	1	-	-	ParentShell	apps/host/src/app/parent/_components/ParentShell.tsx:135
+203	local	-	30	17	29	0	0	-	-	Navbar	apps/host/src/app/press/page.tsx:15
+174	local	-	18	11	10	0	0	-	-	Navbar	apps/host/src/app/refunds/page.tsx:15
+259	local	-	21	12	19	0	0	-	-	Navbar	apps/host/src/app/research/page.tsx:128
+58	Y	16	1	0	1	2	0	-	-	SchoolAdminPageHeader	apps/host/src/app/school-admin/_components/SchoolAdminPageHeader.tsx:26
+359	Y	1	2	1	1	4	0	-	-	SchoolAdminShell	apps/host/src/app/school-admin/_components/SchoolAdminShell.tsx:138
+298	local	-	28	16	36	0	0	-	-	Navbar	apps/host/src/app/security/page.tsx:100
+555	Y	62	0	0	0	7	12	-	-	AdminShell	apps/host/src/app/super-admin/_components/AdminShell.tsx:241
+959	local	-	7	0	1	70	0	-	-	DealHeader	apps/host/src/app/super-admin/entitlements/page.tsx:652
+401	local	-	0	13	0	36	0	-	-	EICHeader	apps/host/src/app/super-admin/intelligence/page.tsx:101
+109	Y	4	0	0	0	10	0	-	-	EICHeader	apps/host/src/app/super-admin/intelligence/shared.tsx:49
+888	local	-	0	10	56	1	0	-	-	ModalShell	apps/host/src/app/super-admin/subscribers/page.tsx:735
+888	local	-	0	10	56	1	0	-	-	DrawerShell	apps/host/src/app/super-admin/subscribers/page.tsx:808
+320	Y	1	12	5	13	0	0	-	-	TeacherMobileNav	apps/host/src/app/teacher/_components/TeacherMobileNav.tsx:75
+312	Y	1	8	2	3	1	2	-	-	TeacherShell	apps/host/src/app/teacher/_components/TeacherShell.tsx:124
+1668	local	-	102	25	59	5	0	-	-	Shell	apps/host/src/app/teacher/CommandCenter.tsx:1657
+427	local	-	4	0	1	0	0	-	-	StateShell	apps/host/src/app/today/page.tsx:136
+309	Y	3	0	2	4	20	0	-	-	DashboardSidebar	packages/ui/src/admin-ui/DashboardSidebar.tsx:79
+281	Y	1	37	15	24	0	0	-	-	ResultsHeader	packages/ui/src/exams/MockTestResultsParts.tsx:81
+144	Y	0	10	1	13	0	0	-	-	ConversationHeader	packages/ui/src/foxy/ConversationHeader.tsx:35
+138	Y	1	10	0	7	0	0	-	F	FoxyTopBar	packages/ui/src/foxy/mobile/FoxyTopBar.tsx:39
+150	local	-	27	8	31	0	0	-	-	Nav	packages/ui/src/landing/Hero.tsx:6
+114	local	-	0	0	0	0	0	-	-	ThemedShell	packages/ui/src/landing/v3/marketing/MarketingShell.tsx:63
+114	Y	5	0	0	0	0	0	-	-	MarketingShell	packages/ui/src/landing/v3/marketing/MarketingShell.tsx:105
+101	local	-	0	0	0	0	0	-	-	ThemedShell	packages/ui/src/landing/v3/PricingV3.tsx:48
+125	local	-	0	0	0	0	0	-	-	ThemedShell	packages/ui/src/landing/v3/WelcomeV3.tsx:48
+98	local	-	0	0	0	0	0	-	-	ThemedShell	packages/ui/src/landing/WelcomeV2.tsx:35
+100	Y	1	12	0	8	0	0	-	-	SubjectHeader	packages/ui/src/learn/os/SubjectHeader.tsx:26
+284	Y	1	21	0	9	0	0	-	-	DesktopSidebar	packages/ui/src/navigation/DesktopSidebar.tsx:27
+146	local	-	0	0	0	0	0	-	-	DesktopSidebar	packages/ui/src/navigation/GlobalAppLayout.tsx:17
+146	local	-	0	0	0	0	0	-	-	MobileBottomNav	packages/ui/src/navigation/GlobalAppLayout.tsx:21
+146	local	-	0	0	0	0	0	-	-	TabletNavRail	packages/ui/src/navigation/GlobalAppLayout.tsx:29
+195	Y	1	3	0	4	0	0	-	-	MobileBottomNav	packages/ui/src/navigation/MobileBottomNav.tsx:42
+56	Y	0	0	0	0	0	0	-	-	RoleTopBar	packages/ui/src/navigation/RoleShell.tsx:11
+56	Y	0	0	0	0	0	0	-	-	RoleShell	packages/ui/src/navigation/RoleShell.tsx:40
+151	Y	1	15	2	11	0	0	-	-	PracticeHeader	packages/ui/src/practice/os/PracticeHeader.tsx:31
+236	Y	4	0	0	0	0	0	-	-	AppShell	packages/ui/src/responsive/AppShell.tsx:86
+155	Y	1	16	3	11	0	0	-	-	RevisionHeader	packages/ui/src/review/os/RevisionHeader.tsx:29
+149	Y	0	8	1	8	0	0	-	-	SchoolWelcomeHeader	packages/ui/src/school/SchoolWelcomeHeader.tsx:32
+107	Y	0	1	1	7	0	0	-	-	SchoolBrandedHeader	packages/ui/src/SchoolBrandedHeader.tsx:25
+140	Y	0	0	0	0	0	16	-	-	SimulationShell	packages/ui/src/simulations/SimulationShell.tsx:56
+98	Y	1	0	0	0	7	0	-	-	CardHeader	packages/ui/src/ui/primitives/Card.tsx:73
+1525	Y	11	133	13	67	1	0	-	-	SectionHeader	packages/ui/src/ui/wonder-blocks.tsx:762
+
+### Toast — 17 candidate definitions (exported=11, local=6)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+1583	local	-	98	0	33	3	0	-	-	DataStaleNotice	apps/host/src/app/(student)/progress/page.tsx:451
+972	local	-	4	38	59	0	0	-	-	Toast	apps/host/src/app/parent/support/page.tsx:370
+959	local	-	7	0	1	70	0	-	-	EnforcementBanner	apps/host/src/app/super-admin/entitlements/page.tsx:765
+35	Y	1	0	1	1	0	0	-	-	DemoModeBanner	packages/ui/src/DemoModeBanner.tsx:6
+335	local	-	39	10	17	0	0	-	-	SubmitErrorBanner	packages/ui/src/exams/MockTestRunner.tsx:67
+53	Y	1	0	0	0	0	6	-	-	UnverifiedBanner	packages/ui/src/foxy/UnverifiedBanner.tsx:20
+48	local	-	0	0	0	0	0	-	-	MaintenanceBanner	packages/ui/src/LayoutDeferredChrome.tsx:28
+99	Y	1	1	0	2	0	4	-	-	MaintenanceBanner	packages/ui/src/MaintenanceBanner.tsx:18
+568	local	-	40	2	37	0	0	-	-	ErrorBanner	packages/ui/src/onboarding/v2/SetupFlow.tsx:114
+205	Y	0	4	2	8	0	0	-	-	SchoolAnnouncementBanner	packages/ui/src/school/SchoolAnnouncementBanner.tsx:60
+185	Y	1	0	12	9	0	0	-	-	GraceWarningBanner	packages/ui/src/school/SeatPolicyBanners.tsx:55
+185	Y	2	0	12	9	0	0	-	-	SeatCapBlockBanner	packages/ui/src/school/SeatPolicyBanners.tsx:112
+185	Y	1	0	12	9	0	0	-	-	InviteCapNotice	packages/ui/src/school/SeatPolicyBanners.tsx:166
+52	Y	0	4	0	3	1	0	-	-	ReselectBanner	packages/ui/src/subjects/ReselectBanner.tsx:12
+103	Y	1	1	0	2	3	0	-	-	Alert	packages/ui/src/ui/primitives/Alert.tsx:57
+152	Y	1	0	3	2	0	0	-	-	Toaster	packages/ui/src/ui/toast.tsx:78
+1525	Y	0	133	13	67	1	0	-	-	FoxyBanner	packages/ui/src/ui/wonder-blocks.tsx:1024
+
+### Tabs — 24 candidate definitions (exported=15, local=9)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+474	local	-	37	0	22	1	2	-	-	SubjectTabs	apps/host/src/app/(student)/library/page.tsx:88
+108	Y	1	0	7	10	0	0	-	-	AIMonitorTab	apps/host/src/app/internal/admin/_components/AIMonitorTab.tsx:37
+155	Y	1	0	18	21	0	0	-	-	CommandTab	apps/host/src/app/internal/admin/_components/CommandTab.tsx:50
+195	Y	1	0	10	13	0	0	-	-	ContentTab	apps/host/src/app/internal/admin/_components/ContentTab.tsx:52
+117	Y	1	0	9	11	0	0	-	-	FlagsTab	apps/host/src/app/internal/admin/_components/FlagsTab.tsx:47
+149	Y	1	0	8	13	0	0	-	-	LogsTab	apps/host/src/app/internal/admin/_components/LogsTab.tsx:48
+94	Y	1	0	7	8	0	0	-	-	ReportsTab	apps/host/src/app/internal/admin/_components/ReportsTab.tsx:40
+102	Y	1	0	9	11	0	0	-	-	RevenueTab	apps/host/src/app/internal/admin/_components/RevenueTab.tsx:37
+82	Y	1	0	5	13	0	0	-	-	SchoolsTab	apps/host/src/app/internal/admin/_components/SchoolsTab.tsx:33
+458	Y	1	0	12	41	0	0	-	-	SupportTab	apps/host/src/app/internal/admin/_components/SupportTab.tsx:89
+222	Y	1	0	10	17	0	0	-	-	UsersTab	apps/host/src/app/internal/admin/_components/UsersTab.tsx:71
+383	local	-	2	0	0	18	10	-	-	FilterTab	apps/host/src/app/parent/notifications/page.tsx:241
+922	local	-	35	6	29	0	0	-	-	TabBar	apps/host/src/app/school-admin/announcements/page.tsx:700
+1069	local	-	65	3	33	0	0	-	-	TabBar	apps/host/src/app/school-admin/parents/page.tsx:496
+290	Y	1	13	8	6	0	0	-	-	LeadershipTab	apps/host/src/app/school-admin/reports/LeadershipTab.tsx:61
+1317	local	-	18	8	37	35	0	-	-	LeadershipTab	apps/host/src/app/school-admin/reports/page.tsx:51
+381	Y	1	0	37	33	4	0	-	-	StrategicReportsTab	apps/host/src/app/super-admin/learning/_components/StrategicReportsTab.tsx:125
+626	local	-	21	62	94	20	0	-	-	StrategicReportsTab	apps/host/src/app/super-admin/learning/page.tsx:53
+573	Y	1	0	67	42	0	0	-	-	PaymentOpsTab	apps/host/src/app/super-admin/subscriptions/_components/PaymentOpsTab.tsx:182
+808	local	-	26	54	67	0	0	-	-	ClassOverviewTab	apps/host/src/app/teacher/reports/page.tsx:150
+808	local	-	26	54	67	0	0	-	-	StudentAnalysisTab	apps/host/src/app/teacher/reports/page.tsx:245
+808	local	-	26	54	67	0	0	-	-	TrendsTab	apps/host/src/app/teacher/reports/page.tsx:469
+247	Y	1	0	0	0	12	0	-	-	Tabs	packages/ui/src/ui/primitives/Tabs.tsx:68
+247	Y	1	0	0	0	12	0	-	-	Tab	packages/ui/src/ui/primitives/Tabs.tsx:181
+
+### Badge — 28 candidate definitions (exported=12, local=16)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+550	local	-	31	0	38	0	0	-	-	CompetencyBadge	apps/host/src/app/hpc/HpcReportBody.tsx:75
+1399	local	-	9	92	103	0	0	-	-	StatPill	apps/host/src/app/parent/children/page.tsx:95
+829	local	-	0	98	113	6	0	-	-	CmsStatusBadge	apps/host/src/app/super-admin/cms/page.tsx:338
+233	local	-	0	5	12	0	0	-	-	ToggleChip	apps/host/src/app/super-admin/observability/_components/FiltersBar.tsx:105
+222	local	-	22	4	16	1	0	-	-	ExceptionChip	apps/host/src/app/teacher/GradingQueue.tsx:55
+23	Y	11	0	0	0	2	0	-	-	StalenessTag	packages/ui/src/admin-ui/StalenessTag.tsx:1
+65	Y	50	9	12	0	6	0	-	-	StatusBadge	packages/ui/src/admin-ui/StatusBadge.tsx:52
+101	Y	4	4	0	1	0	0	-	-	StreakBadge	packages/ui/src/challenge/StreakBadge.tsx:41
+27	local	-	0	0	0	0	0	-	-	Tag	packages/ui/src/cosmic/CardElev.tsx:19
+39	Y	2	0	0	0	0	0	-	-	Chip	packages/ui/src/cosmic/Chip.tsx:29
+27	local	-	0	0	0	0	0	-	-	Tag	packages/ui/src/cosmic/GlowCard.tsx:19
+58	local	-	0	0	0	0	0	-	-	Tag	packages/ui/src/cosmic/Text.tsx:24
+58	local	-	0	0	0	0	0	-	-	Tag	packages/ui/src/cosmic/Text.tsx:41
+58	local	-	0	0	0	0	0	-	-	Tag	packages/ui/src/cosmic/Text.tsx:50
+275	local	-	45	0	23	0	0	-	-	ChapterChip	packages/ui/src/exams/v2/ExamSchedule.tsx:36
+67	Y	1	12	0	1	0	0	-	-	ChapterReadinessBadge	packages/ui/src/learn/ChapterReadinessBadge.tsx:63
+70	Y	0	8	6	4	0	0	-	-	MemoryChip	packages/ui/src/memory/MemoryLayerCard.tsx:54
+546	local	-	0	13	2	0	56	-	-	StatPill	packages/ui/src/parent/ParentGlanceHome.tsx:177
+96	Y	2	1	0	9	0	0	-	-	PlanBadge	packages/ui/src/PlanBadge.tsx:17
+141	local	-	1	0	3	0	0	-	-	SignalChip	packages/ui/src/pulse/PulseSignals.tsx:29
+184	local	-	13	7	6	0	0	-	-	SectionLabel	packages/ui/src/pulse/StudentPulse.tsx:42
+382	local	-	17	7	18	0	0	-	-	ReassurancePill	packages/ui/src/quiz/v2/PracticeRunner.tsx:111
+194	local	-	1	10	3	0	6	-	-	StatusChip	packages/ui/src/synthesis/ParentShareCard.tsx:130
+61	Y	2	2	0	0	0	0	-	-	Badge	packages/ui/src/ui/primitives/Badge.tsx:27
+63	Y	1	2	0	0	5	0	-	-	Chip	packages/ui/src/ui/primitives/Chip.tsx:23
+1525	Y	27	133	13	67	1	0	-	-	Badge	packages/ui/src/ui/wonder-blocks.tsx:604
+1525	Y	0	133	13	67	1	0	-	-	SubjectChip	packages/ui/src/ui/wonder-blocks.tsx:690
+1525	Y	1	133	13	67	1	0	-	-	StreakBadge	packages/ui/src/ui/wonder-blocks.tsx:1049
+
+### Skeleton — 72 candidate definitions (exported=34, local=38)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+6	Y	0	0	0	0	0	0	-	-	Loading	apps/host/src/app/(student)/dashboard/loading.tsx:1
+48	Y	0	2	0	1	0	0	-	-	Loading	apps/host/src/app/(student)/exams/loading.tsx:5
+44	Y	0	2	0	1	0	0	-	-	Loading	apps/host/src/app/(student)/leaderboard/loading.tsx:5
+1399	local	-	100	0	40	0	5	-	-	TabLoader	apps/host/src/app/(student)/leaderboard/page.tsx:209
+40	Y	0	4	0	2	0	0	-	-	Loading	apps/host/src/app/(student)/learn/loading.tsx:6
+51	Y	0	6	0	3	0	0	-	-	Loading	apps/host/src/app/(student)/progress/loading.tsx:5
+24	Y	0	5	0	4	0	0	-	-	Loading	apps/host/src/app/(student)/quiz/loading.tsx:1
+25	Y	0	6	0	5	0	0	-	-	Loading	apps/host/src/app/(student)/simulations/loading.tsx:1
+8	Y	0	1	0	1	0	0	-	-	DiveLoading	apps/host/src/app/dive/loading.tsx:1
+529	local	-	29	0	23	0	0	-	-	LoadingState	apps/host/src/app/foxy/_components/StudyArtifactSheet.tsx:42
+32	Y	0	3	0	3	0	0	-	-	Loading	apps/host/src/app/foxy/loading.tsx:1
+2602	local	-	78	1	69	0	0	-	-	LoadingState	apps/host/src/app/foxy/page.tsx:28
+42	Y	0	4	3	4	0	0	-	-	Loading	apps/host/src/app/loading.tsx:1
+8	Y	0	0	0	0	0	0	-	-	NotificationsLoading	apps/host/src/app/notifications/loading.tsx:1
+9	Y	0	0	0	0	1	0	-	-	OnboardingLoading	apps/host/src/app/onboarding/loading.tsx:1
+660	local	-	10	7	3	2	64	-	-	Skeleton	apps/host/src/app/parent/attendance/page.tsx:83
+660	local	-	10	7	3	2	64	-	-	PageSkeleton	apps/host/src/app/parent/attendance/page.tsx:91
+11	Y	0	0	0	0	0	0	-	-	Loading	apps/host/src/app/parent/loading.tsx:7
+922	local	-	35	6	29	0	0	-	-	AnnouncementCardSkeleton	apps/host/src/app/school-admin/announcements/page.tsx:68
+735	local	-	31	10	22	0	0	-	-	KeyCardSkeleton	apps/host/src/app/school-admin/api-keys/page.tsx:74
+502	local	-	30	0	19	0	0	-	-	TableSkeleton	apps/host/src/app/school-admin/audit-log/page.tsx:93
+525	local	-	26	5	15	0	0	-	-	PageSkeleton	apps/host/src/app/school-admin/billing/page.tsx:78
+817	local	-	45	4	28	0	0	-	-	ClassCardSkeleton	apps/host/src/app/school-admin/classes/page.tsx:88
+691	local	-	50	9	7	3	5	-	-	PanelSkeleton	apps/host/src/app/school-admin/CommandCenter.tsx:228
+1502	local	-	64	27	78	0	0	-	-	QuestionRowSkeleton	apps/host/src/app/school-admin/content/page.tsx:275
+697	local	-	41	20	20	0	3	-	-	PageSkeleton	apps/host/src/app/school-admin/enroll/page.tsx:123
+385	local	-	10	2	2	0	0	-	-	EscalationCardSkeleton	apps/host/src/app/school-admin/escalations/page.tsx:93
+437	local	-	23	5	8	0	0	-	-	CaseCardSkeleton	apps/host/src/app/school-admin/escalations/SafeguardingQueue.tsx:79
+1349	local	-	51	19	47	0	0	-	-	ExamCardSkeleton	apps/host/src/app/school-admin/exams/page.tsx:242
+931	local	-	23	12	15	0	0	-	-	CodeRowSkeleton	apps/host/src/app/school-admin/invite-codes/page.tsx:80
+46	Y	0	0	15	15	0	0	-	-	Loading	apps/host/src/app/school-admin/loading.tsx:1
+1069	local	-	65	3	33	0	0	-	-	ParentRowSkeleton	apps/host/src/app/school-admin/parents/page.tsx:93
+1069	local	-	65	3	33	0	0	-	-	StatCardSkeleton	apps/host/src/app/school-admin/parents/page.tsx:107
+1144	local	-	48	19	14	0	0	-	-	PageSkeleton	apps/host/src/app/school-admin/rbac/page.tsx:119
+548	local	-	45	10	1	7	2	-	-	TableSkeleton	apps/host/src/app/school-admin/reports-depth/SchoolReports.tsx:177
+1317	local	-	18	8	37	35	0	-	-	StatCardsSkeleton	apps/host/src/app/school-admin/reports/page.tsx:225
+1317	local	-	18	8	37	35	0	-	-	TableSkeleton	apps/host/src/app/school-admin/reports/page.tsx:234
+1015	local	-	42	5	13	2	5	-	-	SetupSkeleton	apps/host/src/app/school-admin/setup/page.tsx:742
+647	local	-	24	6	13	0	0	-	-	StaffRowSkeleton	apps/host/src/app/school-admin/staff/StaffManagement.tsx:111
+540	local	-	22	3	16	0	0	-	-	StudentCardSkeleton	apps/host/src/app/school-admin/students/page.tsx:66
+540	local	-	22	3	16	0	0	-	-	FilterBarSkeleton	apps/host/src/app/school-admin/students/page.tsx:84
+637	local	-	34	1	14	0	0	-	-	TeacherCardSkeleton	apps/host/src/app/school-admin/teachers/page.tsx:43
+637	local	-	34	1	14	0	0	-	-	PageSkeleton	apps/host/src/app/school-admin/teachers/page.tsx:63
+46	Y	0	0	5	23	0	0	-	-	Loading	apps/host/src/app/schools/loading.tsx:1
+40	Y	0	0	14	15	0	0	-	-	Loading	apps/host/src/app/super-admin/alerts/loading.tsx:1
+41	Y	0	0	17	16	0	0	-	-	Loading	apps/host/src/app/super-admin/analytics-b2b/loading.tsx:1
+959	local	-	7	0	1	70	0	-	-	PanelSkeleton	apps/host/src/app/super-admin/entitlements/page.tsx:943
+786	local	-	0	18	56	8	0	-	-	ReportSkeleton	apps/host/src/app/super-admin/foxy-report/[studentId]/page.tsx:247
+42	Y	0	0	14	16	0	0	-	-	Loading	apps/host/src/app/super-admin/invoices/loading.tsx:1
+12	Y	0	0	0	0	0	0	-	-	Loading	apps/host/src/app/super-admin/loading.tsx:8
+608	local	-	0	19	45	8	0	-	-	TableSkeleton	apps/host/src/app/super-admin/marking-integrity/[studentId]/page.tsx:133
+535	local	-	0	17	29	15	0	-	-	SummaryCardsSkeleton	apps/host/src/app/super-admin/marking-integrity/page.tsx:150
+40	Y	0	0	17	17	0	0	-	-	Loading	apps/host/src/app/super-admin/sla/loading.tsx:1
+8	Y	0	1	0	1	0	0	-	-	SynthesisLoading	apps/host/src/app/synthesis/loading.tsx:1
+50	Y	0	6	0	3	0	0	-	-	Loading	apps/host/src/app/teacher/loading.tsx:5
+218	local	-	14	3	9	0	0	-	-	Skeleton	packages/ui/src/dashboard/ReviewsDueCard.tsx:63
+80	Y	2	2	0	2	0	0	-	-	LoadingState	packages/ui/src/foxy/LoadingState.tsx:26
+353	local	-	0	0	0	0	52	-	-	Skeleton	packages/ui/src/parent/ParentLabReportWidget.tsx:103
+293	local	-	0	6	1	0	29	-	-	ReportSkeleton	packages/ui/src/parent/WeeklyReport.tsx:60
+184	local	-	13	7	6	0	0	-	-	PulseSkeleton	packages/ui/src/pulse/StudentPulse.tsx:50
+201	local	-	14	7	8	0	0	-	-	ListSkeleton	packages/ui/src/pulse/StudentPulseList.tsx:42
+591	Y	3	63	2	32	0	0	-	-	DashboardSkeleton	packages/ui/src/Skeleton.tsx:44
+591	Y	0	63	2	32	0	0	-	-	QuizSkeleton	packages/ui/src/Skeleton.tsx:165
+591	Y	13	63	2	32	0	0	-	-	CardListSkeleton	packages/ui/src/Skeleton.tsx:193
+591	Y	2	63	2	32	0	0	-	-	ParentDashboardSkeleton	packages/ui/src/Skeleton.tsx:221
+591	Y	2	63	2	32	0	0	-	-	SimulationSkeleton	packages/ui/src/Skeleton.tsx:294
+591	Y	3	63	2	32	0	0	-	-	TeacherDashboardSkeleton	packages/ui/src/Skeleton.tsx:328
+591	Y	5	63	2	32	0	0	-	-	TeacherTableSkeleton	packages/ui/src/Skeleton.tsx:411
+591	Y	7	63	2	32	0	0	-	-	AdminDashboardSkeleton	packages/ui/src/Skeleton.tsx:455
+591	Y	2	63	2	32	0	0	-	-	AdminControlRoomSkeleton	packages/ui/src/Skeleton.tsx:523
+70	Y	5	0	0	0	1	0	-	-	Skeleton	packages/ui/src/ui/primitives/Skeleton.tsx:31
+1525	Y	63	133	13	67	1	0	-	-	Skeleton	packages/ui/src/ui/wonder-blocks.tsx:1130
+
+### Empty — 8 candidate definitions (exported=4, local=4)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+138	local	-	12	0	1	0	0	-	-	EmptyState	apps/host/src/app/(student)/exams/mock/[paperId]/results/page.tsx:47
+550	local	-	31	0	38	0	0	-	-	SectionEmpty	apps/host/src/app/hpc/HpcReportBody.tsx:121
+383	local	-	2	0	0	18	10	-	-	EmptyState	apps/host/src/app/parent/notifications/page.tsx:270
+401	local	-	0	13	0	36	0	-	-	EICEmpty	apps/host/src/app/super-admin/intelligence/page.tsx:139
+109	Y	4	0	0	0	10	0	-	-	EICEmpty	apps/host/src/app/super-admin/intelligence/shared.tsx:86
+155	Y	7	0	15	11	0	0	-	-	NoDataState	packages/ui/src/admin-ui/NoDataState.tsx:74
+62	Y	5	0	0	0	3	0	-	-	EmptyState	packages/ui/src/ui/primitives/EmptyState.tsx:37
+1525	Y	30	133	13	67	1	0	-	-	EmptyState	packages/ui/src/ui/wonder-blocks.tsx:800
+
+### ErrorState — 35 candidate definitions (exported=29, local=6)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+51	Y	0	5	0	4	1	0	-	-	DashboardError	apps/host/src/app/(student)/dashboard/error.tsx:4
+47	Y	0	5	0	4	1	0	-	-	ExamsError	apps/host/src/app/(student)/exams/error.tsx:4
+47	Y	0	5	0	4	1	0	-	-	LeaderboardError	apps/host/src/app/(student)/leaderboard/error.tsx:4
+47	Y	0	5	0	4	1	0	-	-	LearnError	apps/host/src/app/(student)/learn/error.tsx:4
+49	Y	0	5	0	4	1	0	-	-	ProfileError	apps/host/src/app/(student)/profile/error.tsx:5
+47	Y	0	5	0	4	1	0	-	-	ProgressError	apps/host/src/app/(student)/progress/error.tsx:4
+48	Y	0	5	0	4	1	0	-	-	QuizError	apps/host/src/app/(student)/quiz/error.tsx:4
+860	local	-	47	11	23	0	0	-	-	ReportLoadError	apps/host/src/app/(student)/reports/page.tsx:147
+49	Y	0	5	0	4	0	0	-	-	SimulationsError	apps/host/src/app/(student)/simulations/error.tsx:5
+252	local	-	0	0	0	0	0	-	-	PostHogError	apps/host/src/app/api/super-admin/analytics/posthog-summary/route.ts:128
+315	local	-	0	0	0	0	0	-	-	PostHogError	apps/host/src/app/api/super-admin/oracle-health/route.ts:242
+49	Y	0	5	0	4	1	0	-	-	BillingError	apps/host/src/app/billing/error.tsx:5
+49	Y	0	5	0	4	1	0	-	-	DiagnosticError	apps/host/src/app/diagnostic/error.tsx:5
+22	Y	0	0	0	0	0	2	-	-	DiveError	apps/host/src/app/dive/error.tsx:3
+23	Y	0	2	0	1	1	0	-	-	DiveHistoryError	apps/host/src/app/dive/history/error.tsx:1
+109	Y	0	7	4	8	0	0	-	-	Error	apps/host/src/app/error.tsx:11
+38	Y	0	3	0	3	1	0	-	-	FoxyError	apps/host/src/app/foxy/error.tsx:3
+45	Y	0	2	1	6	0	0	-	-	GlobalError	apps/host/src/app/global-error.tsx:6
+47	Y	0	5	0	4	1	0	-	-	NotificationsError	apps/host/src/app/notifications/error.tsx:5
+52	Y	0	5	0	4	1	0	-	-	OnboardingError	apps/host/src/app/onboarding/error.tsx:9
+47	Y	0	5	0	4	1	0	-	-	ParentError	apps/host/src/app/parent/error.tsx:4
+49	Y	0	5	0	4	1	0	-	-	ScanError	apps/host/src/app/scan/error.tsx:5
+38	Y	0	0	0	0	1	5	-	-	SchoolAdminError	apps/host/src/app/school-admin/error.tsx:5
+38	Y	0	0	0	0	1	5	-	-	SchoolsError	apps/host/src/app/schools/error.tsx:5
+66	Y	0	0	7	8	0	0	-	-	SuperAdminError	apps/host/src/app/super-admin/error.tsx:9
+22	Y	0	0	0	0	0	2	-	-	SynthesisError	apps/host/src/app/synthesis/error.tsx:3
+191	Y	7	13	0	10	0	0	-	-	TeacherDataError	apps/host/src/app/teacher/_components/TeacherDataError.tsx:73
+47	Y	0	5	0	4	1	0	-	-	TeacherError	apps/host/src/app/teacher/error.tsx:4
+453	Y	1	0	0	0	0	0	-	-	PythonVoiceError	packages/lib/src/voice-python-client.ts:110
+82	Y	16	5	0	0	8	0	-	-	AdminErrorState	packages/ui/src/admin-ui/AdminErrorState.tsx:29
+92	Y	1	5	2	6	0	0	-	-	ErrorBoundary	packages/ui/src/ErrorBoundary.tsx:16
+109	local	-	0	0	0	0	0	-	-	MathErrorBoundary	packages/ui/src/math/MathRenderer.tsx:61
+184	local	-	13	7	6	0	0	-	-	PulseError	packages/ui/src/pulse/StudentPulse.tsx:80
+82	Y	29	4	3	3	0	0	-	-	SectionErrorBoundary	packages/ui/src/SectionErrorBoundary.tsx:24
+140	local	-	0	0	0	0	16	-	-	SimErrorBoundary	packages/ui/src/simulations/SimulationShell.tsx:20
+
+### Stat — 18 candidate definitions (exported=6, local=12)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+1583	local	-	98	0	33	3	0	-	-	SessionMetricCard	apps/host/src/app/(student)/progress/page.tsx:271
+550	local	-	31	0	38	0	0	-	-	Stat	apps/host/src/app/hpc/HpcReportBody.tsx:139
+1069	local	-	65	3	33	0	0	-	-	StatCard	apps/host/src/app/school-admin/parents/page.tsx:128
+786	local	-	0	18	56	8	0	-	-	Metric	apps/host/src/app/super-admin/foxy-report/[studentId]/page.tsx:221
+742	local	-	7	3	2	102	0	-	-	FlagStatusTile	apps/host/src/app/super-admin/mol-shadow/page.tsx:168
+742	local	-	7	3	2	102	0	-	-	CostBudgetTile	apps/host/src/app/super-admin/mol-shadow/page.tsx:211
+742	local	-	7	3	2	102	0	-	-	VolumeTile	apps/host/src/app/super-admin/mol-shadow/page.tsx:245
+1668	local	-	102	25	59	5	0	-	-	ClassRankingsWidget	apps/host/src/app/teacher/CommandCenter.tsx:1559
+336	local	-	33	7	26	2	0	-	-	StatTile	apps/host/src/app/teacher/StudentMasteryReport.tsx:47
+80	Y	40	0	2	0	7	0	-	-	StatCard	packages/ui/src/admin-ui/StatCard.tsx:24
+849	Y	1	62	1	63	0	0	-	-	BoardScoreWidget	packages/ui/src/dashboard/os/BoardScoreWidget.tsx:194
+120	local	-	6	1	5	0	0	-	-	Stat	packages/ui/src/exam-briefing/os/TimePaceEstimate.tsx:91
+94	Y	1	8	0	5	0	0	-	-	LeadershipTile	packages/ui/src/leadership/Tiles.tsx:12
+353	Y	1	0	0	0	0	52	-	-	ParentLabReportWidget	packages/ui/src/parent/ParentLabReportWidget.tsx:121
+165	local	-	5	3	4	0	12	-	-	DeltaTile	packages/ui/src/synthesis/SynthesisRitual.tsx:141
+165	local	-	5	3	4	0	12	-	-	InfoTile	packages/ui/src/synthesis/SynthesisRitual.tsx:155
+1525	Y	5	133	13	67	1	0	-	-	StatCard	packages/ui/src/ui/wonder-blocks.tsx:670
+1525	Y	0	133	13	67	1	0	-	-	ActionTile	packages/ui/src/ui/wonder-blocks.tsx:736
+
+### Avatar — 4 candidate definitions (exported=3, local=1)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+1399	local	-	9	92	103	0	0	-	-	ChildAvatar	apps/host/src/app/parent/children/page.tsx:66
+180	Y	1	0	0	1	8	0	-	-	Avatar	packages/ui/src/ui/primitives/Avatar.tsx:74
+1525	Y	8	133	13	67	1	0	-	-	Avatar	packages/ui/src/ui/wonder-blocks.tsx:776
+1525	Y	5	133	13	67	1	0	-	-	FoxyAvatar	packages/ui/src/ui/wonder-blocks.tsx:835
+
+### Breadcrumb — 1 candidate definitions (exported=1, local=0)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+120	Y	6	4	4	6	0	0	-	-	Breadcrumbs	packages/ui/src/Breadcrumbs.tsx:36
+
+### Pagination — 0 candidate definitions (exported=0, local=0)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+
+### Search — 1 candidate definitions (exported=1, local=0)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+233	Y	2	0	0	0	0	0	-	-	IconSearch	packages/ui/src/landing/v3/marketing/MarketingIcons.tsx:144
+
+### Progress — 17 candidate definitions (exported=9, local=8)
+lines	exported	importers	var()	hex	inline	twSem	twPal	radix	framer	name	file:line
+209	local	-	21	0	17	1	4	-	-	XPProgressRing	apps/host/src/app/(student)/progress/dashboard/page.tsx:21
+860	local	-	47	11	23	0	0	-	-	CircularProgress	apps/host/src/app/(student)/reports/page.tsx:195
+425	local	-	19	13	28	0	0	-	-	CircleProgress	apps/host/src/app/diagnostic/ResultsScreen.tsx:24
+1399	local	-	9	92	103	0	0	-	-	MiniProgressBar	apps/host/src/app/parent/children/page.tsx:112
+2174	local	-	10	201	181	0	0	-	-	CircularProgressRing	apps/host/src/app/parent/reports/page.tsx:899
+691	local	-	50	9	7	3	5	-	-	SeatGauge	apps/host/src/app/school-admin/CommandCenter.tsx:140
+1790	local	-	0	169	150	40	0	-	-	CircularGauge	apps/host/src/app/super-admin/institutions/page.tsx:191
+65	Y	2	3	0	0	0	0	-	-	MasteryRing	packages/ui/src/cosmic/MasteryRing.tsx:32
+185	Y	1	0	0	0	0	0	-	-	MasteryRing	packages/ui/src/landing/v3/MotionPrimitives.tsx:136
+75	Y	3	0	0	1	2	0	-	-	ProgressBar	packages/ui/src/ui/primitives/ProgressBar.tsx:32
+200	local	-	4	0	3	3	0	-	-	Ring	packages/ui/src/ui/primitives/ProgressRing.tsx:33
+200	Y	2	4	0	3	3	0	-	-	ProgressRing	packages/ui/src/ui/primitives/ProgressRing.tsx:92
+200	Y	1	4	0	3	3	0	-	-	MasteryRing	packages/ui/src/ui/primitives/ProgressRing.tsx:159
+1525	Y	18	133	13	67	1	0	-	-	ProgressBar	packages/ui/src/ui/wonder-blocks.tsx:634
+1525	Y	8	133	13	67	1	0	-	-	MasteryRing	packages/ui/src/ui/wonder-blocks.tsx:885
+1525	Y	2	133	13	67	1	0	-	-	StatRing	packages/ui/src/ui/wonder-blocks.tsx:1467
+138	Y	2	9	0	7	0	0	-	-	XPProgressRing	packages/ui/src/xp/XPProgressRing.tsx:22
+
+## C. ROLE-SURFACE IMPORTS of Button/Card/Modal/Dialog/Sheet/Drawer/Table/Toast/Sidebar/Nav
+
+### apps/host/src/app/(student)/dashboard
+  1	AppShell <- @alfanumrik/ui/responsive	 e.g. apps/host/src/app/(student)/dashboard/StudentOSDashboard.tsx:48
+  RAW <button> elements in surface: 4 across 2 files
+
+### apps/host/src/app/foxy
+  1	AppShell <- @alfanumrik/ui/responsive	 e.g. apps/host/src/app/foxy/page.tsx:19
+  1	ReportDialog <- ./_components/ReportDialog	 e.g. apps/host/src/app/foxy/page.tsx:110
+  RAW <button> elements in surface: 37 across 6 files
+
+### apps/host/src/app/parent
+  7	CardListSkeleton <- @alfanumrik/ui/Skeleton	 e.g. apps/host/src/app/parent/calendar/page.tsx:7
+  1	toast <- @alfanumrik/ui/ui/toast	 e.g. apps/host/src/app/parent/billing/page.tsx:24
+  1	ResponsiveTable <- @alfanumrik/ui/ui	 e.g. apps/host/src/app/parent/billing/page.tsx:25
+  1	ParentShell <- ./_components/ParentShell	 e.g. apps/host/src/app/parent/layout.tsx:3
+  1	ConversationPromptsCard <- @alfanumrik/ui/parent/ConversationPromptsCard	 e.g. apps/host/src/app/parent/reports/page.tsx:15
+  1	StatCard <- @alfanumrik/ui/admin-ui	 e.g. apps/host/src/app/parent/reports/page.tsx:18
+  1	ParentShareCard <- react	 e.g. apps/host/src/app/parent/reports/ProgressPanel.tsx:11
+  1	DashboardSidebar <- @alfanumrik/ui/admin-ui/DashboardSidebar	 e.g. apps/host/src/app/parent/_components/ParentShell.tsx:7
+  1	ParentMobileNav <- ./ParentMobileNav	 e.g. apps/host/src/app/parent/_components/ParentShell.tsx:10
+  RAW <button> elements in surface: 85 across 15 files
+
+### apps/host/src/app/teacher
+  4	TeacherTableSkeleton <- @alfanumrik/ui/Skeleton	 e.g. apps/host/src/app/teacher/attendance/page.tsx:24
+  3	CardListSkeleton <- @alfanumrik/ui/Skeleton	 e.g. apps/host/src/app/teacher/assignments/page.tsx:11
+  1	MisconceptionClusterCard <- @alfanumrik/ui/teacher/MisconceptionClusterCard	 e.g. apps/host/src/app/teacher/CommandCenter.tsx:69
+  1	EvidenceDrawer <- @alfanumrik/ui/teacher/EvidenceDrawer	 e.g. apps/host/src/app/teacher/CommandCenter.tsx:70
+  1	InterventionApprovalCard <- @alfanumrik/ui/teacher/InterventionApprovalCard	 e.g. apps/host/src/app/teacher/CommandCenter.tsx:74
+  1	StatCard <- @alfanumrik/ui/admin-ui/StatCard	 e.g. apps/host/src/app/teacher/CommandCenter.tsx:82
+  1	TeacherShell <- ./_components/TeacherShell	 e.g. apps/host/src/app/teacher/layout.tsx:3
+  1	StatCard <- @alfanumrik/ui/admin-ui	 e.g. apps/host/src/app/teacher/reports/page.tsx:9
+  1	Dialog <- @alfanumrik/ui/ui/primitives/EmptyState	 e.g. apps/host/src/app/teacher/worksheets/page.tsx:9
+  1	DashboardSidebar <- @alfanumrik/ui/admin-ui/DashboardSidebar	 e.g. apps/host/src/app/teacher/_components/TeacherShell.tsx:40
+  1	TeacherMobileNav <- ./TeacherMobileNav	 e.g. apps/host/src/app/teacher/_components/TeacherShell.tsx:44
+  RAW <button> elements in surface: 122 across 19 files
+
+### apps/host/src/app/school-admin
+  24	Card <- @alfanumrik/ui/ui	 e.g. apps/host/src/app/school-admin/ai-assistant/page.tsx:32
+  6	Card <- @alfanumrik/ui/ui/primitives	 e.g. apps/host/src/app/school-admin/command-center/ClassesAtRiskRail.tsx:19
+  2	StatCard <- @alfanumrik/ui/admin-ui	 e.g. apps/host/src/app/school-admin/CommandCenter.tsx:47
+  1	ResponsiveTable <- @alfanumrik/ui/ui	 e.g. apps/host/src/app/school-admin/command-center/TeacherEngagementTable.tsx:17
+  1	SchoolAdminShell <- ./_components/SchoolAdminShell	 e.g. apps/host/src/app/school-admin/layout.tsx:2
+  1	BottomSheet <- @alfanumrik/ui/ui/primitives	 e.g. apps/host/src/app/school-admin/_components/ConsolidatedSchoolNav.tsx:30
+  1	ConsolidatedSchoolNav <- ./ConsolidatedSchoolNav	 e.g. apps/host/src/app/school-admin/_components/SchoolAdminShell.tsx:15
+  RAW <button> elements in surface: 86 across 26 files
+
+### apps/host/src/app/super-admin
+  41	AdminShell <- ../_components/AdminShell	 e.g. apps/host/src/app/super-admin/adaptive-loops/page.tsx:4
+  22	StatCard <- @alfanumrik/ui/admin-ui	 e.g. apps/host/src/app/super-admin/adaptive-loops/page.tsx:6
+  19	AdminShell <- ../../_components/AdminShell	 e.g. apps/host/src/app/super-admin/alfabot/[sessionId]/page.tsx:27
+  8	DataTable <- @alfanumrik/ui/admin-ui	 e.g. apps/host/src/app/super-admin/analytics-b2b/page.tsx:5
+  7	toast <- @alfanumrik/ui/ui/toast	 e.g. apps/host/src/app/super-admin/cms/page.tsx:6
+  3	StatCard <- @alfanumrik/ui/admin-ui/StatCard	 e.g. apps/host/src/app/super-admin/alfabot/page.tsx:23
+  3	StatCard <- ../_components/StatCard	 e.g. apps/host/src/app/super-admin/bulk-upload/page.tsx:5
+  2	DataTable <- ../../_components/DataTable	 e.g. apps/host/src/app/super-admin/bulk-actions/_components/StudentSelector.tsx:5
+  2	DataTable <- ../_components/DataTable	 e.g. apps/host/src/app/super-admin/bulk-upload/page.tsx:7
+  2	StatCard <- ../../_components/StatCard	 e.g. apps/host/src/app/super-admin/bulk-upload/schools/page.tsx:17
+  2	ConfirmDialog <- @alfanumrik/ui/ui/primitives	 e.g. apps/host/src/app/super-admin/support/page.tsx:7
+  1	AdminShell <- ../../../_components/AdminShell	 e.g. apps/host/src/app/super-admin/intelligence/schools/[id]/page.tsx:17
+  1	EventDetailDrawer <- ./_components/EventDetailDrawer	 e.g. apps/host/src/app/super-admin/observability/page.tsx:10
+  1	ConfirmActionDialog <- ./_components/ConfirmActionDialog	 e.g. apps/host/src/app/super-admin/users/page.tsx:11
+  1	ConfirmActionDialog <- ./ConfirmActionDialog	 e.g. apps/host/src/app/super-admin/users/_components/AdminTierPanel.tsx:27
+  1	TypedConfirmDialog <- ./TypedConfirmDialog	 e.g. apps/host/src/app/super-admin/users/_components/AdminTierPanel.tsx:28
+  1	Dialog <- @alfanumrik/ui/ui/primitives	 e.g. apps/host/src/app/super-admin/users/_components/TypedConfirmDialog.tsx:14
+  1	DetailDrawer <- ../_components/DetailDrawer	 e.g. apps/host/src/app/super-admin/workbench/page.tsx:6
+  1	DashboardSidebar <- @alfanumrik/ui/admin-ui/DashboardSidebar	 e.g. apps/host/src/app/super-admin/_components/AdminShell.tsx:5
+  1	AdminShell <- ./AdminShell	 e.g. apps/host/src/app/super-admin/_components/LegacySuperAdminPage.tsx:12
+  RAW <button> elements in surface: 369 across 87 files
+
+## E. TYPE-SCALE USAGE
+text-fluid-* classes: 200 occurrences in 34 files
+tailwind text-{xs..9xl} classes: 3944 occurrences in 392 files
+var(--text-{size}) reads: 4 occurrences in 2 files
+inline fontSize: (px/rem literal): 3252 occurrences in 274 files
+inline fontSize: any: 3294 occurrences in 275 files
+tailwind text-[Npx] arbitrary: 1359 occurrences in 214 files
+cosmic HDisplay/TabNum usage: 1 occurrences in 1 files
+CSS-module type classes (welcome-v2/v3 .h1/.display etc) — see module files
+dark: tailwind variant: 50 occurrences in 7 files
+font-heading/font-display/font-data tailwind utilities: 332 occurrences in 150 files
+
+## F. WHO RENDERS WelcomeV2 / WelcomeV3 / PricingV2 / PricingV3 / MarketingShell (app/ only)
+  apps/host/src/app/about/AboutContent.tsx: MarketingShell
+  apps/host/src/app/for-parents/page.tsx: MarketingShell
+  apps/host/src/app/for-schools/page.tsx: MarketingShell
+  apps/host/src/app/for-teachers/page.tsx: MarketingShell
+  apps/host/src/app/pricing/page.tsx: PricingV3
+  apps/host/src/app/product/page.tsx: MarketingShell
+  apps/host/src/app/welcome/page.tsx: WelcomeV2,WelcomeV3

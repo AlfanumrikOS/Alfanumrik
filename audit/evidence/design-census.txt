@@ -1,0 +1,200 @@
+globals.css lines 4816
+--- token blocks in globals.css (selector, lines, custom-prop declarations) ---
+:root                                                                  L6-351 vars=125
+[data-theme="dark-disabled-pending-cleanup"]                           L379-420 vars=22
+:root                                                                  L875-881 vars=5
+:root                                                                  L1572-1663 vars=52
+html[data-design="cosmic"]                                             L3586-3792 vars=100
+html[data-design="cosmic"][data-theme="light"]                         L3816-3892 vars=34
+html[data-design="cosmic"][data-theme="hc"]                            L3897-3917 vars=12
+html[data-design="cosmic"][data-role="parent"]                         L3926-3935 vars=8
+html[data-design="cosmic"][data-role="teacher"]                        L3938-3947 vars=8
+html[data-design="cosmic"][data-role="school"]                         L3950-3959 vars=8
+.cosmic-ring                                                           L4019-4029 vars=4
+total custom-prop declarations 385 distinct names 209
+--- distinct var names by prefix (top 30) ---
+--space*:21  --text*:17  --z*:10  --radius*:8  --shadow*:7  --accent*:6  --surface*:6  --bg*:6  --font*:5  --ease*:5  --focus*:5  --duration*:5  --ink*:4  --green*:4  --border*:4  --on*:4  --tap*:4  --safe*:4  --shell*:4  --r*:4  --cream*:3  --teal*:3  --line*:3  --orange*:3  --purple*:3  --danger*:3  --primary*:3  --mastery*:3  --reach*:3  --layout*:3
+--- per directory: files, hex6 literals, inline style={{ }}, tailwind arbitrary [#hex|Npx], dark: variants ---
+packages/ui/src/simulations                      files= 119 hex= 2699 inline= 2211 arb=  12 dark=0
+apps/host/src/super-admin                        files= 121 hex= 1723 inline= 2267 arb= 492 dark=0
+apps/host/src/teacher                            files=  27 hex=  678 inline=  871 arb= 160 dark=0
+apps/host/src/parent                             files=  23 hex=  409 inline=  432 arb= 147 dark=0
+apps/host/src/school-admin                       files=  45 hex=  212 inline=  487 arb=  85 dark=0
+packages/lib/src                                 files= 499 hex=  171 inline=    2 arb=   0 dark=1
+apps/host/src/(student)                          files=  53 hex=  156 inline=  502 arb= 184 dark=0
+packages/ui/src/landing                          files=  55 hex=  149 inline=  182 arb=  23 dark=0
+apps/host/src/internal                           files=  16 hex=  104 inline=  166 arb=  23 dark=0
+packages/ui/src/pulse                            files=   9 hex=   67 inline=   42 arb=  12 dark=0
+apps/host/src/settings                           files=   2 hex=   64 inline=   65 arb=   1 dark=0
+packages/ui/src/quiz                             files=  13 hex=   46 inline=  175 arb=  37 dark=0
+packages/ui/src/parent                           files=   6 hex=   43 inline=   31 arb= 111 dark=0
+packages/ui/src/school                           files=   6 hex=   43 inline=   64 arb=  10 dark=0
+apps/host/src/diagnostic                         files=   9 hex=   32 inline=  120 arb=   0 dark=0
+packages/ui/src/admin-ui                         files=  18 hex=   31 inline=   26 arb=  29 dark=0
+apps/host/src/notifications                      files=   4 hex=   29 inline=   16 arb=   6 dark=0
+packages/ui/src/dashboard                        files=  10 hex=   29 inline=  141 arb=   0 dark=0
+apps/host/src/support                            files=   3 hex=   28 inline=   44 arb=   8 dark=0
+apps/host/src/help                               files=   2 hex=   27 inline=   75 arb=  12 dark=0
+packages/ui/src/foxy                             files=  27 hex=   27 inline=  189 arb=  92 dark=37
+packages/ui/src/ui                               files=  43 hex=   26 inline=  102 arb=   1 dark=0
+apps/host/src/api                                files= 450 hex=   25 inline=   29 arb=   0 dark=0
+apps/host/src/schools                            files=   3 hex=   25 inline=   61 arb=   0 dark=0
+packages/ui/src/exams                            files=   6 hex=   25 inline=   68 arb=   7 dark=0
+apps/host/src/lab-notebook                       files=   1 hex=   24 inline=    0 arb=   0 dark=0
+apps/host/src                                    files=  19 hex=   21 inline=    0 arb=   0 dark=0
+packages/ui/src/exam-briefing                    files=   9 hex=   21 inline=   51 arb=   9 dark=0
+packages/ui/src/auth                             files=   1 hex=   20 inline=   47 arb=   9 dark=0
+packages/ui/src/SimulationCard.tsx               files=   1 hex=   20 inline=   16 arb=   0 dark=0
+apps/host/src/contact                            files=   2 hex=   19 inline=   34 arb=   0 dark=0
+packages/ui/src/review                           files=   8 hex=   19 inline=   54 arb=   2 dark=0
+packages/ui/src/learn                            files=  14 hex=   18 inline=   75 arb=  14 dark=0
+apps/host/src/press                              files=   1 hex=   17 inline=   29 arb=   0 dark=0
+apps/host/src/security                           files=   1 hex=   16 inline=   36 arb=   0 dark=0
+apps/host/src/billing                            files=   2 hex=   15 inline=   47 arb=   0 dark=0
+apps/host/src/careers                            files=   1 hex=   15 inline=   26 arb=   0 dark=0
+packages/ui/src/SimulationViewer.tsx             files=   1 hex=   14 inline=   14 arb=   0 dark=0
+apps/host/src/scan                               files=   3 hex=   13 inline=   24 arb=   8 dark=0
+packages/ui/src/ScanSolver.tsx                   files=   1 hex=   13 inline=   10 arb=  11 dark=0
+packages/ui/src/synthesis                        files=   2 hex=   13 inline=    7 arb=  10 dark=0
+apps/host/src/research                           files=   1 hex=   12 inline=   19 arb=   0 dark=0
+packages/ui/src/foxy-panel                       files=   6 hex=   12 inline=   16 arb=   8 dark=0
+apps/host/src/refunds                            files=   1 hex=   11 inline=   10 arb=   0 dark=0
+packages/ui/src/ExamModeToggle.tsx               files=   1 hex=   11 inline=   18 arb=   4 dark=0
+packages/ui/src/refresh                          files=   4 hex=   11 inline=   28 arb=   4 dark=0
+packages/ui/src/teacher                          files=   5 hex=   11 inline=   57 arb=  44 dark=0
+apps/host/src/challenge                          files=   1 hex=    9 inline=   11 arb=   3 dark=0
+packages/ui/src/exam                             files=   1 hex=    9 inline=   29 arb=   1 dark=0
+packages/ui/src/practice                         files=   8 hex=    9 inline=   55 arb=   1 dark=0
+packages/ui/src/study-plan                       files=   3 hex=    9 inline=   10 arb=   4 dark=0
+apps/host/src/not-found.tsx                      files=   1 hex=    8 inline=    1 arb=   0 dark=0
+packages/ui/src/progress                         files=   3 hex=    8 inline=   13 arb=   9 dark=0
+packages/ui/src/school-admin                     files=   6 hex=    8 inline=    5 arb=   5 dark=0
+apps/host/src/join                               files=   1 hex=    6 inline=    6 arb=   0 dark=0
+packages/ui/src/CookieConsent.tsx                files=   1 hex=    6 inline=    6 arb=   0 dark=0
+packages/ui/src/engagement                       files=   3 hex=    6 inline=    2 arb=   2 dark=13
+packages/ui/src/memory                           files=   1 hex=    6 inline=    4 arb=   2 dark=0
+packages/ui/src/onboarding                       files=   4 hex=    6 inline=   52 arb=   2 dark=0
+packages/ui/src/StreamGate.tsx                   files=   1 hex=    6 inline=   10 arb=   1 dark=0
+packages/ui/src/UpgradeModal.tsx                 files=   1 hex=    5 inline=   21 arb=   4 dark=0
+apps/host/src/demo                               files=   2 hex=    4 inline=   39 arb=   0 dark=0
+apps/host/src/error.tsx                          files=   1 hex=    4 inline=    8 arb=   0 dark=0
+apps/host/src/foxy                               files=  21 hex=    4 inline=  123 arb=  39 dark=0
+apps/host/src/privacy                            files=   2 hex=    4 inline=    1 arb=   0 dark=0
+apps/host/src/terms                              files=   2 hex=    4 inline=    1 arb=   0 dark=0
+packages/ui/src/Breadcrumbs.tsx                  files=   1 hex=    4 inline=    6 arb=   0 dark=0
+packages/ui/src/ExamProphecy.tsx                 files=   1 hex=    4 inline=   12 arb=  13 dark=0
+apps/host/src/auth                               files=   3 hex=    3 inline=   19 arb=   0 dark=0
+apps/host/src/dive                               files=   7 hex=    3 inline=   11 arb=   2 dark=0
+apps/host/src/loading.tsx                        files=   1 hex=    3 inline=    4 arb=   0 dark=0
+apps/host/src/login                              files=   1 hex=    3 inline=    1 arb=   0 dark=0
+apps/host/src/stem-centre                        files=   1 hex=    3 inline=    1 arb=  13 dark=0
+apps/host/src/synthesis                          files=   4 hex=    3 inline=    6 arb=   0 dark=0
+packages/ui/src/billing                          files=   1 hex=    3 inline=   29 arb=   5 dark=0
+packages/ui/src/leaderboard                      files=   1 hex=    3 inline=    4 arb=   1 dark=0
+packages/ui/src/scan                             files=   1 hex=    3 inline=    2 arb=   1 dark=0
+packages/ui/src/SectionErrorBoundary.tsx         files=   1 hex=    3 inline=    3 arb=   0 dark=0
+packages/ui/src/SubscriptionConfirm.tsx          files=   1 hex=    3 inline=   14 arb=   0 dark=0
+apps/host/src/onboarding                         files=   3 hex=    2 inline=   27 arb=   0 dark=0
+apps/host/src/tutor                              files=   1 hex=    2 inline=   11 arb=   3 dark=0
+packages/ui/src/challenge                        files=   5 hex=    2 inline=   23 arb=   8 dark=0
+packages/ui/src/ErrorBoundary.tsx                files=   1 hex=    2 inline=    6 arb=   0 dark=0
+packages/ui/src/math                             files=   4 hex=    2 inline=   16 arb=   0 dark=0
+packages/ui/src/NetworkStatus.tsx                files=   1 hex=    2 inline=    2 arb=   0 dark=0
+packages/ui/src/play                             files=   2 hex=    2 inline=    9 arb=   4 dark=0
+packages/ui/src/profile                          files=   1 hex=    2 inline=   38 arb=   5 dark=0
+packages/ui/src/Skeleton.tsx                     files=   1 hex=    2 inline=   32 arb=   8 dark=0
+apps/host/src/global-error.tsx                   files=   1 hex=    1 inline=    6 arb=   0 dark=0
+apps/host/src/hpc                                files=   3 hex=    1 inline=   50 arb=   0 dark=0
+apps/host/src/layout.tsx                         files=   1 hex=    1 inline=    0 arb=   0 dark=0
+apps/host/src/page.tsx                           files=   1 hex=    1 inline=    2 arb=   0 dark=0
+apps/host/src/refresh                            files=   1 hex=    1 inline=    3 arb=   0 dark=0
+packages/ui/src/DemoModeBanner.tsx               files=   1 hex=    1 inline=    1 arb=   0 dark=0
+packages/ui/src/dive                             files=   2 hex=    1 inline=    1 arb=   1 dark=0
+packages/ui/src/InlineSimulation.tsx             files=   1 hex=    1 inline=    7 arb=   2 dark=0
+packages/ui/src/SchoolBrandedHeader.tsx          files=   1 hex=    1 inline=    7 arb=   0 dark=0
+packages/ui/src/stem                             files=   3 hex=    1 inline=   21 arb=  21 dark=0
+packages/ui/src/today                            files=   2 hex=    1 inline=   33 arb=   4 dark=0
+apps/host/src/about                              files=   2 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/dev                                files=   2 hex=    0 inline=   33 arb=   0 dark=1
+apps/host/src/exam-briefing                      files=   1 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/for-parents                        files=   2 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/for-schools                        files=   2 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/for-teachers                       files=   2 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/me                                 files=   1 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/pricing                            files=   2 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/product                            files=   2 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/sitemap.ts                         files=   1 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/tests                              files=   1 hex=    0 inline=    1 arb=   0 dark=0
+apps/host/src/today                              files=   1 hex=    0 inline=    1 arb=   0 dark=0
+apps/host/src/upgrade                            files=   1 hex=    0 inline=    0 arb=   0 dark=0
+apps/host/src/welcome                            files=   2 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/achievements                     files=   1 hex=    0 inline=    8 arb=   3 dark=0
+packages/ui/src/alfabot                          files=  12 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/coins                            files=   1 hex=    0 inline=    4 arb=   0 dark=0
+packages/ui/src/cosmic                           files=  11 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/DemoModeWrapper.tsx              files=   1 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/DiagramViewer.tsx                files=   1 hex=    0 inline=    5 arb=   1 dark=0
+packages/ui/src/foxy-launcher                    files=   1 hex=    0 inline=    1 arb=   1 dark=0
+packages/ui/src/FoxyRenderEngine.tsx             files=   1 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/grounding                        files=   2 hex=    0 inline=    0 arb=   4 dark=0
+packages/ui/src/HtmlLangSync.tsx                 files=   1 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/JsonLd.tsx                       files=   1 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/LayoutDeferredChrome.tsx         files=   1 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/leadership                       files=   1 hex=    0 inline=    5 arb=   2 dark=0
+packages/ui/src/MaintenanceBanner.tsx            files=   1 hex=    0 inline=    2 arb=   0 dark=0
+packages/ui/src/motion                           files=   4 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/navigation                       files=   8 hex=    0 inline=   30 arb=   9 dark=0
+packages/ui/src/offline                          files=   3 hex=    0 inline=   18 arb=   0 dark=0
+packages/ui/src/PermissionGate.tsx               files=   1 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/PlanBadge.tsx                    files=   1 hex=    0 inline=    9 arb=   5 dark=0
+packages/ui/src/PostHogProvider.tsx              files=   1 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/responsive                       files=   3 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/SchoolThemeProvider.tsx          files=   1 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/score                            files=   2 hex=    0 inline=   16 arb=   0 dark=0
+packages/ui/src/SELCheckIn.tsx                   files=   1 hex=    0 inline=    6 arb=   1 dark=0
+packages/ui/src/subjects                         files=   1 hex=    0 inline=    3 arb=   0 dark=0
+packages/ui/src/TrustFooter.tsx                  files=   1 hex=    0 inline=    4 arb=   0 dark=0
+packages/ui/src/useSimulations.ts                files=   1 hex=    0 inline=    0 arb=   0 dark=0
+packages/ui/src/xp                               files=   4 hex=    0 inline=   22 arb=   1 dark=0
+TOTAL {"hex":7405,"inline":9958,"arb":1766,"files":1867,"dark":52}
+--- top 15 hex values --- #DC2626:438 #E8581C:384 #16A34A:364 #9CA3AF:348 #7C3AED:310 #6B7280:211 #E5E7EB:209 #EF4444:186 #111827:185 #FFFFFF:168 #7D7264:160 #D97706:141 #2563EB:137 #64748B:136 #22C55E:135
+--- top 20 files by hex count ---
+ 201 apps/host/src/app/parent/reports/page.tsx
+ 169 apps/host/src/app/super-admin/institutions/page.tsx
+ 103 apps/host/src/app/super-admin/bulk-upload/page.tsx
+  98 apps/host/src/app/super-admin/cms/page.tsx
+  95 apps/host/src/app/teacher/classes/page.tsx
+  92 apps/host/src/app/parent/children/page.tsx
+  87 apps/host/src/app/teacher/students/page.tsx
+  77 packages/lib/src/email-templates.ts
+  73 apps/host/src/app/super-admin/oauth-apps/page.tsx
+  70 apps/host/src/app/super-admin/demo/page.tsx
+  67 apps/host/src/app/super-admin/subscriptions/_components/PaymentOpsTab.tsx
+  67 packages/ui/src/simulations/TitrationLab.tsx
+  66 packages/ui/src/simulations/RefractionLab.tsx
+  65 apps/host/src/app/super-admin/command-center/page.tsx
+  64 packages/ui/src/simulations/ElectrochemicalCell.tsx
+  62 apps/host/src/app/super-admin/learning/page.tsx
+  62 packages/ui/src/simulations/CellStructure.tsx
+  60 packages/ui/src/simulations/ChemicalBalancer.tsx
+  60 packages/ui/src/simulations/RespirationLab.tsx
+  59 packages/ui/src/simulations/PHScale.tsx
+--- font loading sites ---
+fonts.googleapis.com => apps/host/src/app/layout.tsx 
+from 'next/font/local' => apps/host/src/app/welcome/layout.tsx 
+fonts.googleapis.com`, => apps/host/src/app/welcome/layout.tsx 
+from 'next/font/google' => packages/lib/src/cosmic-fonts.ts, packages/lib/src/momentum-fonts.ts 
+font families referenced: Plus Jakarta Sans, Sora, Inter, Roboto, Fraunces, Space Grotesk, Mukta, Noto Sans Devanagari, Hind
+--- theme mechanisms (token => files) ---
+data-design            13 apps/host/src/app/(student)/dashboard/StudentOSDashboard.tsx, apps/host/src/app/layout.tsx, packages/ui/src/cosmic/GlowCard.tsx, packages/ui/src/cosmic/index.ts
+data-role              14 apps/host/src/app/dev/cosmic-preview/page.tsx, apps/host/src/app/layout.tsx, apps/host/src/app/school-admin/_components/SchoolAdminShell.tsx, apps/host/src/app/super-admin/_components/AdminShell.tsx
+CosmicThemeProvider    4 apps/host/src/app/layout.tsx, packages/ui/src/globals.css, packages/lib/src/AuthContext.tsx, packages/lib/src/cosmic-theme.tsx
+resolveTheme           4 apps/host/src/app/layout.tsx, packages/ui/src/globals.css, packages/ui/src/landing/WelcomeV2Context.tsx, packages/lib/src/AuthContext.tsx
+data-theme             16 apps/host/src/app/layout.tsx, apps/host/src/app/teacher/_components/TeacherShell.tsx, packages/ui/src/alfabot/alfabot.module.css, packages/ui/src/dashboard/os/palette.ts
+SchoolThemeProvider    3 apps/host/src/app/school-admin/_components/SchoolAdminShell.tsx, packages/ui/src/SchoolThemeProvider.tsx, packages/lib/src/tenant-domain/client.tsx
+prefers-color-scheme   3 packages/ui/src/globals.css, packages/ui/src/landing/welcome-v2.module.css, packages/ui/src/SimulationViewer.tsx
+--- type scale usage --- {"text-fluid-*":212,"text-[Npx]":1362,"tailwind text-xs..9xl":3969,"var(--text-*)":31,"cosmic <Text":0,"fontSize inline":3294}
+css module packages/ui/src/alfabot/alfabot.module.css 830 lines; importers 9
+css module packages/ui/src/landing/v3/marketing/marketing-v3.module.css 231 lines; importers 5
+css module packages/ui/src/landing/v3/welcome-v3.module.css 2690 lines; importers 32
+css module packages/ui/src/landing/welcome-v2.module.css 3163 lines; importers 14
