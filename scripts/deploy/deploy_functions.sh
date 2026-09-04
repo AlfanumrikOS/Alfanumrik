@@ -91,7 +91,6 @@ ALL_FUNCTIONS=(
   send-renewal-reminder
   send-transactional-email
   send-welcome-email
-  session-guard
   synthetic-host-monitor
   teacher-dashboard
   verify-question-bank
