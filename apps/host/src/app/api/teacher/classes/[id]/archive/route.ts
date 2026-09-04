@@ -11,10 +11,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
+
+const ParamsSchema = z.object({ id: z.string().uuid() });
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
@@ -27,8 +31,9 @@ export async function POST(
   const auth = await authorizeRequest(request, 'class.manage');
   if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
-  const { id: classId } = await params;
-  if (!/^[0-9a-fA-F-]{36}$/.test(classId)) return err('Invalid class id', 400);
+  const parsedParams = ParamsSchema.safeParse(await params);
+  if (!parsedParams.success) return err('Invalid class id', 400);
+  const { id: classId } = parsedParams.data;
 
   // Resolve teacher row.
   const { data: teacher, error: teacherErr } = await supabaseAdmin
@@ -96,6 +101,15 @@ export async function POST(
     });
     return err('Failed to archive class', 500);
   }
+
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'class.archived',
+    resourceType: 'class',
+    resourceId: classId,
+    schoolId: (teacher as { school_id?: string | null }).school_id ?? null,
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
 
   return NextResponse.json({ success: true });
 }

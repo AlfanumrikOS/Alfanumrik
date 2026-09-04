@@ -56,6 +56,7 @@ import {
 } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
 import {
   buildEvidenceForStudents,
   evidenceToJsonb,
@@ -435,6 +436,16 @@ export async function POST(request: NextRequest) {
     });
     return err('Failed to assign remediation', 500);
   }
+
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'remediation.assigned',
+    resourceType: 'teacher_remediation_assignment',
+    resourceId: (inserted as { id: string }).id,
+    schoolId: classScope.schoolId ?? null,
+    details: { student_id: studentId, class_id: classId, chapter_id: chapterId, source_alert_id: sourceAlertId },
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
 
   return NextResponse.json({ success: true, data: inserted }, { status: 201 });
 }

@@ -279,3 +279,46 @@ export async function logSchoolAudit(entry: SchoolAuditEntry): Promise<void> {
     // Audit failures must never block the main operation
   }
 }
+
+interface TeacherAuditEntry {
+  teacherAuthUserId: string;
+  action: string;
+  resourceType: string;
+  resourceId?: string | null;
+  schoolId?: string | null;
+  details?: Record<string, unknown>;
+  ipAddress?: string;
+}
+
+/**
+ * Log a teacher-actor event to the canonical `audit_logs` table (Gate-2 D3:
+ * before this, 0 of 19 /api/teacher/** routes logged any mutation).
+ *
+ * `actor_type` uses 'user' — audit_logs' own CHECK constraint
+ * (audit_logs_actor_type_check) only allows 'user' | 'admin' | 'service' |
+ * 'system' | 'cron'; there is no per-role value for student/teacher/parent,
+ * so 'user' is the correct generic-human-actor value here, same as any
+ * other non-admin authenticated actor would use. Do NOT pass 'teacher' —
+ * the insert would violate the constraint and this fire-and-forget helper
+ * would silently swallow the failure, defeating the point of adding it.
+ * Fire-and-forget — failures never break the main operation.
+ */
+export async function logTeacherAudit(entry: TeacherAuditEntry): Promise<void> {
+  try {
+    const { getSupabaseAdmin } = await import('@alfanumrik/lib/supabase-admin');
+    const supabase = getSupabaseAdmin();
+    await supabase.from('audit_logs').insert({
+      auth_user_id: entry.teacherAuthUserId,
+      actor_type: 'user',
+      action: entry.action,
+      resource_type: entry.resourceType,
+      resource_id: entry.resourceId ?? null,
+      school_id: entry.schoolId ?? null,
+      details: entry.details ?? {},
+      ip_address: entry.ipAddress || null,
+      status: 'success',
+    });
+  } catch {
+    // Audit failures must never block the main operation
+  }
+}

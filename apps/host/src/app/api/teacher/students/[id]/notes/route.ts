@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { authorizeRequest, canAccessStudent } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
 
 const BodySchema = z.object({
@@ -119,6 +120,18 @@ export async function PUT(
     });
     return err('Failed to save note', 500);
   }
+
+  // Metadata only — note/goal text is deliberately never logged (P13),
+  // matching the event payload's own hasNote/hasGoal-only contract above.
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'student_note.updated',
+    resourceType: 'student',
+    resourceId: studentId,
+    schoolId: (teacher as { school_id?: string | null }).school_id ?? null,
+    details: { has_note: note.trim().length > 0, has_goal: customGoal.trim().length > 0 },
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
 
   return NextResponse.json({ success: true });
 }

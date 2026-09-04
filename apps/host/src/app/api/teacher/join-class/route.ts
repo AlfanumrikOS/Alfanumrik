@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
@@ -117,6 +118,16 @@ export async function POST(request: NextRequest) {
     teacherId: result.data?.teacherId ?? auth.userId ?? null,
     classId: result.data?.classId ?? null,
     schoolId: result.data?.schoolId ?? null,
+  });
+
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'class.joined',
+    resourceType: 'class',
+    resourceId: result.data!.classId,
+    schoolId: result.data?.schoolId ?? null,
+    details: { already_joined: result.data!.alreadyJoined },
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
   });
 
   return NextResponse.json({

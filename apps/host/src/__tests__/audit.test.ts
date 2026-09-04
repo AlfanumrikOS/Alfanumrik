@@ -9,11 +9,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * Source: src/lib/audit.ts
  */
 
-// Mock supabase-admin to prevent real DB calls
+// Mock supabase-admin to prevent real DB calls. Captures the last
+// (table, payload) pair passed to .insert() so tests can assert on it —
+// used by the logTeacherAudit contract tests below. getSupabaseAdmin() is
+// also exported so logTeacherAudit's own `await import(...)` resolves this
+// same mock (it imports dynamically rather than importing the named export).
+export const insertCalls: { table: string; payload: unknown }[] = [];
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => ({
-    from: () => ({
-      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+    from: (table: string) => ({
+      insert: (payload: unknown) => {
+        insertCalls.push({ table, payload });
+        return Promise.resolve({ data: null, error: null });
+      },
     }),
   }),
 }));
@@ -24,7 +32,7 @@ vi.mock('@sentry/nextjs', () => ({
   captureMessage: vi.fn(),
 }));
 
-import { AuditAction, auditLog, auditDenied, type AuditEvent } from '@alfanumrik/lib/audit';
+import { AuditAction, auditLog, auditDenied, logTeacherAudit, type AuditEvent } from '@alfanumrik/lib/audit';
 
 describe('Audit Action Constants', () => {
   it('defines all expected auth actions', () => {
@@ -318,5 +326,71 @@ describe('PII Redaction in Audit Events', () => {
     expect(loggedJson.metadata.changes.email).toBe('[REDACTED]');
     // name is not in PII_FIELDS, so it should not be redacted
     expect(loggedJson.metadata.changes.name).toBe('Updated Name');
+  });
+});
+
+describe('logTeacherAudit (Gate-2 D3)', () => {
+  beforeEach(() => {
+    insertCalls.length = 0;
+  });
+
+  it('writes to audit_logs, not school_audit_log or a teacher-specific table', async () => {
+    await logTeacherAudit({
+      teacherAuthUserId: 'auth-user-1',
+      action: 'assignment.created',
+      resourceType: 'assignment',
+      resourceId: 'assignment-1',
+    });
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0].table).toBe('audit_logs');
+  });
+
+  it('uses actor_type "user", never "teacher" — audit_logs_actor_type_check ' +
+    'only allows user|admin|service|system|cron; "teacher" would violate the ' +
+    'DB constraint and this fire-and-forget helper would silently swallow the failure', async () => {
+    await logTeacherAudit({
+      teacherAuthUserId: 'auth-user-1',
+      action: 'class.created',
+      resourceType: 'class',
+      resourceId: 'class-1',
+    });
+    const payload = insertCalls[0].payload as Record<string, unknown>;
+    expect(payload.actor_type).toBe('user');
+  });
+
+  it('maps fields onto audit_logs columns correctly (auth_user_id, resource_type, resource_id, school_id, details)', async () => {
+    await logTeacherAudit({
+      teacherAuthUserId: 'auth-user-42',
+      action: 'remediation.assigned',
+      resourceType: 'teacher_remediation_assignment',
+      resourceId: 'rem-1',
+      schoolId: 'school-9',
+      details: { student_id: 'student-1' },
+      ipAddress: '1.2.3.4',
+    });
+    const payload = insertCalls[0].payload as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      auth_user_id: 'auth-user-42',
+      action: 'remediation.assigned',
+      resource_type: 'teacher_remediation_assignment',
+      resource_id: 'rem-1',
+      school_id: 'school-9',
+      details: { student_id: 'student-1' },
+      ip_address: '1.2.3.4',
+      status: 'success',
+    });
+  });
+
+  it('defaults optional fields to null/empty rather than undefined', async () => {
+    await logTeacherAudit({
+      teacherAuthUserId: 'auth-user-1',
+      action: 'profile.updated',
+      resourceType: 'teacher',
+    });
+    const payload = insertCalls[0].payload as Record<string, unknown>;
+    expect(payload.resource_id).toBeNull();
+    expect(payload.school_id).toBeNull();
+    expect(payload.details).toEqual({});
+    expect(payload.ip_address).toBeNull();
   });
 });
