@@ -25,7 +25,7 @@ export default function ShowcaseV2() {
           <div className="right">
             <p>
               {t(
-                'The product is small on purpose. A tutor to talk to, a map to know yourself by, and a quiz that actually teaches you something when you are wrong.',
+                'The product is small on purpose. A companion to talk to, a map to know yourself by, and a quiz that actually teaches you something when you are wrong.',
                 'उत्पाद जान-बूझ कर छोटा है। बात करने के लिए एक शिक्षक, ख़ुद को पहचानने के लिए एक नक़्शा, और ग़लत होने पर सच में सिखाने वाला क्विज़।',
               )}
             </p>
@@ -34,7 +34,7 @@ export default function ShowcaseV2() {
 
         <div className={s.showGrid}>
           <article data-reveal className={`${s.showCard} ${s.showCard1} ${s.revealFade}`} aria-labelledby="card-1-title">
-            <div className="lbl">{t('Tool i · the tutor', 'औज़ार i · शिक्षक')}</div>
+            <div className="lbl">{t('Tool i · the companion', 'औज़ार i · शिक्षक')}</div>
             <div className="step" aria-hidden="true">i.</div>
             <h3 id="card-1-title">
               Foxy, who never <em>{t('sighs', 'थकता')}</em>
@@ -42,7 +42,7 @@ export default function ShowcaseV2() {
             </h3>
             <p>
               {t(
-                'An AI tutor trained on the NCERT textbook for your grade. Answers in your language, never goes off-syllabus, never invents a fact. Asks better questions than it answers.',
+                'An AI learning intelligence trained on the NCERT textbook for your grade. Answers in your language, never goes off-syllabus, never invents a fact. Asks better questions than it answers.',
                 'आपकी कक्षा की NCERT पुस्तक पर प्रशिक्षित एक AI शिक्षक। आपकी भाषा में उत्तर, पाठ्यक्रम के भीतर, कभी कुछ गढ़ता नहीं।',
               )}
             </p>

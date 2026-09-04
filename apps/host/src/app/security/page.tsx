@@ -47,10 +47,10 @@ const ACCESS_CONTROL = [
 ];
 
 const AI_SAFETY = [
-  { icon: '🛡️', title: 'Prompt Injection Prevention', desc: 'Multi-layer input sanitization and system prompt hardening prevent prompt injection attacks against the AI tutor.' },
+  { icon: '🛡️', title: 'Prompt Injection Prevention', desc: 'Multi-layer input sanitization and system prompt hardening prevent prompt injection attacks against Foxy.' },
   { icon: '📝', title: 'Content Moderation', desc: 'All AI outputs pass through content filters for age-appropriateness, accuracy, and safety before reaching students.' },
   { icon: '🎮', title: 'XP Manipulation Prevention', desc: 'Server-side validation of all XP awards, streak calculations, and leaderboard entries. No client-side trust for gamification.' },
-  { icon: '🔄', title: 'Session Isolation', desc: 'Each AI tutoring session is isolated. No cross-session data leakage between students. Conversation history is per-user and encrypted.' },
+  { icon: '🔄', title: 'Session Isolation', desc: 'Each Foxy session is isolated. No cross-session data leakage between students. Conversation history is per-user and encrypted.' },
 ];
 
 const CERTIFICATIONS = [

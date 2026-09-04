@@ -9,7 +9,7 @@ export const metadata: Metadata = buildMarketingMetadata({
   path: '/product',
   title: 'Product — Alfanumrik AI Learning Platform for CBSE (Class 6–12)',
   description:
-    'See how Alfanumrik works: NCERT-grounded AI tutoring, adaptive quizzes, teacher dashboards and parent reports for CBSE Class 6–12. Explore the platform.',
+    'See how Alfanumrik works: NCERT-grounded AI learning, adaptive quizzes, teacher dashboards and parent reports for CBSE Class 6–12. Explore the platform.',
   ogVariant: 'product',
   bilingual: true,
 });

@@ -15,7 +15,7 @@ const COLS: Col[] = [
     headEn: 'Product',
     headHi: 'उत्पाद',
     links: [
-      { label: { en: 'Foxy tutor', hi: 'फ़ॉक्सी शिक्षक' }, href: '/foxy' },
+      { label: { en: 'Foxy', hi: 'फ़ॉक्सी' }, href: '/foxy' },
       { label: { en: 'Mastery x-ray', hi: 'महारत एक्स-रे' }, href: '/progress' },
       { label: { en: 'Parent dashboard', hi: 'अभिभावक डैशबोर्ड' }, href: '/parent' },
       { label: { en: 'Teacher portal', hi: 'शिक्षक पोर्टल' }, href: '/teacher' },

@@ -55,7 +55,7 @@ export default function MissionV2() {
             <h3>{t('Vision', 'दृष्टिकोण')}</h3>
             <p>
               {t(
-                'An India where every child has a patient tutor — in their language, at their pace, without a single shouting leaderboard.',
+                'An India where every child has a patient learning companion — in their language, at their pace, without a single shouting leaderboard.',
                 'एक ऐसा भारत, जहाँ हर बच्चे के पास एक धैर्यवान शिक्षक हो — अपनी भाषा में, अपनी रफ़्तार पर, बिना किसी शोर मचाते लीडरबोर्ड के।',
               )}
             </p>

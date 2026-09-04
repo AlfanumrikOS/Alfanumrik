@@ -86,9 +86,9 @@ const STEPS = [
     titleEn: 'Students Learn Adaptively',
     titleHi: 'छात्र अनुकूली तरीके से सीखें',
     bodyEn:
-      'Every student gets a personalized AI tutor that adapts to their learning pace and style.',
+      'Every student gets a personalized learning intelligence that adapts to their learning pace and style.',
     bodyHi:
-      'हर छात्र को एक व्यक्तिगत AI ट्यूटर मिलता है जो उनकी सीखने की गति और शैली के अनुसार ढलता है।',
+      'हर छात्र को एक व्यक्तिगत AI लर्निंग इंटेलिजेंस मिलता है जो उनकी सीखने की गति और शैली के अनुसार ढलता है।',
   },
   {
     titleEn: 'Track Progress Institution-Wide',
@@ -155,8 +155,8 @@ export default function ForSchoolsPage() {
         eyebrowHi="स्कूलों के लिए"
         titleEn="Transform your school with AI-powered learning."
         titleHi="अपने स्कूल को AI-संचालित शिक्षा से बदलें।"
-        ledeEn="Give every student a personal AI tutor. Give every teacher real-time analytics. Give your school a competitive edge in board exam outcomes."
-        ledeHi="हर छात्र को एक व्यक्तिगत AI ट्यूटर दें। हर शिक्षक को रियल-टाइम एनालिटिक्स दें। अपने स्कूल को बोर्ड परीक्षा परिणामों में प्रतिस्पर्धात्मक बढ़त दें।"
+        ledeEn="Give every student a personal learning intelligence. Give every teacher real-time analytics. Give your school a competitive edge in board exam outcomes."
+        ledeHi="हर छात्र को एक व्यक्तिगत AI लर्निंग इंटेलिजेंस दें। हर शिक्षक को रियल-टाइम एनालिटिक्स दें। अपने स्कूल को बोर्ड परीक्षा परिणामों में प्रतिस्पर्धात्मक बढ़त दें।"
         ctas={[
           { href: '/demo', en: 'Book a Demo', hi: 'डेमो बुक करें' },
           { href: '/contact', en: 'Contact Sales', hi: 'सेल्स से संपर्क करें', variant: 'ghost' },

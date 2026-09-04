@@ -31,9 +31,9 @@ const inter = localInter({
 // canonical + complete openGraph (incl. og:image) come from the builder.
 export const metadata: Metadata = buildMarketingMetadata({
   path: '/welcome',
-  title: 'AI Tutor for CBSE Students (Class 6–12) — Alfanumrik',
+  title: 'AI Learning OS for CBSE Students (Class 6–12) — Alfanumrik',
   description:
-    'Alfanumrik is an AI-powered adaptive learning app for CBSE students in Class 6–12. NCERT-grounded tutoring in Hindi & English. Start free — no card needed.',
+    'Alfanumrik is an AI-powered adaptive learning app for CBSE students in Class 6–12. NCERT-grounded learning in Hindi & English. Start free — no card needed.',
   bilingual: true,
 });
 

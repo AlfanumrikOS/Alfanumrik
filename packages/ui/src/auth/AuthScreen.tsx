@@ -444,7 +444,7 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
       ? t('Track your child\'s learning journey', 'अपने बच्चे की सीखने की यात्रा देखें')
       : roleTab === 'institution_admin'
         ? t('Manage your school on Alfanumrik', 'Alfanumrik पर अपने स्कूल का प्रबंधन करें')
-        : t('AI Tutor for CBSE Students', 'CBSE विद्यार्थियों के लिए AI ट्यूटर');
+        : t('AI Learning OS for CBSE Students', 'CBSE विद्यार्थियों के लिए AI लर्निंग OS');
 
   const signupTitle = roleTab === 'teacher'
     ? t('Join as Teacher', 'शिक्षक के रूप में जुड़ें')

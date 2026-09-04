@@ -9,7 +9,7 @@ export const metadata: Metadata = buildMarketingMetadata({
   path: '/pricing',
   title: 'Pricing — CBSE Learning App, Free & Paid Plans',
   description:
-    'Transparent pricing for Alfanumrik’s CBSE learning app (Class 6–12). Start free with Foxy, upgrade for unlimited AI tutoring, quizzes & NCERT practice.',
+    'Transparent pricing for Alfanumrik’s CBSE learning app (Class 6–12). Start free with Foxy, upgrade for unlimited AI learning, quizzes & NCERT practice.',
   ogVariant: 'pricing',
   bilingual: true,
 });

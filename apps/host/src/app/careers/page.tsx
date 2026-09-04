@@ -28,14 +28,14 @@ const WHY = [
   {
     icon: '🧠',
     title: 'Hard problems',
-    desc: 'Adaptive learning, RAG over textbooks, bilingual AI tutoring. The work is non-trivial.',
+    desc: 'Adaptive learning, RAG over textbooks, bilingual AI teaching. The work is non-trivial.',
   },
 ];
 
 const ROLES = [
   {
-    title: 'Senior AI/ML Engineer — Foxy tutor & RAG pipeline',
-    desc: 'Own the retrieval and reasoning stack behind our patient AI tutor. Voyage embeddings, Claude orchestration, NCERT grounding.',
+    title: 'Senior AI/ML Engineer — Foxy & RAG pipeline',
+    desc: 'Own the retrieval and reasoning stack behind Foxy, our patient learning intelligence. Voyage embeddings, Claude orchestration, NCERT grounding.',
   },
   {
     title: 'Senior Backend Engineer — payments, notifications, edge functions',
@@ -112,7 +112,7 @@ export default function CareersPage() {
           <span style={badgeStyle}>CAREERS</span>
           <h1 style={h1Style}>Build the learning OS for India</h1>
           <p style={{ fontSize: 16, lineHeight: 1.8, color: 'var(--text-2, #444)', maxWidth: 580, margin: '0 auto' }}>
-            We&apos;re a small, deliberate team building patient AI tutors for K-12 India. If that sentence excites you, we&apos;d like to meet.
+            We&apos;re a small, deliberate team building patient learning intelligence for K-12 India. If that sentence excites you, we&apos;d like to meet.
           </p>
         </section>
 

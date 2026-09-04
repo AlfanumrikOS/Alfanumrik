@@ -66,7 +66,7 @@ describe('AuthScreen — default English (no stored language)', () => {
 
     // Known English strings from the login view.
     expect(screen.getByText('Welcome Back!')).toBeDefined();
-    expect(screen.getByText('AI Tutor for CBSE Students')).toBeDefined();
+    expect(screen.getByText('AI Learning OS for CBSE Students')).toBeDefined();
 
     // EN pill is pressed, हिंदी is not.
     const group = screen.getByRole('group', { name: /Language|भाषा/ });
@@ -85,7 +85,7 @@ describe('AuthScreen — Hindi when localStorage alfanumrik_language=hi', () => 
 
     // Known Hindi strings: login heading + the student subtitle.
     expect(screen.getByText('फिर से स्वागत है!')).toBeDefined();
-    expect(screen.getByText('CBSE विद्यार्थियों के लिए AI ट्यूटर')).toBeDefined();
+    expect(screen.getByText('CBSE विद्यार्थियों के लिए AI लर्निंग OS')).toBeDefined();
 
     // हिंदी pill is pressed, EN is not.
     const group = screen.getByRole('group', { name: /Language|भाषा/ });

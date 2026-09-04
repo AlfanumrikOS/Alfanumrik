@@ -278,7 +278,7 @@ export default function BillingPage() {
               <p style={{ fontSize: 13, color: '#888', lineHeight: 1.6 }}>
                 {isHi
                   ? 'आप Explorer (मुफ्त) योजना पर हैं। Foxy, अनलिमिटेड क्विज़ और अधिक सुविधाओं के लिए अपग्रेड करें।'
-                  : 'You\'re on the Explorer (free) plan. Upgrade for unlimited Foxy tutoring, quizzes, and more features.'}
+                  : 'You\'re on the Explorer (free) plan. Upgrade for unlimited Foxy, quizzes, and more features.'}
               </p>
             </div>
           )}
