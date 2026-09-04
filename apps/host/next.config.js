@@ -200,6 +200,17 @@ const nextConfig = {
       // listed in sitemap.ts. 301 (not deletion without a redirect) preserves
       // any external backlink/bookmark equity /schools may have accumulated.
       { source: '/schools', destination: '/for-schools', permanent: true },
+
+      // Gate-2 G1 (cleanup, 2026-09-05). /practice/exam was a thin client-side
+      // `router.replace('/exam-prep')` stub with zero inbound links (same
+      // pattern as the D4 parent stubs above) -- replaced with a real 301 so
+      // old bookmarks/deep links resolve server-side. Its sibling
+      // /practice/exam/mock already has an identical precedent two entries
+      // up. Does not touch /simulations or /teacher/{assign,grade,insights,
+      // resources,settings} -- those stubs sit behind broader auth-gating
+      // logic in proxy.ts and converting them needs an architect check on
+      // redirect-vs-middleware execution order first, not a same-pass cleanup.
+      { source: '/practice/exam', destination: '/exam-prep', permanent: true },
     ];
   },
   // PostHog reverse-proxy → EU project 159341 (eu.i.posthog.com). /ingest/static/*
