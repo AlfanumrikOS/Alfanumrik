@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
+// Direct module path, NOT the '@alfanumrik/ui/ui/primitives' barrel: that
+// barrel has no "sideEffects": false, so importing ANY value from it drags
+// the whole eager primitives chunk onto this route (same root cause as the
+// documented Menu/Combobox incident, PR #1624) — confirmed here by the P10
+// bundle gate (+9 kB on this route) before switching to this import.
+import { ToastProvider, useToast } from '@alfanumrik/ui/ui/primitives/Toast';
 
 // ============================================================
 // BILINGUAL HELPER (P7)
@@ -366,43 +372,6 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 }
 
 // ============================================================
-// TOAST COMPONENT
-// ============================================================
-function Toast({ message, kind, onDone }: { message: string; kind: 'success' | 'error'; onDone: () => void }) {
-  useEffect(() => {
-    const tm = setTimeout(onDone, 5000);
-    return () => clearTimeout(tm);
-  }, [onDone]);
-
-  return (
-    <div
-      role="alert"
-      style={{
-        position: 'fixed',
-        bottom: 24,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        backgroundColor: kind === 'success' ? '#16A34A' : '#DC2626',
-        // DD-16: #fff on the success green is 3.30:1 (sub-AA); ink is 5.62:1.
-        // The error red keeps --on-accent (4.83:1 AA).
-        color: kind === 'success' ? 'var(--text-1)' : 'var(--on-accent)',
-        padding: '12px 24px',
-        borderRadius: 12,
-        fontSize: 14,
-        fontWeight: 600,
-        zIndex: 2000,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
-        animation: 'fadeInUp 0.3s ease',
-        maxWidth: '90vw',
-        textAlign: 'center' as const,
-      }}
-    >
-      {message}
-    </div>
-  );
-}
-
-// ============================================================
 // MY TICKETS LIST
 // ============================================================
 function MyTickets({
@@ -521,9 +490,10 @@ function MyTickets({
 // ============================================================
 // MAIN PAGE COMPONENT
 // ============================================================
-export default function ParentSupportPage() {
+function ParentSupportPageInner() {
   const { isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
+  const toast = useToast();
 
   // Compose form state
   const [subject, setSubject] = useState('');
@@ -531,7 +501,6 @@ export default function ParentSupportPage() {
   const [priority, setPriority] = useState<TicketPriority>('normal');
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
 
   // My-tickets list state
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
@@ -578,14 +547,11 @@ export default function ParentSupportPage() {
 
   const handleSubmit = useCallback(async () => {
     if (!subjectValid) {
-      setToast({ message: t(isHi, 'Please enter a subject.', 'कृपया एक विषय दर्ज करें।'), kind: 'error' });
+      toast.error(t(isHi, 'Please enter a subject.', 'कृपया एक विषय दर्ज करें।'));
       return;
     }
     if (!descriptionValid) {
-      setToast({
-        message: t(isHi, 'Please enter at least 20 characters describing your issue.', 'कृपया अपनी समस्या बताने के लिए कम से कम 20 अक्षर दर्ज करें।'),
-        kind: 'error',
-      });
+      toast.error(t(isHi, 'Please enter at least 20 characters describing your issue.', 'कृपया अपनी समस्या बताने के लिए कम से कम 20 अक्षर दर्ज करें।'));
       return;
     }
 
@@ -603,78 +569,57 @@ export default function ParentSupportPage() {
 
       // Status-specific error handling (P7: every message bilingual)
       if (res.status === 401) {
-        setToast({
-          message: t(isHi, 'Your session expired. Please sign in again.', 'आपका सत्र समाप्त हो गया। कृपया दोबारा साइन इन करें।'),
-          kind: 'error',
-        });
+        toast.error(t(isHi, 'Your session expired. Please sign in again.', 'आपका सत्र समाप्त हो गया। कृपया दोबारा साइन इन करें।'));
         return;
       }
       if (res.status === 403) {
         const json = (await res.json().catch(() => ({}))) as TicketCreateResponse;
         if (json.code === 'NO_LINKED_CHILD') {
-          setToast({
-            message: t(
-              isHi,
-              'Link a child to your account before contacting support.',
-              'सहायता से संपर्क करने से पहले अपने खाते से एक बच्चा जोड़ें।'
-            ),
-            kind: 'error',
-          });
+          toast.error(t(
+            isHi,
+            'Link a child to your account before contacting support.',
+            'सहायता से संपर्क करने से पहले अपने खाते से एक बच्चा जोड़ें।'
+          ));
         } else {
-          setToast({
-            message: t(isHi, "You don't have permission to do this.", 'आपके पास ऐसा करने की अनुमति नहीं है।'),
-            kind: 'error',
-          });
+          toast.error(t(isHi, "You don't have permission to do this.", 'आपके पास ऐसा करने की अनुमति नहीं है।'));
         }
         return;
       }
       if (res.status === 429) {
-        setToast({
-          message: t(
-            isHi,
-            "You've reached the limit of 5 tickets per day. Please try again later.",
-            'आपने प्रति दिन 5 टिकट की सीमा पार कर ली है। कृपया बाद में दोबारा कोशिश करें।'
-          ),
-          kind: 'error',
-        });
+        toast.error(t(
+          isHi,
+          "You've reached the limit of 5 tickets per day. Please try again later.",
+          'आपने प्रति दिन 5 टिकट की सीमा पार कर ली है। कृपया बाद में दोबारा कोशिश करें।'
+        ));
         return;
       }
       if (res.status === 400) {
-        setToast({
-          message: t(
-            isHi,
-            'Please check the subject and description and try again.',
-            'कृपया विषय और विवरण जाँचें और दोबारा कोशिश करें।'
-          ),
-          kind: 'error',
-        });
+        toast.error(t(
+          isHi,
+          'Please check the subject and description and try again.',
+          'कृपया विषय और विवरण जाँचें और दोबारा कोशिश करें।'
+        ));
         return;
       }
 
       const json = (await res.json().catch(() => ({}))) as TicketCreateResponse;
 
       if (!res.ok || !json.success || !json.ticket_id) {
-        setToast({
-          message: t(
-            isHi,
-            'Something went wrong sending your message. Please try again.',
-            'आपका संदेश भेजने में कुछ गड़बड़ हुई। कृपया दोबारा कोशिश करें।'
-          ),
-          kind: 'error',
-        });
+        toast.error(t(
+          isHi,
+          'Something went wrong sending your message. Please try again.',
+          'आपका संदेश भेजने में कुछ गड़बड़ हुई। कृपया दोबारा कोशिश करें।'
+        ));
         return;
       }
 
       // Success — show a real confirmation with the ticket id.
       const shortId = json.ticket_id.slice(0, 8);
-      setToast({
-        message: t(
-          isHi,
-          `Ticket #${shortId} created. We'll respond within 24 hours.`,
-          `टिकट #${shortId} बना दिया गया। हम 24 घंटे के भीतर जवाब देंगे।`
-        ),
-        kind: 'success',
-      });
+      toast.success(t(
+        isHi,
+        `Ticket #${shortId} created. We'll respond within 24 hours.`,
+        `टिकट #${shortId} बना दिया गया। हम 24 घंटे के भीतर जवाब देंगे।`
+      ));
 
       // Reset the form and refresh the list so the new ticket appears.
       setSubject('');
@@ -683,10 +628,7 @@ export default function ParentSupportPage() {
       setPriority('normal');
       void fetchTickets();
     } catch {
-      setToast({
-        message: t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया दोबारा कोशिश करें।'),
-        kind: 'error',
-      });
+      toast.error(t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया दोबारा कोशिश करें।'));
     } finally {
       setSubmitting(false);
     }
@@ -709,10 +651,6 @@ export default function ParentSupportPage() {
     <div style={pageStyle}>
       {/* Inject keyframe animations */}
       <style>{`
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translate(-50%, 20px); }
-          to { opacity: 1; transform: translate(-50%, 0); }
-        }
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
 
@@ -963,9 +901,22 @@ export default function ParentSupportPage() {
       <p style={{ textAlign: 'center', fontSize: 11, color: '#94A3B8', margin: '20px 0 12px' }}>
         Alfanumrik Learning OS | {t(isHi, 'Parent Portal', 'अभिभावक पोर्टल')}
       </p>
-
-      {/* Toast */}
-      {toast && <Toast message={toast.message} kind={toast.kind} onDone={() => setToast(null)} />}
     </div>
+  );
+}
+
+// ToastProvider must be an ANCESTOR of the component calling useToast() (see
+// Toast.tsx's own header comment: opt-in per tree, not app-wide). Scoped
+// locally to this page rather than the shared parent layout, since this is
+// the only parent surface that uses toasts today.
+export default function ParentSupportPage() {
+  const { isHi } = useAuth();
+  return (
+    <ToastProvider
+      regionLabel={t(isHi, 'Notifications', 'सूचनाएं')}
+      dismissLabel={t(isHi, 'Dismiss', 'खारिज करें')}
+    >
+      <ParentSupportPageInner />
+    </ToastProvider>
   );
 }

@@ -181,6 +181,16 @@ const nextConfig = {
       { source: '/mock-exam',           destination: '/exams/mock', permanent: true },
       { source: '/mock-exam/:path*',    destination: '/exams/mock', permanent: true },
       { source: '/practice/exam/mock',  destination: '/exams/mock', permanent: true },
+
+      // Gate-2 D4 (parent portal cleanup, 2026-09-04). These three routes
+      // were thin client-side `router.replace()` stub pages (no real
+      // content of their own) — replaced with real 301s so old bookmarks
+      // and deep links resolve server-side instead of round-tripping
+      // through a blank client render first. Query strings (e.g. the
+      // ?parentChild= child-scope param) pass through automatically.
+      { source: '/parent/home',     destination: '/parent',          permanent: true },
+      { source: '/parent/plan',     destination: '/parent/calendar', permanent: true },
+      { source: '/parent/settings', destination: '/parent/profile',  permanent: true },
     ];
   },
   // PostHog reverse-proxy → EU project 159341 (eu.i.posthog.com). /ingest/static/*
