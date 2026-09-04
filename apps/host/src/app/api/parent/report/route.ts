@@ -145,6 +145,27 @@ export async function POST(request: Request) {
       );
     }
 
+    // Forward the parent's own JWT (same pattern as /api/board-score) so the
+    // Edge Function's resolveSecurityPrincipal resolves them via the
+    // authenticated path and runs its own independent guardian + link
+    // verification. The anon key satisfies neither that path nor the
+    // internal-service signature path there — sending it was a 100% failure
+    // (deny_auth, HTTP 401) for every parent who ever hit this route,
+    // confirmed live via Vercel runtime error logs.
+    let edgeAuthHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+    if (!edgeAuthHeader) {
+      const { data: { session } } = await cacheClient.auth.getSession();
+      if (session?.access_token) {
+        edgeAuthHeader = `Bearer ${session.access_token}`;
+      }
+    }
+    if (!edgeAuthHeader) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const edgeFunctionUrl = `${supabaseUrl}/functions/v1/parent-report-generator`;
 
     let efResponse: Response;
@@ -153,7 +174,7 @@ export async function POST(request: Request) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'Authorization': edgeAuthHeader,
         },
         body: JSON.stringify({
           student_id,
