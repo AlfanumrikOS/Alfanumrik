@@ -367,9 +367,7 @@ def test_breaker_ignores_non_retryable_4xx_but_counts_5xx(
 
     # ── Case 2: Anthropic 503 (retryable 5xx) → MUST record_failure.
     recorded_failures.clear()
-    respx_mock.post("https://api.anthropic.com/v1/messages").mock(
-        return_value=httpx.Response(503)
-    )
+    respx_mock.post("https://api.anthropic.com/v1/messages").mock(return_value=httpx.Response(503))
     respx_mock.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(
             200,
