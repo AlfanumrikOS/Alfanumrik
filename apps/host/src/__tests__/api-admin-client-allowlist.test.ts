@@ -414,7 +414,13 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // RLS-scoped createSupabaseServerClient (admin_announcements' existing RLS
 // already matches their access shape), so they are NOT ledgered here at
 // all — net count moves down by 3, not up.
-const EXPECTED_COUNT = 271;
+// 271 -> 272 (2026-09-05, Gate-2 Phase C global search): NEW route
+// src/app/api/search/route.ts. Service-role is REQUIRED — cross-tenant
+// search must see every school's students/teachers/schools, and RLS there
+// is own-row/own-school scoped. Super-admin-by-design, same justification
+// as ai-quality/foxy-report/synthesis-health. See
+// scripts/admin-client-allowlist.json for the full note.
+const EXPECTED_COUNT = 272;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

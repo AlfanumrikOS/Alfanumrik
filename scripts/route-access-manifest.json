@@ -1499,6 +1499,14 @@
       "rationale": "Public-by-design endpoint; source comments or path semantics document why anonymous access is expected."
     },
     {
+      "path": "/api/search",
+      "file": "apps/host/src/app/api/search/route.ts",
+      "access": "super_admin",
+      "owner": "admin-platform",
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret. Deliberately scoped to super_admin only for now -- per-role tenant-scoped search (teacher roster, school-admin own-school) is a separate follow-up, not this route.",
+      "serviceRoleUse": "Cross-tenant search must see every school's students/teachers/schools; RLS there is own-row/own-school scoped and would silently zero-row a cross-tenant query. Same super-admin-by-design justification as ai-quality/foxy-report/synthesis-health."
+    },
+    {
       "path": "/api/state/decisions",
       "file": "apps/host/src/app/api/state/decisions/route.ts",
       "access": "auth",
