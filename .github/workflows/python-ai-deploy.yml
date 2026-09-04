@@ -108,7 +108,55 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # ── Job 2: build + push image (only on a main-branch push) ──────────
+  # ── Job 2: container import smoke test (runs on every PR + main push,
+  #    independent of ENABLE_PYTHON_AI_PRODUCTION_DEPLOY — this is a
+  #    correctness check, not a deploy, and needs no GCP credentials) ──────
+  #
+  # P2-13 (2026-09-04 launch-audit follow-up): services/ai/api/v1/
+  # foxy_tutor.py imports `cbse_parser` lazily inside its handler (not at
+  # module level) specifically so a broken import doesn't crash the whole
+  # app at container startup — but that same defensive laziness means a
+  # broken import ships completely undetected until the (today flag-dark,
+  # ff_python_foxy_tutor_v1 seeded OFF) endpoint is actually hit in
+  # production. Before this job existed, the Docker image was never even
+  # built on a PR (only on a main push, and only then if
+  # ENABLE_PYTHON_AI_PRODUCTION_DEPLOY is true) — so nothing in CI ever
+  # exercised this import inside the real container layout. This job builds
+  # the actual image (no push, no registry, no GCP auth needed) and runs
+  # the import directly inside it, so a regression here fails CI instead of
+  # surfacing as a runtime 500 after a future flag flip. See
+  # docs/runbooks/2026-06-13-mol-python-cutover.md and
+  # python/cbse_parser/README.md.
+  container-import-smoke:
+    name: Container import smoke test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (local only — not pushed to any registry)
+        uses: docker/build-push-action@v6
+        with:
+          context: python
+          file: python/Dockerfile
+          push: false
+          load: true
+          tags: alfanumrik-ai-services:smoke-${{ github.run_id }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Verify cbse_parser import resolves inside the built image
+        run: |
+          docker run --rm --entrypoint python \
+            "alfanumrik-ai-services:smoke-${{ github.run_id }}" \
+            -c "from cbse_parser.generator import generate_answer; print('cbse_parser import OK:', generate_answer)"
+
+  # ── Job 3: build + push image (only on a main-branch push) ──────────
   build-and-push:
     name: Build + Push to Artifact Registry
     needs: test
@@ -174,7 +222,7 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false  # GAR rejects provenance attestations by default
 
-  # ── Job 3: deploy to Cloud Run ────────────────────────────────────────────
+  # ── Job 4: deploy to Cloud Run ────────────────────────────────────────────
   deploy:
     name: Deploy to Cloud Run
     needs: build-and-push
@@ -345,7 +393,7 @@ jobs:
           echo "service=${SERVICE}" >> "$GITHUB_OUTPUT"
           echo "Service URL: ${URL}"
 
-  # ── Job 4: post-deploy smoke test ─────────────────────────────────────────
+  # ── Job 5: post-deploy smoke test ─────────────────────────────────────────
   post-deploy-smoke:
     name: Post-deploy smoke test
     needs: deploy

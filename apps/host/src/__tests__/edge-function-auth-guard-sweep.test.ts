@@ -259,7 +259,6 @@ const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   'send-renewal-reminder': ['jwt-user'],
   'send-transactional-email': ['jwt-user'],
   'send-welcome-email': ['jwt-user'],
-  'session-guard': ['jwt-user'],
   'synthetic-host-monitor': ['internal-cron'],
   'teacher-dashboard': ['jwt-user'],
   'verify-question-bank': ['internal-cron'],

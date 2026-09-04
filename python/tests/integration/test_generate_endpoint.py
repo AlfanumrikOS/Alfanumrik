@@ -83,7 +83,7 @@ def test_generate_happy_path_returns_mol_result(
     assert body["provider"] == "anthropic"
     assert body["model"] == "claude-haiku-4-5-20251001"
     assert body["task_type"] == "explanation"
-    assert body["tokens"] == {"prompt": 12, "completion": 8}
+    assert body["tokens"] == {"prompt": 12, "completion": 8, "cache_read": 0, "cache_write": 0}
     assert body["passes"] == 1
     assert body["request_id"]
     # USD cost (anthropic/claude-haiku-4-5 pricing): 12/1e6 * 1.00 + 8/1e6 * 5.00
