@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@alfanumrik/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { logSchoolAudit } from '@alfanumrik/lib/audit';
 import { schoolAdminPermissionCode } from '@alfanumrik/lib/school-admin/permission-code';
 import { z } from 'zod';
 
@@ -132,6 +133,15 @@ export async function PUT(request: NextRequest) {
       });
       return NextResponse.json({ success: false, error: 'Failed to save GST details' }, { status: 500 });
     }
+
+    void logSchoolAudit({
+      schoolId: auth.schoolId!,
+      actorId: auth.userId ?? 'unknown',
+      action: 'gst_details.updated',
+      resourceType: 'school_gst_details',
+      resourceId: auth.schoolId!,
+      metadata: { is_registered: payload.is_registered },
+    });
 
     return NextResponse.json({ success: true, data });
   } catch (err) {
