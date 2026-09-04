@@ -53,7 +53,7 @@ const ROLE_COPY: Record<Role, RoleCopy> = {
   },
   student: {
     eyebrow: {
-      en: 'A patient tutor · in your pocket · never sighs',
+      en: 'A patient learning companion · in your pocket · never sighs',
       hi: 'धैर्यवान शिक्षक · जेब में · कभी नहीं झिड़कता',
     },
     headlineEn: <>The chapter<br /><em>finally clicks.</em></>,

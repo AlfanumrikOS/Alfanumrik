@@ -40,9 +40,9 @@ const FOR_STUDENTS: FeatureGridItem[] = [
     titleEn: 'Foxy',
     titleHi: 'Foxy',
     bodyEn:
-      'Chat with your personal tutor in Hindi or English. Get step-by-step explanations tailored to your level.',
+      'Chat with Foxy, your learning intelligence, in Hindi or English. Get step-by-step explanations tailored to your level.',
     bodyHi:
-      'हिंदी या अंग्रेज़ी में अपने व्यक्तिगत ट्यूटर से बात करें। अपने स्तर के अनुसार स्टेप-बाय-स्टेप समझ पाएँ।',
+      'हिंदी या अंग्रेज़ी में फॉक्सी, अपनी लर्निंग इंटेलिजेंस, से बात करें। अपने स्तर के अनुसार स्टेप-बाय-स्टेप समझ पाएँ।',
   },
   {
     icon: <IconTarget />,

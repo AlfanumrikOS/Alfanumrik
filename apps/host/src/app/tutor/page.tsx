@@ -136,8 +136,8 @@ export default function TutorPage() {
           </h1>
           <p className="text-sm text-[var(--text-3)] mb-6">
             {isHi
-              ? 'अनुकूली ट्यूटर अभी सेट किया जा रहा है। तब तक /learn से अभ्यास करते रहो।'
-              : 'The Adaptive Tutor is rolling out. In the meantime, keep practising from /learn.'}
+              ? 'फॉक्सी की नई सुविधाएँ जल्द आ रही हैं। तब तक /learn से अभ्यास करते रहो।'
+              : 'New Foxy features are rolling out. In the meantime, keep practising from /learn.'}
           </p>
           <Button onClick={() => router.push('/dashboard')}>← {isHi ? 'डैशबोर्ड' : 'Back to dashboard'}</Button>
         </main>

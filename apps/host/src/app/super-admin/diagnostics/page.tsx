@@ -267,7 +267,7 @@ function DiagnosticsContent() {
         <div style={{ marginBottom: 24 }}>
           <h2 style={S.h2}>AI &amp; Learning Engine Health</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-            {/* Foxy AI Tutor */}
+            {/* Foxy AI */}
             <div style={S.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>Foxy</div>

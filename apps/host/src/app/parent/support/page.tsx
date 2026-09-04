@@ -148,8 +148,8 @@ const faqItems: { q: { en: string; hi: string }; a: { en: string; hi: string } }
       hi: 'Alfanumrik मेरे बच्चे को सीखने में कैसे मदद करता है?',
     },
     a: {
-      en: "Alfanumrik uses AI-powered personalized tutoring to adapt to your child's learning pace. Foxy, our AI tutor, explains concepts step-by-step, gives practice questions, and provides instant feedback — just like having a personal tutor available 24/7.",
-      hi: 'Alfanumrik AI-आधारित वैयक्तिक ट्यूशन का उपयोग करके आपके बच्चे की सीखने की गति के अनुसार ढलता है। हमारा AI ट्यूटर Foxy अवधारणाओं को चरण-दर-चरण समझाता है, अभ्यास प्रश्न देता है और तुरंत फीडबैक देता है — ठीक एक निजी ट्यूटर की तरह जो 24/7 उपलब्ध हो।',
+      en: "Alfanumrik uses AI-powered personalized learning to adapt to your child's learning pace. Foxy, our learning intelligence, explains concepts step-by-step, gives practice questions, and provides instant feedback — just like having a personal learning companion available 24/7.",
+      hi: 'Alfanumrik AI-आधारित वैयक्तिक ट्यूशन का उपयोग करके आपके बच्चे की सीखने की गति के अनुसार ढलता है। हमारी AI लर्निंग इंटेलिजेंस Foxy अवधारणाओं को चरण-दर-चरण समझाता है, अभ्यास प्रश्न देता है और तुरंत फीडबैक देता है — ठीक एक निजी लर्निंग साथी की तरह जो 24/7 उपलब्ध हो।',
     },
   },
   {

@@ -368,7 +368,7 @@ export default function HeroV3() {
 
         <p className={`${s.heroSub} ${s.revealUp}`} data-reveal>
           {t(
-            'Foxy — the AI tutor built on your NCERT — takes your child from tonight’s homework to competition-level thinking. Measured, not promised.',
+            'Foxy — the learning intelligence built on your NCERT — takes your child from tonight’s homework to competition-level thinking. Measured, not promised.',
             'फ़ॉक्सी — आपकी NCERT पर बना AI शिक्षक — आपके बच्चे को आज के गृहकार्य से प्रतियोगिता-स्तर की सोच तक ले जाता है। मापा हुआ, वादा नहीं।',
           )}
         </p>

@@ -38,7 +38,7 @@ export default function PrivacyPage() {
             <li style={li}>Personalizing your learning experience (adaptive difficulty, recommendations).</li>
             <li style={li}>Tracking your progress and generating study plans.</li>
             <li style={li}>Providing teacher and parent dashboards.</li>
-            <li style={li}>Improving our AI tutor (Foxy) and platform features.</li>
+            <li style={li}>Improving Foxy and platform features.</li>
             <li style={li}>Sending important notifications (streak reminders, achievements).</li>
           </ul>
         </section>

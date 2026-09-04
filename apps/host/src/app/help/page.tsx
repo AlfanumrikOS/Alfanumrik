@@ -35,7 +35,7 @@ const FAQ_CATEGORIES = [
   {
     id: 'learning' as const, icon: '🦊', label: 'Foxy & Learning', labelHi: 'फॉक्सी और पढ़ाई', color: '#E8581C',
     items: [
-      { q: 'How does Foxy work?', qHi: 'फॉक्सी कैसे काम करता है?', a: 'Foxy is your personal tutor. Select a subject and chapter, then ask any question in Hindi or English. Foxy explains step-by-step, gives practice problems, and remembers which topics you have already got right, so it knows what to teach you next.', aHi: 'फॉक्सी आपका निजी ट्यूटर है। विषय और अध्याय चुनें, फिर हिंदी या अंग्रेज़ी में कोई भी प्रश्न पूछें। फॉक्सी कदम-दर-कदम समझाता है और याद रखता है कि आपने कौन से टॉपिक सही किए हैं, ताकि आगे क्या पढ़ाना है यह तय कर सके।' },
+      { q: 'How does Foxy work?', qHi: 'फॉक्सी कैसे काम करता है?', a: 'Foxy is your personal learning intelligence. Select a subject and chapter, then ask any question in Hindi or English. Foxy explains step-by-step, gives practice problems, and remembers which topics you have already got right, so it knows what to teach you next.', aHi: 'फॉक्सी आपकी निजी लर्निंग इंटेलिजेंस है। विषय और अध्याय चुनें, फिर हिंदी या अंग्रेज़ी में कोई भी प्रश्न पूछें। फॉक्सी कदम-दर-कदम समझाता है और याद रखता है कि आपने कौन से टॉपिक सही किए हैं, ताकि आगे क्या पढ़ाना है यह तय कर सके।' },
       // CATALOGUE-CLAIM FIX (2026-08-12): this answer enumerated 16 subjects by
       // name in both languages. Production `subjects.is_active` is true for
       // exactly five codes — math, science, physics, chemistry, biology — so a

@@ -9,7 +9,7 @@ export const metadata: Metadata = buildMarketingMetadata({
   path: '/about',
   title: 'About Alfanumrik — Cusiosense Learning India',
   description:
-    "Meet the team building India's adaptive learning OS for CBSE Class 6–12 — NCERT-grounded AI tutoring in Hindi & English. Read our vision and founder note.",
+    "Meet the team building India's adaptive learning OS for CBSE Class 6–12 — NCERT-grounded AI learning in Hindi & English. Read our vision and founder note.",
 });
 
 // Landing-v3 makeover 2026-07-16 (page BODY): the interactive bilingual

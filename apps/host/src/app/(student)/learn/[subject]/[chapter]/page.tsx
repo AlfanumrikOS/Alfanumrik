@@ -39,7 +39,7 @@ import type { ChapterContent } from '@alfanumrik/lib/learn/fetchChapterContent';
 import { resolvePedagogyRule } from '@alfanumrik/lib/learn/pedagogy-content-rules';
 import { useChapterReadiness } from '@alfanumrik/lib/useChapterReadiness';
 // Canonical math renderer — replaces the legacy raw-monospace LaTeX box in
-// the AlfaTutor cards (KaTeX lazily loaded only when math is on screen).
+// the CBSE concept cards (KaTeX lazily loaded only when math is on screen).
 import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 
 // Lazy-loaded so the markdown + KaTeX bundle stays out of first paint.
@@ -2772,7 +2772,7 @@ interface CbseStep {
   listItems?: string[];
 }
 
-// P7: `label` is rendered as the step badge on the AlfaTutor cards and was
+// P7: `label` is rendered as the step badge on the CBSE concept cards and was
 // English-only, so a Hindi student on /learn read "CONCEPT BREAKDOWN" beside
 // the Hindi step title — observed at 360px on 2026-08-10. `labelHi` is the
 // Hindi twin; CBSE stays untranslated per the constitution.

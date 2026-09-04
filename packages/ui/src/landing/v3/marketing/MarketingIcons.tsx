@@ -149,7 +149,7 @@ export const IconSearch = () => (
   </Svg>
 );
 
-/** Chat bubble — Foxy tutoring. */
+/** Chat bubble — Foxy chat. */
 export const IconMessageCircle = () => (
   <Svg>
     <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z" />

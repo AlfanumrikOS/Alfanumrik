@@ -22,7 +22,7 @@ const COLS: Col[] = [
     headEn: 'Product',
     headHi: 'उत्पाद',
     links: [
-      { en: 'Foxy AI tutor', hi: 'फ़ॉक्सी AI शिक्षक', href: '/foxy' },
+      { en: 'Foxy', hi: 'फ़ॉक्सी', href: '/foxy' },
       { en: 'Practice & quizzes', hi: 'अभ्यास और क्विज़', href: '/product' },
       { en: 'Mastery map', hi: 'महारत का नक़्शा', href: '/progress' },
       { en: 'Pricing', hi: 'मूल्य', href: '/pricing' },

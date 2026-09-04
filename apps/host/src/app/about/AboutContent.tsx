@@ -86,7 +86,7 @@ function StorySections() {
             <span className={s.eyebrow}>{t('Our vision', 'हमारा विज़न')}</span>
             <h2 id="about-vision-title">
               {t(
-                'An India where every child has a patient tutor',
+                'An India where every child has a patient learning companion',
                 'एक ऐसा भारत जहाँ हर बच्चे के पास एक धैर्यवान शिक्षक हो',
               )}
             </h2>
@@ -207,7 +207,7 @@ function MissionSection() {
     // CATALOGUE-CLAIM FIX (2026-08-12): this tile read "16 / Subjects Covered".
     // Production `subjects.is_active` is true for exactly five codes — math,
     // science, physics, chemistry, biology — so the number was false. The value
-    // goes through `t()` like the bilingual-tutoring tile below it, so the
+    // goes through `t()` like the bilingual-teaching tile below it, so the
     // Hindi reader sees the same claim, not a numeral with a Hindi noun.
     {
       value: t('Maths & Science', 'गणित और विज्ञान'),
@@ -217,8 +217,8 @@ function MissionSection() {
     { value: '6-12', labelEn: 'Grades Supported', labelHi: 'कक्षाएँ समर्थित' },
     {
       value: t('Hindi + English', 'हिंदी + अंग्रेज़ी'),
-      labelEn: 'Bilingual Tutoring',
-      labelHi: 'द्विभाषी ट्यूटरिंग',
+      labelEn: 'Bilingual Teaching',
+      labelHi: 'द्विभाषी शिक्षण',
     },
     { value: 'CBSE', labelEn: 'Board Aligned', labelHi: 'बोर्ड-संरेखित' },
   ];
@@ -236,7 +236,7 @@ function MissionSection() {
           </h2>
           <p>
             {t(
-              'Every student in India deserves a personal tutor that understands how they learn, speaks their language, and adapts to their pace. AI makes this possible at scale.',
+              'Every student in India deserves a personal learning intelligence that understands how they learn, speaks their language, and adapts to their pace. AI makes this possible at scale.',
               'भारत के हर छात्र को एक ऐसा व्यक्तिगत शिक्षक मिलना चाहिए जो समझे कि वे कैसे सीखते हैं, उनकी भाषा बोले, और उनकी गति के अनुसार ढले। AI इसे बड़े पैमाने पर संभव बनाता है।',
             )}
           </p>

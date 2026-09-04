@@ -34,7 +34,7 @@ export default function LearnerHealth({ analytics, stats, obsData, lastUpdated }
       color: quizzesToday > 0 ? '#16A34A' : '#D97706',
     },
     {
-      label: 'AI tutor usage',
+      label: 'Foxy usage',
       value: `${chatsToday}`,
       detail: 'Foxy sessions today',
       color: chatsToday > 0 ? '#2563EB' : '#9CA3AF',

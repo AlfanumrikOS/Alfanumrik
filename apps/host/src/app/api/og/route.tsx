@@ -31,7 +31,7 @@ const VARIANTS: Record<string, OgVariantContent> = {
   default: {
     line1: "Tonight's homework",
     line2: 'can be different.',
-    sub1: "Foxy — India's most patient tutor.",
+    sub1: "Foxy — India's most patient learning companion.",
     sub2: 'CBSE Grades 6–12 · Hindi & English',
     bullets: [
       "Adapts to your child's pace",
@@ -42,10 +42,10 @@ const VARIANTS: Record<string, OgVariantContent> = {
   product: {
     line1: 'One platform.',
     line2: 'Every learner covered.',
-    sub1: 'AI tutoring, quizzes, dashboards & reports.',
+    sub1: 'AI learning, quizzes, dashboards & reports.',
     sub2: 'CBSE Grades 6–12 · Hindi & English',
     bullets: [
-      'NCERT-grounded AI tutor',
+      'NCERT-grounded learning intelligence',
       'Adaptive quizzes & spaced review',
       'Teacher & parent dashboards',
     ],

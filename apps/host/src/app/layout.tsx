@@ -20,7 +20,7 @@ import { GlobalAppLayout } from '@alfanumrik/ui/navigation/GlobalAppLayout';
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://alfanumrik.com'),
   title: {
-    default: 'Alfanumrik - Adaptive Learning OS | AI Tutor for CBSE Students',
+    default: 'Alfanumrik - Adaptive Learning OS for CBSE Students',
     template: '%s | Alfanumrik',
   },
   description:
@@ -42,9 +42,9 @@ export const metadata: Metadata = {
     capable: false,
     title: 'Alfanumrik',
   },
-  keywords: 'CBSE AI tutor, adaptive learning India, AI tutor Hindi, board exam preparation, Foxy, spaced repetition CBSE, personalized learning India, class 9 science, class 10 math, online tutor India, Hindi medium tutor, Alfanumrik, Cusiosense Learning',
+  keywords: 'CBSE adaptive learning app, AI learning platform India, personalized learning Hindi, board exam preparation, Foxy, spaced repetition CBSE, personalized learning India, class 9 science, class 10 math, online learning platform India, Hindi medium learning app, Alfanumrik, Cusiosense Learning',
   openGraph: {
-    title: 'Alfanumrik - AI Tutor for CBSE Students | Learn Smarter',
+    title: 'Alfanumrik - AI Learning OS for CBSE Students | Learn Smarter',
     // CATALOGUE-CLAIM FIX (2026-08-12): this read "16 subjects". Production
     // `subjects.is_active` is true for exactly five codes — math, science,
     // physics, chemistry, biology — so the number was false by a factor of
@@ -53,7 +53,7 @@ export const metadata: Metadata = {
     // to people long after the page itself is corrected. Pinned by
     // `src/__tests__/subject-catalogue-claim-guard.test.ts`.
     description:
-      'Meet Foxy, your personal AI tutor that teaches at YOUR level. Mathematics and Science for CBSE grades 6-12, in Hindi & English. Adaptive learning powered by Bayesian mastery tracking.',
+      'Meet Foxy, your personal learning intelligence that teaches at YOUR level. Mathematics and Science for CBSE grades 6-12, in Hindi & English. Adaptive learning powered by Bayesian mastery tracking.',
     url: 'https://alfanumrik.com',
     locale: 'en_IN',
     type: 'website',
@@ -63,14 +63,14 @@ export const metadata: Metadata = {
         url: '/api/og',
         width: 1200,
         height: 630,
-        alt: 'Alfanumrik — AI Tutor for CBSE India',
+        alt: 'Alfanumrik — AI Learning OS for CBSE India',
         type: 'image/png',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Alfanumrik - India\'s Smartest AI Tutor for CBSE Students',
+    title: 'Alfanumrik - India\'s Smartest AI Learning OS for CBSE Students',
     description:
       'Foxy teaches CBSE in Hindi and English. Adaptive learning, spaced repetition, gamified practice. Start now.',
     creator: '@alfanumrik',

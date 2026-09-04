@@ -52,8 +52,8 @@ export default function PricingHeroV3({
         </h1>
         <p className={`${s.pheroSub} ${s.revealUp}`} data-reveal>
           {t(
-            'Start free, upgrade when you’re ready. Every plan includes Foxy, your personal AI tutor.',
-            'मुफ़्त शुरू करें, जब तैयार हों तब अपग्रेड करें। हर प्लान में फ़ॉक्सी, आपका व्यक्तिगत AI ट्यूटर शामिल है।',
+            'Start free, upgrade when you’re ready. Every plan includes Foxy, your personal learning intelligence.',
+            'मुफ़्त शुरू करें, जब तैयार हों तब अपग्रेड करें। हर प्लान में फ़ॉक्सी, आपकी व्यक्तिगत AI लर्निंग इंटेलिजेंस शामिल है।',
           )}
         </p>
 
