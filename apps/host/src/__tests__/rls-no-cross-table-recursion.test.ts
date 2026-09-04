@@ -301,7 +301,10 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // here (OR-merged into assignments_select_merged, added near the end of
   // this ledger). 'Teachers can manage own assignments' is a DIFFERENT,
   // untouched policy (not part of the SELECT merge) and stays.
-  'assignments::Teachers can manage own assignments',
+  // P2-5 phase 2 batch 9 (migration 20260904110000, 2026-09-04) pruned
+  // "Teachers can manage own assignments" here -- OR-merged into
+  // assignments_select_merged (extending it with a 4th branch) plus 3 new
+  // write-only splits, added near the end of this ledger.
   // (XC-3 Phase 4 first drain removed 'at_risk_alerts::Teachers see own at-risk
   //  alerts' from here — migration 20260702100000. See the note below.)
   // XC-3 Phase 4 first drain (migration 20260702100000): the at_risk_alerts policy
@@ -338,7 +341,10 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'bloom_progression::bloom_own_insert',
   'bloom_progression::bloom_own_select',
   'bloom_progression::bloom_own_update',
-  'cbse_syllabus::cbse_syllabus_write_admin',
+  // P2-5 phase 2 batch 9 (migration 20260904110000, 2026-09-04) pruned
+  // cbse_syllabus_write_admin here -- OR-merged into
+  // cbse_syllabus_select_merged plus 3 new write-only splits, added near
+  // the end of this ledger.
   'challenge_attempts::challenge_attempts_student_select',
   'challenge_streaks::challenge_streaks_student_select',
   'chapter_progress::cp_select_merged',
@@ -360,8 +366,11 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'class_students::Students can view own enrollment',
   'class_students::Teachers can manage students in their classes',
   'class_students::Teachers can view students in their classes',
-  'class_teachers::School admins can manage school class_teachers',
-  'class_teachers::Teachers can view own class assignments',
+  // P2-5 phase 2 batch 9 (migration 20260904110000, 2026-09-04) pruned
+  // "School admins can manage school class_teachers" and "Teachers can
+  // view own class assignments" here -- OR-merged into
+  // class_teachers_select_merged plus 3 new write-only splits, added near
+  // the end of this ledger.
   // P2-5 phase 2 batch 5 (migration 20260904070000, 2026-09-04) pruned all 5
   // entries here — OR-merged into classes_select_merged, added near the end
   // of this ledger. "School admins can view school classes" and
@@ -374,12 +383,16 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // SELECT-implied access. See that migration's header for the full
   // rationale.
   'classroom_poll_responses::Students submit own poll responses',
-  'classroom_polls::Students see live polls for their class',
-  'classroom_polls::Teachers see own class polls',
+  // P2-5 phase 2 batch 9 (migration 20260904110000, 2026-09-04) pruned
+  // "Students see live polls for their class" and "Teachers see own class
+  // polls" here -- OR-merged into classroom_polls_select_merged plus 3 new
+  // write-only splits, added near the end of this ledger.
   'cme_concept_state::cme_state_own',
   'cme_exam_readiness::cme_readiness_own',
   'cme_revision_schedule::cme_revision_own',
-  'cms_assets::cms_assets_admin',
+  // P2-5 phase 2 batch 9 (migration 20260904110000, 2026-09-04) pruned
+  // cms_assets_admin here -- OR-merged into cms_assets_select_merged plus
+  // 3 new write-only splits, added near the end of this ledger.
   'cms_item_versions::cms_versions_insert_admin',
   'cms_item_versions::cms_versions_select_admin',
   'cms_item_versions::cms_versions_update_admin',
@@ -397,7 +410,10 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'exam_chapters::students_own_exam_chapters',
   'exam_configs::students_own_exam_configs',
   'exam_simulations::students_own_exam_simulations',
-  'ff_grounded_ai_enforced_pairs::ff_pairs_write_admin',
+  // P2-5 phase 2 batch 9 (migration 20260904110000, 2026-09-04) pruned
+  // ff_pairs_write_admin here -- OR-merged into
+  // ff_grounded_ai_enforced_pairs_select_merged plus 3 new write-only
+  // splits, added near the end of this ledger.
   'foxy_chat_messages::school_admins_see_school_foxy_messages',
   'foxy_scan_queries::foxy_scan_insert',
   'foxy_scan_queries::foxy_scan_own',
@@ -486,8 +502,11 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // access.
   'scheduled_actions::student read own',
   'school_contracts::school_admin_can_read_own_contracts',
-  'school_invite_codes::School admins can manage their school codes',
-  'school_invite_codes::Teachers can view codes for their school',
+  // P2-5 phase 2 batch 9 (migration 20260904110000, 2026-09-04) pruned
+  // "School admins can manage their school codes" and "Teachers can view
+  // codes for their school" here -- OR-merged into
+  // school_invite_codes_select_merged plus 3 new write-only splits, added
+  // near the end of this ledger.
   'score_history::score_history_student_select',
   'smart_nudges::students_own_smart_nudges',
   'student_assessment_attempts::attempts_own',
@@ -801,6 +820,59 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'classroom_lesson_plans::Teachers can insert classroom lesson plans',
   'classroom_lesson_plans::Teachers can update classroom lesson plans',
   'classroom_lesson_plans::Teachers can delete classroom lesson plans',
+  // P2-5 phase 2 batch 9 (migration
+  // 20260904110000_p2_5_phase2j_split_merge_for_all_policies_batch9.sql,
+  // 2026-09-04): Tier 3 of the batch-7 FOR ALL/per-command overlap
+  // discovery -- the highest-risk tier, where the FOR ALL policy and a
+  // narrower per-command policy protect genuinely DIFFERENT populations
+  // (not a subset relationship like Tier 2/batch 8). Fix: OR-merge each
+  // pair into one new SELECT (or, for mock_test_responses, SELECT+INSERT+
+  // UPDATE) policy, plus separate write-only policies carrying the FOR ALL
+  // predicate alone for every other action it covered. Every USING/WITH
+  // CHECK expression is copied verbatim from live pg_policies text; the
+  // OR-combination is mechanical, not rewritten. 10 stale entries pruned
+  // above (assignments' 1, cbse_syllabus' 1, class_teachers' 2,
+  // classroom_polls' 2, cms_assets' 1, ff_grounded_ai_enforced_pairs' 1,
+  // school_invite_codes' 2); mock_test_responses's 4 original policies were
+  // NEVER grandfathered (same pre-existing ledger-gap pattern seen
+  // throughout batches 1-8). assignments::assignments_select_merged keeps
+  // its EXISTING ledger key unchanged (same name, batch-3 origin) even
+  // though its predicate grew a 4th branch -- not counted as new/stale.
+  // 31 new entries added. Chains off batch 8's ending count (253), not the
+  // 240 the batch-9 branch was originally authored against (batch 8 merged
+  // first; ledger arithmetic reconciled during the rebase).
+  // Ledger: 253 - 10 + 31 = 274.
+  'assignments::Teachers can insert own assignments',
+  'assignments::Teachers can update own assignments',
+  'assignments::Teachers can delete own assignments',
+  'cbse_syllabus::cbse_syllabus_select_merged',
+  'cbse_syllabus::cbse_syllabus_admin_insert',
+  'cbse_syllabus::cbse_syllabus_admin_update',
+  'cbse_syllabus::cbse_syllabus_admin_delete',
+  'class_teachers::class_teachers_select_merged',
+  'class_teachers::School admins can insert school class_teachers',
+  'class_teachers::School admins can update school class_teachers',
+  'class_teachers::School admins can delete school class_teachers',
+  'classroom_polls::classroom_polls_select_merged',
+  'classroom_polls::Teachers can insert own class polls',
+  'classroom_polls::Teachers can update own class polls',
+  'classroom_polls::Teachers can delete own class polls',
+  'cms_assets::cms_assets_select_merged',
+  'cms_assets::cms_assets_admin_insert',
+  'cms_assets::cms_assets_admin_update',
+  'cms_assets::cms_assets_admin_delete',
+  'ff_grounded_ai_enforced_pairs::ff_grounded_ai_enforced_pairs_select_merged',
+  'ff_grounded_ai_enforced_pairs::ff_pairs_admin_insert',
+  'ff_grounded_ai_enforced_pairs::ff_pairs_admin_update',
+  'ff_grounded_ai_enforced_pairs::ff_pairs_admin_delete',
+  'school_invite_codes::school_invite_codes_select_merged',
+  'school_invite_codes::School admins can insert their school codes',
+  'school_invite_codes::School admins can update their school codes',
+  'school_invite_codes::School admins can delete their school codes',
+  'mock_test_responses::mock_test_responses_select_merged',
+  'mock_test_responses::mock_test_responses_insert_merged',
+  'mock_test_responses::mock_test_responses_update_merged',
+  'mock_test_responses::mock_test_responses_admin_delete',
 ]);
 
 // ── parsing ─────────────────────────────────────────────────────────────────
@@ -1187,8 +1259,17 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // new split-policy entries added across 6 tables (2 tables' splits
     // carry no inline FROM/JOIN and need no entry).
     // Ledger: 240 - 5 + 18 = 253.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(253);
-    expect(detectedRiskKeys().length).toBe(253);
+    // P2-5 phase 2 batch 9 (migration 20260904110000, 2026-09-04): Tier 3
+    // of the batch-7 FOR ALL/per-command overlap discovery -- 8 tables
+    // where the FOR ALL and per-command policies protect genuinely
+    // different populations, requiring an OR-merge (not just a split) for
+    // the overlapping command plus write-only splits for the rest (see the
+    // ledger comment above for the full breakdown). 10 stale entries
+    // pruned, 31 new entries added. Chains off batch 8's 253 (batch 8
+    // merged first; arithmetic reconciled during the rebase).
+    // Ledger: 253 - 10 + 31 = 274.
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(274);
+    expect(detectedRiskKeys().length).toBe(274);
   });
 });
 
