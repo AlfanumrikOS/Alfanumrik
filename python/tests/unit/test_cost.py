@@ -42,9 +42,7 @@ def test_cache_reads_bill_at_one_tenth_of_input():
     cached bulk of an Anthropic prompt priced at ZERO. This service sends
     cache_control for prompts >= 1024 chars, so that was the common path.
     """
-    usd, _ = compute_cost(
-        "anthropic", "claude-haiku-4-5-20251001", 0, 0, 1_000_000, 0
-    )
+    usd, _ = compute_cost("anthropic", "claude-haiku-4-5-20251001", 0, 0, 1_000_000, 0)
     assert usd == pytest.approx(0.10, rel=1e-9)
 
 
@@ -54,9 +52,7 @@ def test_cache_writes_bill_at_one_and_a_quarter_input():
     Omitting writes would bias every estimate low, i.e. in the direction that
     hides a cost regression rather than surfacing one.
     """
-    usd, _ = compute_cost(
-        "anthropic", "claude-haiku-4-5-20251001", 0, 0, 0, 1_000_000
-    )
+    usd, _ = compute_cost("anthropic", "claude-haiku-4-5-20251001", 0, 0, 0, 1_000_000)
     assert usd == pytest.approx(1.25, rel=1e-9)
 
 
