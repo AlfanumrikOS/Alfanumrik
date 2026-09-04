@@ -128,10 +128,31 @@
   --primary-hover: var(--accent-warm-strong);
   --border-base: var(--border);     /* alias of --border for components using the *-base name */
   --surface-sunken: var(--surface-2); /* slightly recessed surface (inset wells) */
-  /* Mastery banding. */
+  /* Mastery banding — 3-band, percentage-driven (0-100). Used by MasteryRing
+     via bandForValue(). */
   --mastery-low: var(--red);        /* < 40% — at risk */
   --mastery-mid: var(--gold);       /* 40–69% — developing */
   --mastery-high: var(--green);     /* >= 70% — strong */
+
+  /* ─── Mastery level scale, 5-value (Gate-2 B2, MasteryBadge) ─────────────
+     Distinct from the 3-band --mastery-low/mid/high above: these map to the
+     REAL `concept_mastery.mastery_level` TEXT enum, verified live against
+     production data before naming these (2026-09-04) — NOT the "not started"
+     naming design/06-design-system.md §1.1 originally assumed. Live distinct
+     values found: beginner, developing, familiar, proficient, mastered.
+     "not started" is not a stored enum value — a student with no
+     concept_mastery row simply has no record; callers render that state by
+     not showing a badge (or via their own explicit fallback), not via a
+     level this component defines. Ordered low → high; colour progression
+     mirrors design/06's original 5-stop scale (grey → amber → orange →
+     green → dark green), reusing --green-strong for the top stop so
+     "mastered" matches the same dark green MasteryRing's "high" band and
+     the rest of the app already use for peak mastery. */
+  --mastery-level-0: #D1D5DB;         /* beginner */
+  --mastery-level-1: var(--gold);     /* developing — #F5A623 */
+  --mastery-level-2: #F97316;         /* familiar */
+  --mastery-level-3: var(--green);    /* proficient — #16A34A */
+  --mastery-level-4: var(--green-strong); /* mastered — #15803D */
 
   /* ─── AA-safe "strong" status stops for TEXT on a tinted chip (2026-08-15) ──
      The base status hues above (--success/--warning/--info/--danger) are FILL

@@ -23,6 +23,12 @@ export {
 } from './Card';
 export { Badge, type BadgeProps, type BadgeVariant } from './Badge';
 export { Chip, type ChipProps } from './Chip';
+export {
+  MasteryBadge,
+  MASTERY_LEVEL_ORDER,
+  type MasteryBadgeProps,
+  type MasteryLevel,
+} from './MasteryBadge';
 export { ProgressBar, type ProgressBarProps } from './ProgressBar';
 export {
   ProgressRing,
@@ -133,11 +139,27 @@ export {
   type TabPanelProps,
 } from './Tabs';
 export {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentedControlOption,
+} from './SegmentedControl';
+export {
   Table,
   type TableProps,
   type TableColumn,
   type TableAlign,
 } from './Table';
+export { ChartFrame, type ChartFrameProps } from './ChartFrame';
+/* ── Combobox: TYPES ONLY from this barrel — same reason as Menu above ──
+ *
+ *     import { Combobox } from '@alfanumrik/ui/ui/primitives/Combobox';   // ✅
+ *     import { Combobox } from '@alfanumrik/ui/ui/primitives';            // ❌ removed
+ *
+ * It depends on usePopoverPosition (see the Menu note above for the
+ * measured PR #1624 regression a value re-export of that hook causes on
+ * this barrel). Combobox has zero consumers today, so this costs nothing
+ * and avoids reintroducing the exact same class of bug. */
+export type { ComboboxProps, ComboboxOption } from './Combobox';
 export {
   Avatar,
   AvatarGroup,
