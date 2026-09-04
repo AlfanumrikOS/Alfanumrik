@@ -132,7 +132,9 @@ def test_openai_default_does_not_affect_reasoning(mock_rand):
 @patch("services.ai.mol.router.random.random", return_value=0.9)
 def test_openai_default_no_duplicate_after_flip(mock_rand):
     """The flip removes existing gpt-4o-mini before prepending — no duplicates."""
-    selected = select_provider_chain("explanation", _opts(openai_default=True, shadow_priority=True))
+    selected = select_provider_chain(
+        "explanation", _opts(openai_default=True, shadow_priority=True)
+    )
     chain = selected.passes[0].chain
     mini_count = sum(1 for t in chain if t.provider == "openai" and t.model == GPT_MINI)
     assert mini_count == 1
