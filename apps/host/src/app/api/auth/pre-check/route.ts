@@ -65,6 +65,7 @@ interface TurnstileSiteverifyResult {
   success?: boolean;
   action?: string;
   hostname?: string;
+  'error-codes'?: string[];
 }
 
 /**
@@ -147,6 +148,20 @@ async function verifyTurnstile(
     !result.hostname ||
     !expectedHostnames.has(result.hostname)
   ) {
+    // Cloudflare accepted the request but rejected the token/context. Log
+    // which specific condition tripped — none of these fields are secret or
+    // the token itself — so a pattern (e.g. a legitimate hostname missing
+    // from TURNSTILE_HOSTNAMES) is visible without live reproduction. 2026-09-04:
+    // this exact gap (www.alfanumrik.com solved successfully but wasn't in
+    // the allowlist) took a mobile-only report and code inspection to find
+    // because this branch logged nothing.
+    logger.warn('Turnstile siteverify rejected the token/context', {
+      action,
+      resultAction: result?.action,
+      resultHostname: result?.hostname,
+      resultSuccess: result?.success,
+      errorCodes: result?.['error-codes'],
+    });
     return { ok: false, status: 403, error: 'Verification failed. Please try again.' };
   }
   return { ok: true };
