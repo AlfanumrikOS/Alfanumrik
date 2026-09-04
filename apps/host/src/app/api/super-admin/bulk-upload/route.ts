@@ -3,11 +3,11 @@ import { authorizeAdmin, logAdminAudit } from '@alfanumrik/lib/admin-auth';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { capture as posthogCapture } from '@alfanumrik/lib/posthog/server';
 import { generateSecurePassword } from '@alfanumrik/lib/crypto/password';
+import { isValidGrade } from '@alfanumrik/lib/identity/constants';
 
 // CSV template columns
 const REQUIRED_COLUMNS = ['name', 'grade', 'email'];
 const OPTIONAL_COLUMNS = ['phone', 'board', 'section', 'roll_number'];
-const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 
 /**
  * POST — Accepts CSV file, validates rows, creates student accounts in bulk.
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Validate grade — must be string "6"-"12" per P5
-      if (!VALID_GRADES.includes(row.grade)) {
+      if (!isValidGrade(row.grade)) {
         errors.push({ row: i + 1, field: 'grade', message: `Invalid grade "${row.grade}". Must be 6-12` });
         continue;
       }
