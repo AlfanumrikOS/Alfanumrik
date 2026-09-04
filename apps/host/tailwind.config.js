@@ -54,8 +54,8 @@ module.exports = {
           // data-design="cosmic") instead of freezing at a literal. Resolves to
           // #E8581C on the shipping light theme — identical to the old literal.
           orange: 'var(--orange)',
-          purple: '#7C3AED',
-          cream: '#FBF8F4',
+          purple: 'var(--purple)',
+          cream: 'var(--cream)',
           warm: '#FEF3E2',
           // Dynamic school branding — overridden by SchoolThemeProvider CSS vars.
           // Fallbacks are the canonical Alfanumrik brand pair (purple #7C3AED /

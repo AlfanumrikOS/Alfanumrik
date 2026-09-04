@@ -73,6 +73,13 @@ function findRepoRoot(): string {
 
 const REPO_ROOT = findRepoRoot();
 const GLOBALS_CSS = path.join(REPO_ROOT, 'packages', 'ui', 'src', 'globals.css');
+// The --*-rgb token DECLARATIONS moved to tokens.css in the Gate-2 B1
+// consolidation; the two comma-form rgba(var(--bg-rgb), alpha) CONSUMER
+// usages this file's error messages reference stayed in globals.css (they
+// are usages, not declarations, so the move didn't touch them). Both files
+// are scanned for declarations below so the allowlist logic doesn't care
+// which one currently holds a given token.
+const TOKENS_CSS = path.join(REPO_ROOT, 'packages', 'ui', 'src', 'tokens.css');
 
 /**
  * Blank out CSS block comments, PRESERVING newlines so reported line numbers
@@ -101,8 +108,8 @@ interface TokenDecl {
 /** A bare RGB triple: three 0-255-ish integers, comma- or space-separated. */
 const BARE_TRIPLE = /^\d{1,3}\s*(?:,\s*|\s+)\d{1,3}\s*(?:,\s*|\s+)\d{1,3}$/;
 
-function collectRgbTokenDeclarations(): TokenDecl[] {
-  const masked = maskCssComments(fs.readFileSync(GLOBALS_CSS, 'utf8'));
+function collectDeclarationsFrom(cssPath: string): TokenDecl[] {
+  const masked = maskCssComments(fs.readFileSync(cssPath, 'utf8'));
 
   const decls: TokenDecl[] = [];
   const re = /(--[A-Za-z0-9_-]*-rgb)\s*:\s*([^;{}]+);/g;
@@ -111,6 +118,10 @@ function collectRgbTokenDeclarations(): TokenDecl[] {
     decls.push({ token: m[1], value: m[2].trim(), line: lineOf(masked, m.index) });
   }
   return decls;
+}
+
+function collectRgbTokenDeclarations(): TokenDecl[] {
+  return [...collectDeclarationsFrom(GLOBALS_CSS), ...collectDeclarationsFrom(TOKENS_CSS)];
 }
 
 describe('globals.css — --*-rgb token separator form', () => {

@@ -1,0 +1,365 @@
+/* ─── Alfanumrik Design Tokens — single source of truth ──────────────────
+ * Gate-2 Step B1 (design/06-design-system.md §1). Consolidates the light-
+ * theme custom properties that previously lived in two separated `:root`
+ * blocks inside globals.css (colour/brand/surface/text/shadow/radius/motion/
+ * z-index/on-surface tokens, and fluid type/spacing/layout tokens) into one
+ * file, imported before globals.css in the root layout.
+ *
+ * Token NAMES are preserved exactly as they were — this is a consolidation,
+ * not a rename. Renaming would require touching every one of the hundreds
+ * of components across the app that already reference these vars, which is
+ * out of scope for B1 (that migration happens component-by-component as
+ * B2/B3 rebuild each surface onto the new kit).
+ *
+ * NOT included here: the dark-theme block. It is explicitly FROZEN in
+ * globals.css ("DO NOT ACTIVATE WITHOUT CEO APPROVAL" — a P13 data-privacy
+ * gate on how PII renders on dark surfaces) and stays exactly where it is,
+ * untouched, still pointed at a sentinel selector the app never writes.
+ *
+ * NOT included here: the `html[data-design="cosmic"]` token overrides that
+ * used to live in globals.css. That block only ever activated when
+ * CosmicThemeProvider wrote data-design="cosmic" to <html>, and
+ * computeCosmicEnabled() in packages/lib/src/cosmic-theme.tsx is hardcoded
+ * to always return false ("CoSchool-style restore: the cosmic/blue-violet
+ * identity is fully disabled... do not allow DB flags... to re-enable it") —
+ * confirmed dead, deleted rather than migrated here.
+ */
+
+:root {
+  --font-display: "Sora", sans-serif;
+  --font-body: "Plus Jakarta Sans", sans-serif;
+
+  /* ─── Editorial Atlas tokens (2026-05-11) ─────────────────
+     Additive token set introduced with ff_editorial_atlas_v1.
+     Maps cleanly onto the existing palette (--orange, --bg, --text-*)
+     while giving the new redesigned surfaces a vocabulary that maps
+     1:1 to the prototype in docs/design/multi-role-redesign-prototype.html.
+     Existing tokens stay untouched so legacy surfaces keep rendering
+     identically. Atlas pages address tokens via these aliases. */
+  --font-serif:    "Fraunces", Georgia, serif;
+  --paper:         #FFFFFF;
+  --cream:         #FBF8F4;     /* alias of --bg */
+  --cream-2:       #F5F0EA;     /* alias of --surface-2 */
+  --cream-3:       #EDE6DC;     /* alias of --surface-3 */
+  --ink:           #1A1207;     /* alias of --text-1 */
+  --ink-2:         #4A3F2E;
+  --ink-3:         #7D7264;
+  --ink-4:         #A89B86;     /* new: editorial 4th tier for whispers */
+  --accent:        #E8581C;     /* alias of --orange */
+  --accent-soft:   #FBE6D9;
+  --accent-quiet:  #F0C9B0;
+  --teal-deep:     #0F2A2E;     /* new: editorial weight, distinct from --teal */
+  --teal-soft:     #E2EDEC;
+  --gold-soft:     #F8ECD2;
+  --green-soft:    #DDEFE3;
+  --red-soft:      #F6DCDC;
+  --line:          rgba(26, 18, 7, 0.08);
+  --line-mid:      rgba(26, 18, 7, 0.14);
+  --line-strong:   rgba(26, 18, 7, 0.22);
+  --shadow-edge:   inset 0 -1px 0 rgba(26, 18, 7, 0.04);
+  --shadow-atlas-1: 0 1px 3px rgba(26, 18, 7, 0.04), 0 0 0 1px rgba(26, 18, 7, 0.04);
+  --shadow-atlas-2: 0 4px 14px rgba(26, 18, 7, 0.06), 0 0 0 1px rgba(26, 18, 7, 0.05);
+  --radius-atlas:    14px;
+  --radius-atlas-lg: 22px;
+  --radius-pill:     999px;
+  --ease-atlas:      cubic-bezier(.22, 1, .36, 1);
+
+  /* Brand */
+  --orange: #E8581C;
+  --orange-rgb: 232 88 28;          /* use as rgb(var(--orange-rgb) / <alpha>) for opacity stacks.
+                                       Space-separated is REQUIRED — the comma form silently
+                                       invalidates every rgb(var(--x-rgb) / <alpha>) consumer. */
+  --orange-light: #FF7A3D;
+  /* STABLE WARM CHANNEL (Alfa Momentum, Wave 2). Historically this token
+     stayed burnt-orange even under the (now-deleted) cosmic scope, which
+     remapped --orange-rgb to violet. Cosmic is gone, but the separate,
+     always-warm channel is still used directly by consumers that want a
+     guaranteed warm-orange tint regardless of future theme work — kept as
+     its own token rather than folded back into --orange-rgb.
+     Space-separated is REQUIRED — the comma form silently invalidates every
+     rgb(var(--x-rgb) / <alpha>) consumer. */
+  --accent-warm-rgb: 232 88 28;
+  /* Solid warm-channel stops (Alfa Momentum, Wave 3 — Foxy). Kept as their
+     own tokens so `var(--accent-warm)` / `var(--accent-warm-strong)` stay
+     stable independent of any future --orange re-theme — the Foxy
+     mascot/avatar identity stays warm on purpose. */
+  --accent-warm: #E8581C;
+  --accent-warm-strong: #C2440F;   /* darker warm stop for CTA / avatar gradients */
+  --gold: #F5A623;
+  --teal: #0891B2;
+  --green: #16A34A;
+  --green-rgb: 22 163 74;           /* for rgb(var(--green-rgb) / <alpha>) — added
+                                       Wave B (2026-08-02): OfflineState.tsx and
+                                       ExamSchedule.tsx read this via a hardcoded
+                                       CSS fallback (rgb(var(--green-rgb, 22 163 74) / …)),
+                                       which happened to match this exact value by
+                                       coincidence. Declaring the real token here
+                                       means it now resolves on purpose, and would
+                                       still track a future --green re-theme instead
+                                       of silently reusing a stale fallback forever.
+                                       Space-separated is REQUIRED — the comma form silently
+                                       invalidates every rgb(var(--x-rgb) / <alpha>) consumer. */
+  --purple: #7C3AED;
+  --purple-rgb: 124 58 237;         /* for rgb(var(--purple-rgb) / <alpha>).
+                                       Space-separated is REQUIRED — the comma form silently
+                                       invalidates every rgb(var(--x-rgb) / <alpha>) consumer. */
+  --purple-light: #9333EA;
+  --pink: #DB2777;
+  --red: #DC2626;
+  --marigold-rgb: 245 166 35;       /* channel for the --gold/marigold; rgb(var(--marigold-rgb) / <alpha>).
+                                       Space-separated is REQUIRED — the comma form silently
+                                       invalidates every rgb(var(--x-rgb) / <alpha>) consumer. */
+
+  /* ─── Base semantic / status tokens (Alfa Momentum, Wave 6) ──────────────
+     These semantic aliases were previously declared ONLY inside the cosmic
+     and/or dark blocks, so on the DEFAULT-LIGHT surface they resolved to
+     nothing — a real latent bug (Foxy ChatBubble reads var(--success)/
+     var(--warning)/var(--danger); DynamicScaffold reads var(--border-base)/
+     var(--surface-sunken); StatRing bands on var(--mastery-*)). Declaring
+     sensible base values here makes those consumers render on light too.
+     (The cosmic block that used to redeclare these under a higher-specificity
+     selector is gone — confirmed dead, see file header.) */
+  --success: var(--green);          /* positive / verified — green #16A34A */
+  --warning: var(--gold);           /* caution / check-yourself — marigold #F5A623 */
+  --info: var(--teal);              /* informational — teal #0891B2 */
+  --danger: var(--red);             /* destructive / error — red #DC2626 */
+  --primary: var(--orange);         /* brand primary action — burnt-orange (CTA buttons) */
+  --primary-light: var(--orange-light);
+  --primary-hover: var(--accent-warm-strong);
+  --border-base: var(--border);     /* alias of --border for components using the *-base name */
+  --surface-sunken: var(--surface-2); /* slightly recessed surface (inset wells) */
+  /* Mastery banding. */
+  --mastery-low: var(--red);        /* < 40% — at risk */
+  --mastery-mid: var(--gold);       /* 40–69% — developing */
+  --mastery-high: var(--green);     /* >= 70% — strong */
+
+  /* ─── AA-safe "strong" status stops for TEXT on a tinted chip (2026-08-15) ──
+     The base status hues above (--success/--warning/--info/--danger) are FILL
+     colours. Rendered as TEXT they fail WCAG AA badly — measured on the 10%
+     tint each one sits on:
+       --warning #F5A623 → 1.89:1   --success #16A34A → 2.95:1
+       --info    #0891B2 → 3.27:1   --danger  #DC2626 → 4.14:1
+     admin-ui/StatusBadge was doing exactly that on every admin surface, which
+     also contradicted the rule primitives/Badge.tsx states in a comment
+     ("Warning never renders gold-as-text", design-system.md §2/§8).
+
+     These are the darkened companions to use whenever a status hue carries
+     TEXT rather than a fill. Each is verified >= 4.5:1 against its own 10%
+     tint mixed into an OPAQUE --surface-1, and against every flat surface
+     token (--bg / --surface-1/2/3):
+       --success-strong #166534 on its tint 6.38:1   (bare on white 7.13:1)
+       --warning-strong #B45309 on its tint 4.68:1   (bare on white 5.02:1)
+       --info-strong    #0E7490 on its tint 4.76:1   (bare on white 5.36:1)
+       --danger-strong  #B91C1C on its tint 5.54:1   (bare on white 6.47:1)
+     Brand already has its strong stop: --accent-warm-strong #C2440F (4.51:1).
+
+     IMPORTANT: the tint a strong stop is verified against must be mixed into an
+     OPAQUE surface, never `transparent` — a transparent mix composites over
+     whatever happens to paint behind, so the contrast is undefined (on
+     --surface-3 it drops to 3.67:1). See primitives/Badge.tsx for the recipe. */
+  --success-strong: #166534;   /* green-800  — success text on a success tint */
+  --warning-strong: #B45309;   /* amber-700  — warning text on a warning tint */
+  --info-strong:    #0E7490;   /* cyan-700   — info text on an info tint */
+  --danger-strong:  #B91C1C;   /* red-700    — danger text on a danger tint */
+
+  /* --green-strong was REFERENCED but never DECLARED: both
+     tailwind.config.js (`success-strong`) and dashboard/os/palette.ts
+     (`MASTERY_STRONG`) read `var(--green-strong, #15803D)` and had been riding
+     the literal fallback since they were written — three homes for one value,
+     none of them authoritative. Declared here at exactly that fallback value so
+     the token now resolves on purpose with ZERO visual change, and a future
+     re-theme of the mastery green has a single place to happen.
+     Distinct from --success-strong above: this one is a FILL/ring colour
+     (mastery-high), not a text colour. */
+  --green-strong: #15803D;
+
+  /* ─── Light-surface base values (Phase 1) ──────────────────────────────
+     --secondary / --xp-color / --streak-color / --level-up / --danger-light
+     are accent hues (badges, fills, large numerals/icons), not body-text-on-
+     surface pairs — see the design-system contrast table. */
+  --secondary: var(--purple);       /* secondary brand action — violet #7C3AED */
+  --xp-color: var(--gold);          /* XP accent — marigold #F5A623 */
+  --streak-color: var(--orange);    /* streak flame — burnt-orange #E8581C */
+  --level-up: var(--purple);        /* level-up celebration — violet #7C3AED */
+  --danger-light: #FCE4E4;          /* soft red wash behind danger text/badges */
+
+  /* Surfaces — warm cream base */
+  --bg: #FBF8F4;
+  --bg-rgb: 251, 248, 244;          /* for rgba(var(--bg-rgb) / <alpha>) — used by glass + sticky headers */
+  --surface-1: #FFFFFF;
+  --surface-2: #F5F0EA;
+  --surface-3: #EDE6DC;
+
+  /* Borders */
+  --border: rgba(0, 0, 0, 0.08);
+  --border-mid: rgba(0, 0, 0, 0.12);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  /* Text — Contrast-checked against ALL warm surfaces, not just --bg (Phase 1).
+       text-1 #1A1207 on bg: 15.2:1 (AAA) — primary text
+       text-2 #4A3F2E on bg:  8.9:1 (AAA) — secondary text
+       text-3 #6B6053 on surface-3: 4.95:1 (AA) / on bg: 5.6:1 (AA)
+     Indian students study outdoors & in harsh sunlight — contrast matters more. */
+  --text-1: #1A1207;
+  --text-2: #4A3F2E;
+  --text-3: #6B6053;
+
+  /* Shadows — subtle dark-ink depth on warm cream. */
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 24px rgba(232, 88, 28, 0.15);
+
+  /* ─── Overlay scrim (Phase 2 Batch B2) ─────────────────────────────────── */
+  --scrim: rgba(26, 18, 7, 0.45);
+
+  /* ─── Radius scale ────────────────────────────────────────────────────── */
+  --radius-sm:  0.125rem;   /* 2px  — chips, tags */
+  --radius-md:  0.375rem;   /* 6px  — inputs, small controls */
+  --radius-lg:  0.5rem;     /* 8px  — buttons, list rows */
+  --radius-xl:  0.75rem;    /* 12px — cards */
+  --radius-2xl: 1rem;       /* 16px — panels, sheets, hero cards */
+
+  /* ─── Primary-CTA gradient stops (WCAG AA fix) ──────────────────────────
+     #CB4710 → white = 4.72:1 (AA)   #C2440F → white = 5.09:1 (AA) */
+  --btn-primary-from: #CB4710;
+  --btn-primary-to:   #C2440F;   /* == --accent-warm-strong */
+
+  /* Layout */
+  --sidebar-width: 240px;
+  /* Tablet (768–1023px) navigation rail. */
+  --nav-rail-width: 96px;
+  --header-height: 60px;
+  --content-max: 720px;
+  --content-max-wide: 1080px;
+
+  /* ─── Focus ring ────────────────────────────────────────── */
+  --focus-ring-color:  var(--orange);
+  --focus-ring-width:  2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-radius: 4px;
+  --focus-ring: var(--focus-ring-width) solid var(--focus-ring-color);
+
+  /* ─── Motion: duration scale ────────────────────────────── */
+  --duration-instant: 80ms;
+  --duration-fast:    140ms;
+  --duration-base:    200ms;
+  --duration-slow:    320ms;
+  --duration-slower:  480ms;
+
+  /* ─── Motion: easing ──────────────────────────────────────
+     --ease-atlas (the brand's overshoot-free decelerate curve) is kept as-is
+     and aliased to --ease-emphasized so existing call sites keep working. */
+  --ease-standard:  cubic-bezier(.2, 0, 0, 1);      /* symmetric, in-and-out */
+  --ease-out:       cubic-bezier(0, 0, .2, 1);      /* entering / revealing  */
+  --ease-in:        cubic-bezier(.4, 0, 1, 1);      /* leaving / dismissing  */
+  --ease-emphasized: var(--ease-atlas);              /* brand decelerate      */
+
+  /* ─── Z-index tokens ──────────────────────────────────────
+     Canonical z-index ladder so stacking never collides. */
+  --z-base:    0;
+  --z-raised:  1;
+  --z-sticky:  10;
+  --z-drawer:  40;
+  --z-nav:     50;
+  --z-modal:   60;
+  --z-toast:   70;
+  --z-tooltip: 80;
+  --z-overlay: 90;
+  --z-skip:    9999;
+
+  /* ─── Paired on-surface / on-accent tokens (Phase 2 — legibility invariant) ─
+     CONTRACT: text on surface X MUST use --on-X. NEVER a bare #fff / text-white
+     on a decorative background. */
+  --surface-inverse:            #241A2E;   /* warm-dark chrome; == Foxy header
+                                              gradient darker base (#241a2e→#16263f) */
+  --on-surface-inverse:         #F4ECDB;   /* 14.16:1 on --surface-inverse (AAA) */
+  --on-surface-inverse-muted:   #C9BCA6;   /*  8.89:1 on --surface-inverse (AAA) */
+
+  --on-accent:                  #FFFFFF;
+
+  --surface-accent:             linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
+  --on-surface-accent:          #FFFFFF;
+
+  /* ── Fluid type scale ─────────────────────────────────────────
+     12 steps from 11px caption to 60px display.
+     Formula: clamp(min, ideal-in-vw + offset-in-rem, max)
+     coefficient = (max - min) / (1440 - 360) × 100, so the value lands at
+     min at 360px and max at 1440px, growing smoothly between. */
+  --text-2xs:    0.75rem;                                        /* 12px floor */
+  --text-xs:     clamp(0.75rem, 0.71rem + 0.18vw, 0.8125rem);    /* 12→13px */
+  --text-sm:     clamp(0.8125rem, 0.77rem + 0.22vw, 0.875rem);   /* 13→14px */
+  --text-base:   clamp(0.9375rem, 0.89rem + 0.24vw, 1rem);       /* 15→16px */
+  --text-md:     clamp(1rem, 0.94rem + 0.28vw, 1.125rem);        /* 16→18px */
+  --text-lg:     clamp(1.125rem, 1.05rem + 0.37vw, 1.25rem);     /* 18→20px */
+  --text-xl:     clamp(1.25rem, 1.13rem + 0.6vw, 1.5rem);        /* 20→24px */
+  --text-2xl:    clamp(1.5rem, 1.31rem + 0.93vw, 1.875rem);      /* 24→30px */
+  --text-3xl:    clamp(1.75rem, 1.46rem + 1.39vw, 2.25rem);      /* 28→36px */
+  --text-4xl:    clamp(2rem, 1.6rem + 1.85vw, 2.75rem);          /* 32→44px */
+  --text-5xl:    clamp(2.5rem, 1.93rem + 2.5vw, 3.5rem);         /* 40→56px */
+  --text-display: clamp(2.75rem, 2.07rem + 2.78vw, 3.75rem);     /* 44→60px */
+
+  /* ── Fluid spacing scale ─────────────────────────────────────
+     12 steps. Margins, gaps, paddings. */
+  --space-fluid-1:  clamp(0.25rem, 0.22rem + 0.09vw, 0.3125rem);  /* 4→5px */
+  --space-fluid-2:  clamp(0.375rem, 0.34rem + 0.18vw, 0.5rem);    /* 6→8px */
+  --space-fluid-3:  clamp(0.5rem, 0.45rem + 0.22vw, 0.625rem);    /* 8→10px */
+  --space-fluid-4:  clamp(0.75rem, 0.68rem + 0.37vw, 1rem);       /* 12→16px */
+  --space-fluid-5:  clamp(1rem, 0.91rem + 0.46vw, 1.25rem);       /* 16→20px */
+  --space-fluid-6:  clamp(1.25rem, 1.13rem + 0.6vw, 1.5rem);      /* 20→24px */
+  --space-fluid-7:  clamp(1.5rem, 1.31rem + 0.93vw, 2rem);        /* 24→32px */
+  --space-fluid-8:  clamp(2rem, 1.74rem + 1.3vw, 2.75rem);        /* 32→44px */
+  --space-fluid-9:  clamp(2.5rem, 2.13rem + 1.85vw, 3.5rem);      /* 40→56px */
+  --space-fluid-10: clamp(3rem, 2.5rem + 2.5vw, 4.5rem);          /* 48→72px */
+  --space-fluid-11: clamp(4rem, 3.32rem + 3.33vw, 6rem);          /* 64→96px */
+  --space-fluid-12: clamp(5rem, 4rem + 5vw, 8rem);                /* 80→128px */
+
+  /* ── Fixed 4px-base spacing scale ───────────────────────────
+     Values follow the 4px base grid — sp-N == N×4px == the stock Tailwind
+     p-N number. The fluid --space-fluid-* scale above stays the preferred
+     choice for responsive gaps; sp-* exists for fixed, deterministic spacing. */
+  --space-1:  0.25rem;   /* 4px  */
+  --space-2:  0.5rem;    /* 8px  */
+  --space-3:  0.75rem;   /* 12px */
+  --space-4:  1rem;      /* 16px */
+  --space-5:  1.25rem;   /* 20px */
+  --space-6:  1.5rem;    /* 24px */
+  --space-8:  2rem;      /* 32px */
+  --space-12: 3rem;      /* 48px */
+  --space-16: 4rem;      /* 64px */
+
+  /* ── Touch-target minimums ─────────────────────────────────── */
+  --tap-min: 44px;       /* Apple HIG minimum */
+  --tap-comfort: 48px;   /* Material Design — used for India market */
+  --tap-large: 56px;     /* Reachable comfortably with thumb on 6"+ */
+  --tap-hero: 72px;      /* Hero CTA / FAB sizing */
+
+  /* ── Safe-area inset shortcuts ─────────────────────────────── */
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left, 0px);
+  --safe-right:  env(safe-area-inset-right, 0px);
+
+  /* ── Thumb-reach zones ────────────────────────────────────────
+     Research: on phones > 5.5", 75% of one-handed taps land in the
+     bottom 1/3 of the screen. We reserve --reach-bottom for nav,
+     primary CTAs, and quick actions. */
+  --reach-bottom: 33vh;
+  --reach-comfort: 50vh;
+  --reach-stretch: 75vh;  /* requires two hands or thumb stretch */
+
+  /* ── Mobile-first layout caps ─────────────────────────────────
+     Used by AppShell. Reading width is ~70ch which is the research-backed
+     optimal for prose comprehension. Card-grid surfaces use the wider
+     --layout-max-content. */
+  --reading-max: 70ch;
+  --layout-max-content: min(1240px, 100% - 2 * var(--space-fluid-4));
+  --layout-max-rail: 220px;
+  --layout-max-aside: 320px;
+
+  /* ── Mobile shell heights ──────────────────────────────────── */
+  --shell-header-h: 56px;
+  --shell-header-h-compact: 44px;
+  --shell-nav-h: 60px;
+  --shell-nav-h-notched: calc(60px + var(--safe-bottom));
+}
