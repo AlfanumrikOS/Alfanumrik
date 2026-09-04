@@ -345,7 +345,7 @@ function ChapterConceptPageContent() {
         : Promise.resolve([]),
       getChapterQuestions(subject, grade, chapterNum, 30).then(unwrapRead),
       supabase
-        .from('chapters')
+        .from('curriculum_chapters_v')
         .select('title, title_hi, ncert_page_start, ncert_page_end')
         .eq('subject_code', subject)
         .eq('grade', grade.replace(/^Grade\s*/i, '').trim())
@@ -399,7 +399,7 @@ function ChapterConceptPageContent() {
     let curriculumTopics: Array<{ id: string; title: string }> = [];
     if (subjectRow?.data) {
       const { data: ctData } = await supabase
-        .from('curriculum_topics')
+        .from('curriculum_chapters_v')
         .select('id, title')
         .eq('subject_id', subjectRow.data.id)
         .eq('grade', normalizedGrade)

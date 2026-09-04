@@ -278,7 +278,7 @@ export async function buildRhythmQueue(
     const studentGradeNum = parseInt(studentGrade, 10);
     if (Number.isFinite(studentGradeNum)) {
       const { data: ctRows, error: ctErr } = await supabase
-        .from('curriculum_topics')
+        .from('curriculum_chapters_v')
         .select('id, grade')
         .in('id', dueTopicIds);
       // On failure no topic is marked ahead-of-grade, so above-grade content

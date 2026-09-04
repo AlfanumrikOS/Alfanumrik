@@ -67,7 +67,7 @@ const INPUT: PrereqCheckInput = {
 
 const HAPPY: Record<string, Resp[]> = {
   subjects: [{ data: { id: 'sub-1' }, error: null }],
-  curriculum_topics: [
+  curriculum_chapters_v: [
     { data: [{ id: 't1' }], error: null }, // chapter topics
     {
       data: { id: 'p1', title: 'Fractions', title_hi: 'भिन्न', chapter_number: 3 },
@@ -134,24 +134,24 @@ describe('checkPrereqs — FAIL-OPEN matrix (every error path → { suggestion: 
       responses: { subjects: [{ data: null, error: null }] },
     },
     {
-      name: 'curriculum_topics query errors',
+      name: 'curriculum_chapters_v query errors',
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [{ data: null, error: { message: 'nope' } }],
+        curriculum_chapters_v: [{ data: null, error: { message: 'nope' } }],
       },
     },
     {
       name: 'chapter has no topics',
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [{ data: [], error: null }],
+        curriculum_chapters_v: [{ data: [], error: null }],
       },
     },
     {
       name: 'traverse_prerequisites RPC errors',
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [{ data: [{ id: 't1' }], error: null }],
+        curriculum_chapters_v: [{ data: [{ id: 't1' }], error: null }],
       },
       rpc: () => ({ data: null, error: { message: 'rpc broke' } }),
     },
@@ -159,7 +159,7 @@ describe('checkPrereqs — FAIL-OPEN matrix (every error path → { suggestion: 
       name: 'topic has no prerequisites',
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [{ data: [{ id: 't1' }], error: null }],
+        curriculum_chapters_v: [{ data: [{ id: 't1' }], error: null }],
       },
       rpc: () => ({ data: [], error: null }),
     },
@@ -167,7 +167,7 @@ describe('checkPrereqs — FAIL-OPEN matrix (every error path → { suggestion: 
       name: 'prereq chain only points back into the chapter itself',
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [{ data: [{ id: 't1' }], error: null }],
+        curriculum_chapters_v: [{ data: [{ id: 't1' }], error: null }],
       },
       rpc: () => ({ data: [{ prerequisite_topic_id: 't1' }], error: null }),
     },
@@ -175,7 +175,7 @@ describe('checkPrereqs — FAIL-OPEN matrix (every error path → { suggestion: 
       name: 'concept_mastery query errors',
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [{ data: [{ id: 't1' }], error: null }],
+        curriculum_chapters_v: [{ data: [{ id: 't1' }], error: null }],
         concept_mastery: [{ data: null, error: { message: 'nope' } }],
       },
       rpc: HAPPY_RPC,
@@ -184,7 +184,7 @@ describe('checkPrereqs — FAIL-OPEN matrix (every error path → { suggestion: 
       name: 'no mastery row below the floor (unknown or strong prereqs → stay quiet)',
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [{ data: [{ id: 't1' }], error: null }],
+        curriculum_chapters_v: [{ data: [{ id: 't1' }], error: null }],
         concept_mastery: [{ data: [], error: null }],
       },
       rpc: HAPPY_RPC,
@@ -193,7 +193,7 @@ describe('checkPrereqs — FAIL-OPEN matrix (every error path → { suggestion: 
       name: 'prereq title lookup errors',
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [
+        curriculum_chapters_v: [
           { data: [{ id: 't1' }], error: null },
           { data: null, error: { message: 'nope' } },
         ],
@@ -204,10 +204,10 @@ describe('checkPrereqs — FAIL-OPEN matrix (every error path → { suggestion: 
       rpc: HAPPY_RPC,
     },
     {
-      name: 'prereq id is not a curriculum_topics row (foreign id namespace)',
+      name: 'prereq id is not a curriculum_chapters_v row (foreign id namespace)',
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [
+        curriculum_chapters_v: [
           { data: [{ id: 't1' }], error: null },
           { data: null, error: null },
         ],
@@ -241,7 +241,7 @@ describe('checkPrereqs — FAIL-OPEN matrix (every error path → { suggestion: 
     const { client } = makeClient({
       responses: {
         subjects: [{ data: { id: 'sub-1' }, error: null }],
-        curriculum_topics: [
+        curriculum_chapters_v: [
           { data: [{ id: 't1' }, { id: 't2' }], error: null },
           {
             data: { id: 'p1', title: 'Fractions', title_hi: null, chapter_number: 3 },

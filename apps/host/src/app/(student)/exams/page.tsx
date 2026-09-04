@@ -138,7 +138,7 @@ export default function ExamsPage() {
 
         // Curriculum_topics may store grade as either "9" or "Grade 9" — match both.
         let query = supabase
-          .from('curriculum_topics')
+          .from('curriculum_chapters_v')
           .select('chapter_number, title')
           .eq('subject_id', subjectRow.id)
           .eq('is_active', true)
