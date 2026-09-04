@@ -2358,28 +2358,18 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
-      "path": "/api/super-admin/reconciliation",
-      "file": "apps/host/src/app/api/super-admin/reconciliation/route.ts",
+      "path": "/api/super-admin/announcements",
+      "file": "apps/host/src/app/api/super-admin/announcements/route.ts",
       "access": "super_admin",
       "owner": "admin-platform",
-      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
-      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret. Uses the RLS-scoped client (not service-role) -- admin_announcements' existing RLS (is_admin()-gated writes) is a real second line of defense behind authorizeRequest('super_admin.access')."
     },
     {
-      "path": "/api/super-admin/reconciliation/[id]/approve",
-      "file": "apps/host/src/app/api/super-admin/reconciliation/[id]/approve/route.ts",
+      "path": "/api/super-admin/announcements/[id]",
+      "file": "apps/host/src/app/api/super-admin/announcements/[id]/route.ts",
       "access": "super_admin",
       "owner": "admin-platform",
-      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
-      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
-    },
-    {
-      "path": "/api/super-admin/reconciliation/[id]/reject",
-      "file": "apps/host/src/app/api/super-admin/reconciliation/[id]/reject/route.ts",
-      "access": "super_admin",
-      "owner": "admin-platform",
-      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
-      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret. Uses the RLS-scoped client (not service-role) -- same rationale as the sibling GET/POST route."
     },
     {
       "path": "/api/super-admin/reports",

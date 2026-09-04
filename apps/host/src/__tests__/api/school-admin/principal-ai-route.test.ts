@@ -27,8 +27,7 @@ import { NextRequest, NextResponse } from 'next/server';
  *   7. MODEL PROVENANCE (REG-67) — the persisted assistant row AND the response
  *      envelope both carry the model id from callClaude.
  *
- * Mocking style mirrors src/__tests__/api/super-admin/reconciliation-actions.test.ts
- * and src/__tests__/api/school-admin-billing-staff-rbac.test.ts — dynamic import
+ * Mocking style mirrors src/__tests__/api/school-admin-billing-staff-rbac.test.ts — dynamic import
  * of the route + module-seam vi.mock. Deterministic, no network.
  *
  * SEAM NOTE: the route uses TWO Supabase clients.

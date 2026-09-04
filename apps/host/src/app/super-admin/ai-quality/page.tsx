@@ -84,7 +84,7 @@ interface AiQualityData {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export default function AiQualityDashboard() {
+function AiQualityDashboardInner() {
   const { apiFetch } = useAdmin();
   const { isHi } = useAuth();
   const [data, setData] = useState<AiQualityData | null>(null);
@@ -414,5 +414,19 @@ export default function AiQualityDashboard() {
           : `Last updated: ${lastUpdated ? timeAgo(lastUpdated) : '—'}`}
       </p>
     </div>
+  );
+}
+
+// Gate-2 D1 (2026-09-05): this page called useAdmin() but never rendered
+// <AdminShell> itself, and the shared layout.tsx doesn't either — every
+// other /super-admin page self-wraps (see adaptive-loops/page.tsx). Without
+// this wrapper the page throws "useAdmin must be used within AdminShell" at
+// runtime; that's why it was never linked from nav despite being complete,
+// documented code.
+export default function AiQualityDashboard() {
+  return (
+    <AdminShell>
+      <AiQualityDashboardInner />
+    </AdminShell>
   );
 }

@@ -405,7 +405,16 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // and docs/audit/launch-readiness/dpdp-erasure-removal.md). Their ledger
 // entries are pruned in the SAME change so the guard ratchets DOWN, not
 // drifts.
-const EXPECTED_COUNT = 274;
+// 274 -> 271 (2026-09-05, Gate-2 D1 super-admin cleanup): the 3
+// src/app/api/super-admin/reconciliation/** routes were DELETED (confirmed
+// zero real callers, superseded by payment-ops/reconcile — see
+// docs/runbooks/super-admin-orphaned-apis.md); their entries are pruned in
+// the SAME change. The 2 new routes added in the same PR,
+// src/app/api/super-admin/announcements/{route,[id]/route}.ts, use the
+// RLS-scoped createSupabaseServerClient (admin_announcements' existing RLS
+// already matches their access shape), so they are NOT ledgered here at
+// all — net count moves down by 3, not up.
+const EXPECTED_COUNT = 271;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
