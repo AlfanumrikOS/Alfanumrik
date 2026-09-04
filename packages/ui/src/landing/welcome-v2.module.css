@@ -3156,7 +3156,7 @@
    set the `open` attribute at >=768px in FooterV2.tsx - tracked separately.
    --------------------------------------------------------------------------- */
 @media (min-width: 768px) {
-  .footAcc :global(> *:not(summary)) {
+  .footAcc > :global(*:not(summary)) {
     content-visibility: visible !important;
   }
 }

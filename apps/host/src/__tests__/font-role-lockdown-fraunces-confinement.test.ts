@@ -130,8 +130,13 @@ export function isAllowed(rel: string, line: string): boolean {
   // 3. Design-system stylesheet: the `--font-serif` token DEFINITION line and
   //    the FONT-ROLE LOCKDOWN documentation comment live here. Allowed UNLESS
   //    the line CONSUMES the brand token in an in-app rule — so re-wiring an
-  //    `.editorial-*` heading to `var(--font-serif)` inside globals.css FAILS.
-  if (rel === 'packages/ui/src/globals.css') return !CONSUMES_BRAND.test(line);
+  //    `.editorial-*` heading to `var(--font-serif)` inside globals.css/
+  //    tokens.css FAILS. The token definition itself moved from globals.css to
+  //    tokens.css (Gate-2 B1 consolidation); both paths stay allowed so the
+  //    guard doesn't care which of the two currently holds it.
+  if (rel === 'packages/ui/src/globals.css' || rel === 'packages/ui/src/tokens.css') {
+    return !CONSUMES_BRAND.test(line);
+  }
 
   // 4. Root layout: momentumFontVars maps the self-hosted font vars onto the
   //    canonical --font-display/--font-body/--font-serif names in a COMMENT.
@@ -211,14 +216,15 @@ describe('font-role lockdown: Fraunces brand font confined to marketing (Batch 2
       hits.some((h) => h.rel.startsWith('packages/ui/src/landing/')),
       'expected at least one Fraunces/--font-serif ref under packages/ui/src/landing/',
     ).toBe(true);
-    // The design-system stylesheet DEFINES the token.
+    // The design-system stylesheet DEFINES the token (moved from globals.css
+    // to tokens.css in the Gate-2 B1 consolidation).
     expect(
       hits.some(
         (h) =>
-          h.rel === 'packages/ui/src/globals.css' &&
+          h.rel === 'packages/ui/src/tokens.css' &&
           /--font-serif\s*:\s*["']Fraunces["']/.test(h.text),
       ),
-      'expected the --font-serif token DEFINITION line in packages/ui/src/globals.css',
+      'expected the --font-serif token DEFINITION line in packages/ui/src/tokens.css',
     ).toBe(true);
     // The KNOWN DEFERRED proxy.ts 429 interstitial is still present.
     expect(

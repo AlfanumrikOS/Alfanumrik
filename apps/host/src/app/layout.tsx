@@ -1,3 +1,4 @@
+import '@alfanumrik/ui/tokens.css';
 import '@alfanumrik/ui/globals.css';
 // KaTeX math styling, self-hosted from the npm package (was a third-party CDN
 // <link> that browsers' Tracking Prevention blocked + version-mismatched).
