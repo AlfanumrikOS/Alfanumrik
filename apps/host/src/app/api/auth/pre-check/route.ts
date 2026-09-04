@@ -1,6 +1,12 @@
 /**
- * Pre-flight rate-limit gate for the three unauthenticated email/password
- * auth actions: login, signup, and forgot-password.
+ * Pre-flight rate-limit + bot-check gate for the three unauthenticated
+ * email/password auth actions: login, signup, and forgot-password.
+ *
+ * TURNSTILE ADDED (2026-09-04, P1-11): login and signup additionally require
+ * a valid Cloudflare Turnstile token (see verifyTurnstile below) before the
+ * rate-limit checks even run. forgot-password is deliberately out of scope
+ * — see TURNSTILE_REQUIRED_ACTIONS. Widget embedded client-side in
+ * AuthScreen.tsx; this is the server-side siteverify half.
  *
  * SECURITY FIX (2026-08-30): AuthScreen.tsx (packages/ui/src/auth/AuthScreen.tsx)
  * calls supabase.auth.{signInWithPassword,signUp,resetPasswordForEmail}()
@@ -48,6 +54,82 @@ const LIMITS: Record<Action, { ip: [number, number]; email?: [number, number] }>
   forgot: { ip: [10, 5 * 60 * 1000], email: [5, 15 * 60 * 1000] },
 };
 
+// Turnstile bot-check (P1-11, 2026-09-04): required for login/signup only —
+// explicit scope decision. forgot-password already has its own per-email
+// limit above, and an attacker email-bombing a victim's inbox gains nothing
+// from a human check running in THEIR OWN browser, not the victim's.
+const TURNSTILE_REQUIRED_ACTIONS = new Set<Action>(['login', 'signup']);
+
+interface TurnstileSiteverifyResult {
+  success?: boolean;
+  action?: string;
+  hostname?: string;
+}
+
+/**
+ * Validates a Turnstile token via Cloudflare's siteverify endpoint.
+ *
+ * Deliberately asymmetric fail posture, unlike the rate-limit checks below
+ * (which fail OPEN by design — see this file's header comment): an ACTUAL
+ * present token that's missing, malformed, expired, replayed, or wrong for
+ * this action/hostname fails CLOSED (403) — a bot-check that silently
+ * no-ops on a real failure defeats its own purpose. But when the feature
+ * simply isn't CONFIGURED yet (no TURNSTILE_SECRET / TURNSTILE_HOSTNAMES —
+ * e.g. this code has deployed but the env vars haven't been set in Vercel
+ * yet), it fails OPEN instead of 503-blocking everyone: login/signup is a
+ * P15 non-negotiable path ("MUST never break"), and this is a retrofit onto
+ * an already-live flow, not a fresh form nobody depends on yet — a
+ * config-ordering slip must never be able to lock out every real user.
+ */
+async function verifyTurnstile(
+  token: unknown,
+  action: Action,
+  remoteip: string,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const secret = process.env.TURNSTILE_SECRET;
+  const expectedHostnames = new Set(
+    (process.env.TURNSTILE_HOSTNAMES ?? '')
+      .split(',')
+      .map((hostname) => hostname.trim())
+      .filter(Boolean),
+  );
+
+  if (!secret || expectedHostnames.size === 0) {
+    // Not configured yet — see fail-open rationale above.
+    return { ok: true };
+  }
+
+  if (typeof token !== 'string' || token.length === 0 || token.length > 2048) {
+    return { ok: false, status: 403, error: 'Verification required. Please try again.' };
+  }
+
+  let result: TurnstileSiteverifyResult | undefined;
+  try {
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      signal: AbortSignal.timeout(10_000),
+      body: new URLSearchParams({ secret, response: token, remoteip }),
+    });
+    if (!r.ok) throw new Error(`siteverify ${r.status}`);
+    result = await r.json();
+  } catch {
+    // Network/upstream failure talking to Cloudflare — fail closed. This is
+    // a real (if configured) check failing to run, not "not configured".
+    return { ok: false, status: 503, error: 'Verification is temporarily unavailable. Please try again shortly.' };
+  }
+
+  if (
+    !result?.success ||
+    result.action !== action ||
+    !result.hostname ||
+    !expectedHostnames.has(result.hostname)
+  ) {
+    return { ok: false, status: 403, error: 'Verification failed. Please try again.' };
+  }
+  return { ok: true };
+}
+
 function getClientIp(request: NextRequest): string {
   const xff = request.headers.get('x-forwarded-for');
   if (xff) return xff.split(',')[0].trim();
@@ -80,9 +162,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
-    const config = LIMITS[action];
     const ip = getClientIp(request);
 
+    if (TURNSTILE_REQUIRED_ACTIONS.has(action)) {
+      const verified = await verifyTurnstile(body?.turnstileToken, action, ip);
+      if (!verified.ok) {
+        return NextResponse.json({ error: verified.error, code: 'TURNSTILE_FAILED' }, { status: verified.status });
+      }
+    }
+
+    const config = LIMITS[action];
     const ipCheck = await checkApiRateLimit(`auth-pre-check:${action}:ip:${ip}`, config.ip[0], config.ip[1]);
     if (!ipCheck.allowed) return rateLimitedResponse(ipCheck);
 

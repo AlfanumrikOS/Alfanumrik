@@ -230,7 +230,7 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://prod.spline.design",
+              "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://prod.spline.design https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com",
@@ -246,10 +246,10 @@ const nextConfig = {
               //    and cdn.jsdelivr.net remain for current main-thread runtime
               //    consumers. public/sw.js is now a no-fetch retirement
               //    tombstone and does not require connect-src access.
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://eu.i.posthog.com https://eu-assets.i.posthog.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://eu.i.posthog.com https://eu-assets.i.posthog.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net https://challenges.cloudflare.com",
               "media-src 'self' blob:",
               "worker-src 'self'",
-              "frame-src https://api.razorpay.com https://checkout.razorpay.com",
+              "frame-src https://api.razorpay.com https://checkout.razorpay.com https://challenges.cloudflare.com",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

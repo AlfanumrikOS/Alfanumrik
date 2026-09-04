@@ -1562,18 +1562,35 @@ function addSecurityHeaders(
   // 'strict-dynamic' come back safely) is tracked as separate follow-up
   // work, to be staged via Content-Security-Policy-Report-Only first
   // rather than shipped blind.
+  // DEV-ONLY 'unsafe-eval' (2026-09-04, discovered while testing the P1-11
+  // Turnstile change locally): `next dev --webpack`'s default devtool is
+  // `eval-source-map` — every dev build's main-app.js runtime calls eval()
+  // for React Fast Refresh module boundaries. With no 'unsafe-eval' in
+  // script-src, that eval() throws immediately on every single page load in
+  // `next dev`, which appears to leave main-app.js's own execution context
+  // in a broken state for the rest of that load (React effects that should
+  // run afterward silently didn't — confirmed by adding a script tag in a
+  // useEffect and finding it never got appended, then confirming the console
+  // carried this exact EvalError on every load, present even before this
+  // session's own change). This has nothing to do with production: `next
+  // build` does not use an eval-based devtool by default, so this was never
+  // caught by the P2-3 fix's live preview/production verification, which
+  // never exercises `next dev`. Scoped strictly to development so it cannot
+  // widen the production policy.
+  const isDev = process.env.NODE_ENV === 'development';
   response.headers.set(
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://prod.spline.design",
+      "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://prod.spline.design https://challenges.cloudflare.com" +
+        (isDev ? " 'unsafe-eval'" : ''),
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://eu.i.posthog.com https://eu-assets.i.posthog.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://eu.i.posthog.com https://eu-assets.i.posthog.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net https://challenges.cloudflare.com",
       "media-src 'self' blob:",
       "worker-src 'self'",
-      "frame-src https://api.razorpay.com https://checkout.razorpay.com",
+      "frame-src https://api.razorpay.com https://checkout.razorpay.com https://challenges.cloudflare.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

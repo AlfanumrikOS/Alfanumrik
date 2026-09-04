@@ -13,13 +13,51 @@
  *
  * DO NOT: create middleware.ts, add client-side profile inserts, remove role tabs
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@alfanumrik/lib/constants';
 // eslint-disable-next-line alfanumrik/no-raw-subject-imports -- AuthScreen is pre-login: no session yet, so neither useAllowedSubjects (student) nor useTeacherAllowedSubjects can run. Static SUBJECT_META is the correct data source for signup subject selection.
 import { SUBJECT_META } from '@alfanumrik/lib/constants';
 import { validatePassword } from '@alfanumrik/lib/sanitize';
 
+// Turnstile bot-check (P1-11, 2026-09-04). Loaded the same way Razorpay's
+// checkout.js is loaded elsewhere in this codebase (packages/lib/src/hooks/
+// useCheckout.ts) — a plain imperative <script> tag, since packages/ui has
+// no dependency on next/script. See apps/host/src/app/api/auth/pre-check/
+// route.ts for the server-side siteverify half.
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: HTMLElement,
+        options: { sitekey: string; action: string; callback: (token: string) => void },
+      ) => string;
+      reset: (widgetId?: string) => void;
+      remove: (widgetId?: string) => void;
+    };
+  }
+}
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
+function loadTurnstileScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (window.turnstile) { resolve(true); return; }
+    const existing = document.querySelector('script[src^="https://challenges.cloudflare.com/turnstile"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(true));
+      existing.addEventListener('error', () => resolve(false));
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
 
 const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
@@ -100,6 +138,49 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
   const [consentData, setConsentData] = useState(false);
   const [consentAnalytics, setConsentAnalytics] = useState(false);
 
+  // Turnstile (P1-11): a ref, not state — written by a callback outside
+  // React's event system, read once (imperatively) at submit time. No
+  // re-render needed when the token arrives or gets consumed.
+  const [turnstileReady, setTurnstileReady] = useState(false);
+  const turnstileTokenRef = useRef('');
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+  const turnstileRenderedActionRef = useRef<'login' | 'signup' | null>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    loadTurnstileScript().then(setTurnstileReady);
+  }, []);
+
+  // Render (or re-render, on an action change) the widget only on the
+  // surfaces that actually submit: the login form, and signup's step 2
+  // ("details" — step 1 is a pure client-side "Continue" transition that
+  // never calls checkAuthRateLimit or Supabase).
+  useEffect(() => {
+    if (!turnstileReady || !TURNSTILE_SITE_KEY || !window.turnstile) return;
+    const action: 'login' | 'signup' | null =
+      mode === 'login' ? 'login' : mode === 'signup' && signupStep === 'details' ? 'signup' : null;
+
+    if (!action) {
+      if (turnstileWidgetIdRef.current) {
+        window.turnstile.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+        turnstileRenderedActionRef.current = null;
+      }
+      return;
+    }
+    if (turnstileRenderedActionRef.current === action && turnstileWidgetIdRef.current) return;
+    if (turnstileWidgetIdRef.current) window.turnstile.remove(turnstileWidgetIdRef.current);
+    if (!turnstileContainerRef.current) return;
+
+    turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+      sitekey: TURNSTILE_SITE_KEY,
+      action,
+      callback: (token: string) => { turnstileTokenRef.current = token; },
+    });
+    turnstileRenderedActionRef.current = action;
+  }, [mode, signupStep, turnstileReady]);
+
   const TEACHER_SUBJECTS = SUBJECT_META.filter(s =>
     ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi'].includes(s.code)
   );
@@ -152,18 +233,25 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
   // missing app-level bound on top of them. Returns false (and sets the
   // error message) when the action should be aborted.
   const checkAuthRateLimit = async (action: 'login' | 'signup' | 'forgot', emailValue: string): Promise<boolean> => {
+    const turnstileToken = turnstileTokenRef.current;
     try {
       const rl = await fetch('/api/auth/pre-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, email: emailValue.trim() }),
+        body: JSON.stringify({ action, email: emailValue.trim(), turnstileToken }),
       });
-      if (rl.status === 429) {
+      if (rl.status === 429 || rl.status === 403 || rl.status === 503) {
         const rlBody = await rl.json().catch(() => ({}));
         setError(rlBody.error || t('Too many attempts. Please wait a few minutes.', 'बहुत अधिक प्रयास। कृपया कुछ मिनट प्रतीक्षा करें।'));
         return false;
       }
     } catch { /* fail open — see comment above */ }
+    finally {
+      // Turnstile tokens are single-use — always get a fresh one for the
+      // next attempt, whether this one succeeded, failed, or errored.
+      turnstileTokenRef.current = '';
+      if (turnstileWidgetIdRef.current) window.turnstile?.reset(turnstileWidgetIdRef.current);
+    }
     return true;
   };
 
@@ -637,6 +725,10 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
                   <span>{t('I consent to analytics tracking to improve the platform', 'मैं प्लेटफ़ॉर्म को बेहतर बनाने के लिए एनालिटिक्स ट्रैकिंग की सहमति देता/देती हूँ')}</span>
                 </label>
               </div>
+            )}
+
+            {TURNSTILE_SITE_KEY && (mode === 'login' || (mode === 'signup' && signupStep === 'details')) && (
+              <div ref={turnstileContainerRef} className="flex justify-center" />
             )}
 
             {mode !== 'check-email' && (
