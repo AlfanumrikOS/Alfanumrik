@@ -1,0 +1,59 @@
+# SECURITY DEFINER public-grant sweep — live check of every SECURITY DEFINER
+# function in the production public schema for an unreviewed PUBLIC EXECUTE
+# grant. P2-8 (2026-09-04 launch-audit follow-up), pairs with the P0-1 sweep
+# it exists to prevent regressing — see scripts/security-definer-grant-sweep.mjs
+# for the full "why" and scripts/security-definer-public-grant-allowlist.json
+# for the reviewed exceptions (RLS helpers + trigger functions).
+#
+# Mirrors edge-auth-sweep.yml's structure and rollout discipline exactly
+# (same `environment: production` secret scoping, same nightly cadence
+# offset to avoid overlapping probes against the same project). Rollout is
+# advisory-first (`continue-on-error: true`) — flip to false once a real
+# scheduled run (not just a manual workflow_dispatch) has gone green, per
+# the lesson documented in edge-auth-sweep.yml's own history: a job that
+# LOOKS clean because of a config error is worse than no job at all, so
+# don't skip straight to blocking on the strength of one manual run.
+name: DB SECURITY DEFINER grant sweep
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 22:45 UTC = 04:15 IST nightly (offset from both rag-eval's 22:00 and
+    # edge-auth-sweep's 22:30 to avoid overlapping probes against the same
+    # project).
+    - cron: '45 22 * * *'
+
+concurrency:
+  group: db-security-definer-grant-sweep
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: PUBLIC EXECUTE grant check (production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    # Advisory until a real scheduled run confirms the Management API call
+    # shape and credentials actually work end-to-end in this environment —
+    # see the file header for why this repo does not skip straight to
+    # blocking on an unverified job.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          check-latest: true
+
+      - name: Run sweep
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/security-definer-grant-sweep.mjs
