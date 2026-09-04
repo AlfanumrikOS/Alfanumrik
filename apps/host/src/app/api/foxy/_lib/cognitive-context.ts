@@ -155,8 +155,8 @@ export async function loadCognitiveContext(
       try {
         const chapterNum = parseFoxyChapterNumber(chapter);
         let chQuery = supabaseAdmin
-          .from('chapters')
-          .select('id')
+          .from('curriculum_chapters_v')
+          .select('chapter_id')
           .eq('subject_id', subjectId)
           .eq('grade', grade);
         if (chapterNum !== null) {
@@ -165,7 +165,10 @@ export async function loadCognitiveContext(
           chQuery = chQuery.ilike('title', chapter);
         }
         const { data: chRow } = await chQuery.limit(1).maybeSingle();
-        chapterId = chRow?.id ?? null;
+        // chapterId must stay chapters.id — it scopes learning_objectives.chapter_id
+        // below, a different FK namespace than curriculum_topics.id (see
+        // migration 20260904170000_curriculum_chapters_v.sql).
+        chapterId = chRow?.chapter_id ?? null;
       } catch {
         // Non-fatal — fall back to subject-wide LO scope.
       }
@@ -572,7 +575,7 @@ export async function loadChapterTopicProgress(
     // Ordered topics for this chapter. curriculum_topics.grade is stored
     // without a "Grade " prefix (see loadCognitiveContext); normalise.
     let topicsQuery = supabaseAdmin
-      .from('curriculum_topics')
+      .from('curriculum_chapters_v')
       .select('id, title, display_order')
       .eq('subject_id', subjectId)
       .eq('grade', grade)

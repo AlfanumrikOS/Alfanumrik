@@ -38,8 +38,8 @@ export async function loadWorkflowCognitiveContext(
       try {
         const chapterNum = /^\d+$/.test(chapter) ? parseInt(chapter, 10) : null;
         let chQuery = supabaseAdmin
-          .from('chapters')
-          .select('id')
+          .from('curriculum_chapters_v')
+          .select('chapter_id')
           .eq('subject_id', subjectId)
           .eq('grade', grade);
         if (chapterNum !== null) {
@@ -48,7 +48,10 @@ export async function loadWorkflowCognitiveContext(
           chQuery = chQuery.ilike('title', chapter);
         }
         const { data: chRow } = await chQuery.limit(1).maybeSingle();
-        chapterId = chRow?.id ?? null;
+        // chapterId must stay chapters.id — it scopes learning_objectives.chapter_id
+        // below, a different FK namespace than curriculum_topics.id (see
+        // migration 20260904170000_curriculum_chapters_v.sql).
+        chapterId = chRow?.chapter_id ?? null;
       } catch {
         // Non-fatal
       }

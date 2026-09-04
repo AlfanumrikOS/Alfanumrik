@@ -80,7 +80,7 @@ export async function checkPrereqs(
 
     // 2. This chapter's topics.
     const { data: chapterTopics, error: topicsErr } = await client
-      .from('curriculum_topics')
+      .from('curriculum_chapters_v')
       .select('id')
       .eq('subject_id', (subjectRow as { id: string }).id)
       .eq('grade', input.grade)
@@ -135,7 +135,7 @@ export async function checkPrereqs(
     // span three id namespaces — a non-curriculum_topics id simply misses
     // here and we fail open (we cannot present a suggestion we cannot title).
     const { data: prereqTopic, error: titleErr } = await client
-      .from('curriculum_topics')
+      .from('curriculum_chapters_v')
       .select('id, title, title_hi, chapter_number')
       .eq('id', weakest.topic_id)
       .maybeSingle();

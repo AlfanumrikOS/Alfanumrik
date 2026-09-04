@@ -165,15 +165,15 @@ function LegacyLearnPage() {
   useEffect(() => {
     if (!student?.grade) return;
     supabase
-      .from('chapters')
-      .select('chapter_number, subject_id, subjects!inner(code)')
+      .from('curriculum_chapters_v')
+      .select('chapter_number, subject_id, subject_code')
       .eq('grade', student.grade)
       .eq('is_active', true)
       .then(({ data }) => {
         if (data) {
           const counts: Record<string, number> = {};
           data.forEach((row: any) => {
-            const code = row.subjects?.code;
+            const code = row.subject_code;
             if (code) {
               counts[code] = (counts[code] || 0) + 1;
             }
