@@ -28,6 +28,7 @@ import { z } from 'zod';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
 
 const BodySchema = z.object({
@@ -130,6 +131,16 @@ export async function POST(request: NextRequest) {
       error: e instanceof Error ? e.message : String(e),
     });
   }
+
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'class.created',
+    resourceType: 'class',
+    resourceId: classId,
+    schoolId: (teacher as { school_id?: string | null }).school_id ?? null,
+    details: { name, grade, section: section ?? null, subject: subject ?? null },
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
 
   return NextResponse.json({ success: true, classId, classCode });
 }

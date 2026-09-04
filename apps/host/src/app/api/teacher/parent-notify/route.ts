@@ -70,6 +70,7 @@ import {
 } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -380,6 +381,17 @@ export async function POST(request: NextRequest) {
       error: e instanceof Error ? e.message : String(e),
     });
   }
+
+  // Metadata only — message body is deliberately never logged (P13).
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'parent_notify.sent',
+    resourceType: 'student',
+    resourceId: student_id,
+    schoolId: teacher.schoolId ?? null,
+    details: { context, thread_id: threadId, include_report: !!include_report },
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
 
   return NextResponse.json({ success: true, thread_id: threadId, message_id: messageId });
 }

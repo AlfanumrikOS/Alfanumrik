@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
 
 const BodySchema = z.object({
@@ -161,6 +162,16 @@ export async function POST(request: NextRequest) {
     });
     return err('Failed to create assignment', 500);
   }
+
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'assignment.created',
+    resourceType: 'assignment',
+    resourceId: assignmentId,
+    schoolId: (teacher as { school_id?: string | null }).school_id ?? null,
+    details: { class_id: body.class_id, title: body.title, type },
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
 
   return NextResponse.json({ success: true, assignmentId });
 }

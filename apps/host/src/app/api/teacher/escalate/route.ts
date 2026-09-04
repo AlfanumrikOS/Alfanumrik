@@ -56,6 +56,7 @@ import {
 } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -191,6 +192,18 @@ export async function POST(request: NextRequest) {
     });
     return err('Failed to escalate', 500);
   }
+
+  // Metadata only — the free-text note is deliberately never logged (P13,
+  // same discipline this route's own header comment states for the notif row).
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'student.escalated',
+    resourceType: 'student',
+    resourceId: student_id,
+    schoolId: teacher.schoolId,
+    details: { class_id: classId, notified_admin_count: inserted.length },
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
 
   return NextResponse.json({
     success: true,

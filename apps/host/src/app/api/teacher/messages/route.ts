@@ -46,6 +46,7 @@ import { z } from 'zod';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
 
 // Shape-only UUID check (matches src/lib/state/events/registry.ts) —
 // Zod v4's strict .uuid() rejects fixture UUIDs used in tests and is
@@ -136,6 +137,16 @@ export async function POST(request: NextRequest) {
   if (result.success !== true) {
     return mapRpcError(result);
   }
+
+  // Metadata only — message body is deliberately never logged (P13).
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'parent_message.sent',
+    resourceType: 'teacher_parent_message_thread',
+    resourceId: result.thread_id ?? null,
+    details: { is_new_thread: result.is_new_thread === true },
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
 
   return NextResponse.json({
     success: true,

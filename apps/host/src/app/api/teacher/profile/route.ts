@@ -29,10 +29,21 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { getTeacherByAuthUserId } from '@alfanumrik/lib/domains/identity';
 import { logger } from '@alfanumrik/lib/logger';
+import { logTeacherAudit } from '@alfanumrik/lib/audit';
+
+const BodySchema = z.object({
+  name: z.string().trim().min(2, 'name must be 2–100 characters').max(100, 'name must be 2–100 characters').optional(),
+  school_name: z.string().trim().max(200, 'school_name cannot exceed 200 characters').optional(),
+  subjects_taught: z
+    .array(z.string().trim().min(1))
+    .min(1, 'subjects_taught must include at least one subject')
+    .optional(),
+});
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
@@ -49,33 +60,26 @@ export async function PATCH(request: NextRequest) {
   }
   const teacherId = teacherResult.data.id;
 
-  let body: Record<string, unknown>;
-  try { body = await request.json(); } catch { return err('Invalid request body', 400); }
+  let body: z.infer<typeof BodySchema>;
+  try {
+    body = BodySchema.parse(await request.json());
+  } catch (e) {
+    const msg = e instanceof z.ZodError ? e.issues[0]?.message ?? 'Invalid body' : 'Invalid request body';
+    return err(msg, 400);
+  }
 
   const { name, school_name, subjects_taught } = body;
   const updatePayload: Record<string, string | string[]> = {};
 
   if (name !== undefined) {
-    if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100) {
-      return err('name must be 2–100 characters', 400);
-    }
-    updatePayload.name = name.trim();
+    updatePayload.name = name;
   }
 
   if (school_name !== undefined) {
-    if (typeof school_name !== 'string' || school_name.trim().length > 200) {
-      return err('school_name cannot exceed 200 characters', 400);
-    }
-    updatePayload.school_name = school_name.trim();
+    updatePayload.school_name = school_name;
   }
 
   if (subjects_taught !== undefined) {
-    if (
-      !Array.isArray(subjects_taught) ||
-      !subjects_taught.every((c) => typeof c === 'string' && c.trim().length > 0)
-    ) {
-      return err('subjects_taught must be an array of non-empty subject codes', 400);
-    }
     const codes = Array.from(new Set(subjects_taught.map((c) => c.trim())));
     if (codes.length === 0) {
       return err('subjects_taught must include at least one subject', 400);
@@ -115,6 +119,16 @@ export async function PATCH(request: NextRequest) {
     logger.error('teacher_profile_update_failed', { error: new Error(error.message), teacherId });
     return err('Failed to update profile', 500);
   }
+
+  void logTeacherAudit({
+    teacherAuthUserId: auth.userId!,
+    action: 'profile.updated',
+    resourceType: 'teacher',
+    resourceId: teacherId,
+    schoolId: teacherResult.data.schoolId ?? null,
+    details: { fields: Object.keys(updatePayload) },
+    ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+  });
 
   return NextResponse.json({ success: true });
 }
