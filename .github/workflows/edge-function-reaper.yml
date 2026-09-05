@@ -1,0 +1,167 @@
+name: Edge Function Reaper — Alfanumrik
+
+# Break-glass, allowlisted, manual-only deletion of Supabase Edge Functions
+# whose source has ALREADY been removed from git but which are still deployed.
+#
+# Why this exists (2026-09-05, P1-7): deploy-production.yml's automatic
+# "Prune removed functions" step only sees directories deleted in the push's
+# own HEAD~1..HEAD diff. PR #1779 deleted 13 tombstoned functions, but a
+# latent bug in "Detect changed Edge Functions" (no --diff-filter, so the
+# deletions were treated as changes) made the deploy job fail on a missing
+# entrypoint BEFORE the prune step ran. Those deletions are now history — no
+# future push's diff will contain them — so this workflow is the sanctioned
+# way to finish that prune, and the template for any future "source is gone,
+# deployment lingers" drift (docs/runbooks/edge-function-drift-report.md).
+#
+# Safety model (mirrors production-cron-runner.yml's break-glass shape):
+#   - workflow_dispatch only, from main only, explicit confirmation phrase
+#   - every requested slug must be in the hardcoded ALLOWLIST below — extend
+#     it via PR to reap anything else; never widen it at dispatch time
+#   - every requested slug must NOT have a supabase/functions/<slug>/ directory
+#     at this checkout (on-disk == deployed intent — never delete a function
+#     the repo still ships); re-checked on the deleting runner
+#   - post-delete verification via `supabase functions list` fails the run if
+#     any requested slug is still deployed
+# Runs under the same `environment: production` scoping as the automatic
+# prune step in deploy-production.yml — no wider privilege than already
+# exists there, and no new secrets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      slugs:
+        description: 'Comma-separated Edge Function slugs to delete (each must be allowlisted AND absent from supabase/functions/ on main)'
+        type: string
+        required: true
+      reason:
+        description: 'Incident/change reference and reason (e.g. the PR that removed the source)'
+        type: string
+        required: true
+      confirmation:
+        description: 'Type REAP_EDGE_FUNCTIONS exactly'
+        type: string
+        required: true
+
+concurrency:
+  group: edge-function-reaper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Keep in sync with deploy-production.yml.
+  SUPABASE_CLI_VERSION: '2.109.1'
+
+jobs:
+  gate:
+    name: Authorize Edge Function reap
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions: {}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Fail closed unless every control passes
+        env:
+          SLUGS: ${{ inputs.slugs }}
+          REASON: ${{ inputs.reason }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::The reaper may run only from main."; exit 1
+          fi
+          if [ "$CONFIRMATION" != "REAP_EDGE_FUNCTIONS" ]; then
+            echo "::error::Confirmation must exactly match REAP_EDGE_FUNCTIONS."; exit 1
+          fi
+          if [ -z "${REASON//[[:space:]]/}" ]; then
+            echo "::error::A non-empty incident/change reason is required."; exit 1
+          fi
+          # ALLOWLIST — the 2026-09-05 P1-7 tombstone set (PR #1779). Extend via PR only.
+          ALLOWLIST="agent-orchestrator agent-worker auth-write-skeleton cme-engine embed-ncert-books embed-rag-remaining rag-answer-v3 rag-answer-v4 rag-answer-v5 rag-ingest-batch rag-ingest-status rag-query-v3"
+          IFS=',' read -ra REQUESTED <<< "$SLUGS"
+          COUNT=0
+          for raw in "${REQUESTED[@]}"; do
+            slug="$(echo "$raw" | tr -d '[:space:]')"
+            [ -n "$slug" ] || continue
+            case " $ALLOWLIST " in
+              *" $slug "*) ;;
+              *) echo "::error::'$slug' is not in the reaper ALLOWLIST (edit this workflow via PR to add it)."; exit 1 ;;
+            esac
+            if [ -d "supabase/functions/$slug" ]; then
+              echo "::error::'$slug' still has source at supabase/functions/$slug on this checkout — refusing to delete a function the repo still ships."; exit 1
+            fi
+            echo "authorized: $slug"
+            COUNT=$((COUNT + 1))
+          done
+          [ "$COUNT" -gt 0 ] || { echo "::error::No slugs given."; exit 1; }
+
+  reap:
+    name: Delete allowlisted Edge Functions (production)
+    runs-on: ubuntu-latest
+    needs: gate
+    environment: production
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Delete each requested function
+        env:
+          SLUGS: ${{ inputs.slugs }}
+          BREAK_GLASS_REASON: ${{ inputs.reason }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          REF="${PROJECT_REF:-shktyoxqhundlvkiwguu}"
+          echo "reason: $BREAK_GLASS_REASON"
+          IFS=',' read -ra REQUESTED <<< "$SLUGS"
+          for raw in "${REQUESTED[@]}"; do
+            slug="$(echo "$raw" | tr -d '[:space:]')"
+            [ -n "$slug" ] || continue
+            # Same on-disk guard as the gate job, re-checked on this runner.
+            if [ -d "supabase/functions/$slug" ]; then
+              echo "::error::'$slug' has source on disk — aborting."; exit 1
+            fi
+            echo "Deleting Edge Function: $slug"
+            if ! supabase functions delete "$slug" --project-ref "$REF"; then
+              echo "::warning::'$slug' could not be deleted (already absent, or a transient API error) — the verification step decides pass/fail."
+            fi
+          done
+
+      - name: Verify none of the requested functions remain deployed
+        env:
+          SLUGS: ${{ inputs.slugs }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          REF="${PROJECT_REF:-shktyoxqhundlvkiwguu}"
+          # Prefer JSON; fall back to the plain table if this CLI build lacks -o json.
+          LIVE="$(supabase functions list --project-ref "$REF" -o json 2>/dev/null | jq -r '.[].slug' 2>/dev/null || true)"
+          if [ -z "$LIVE" ]; then
+            LIVE="$(supabase functions list --project-ref "$REF" | awk -F'|' 'NF>2 {gsub(/ /,"",$3); print $3}')"
+          fi
+          echo "live functions: $(printf '%s\n' "$LIVE" | sed '/^$/d' | wc -l)"
+          STILL=""
+          IFS=',' read -ra REQUESTED <<< "$SLUGS"
+          for raw in "${REQUESTED[@]}"; do
+            slug="$(echo "$raw" | tr -d '[:space:]')"
+            [ -n "$slug" ] || continue
+            if printf '%s\n' "$LIVE" | grep -qx "$slug"; then STILL="$STILL $slug"; fi
+          done
+          if [ -n "$STILL" ]; then
+            echo "::error::Still deployed after reap:$STILL"; exit 1
+          fi
+          echo "verified: none of the requested slugs remain deployed"

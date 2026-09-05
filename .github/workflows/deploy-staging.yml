@@ -370,7 +370,9 @@ jobs:
       - name: Detect changed Edge Functions
         id: changed
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'supabase/functions/' \
+          # --diff-filter=d: a deleted directory is not a changed function (same latent
+          # bug as deploy-production.yml, fixed 2026-09-05 — see that file for the incident).
+          CHANGED=$(git diff --name-only --diff-filter=d HEAD~1 HEAD -- 'supabase/functions/' \
             | grep -vE '(_archive|_shared|__tests__)' \
             | awk -F/ 'NF>=3 {print $3}' | sort -u | grep -v '^$' || true)
           if git diff --name-only HEAD~1 HEAD -- 'supabase/functions/_shared/' | grep -q .; then
