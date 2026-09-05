@@ -39,8 +39,10 @@ import { resolve } from 'node:path';
  * `db push` only applies files at the immediate migrations root), then builds:
  *   • CREATED  = public tables with a CREATE TABLE (DROP TABLE removes);
  *   • RLS      = public tables with effective ENABLE ROW LEVEL SECURITY
- *                (ALTER … ENABLE; ALTER … DISABLE removes);
- *   • POLICIED = public tables with ≥1 surviving CREATE POLICY (DROPs applied).
+ *                (ALTER … ENABLE; ALTER … DISABLE removes; DROP TABLE also
+ *                removes — a dropped table carries no RLS obligation);
+ *   • POLICIED = public tables with ≥1 surviving CREATE POLICY (DROPs applied;
+ *                DROP TABLE also purges that table's policy keys).
  * Views / materialized views are never matched (CREATE TABLE only); non-public
  * schemas are excluded.
  *
@@ -112,7 +114,20 @@ function parseChain(files: string[]): Inventory {
         continue;
       }
       if ((m = DROP_TABLE_RE.exec(stmt))) {
-        if (publicSchema(m[1])) created.delete(m[2].toLowerCase());
+        // A fully dropped table carries no RLS/policy obligation at all — it
+        // doesn't exist, so it can neither violate "every created table has
+        // RLS" nor "every RLS table is currently created". Clear it from
+        // every set, not just `created`: until this migration, no table in
+        // the chain had ever been both RLS-enabled AND later dropped, so
+        // this branch previously had nothing to do.
+        if (publicSchema(m[1])) {
+          const t = m[2].toLowerCase();
+          created.delete(t);
+          rls.delete(t);
+          for (const key of policyKeys) {
+            if (key.startsWith(`${t}::`)) policyKeys.delete(key);
+          }
+        }
         continue;
       }
       if ((m = ENABLE_RE.exec(stmt))) {
