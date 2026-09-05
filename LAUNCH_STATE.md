@@ -307,6 +307,34 @@ Of the 18 failures: **15 are instrument artifacts**, and 3 are worth a look.
 
 ---
 
+## 6d. 🔴 The production migration ledger has drifted from the repo — deploys are failing
+
+**Deploy Production → "Apply Database Migrations" has failed on every run since 12:19 UTC 2026-09-05.** The job (`deploy-production.yml:674`, `supabase db push --linked --include-all`) aborts with:
+
+```
+Remote migration versions not found in local migrations directory.
+supabase migration repair --status reverted   20260905061644 20260905062110 20260905064639 20260905064828 20260905065033 20260905132711
+```
+
+Six versions exist in the remote ledger with no matching file in `supabase/migrations/`:
+
+| Versions | Origin |
+|---|---|
+| `20260905061644`, `062110`, `064639`, `064828`, `065033` | The five **Foxy semantic-cache** migrations, applied to production via the Supabase MCP at ~06:16–06:50 UTC. `apply_migration` stamps its own timestamp, so they landed under versions unrelated to their on-disk filenames (`20260905120000`–`160000`) — and those files are not on `main` at all; they sit on `wip/foxy-preserve-2026-09-05`. |
+| `20260905132711` | The `learning-loop-health` fix, applied the same way at 13:27 UTC. Its file *is* on main, as `20260905180000_fix_learning_loop_health_cron.sql`. |
+
+**The lesson, which is the opposite of what this section previously claimed.** An earlier draft asserted that `deploy-production.yml` has no migration step. That was wrong — it does, and it works. The real hazard is subtler: **applying a migration through the Supabase MCP silently forks the ledger from the repo**, because `apply_migration` assigns its own version. The next `db push` then refuses to run *at all* — so one convenient out-of-band apply blocks every subsequent deploy's migrations, including other people's.
+
+Deploys before 05:53 UTC succeeded; the first failure was the 12:19 UTC deploy, six hours after the first out-of-band apply. **The breakage was latent and surfaced on an unrelated merge** — which is exactly why it is worth writing down.
+
+**Rule:** apply migrations through `db push` (i.e. merge and let the pipeline run). Use `apply_migration` only for an emergency, and immediately reconcile the ledger. Always verify the change is actually live:
+
+```sql
+select pg_get_functiondef(oid) like '%<expected token>%' from pg_proc where proname = '<fn>';
+```
+
+*Last verified: 2026-09-05 13:35 UTC.*
+
 ## 7. Corrections to earlier audits
 
 Recorded so no future session re-opens a closed issue — **or trusts a claim that was never true.**

@@ -33,7 +33,18 @@ A note on how to read this file: a blocker is only "fixed" when its **Verificati
 - **Verification:** place **one** real transaction end to end. A row must land in `payment_webhook_events` **with a verified signature**, a matching row in `payment_history` with non-null `razorpay_signature`, the student's entitlement must update atomically, and the amount charged must equal the amount shown on `/pricing`. Then kill the browser mid-callback on a second transaction and confirm the webhook alone still grants entitlement.
 - **Size:** M
 
-### P0-3 — No authenticated journey has ever been verified, for any role
+### P0-3 — Login is BROKEN in production: the Turnstile secret is invalid
+- **Severity:** P0 — **confirmed by a real user login attempt, not inferred.**
+- **Root cause, from production logs at 2026-09-05 13:08:37 and 13:08:51 UTC** (two consecutive attempts by the CEO):
+  `httpStatus: 400`, `{"error-codes":["invalid-input-secret"],"success":false}`.
+  Cloudflare rejects `TURNSTILE_SECRET` itself. `pre-check/route.ts` treats a non-2xx siteverify as a thrown error and returns **503 "Verification is temporarily unavailable. Please try again shortly."** — which is exactly what the user saw. Same `invalid-input-secret` code as the 2026-09-04 occurrence, so the secret has been wrong the whole time.
+- **🔴 A previous entry in this file, and an earlier session, both claimed this was RESOLVED. Both were wrong, for the same methodological reason.** A probe with a deliberately malformed token returned `invalid-input-response`, which was read as "the secret authenticates". It is not: Cloudflare rejects a malformed token *before* it validates the secret, so a synthetic token can never test a secret. **Only a real login exercises that path.** Do not mark this resolved again on anything less.
+- **Fix (config, not code):** in the Cloudflare Turnstile dashboard, open the widget whose site key matches `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, copy its **secret key**, re-set `TURNSTILE_SECRET` in Vercel production, redeploy. The route's own comment names the usual culprit: a trailing newline from a dashboard paste. Confirm `TURNSTILE_HOSTNAMES` contains **both** `alfanumrik.com` and `www.alfanumrik.com` (a 2026-09-04 incident had `www` solving successfully but absent from the allowlist).
+- **Immediate mitigation if login must work before that:** delete `TURNSTILE_SECRET` from Vercel production and redeploy. The code fails **open** by design — `if (!secret || expectedHostnames.size === 0) return { ok: true }`. Login works instantly, bot protection is off, fully reversible. Acceptable as a stopgap; not acceptable for open signup.
+- **Verification:** a real login and a real signup complete on `alfanumrik.com`, on `www`, and on an Android phone over mobile data; production logs show `resultSuccess: true` and **zero** `invalid-input-*` in the surrounding hour; a new `auth.users` row appears from the form, not from `/dev/impersonate`.
+- **Size:** S (the config fix) — but nothing downstream of login can be verified until it is done.
+
+### P0-3b — No authenticated journey has ever been verified end to end, for any role
 - **Severity:** P0
 - **Root cause:** this is the structural blocker underneath most of the others. Login is **unproven**: the production `TURNSTILE_SECRET` was replaced **~30 minutes** before this audit, and no human login has completed since — the most recent real sign-in in `auth.users` is a `dev.impersonate.*` account, which bypasses Turnstile entirely. Beyond login, no signup → onboarding → core-loop → payment walk has been executed with evidence for **any** of the four roles. Every "works" claim for a logged-in surface in this project's history is inferred from code or database state.
 - **What the evidence does support:** yesterday's hard failure is very likely fixed. On 2026-09-04 prod logged siteverify `invalid-input-secret` (server misconfigured → *all* logins fail closed, 4 errors / 1 user). Today my probe with a deliberately invalid token returns `invalid-input-response` — meaning the request **authenticated** and only my token was rejected. That is strong evidence the secret is now correct. It is not evidence that a person can log in.
@@ -45,6 +56,38 @@ A note on how to read this file: a blocker is only "fixed" when its **Verificati
 ---
 
 ## P1 — embarrassing in a school demo
+
+### P0-4 — Production deploys cannot apply migrations: the ledger has drifted
+- **Severity:** P0 — every deploy since 12:19 UTC 2026-09-05 has failed at "Apply Database Migrations", so **no migration can reach production until this is repaired**.
+- **Root cause:** six versions are in the remote ledger with no matching file in `supabase/migrations/`, so `supabase db push --linked --include-all` (`deploy-production.yml:674`) aborts before applying anything. Five (`20260905061644`, `062110`, `064639`, `064828`, `065033`) are the Foxy semantic-cache migrations a prior session applied via the Supabase MCP at ~06:16–06:50 UTC; their files are not on `main` (they sit on `wip/foxy-preserve-2026-09-05` as `20260905120000`–`160000`). The sixth (`20260905132711`) is the `learning-loop-health` fix, applied the same way at 13:27 UTC; its file **is** on main as `20260905180000_fix_learning_loop_health_cron.sql`.
+- **Why it surfaced when it did:** deploys through 05:53 UTC succeeded. The first failure was the 12:19 UTC deploy — six hours after the first out-of-band apply. The breakage was latent and surfaced on an unrelated merge.
+- **Fix — two statements, reversible:**
+  ```sql
+  -- point my row at the filename that exists on main
+  update supabase_migrations.schema_migrations
+     set version = '20260905180000' where version = '20260905132711';
+  -- clear the five orphans (= `supabase migration repair --status reverted`)
+  delete from supabase_migrations.schema_migrations
+   where version in ('20260905061644','20260905062110','20260905064639','20260905064828','20260905065033');
+  ```
+  Or equivalently: `supabase migration repair --status reverted 20260905061644 20260905062110 20260905064639 20260905064828 20260905065033 20260905132711`, then let `db push` re-apply `20260905180000`.
+  Safe because the DB objects are already applied and **all five Foxy files carry `IF NOT EXISTS` / `OR REPLACE` / `ON CONFLICT` guards** (verified), so they re-apply harmlessly if that branch is ever merged.
+- **Verification:** the next push to `main` shows "Apply Database Migrations" green, and `mcp list_migrations` has no version absent from `supabase/migrations/`.
+- **Size:** S
+- **Root of the class:** `apply_migration` stamps its own version, silently forking the ledger from the repo. One convenient out-of-band apply blocks every subsequent deploy's migrations, including other people's. See LAUNCH_STATE §6d.
+
+### P1-12 — 3,168 active diagrams point at PDF textbooks, so no diagram renders
+- **Found 2026-09-05 only because the health cron was repaired** — it had been dead and silent for 18 days.
+- **Root cause:** every one of the **3,168** `is_active` rows in `topic_diagrams` has an `image_url` pointing at a whole NCERT source PDF, e.g. `…/storage/v1/object/public/ncert-books/Grade 11/Biology/kebo101.pdf`. Verified live: that URL returns **HTTP 200, `content-type: application/pdf`, 2.3 MB**. It is a valid file — it is simply not an image, and an `<img>` pointing at a PDF renders nothing. Separately, the `ncert-assets` bucket that extracted diagrams should live in contains **0 objects**, so the extraction step has evidently never produced output.
+- **Not a false positive:** the canary's regex flags any `image_url` not ending in an image extension; that could in principle catch a valid URL carrying a query string, so it was checked by fetching. It is a real breakage.
+- **Verification:** a student-facing chapter page renders at least one diagram as an image; `topic_diagrams` rows resolve to `image/*` content types; `ncert-assets` is non-empty.
+- **Size:** M (re-run diagram extraction) — **L** if the extraction pipeline itself is what never ran.
+
+### P1-13 — Two projectors subscribe to event kinds nothing ever emits
+- **Found 2026-09-05 by the same repaired cron.** `concept-mastery-projector` filters on `learner.concept_check_answered` and `mastery-state-writer` filters on `learner.mastery_changed`; neither kind has **ever** appeared in `state_events`. These are structural mismatches, not lag — a lagging projector would show a moving offset.
+- **Why it may not be urgent:** mastery is currently written directly by `atomic_quiz_profile_update()`, and `concept_mastery` is healthy (107 rows). So these projectors are probably dead scaffolding from an event-sourced design that was never completed. **That needs confirming, not assuming** — if either was meant to be the write path, mastery has a silent second source of truth.
+- **Verification:** either the emitting code is wired up and the kinds appear in `state_events`, or both subscribers are removed from `subscriber_offsets` and the canary goes quiet.
+- **Size:** S to decide, M to act.
 
 ### P1-4 — Teacher message threads: 13-day permission failure, grant fixed but unproven
 - **Root cause:** `/api/teacher/messages/threads` logged `permission denied for function teacher_list_message_threads` from **2026-08-23** to **2026-09-05 02:33 UTC**. The `(p_limit integer)` overload now has `EXECUTE` for `authenticated` (verified live), so it is *probably* fixed — but the absence of errors since 02:33 is meaningless when only 19 people signed in all week.
@@ -68,7 +111,10 @@ A note on how to read this file: a blocker is only "fixed" when its **Verificati
 - **Verification:** every unbuilt teacher surface renders a deliberate empty state naming what is coming and when; no dead ends, no blank panels.
 - **Size:** S (as a scope cut) / L (as a build)
 
-### P1-8 — `learning-loop-health` cron: 672 consecutive failures, drowning real alerts
+### P1-8 — `learning-loop-health` cron: 672 consecutive failures — ✅ RESOLVED 2026-09-05 13:27 UTC
+- **Status: CLOSED.** Migration `20260905180000` applied to production; a live invocation returned **3** (three genuine alerts emitted) instead of throwing. The function now references `concept_mastery` and no longer references `concept_attempts` — both verified against `pg_get_functiondef`. The false `mastery_pipeline_never_ran` no longer fires. The three alerts it immediately surfaced are filed above as P1-12 and P1-13.
+- **Scheduled run confirmed:** `cron.job_run_details` shows `learning-loop-health` **succeeded at 2026-09-05 13:30:00 UTC** — the first success in over 7 days, after 672 consecutive failures.
+- **Note on how it shipped:** merging the PR was not enough. `deploy-production.yml` has **no migration step**, so the migration sat unapplied until it was pushed explicitly. See LAUNCH_STATE §6d.
 - **Root cause:** two bugs. It inserts into `ops_events` with a NULL `environment` (NOT NULL → the alert insert itself errors), and it gauges the mastery pipeline off the empty legacy `concept_attempts` table, emitting a permanent false `mastery_pipeline_never_ran` critical. Real mastery writes are healthy. **The danger is not the failure; it is that a permanently-red monitor makes a genuinely red monitor invisible.**
 - **Verification:** `cron.job_run_details` shows the job succeeding, and no false `mastery_pipeline_never_ran` critical in 24 h.
 - **Size:** S
