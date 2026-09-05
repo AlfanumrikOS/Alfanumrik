@@ -110,7 +110,7 @@
     "not op_mini all"
   ],
   "devDependencies": {
-    "@asteasolutions/zod-to-openapi": "^8.5.0",
+    "@asteasolutions/zod-to-openapi": "^9.1.0",
     "@next/bundle-analyzer": "^16.2.6",
     "@openapitools/openapi-generator-cli": "^2.34.0",
     "@playwright/test": "^1.60.0",
