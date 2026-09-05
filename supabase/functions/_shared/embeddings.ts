@@ -4,9 +4,16 @@
  * Generates vector embeddings (1024 dimensions) for content chunks
  * used in semantic search across foxy-tutor and ncert-solver.
  *
- * Provider priority:
- *   1. Voyage AI (voyage-3) — preferred, purpose-built for retrieval
- *   2. OpenAI (text-embedding-3-small) — fallback
+ * Provider: Voyage AI (voyage-3) — the ONLY embedding provider. Purpose-built
+ * for retrieval, and the vendor whose key is metered for embeddings.
+ *
+ * ⛔ HARD RULE (CEO directive 2026-09-05): embeddings MUST NEVER be generated
+ * with a paid chat-completion vendor's key (OpenAI, Anthropic). A prior OpenAI
+ * `text-embedding-3-small` FALLBACK lived here and could silently drain the
+ * OpenAI key whenever VOYAGE_API_KEY was missing/misconfigured. It was removed.
+ * If Voyage is unavailable, embedding FAILS LOUD — it does not fall back to a
+ * chat vendor. Enforced in CI by
+ * apps/host/src/__tests__/rag-embedding-voyage-only.test.ts.
  *
  * All vectors are 1024-dimensional to match the rag_content_chunks
  * table column: embedding vector(1024).
@@ -138,24 +145,8 @@ const VOYAGE_PROVIDER: EmbeddingProvider = {
   }),
 };
 
-const OPENAI_PROVIDER: EmbeddingProvider = {
-  name: 'openai',
-  model: 'text-embedding-3-small',
-  endpoint: 'https://api.openai.com/v1/embeddings',
-  maxBatchSize: 2048,
-  buildHeaders: (apiKey: string) => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`,
-  }),
-  buildBody: (model: string, texts: string[]) => ({
-    model,
-    input: texts,
-    dimensions: EMBEDDING_DIMENSIONS,
-  }),
-};
-
 // ---------------------------------------------------------------------------
-// Provider Resolution
+// Provider Resolution — Voyage ONLY. No paid-chat-vendor fallback (see header).
 // ---------------------------------------------------------------------------
 
 interface ResolvedProvider {
@@ -169,13 +160,14 @@ function resolveProvider(): ResolvedProvider {
     return { provider: VOYAGE_PROVIDER, apiKey: voyageKey };
   }
 
-  const openaiKey = Deno.env.get('OPENAI_API_KEY');
-  if (openaiKey) {
-    return { provider: OPENAI_PROVIDER, apiKey: openaiKey };
-  }
-
+  // Voyage is the ONLY embedder. Deliberately NO OpenAI/Anthropic fallback —
+  // a paid chat-vendor key must never be spent on embeddings (CEO directive
+  // 2026-09-05). Fail loud so a missing Voyage key is fixed, not silently
+  // billed to another vendor.
   throw new Error(
-    'No embedding API key configured. Set VOYAGE_API_KEY (preferred) or OPENAI_API_KEY in environment variables.',
+    'VOYAGE_API_KEY is not configured. Embeddings are Voyage-only by policy — ' +
+    'there is no OpenAI/Anthropic fallback. Set VOYAGE_API_KEY. Do NOT add a ' +
+    'chat-vendor embedding fallback here (enforced by rag-embedding-voyage-only.test.ts).',
   );
 }
 
