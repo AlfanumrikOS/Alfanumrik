@@ -4,7 +4,9 @@
 > **Severity:** **P0** = blocks a school using this on Monday · **P1** = embarrassing in a school demo · **P2** = post-launch.
 > Established **2026-09-05 (~10:20 UTC)** from live evidence — see `LAUNCH_STATE.md`. **Audit only; no application code was changed.**
 >
-> ## Bottom line: **3 P0 blockers.**
+> ## Bottom line: **2 P0 blockers** (was 3 — **P0-1 closed 2026-09-05 12:23 UTC**).
+>
+> Both remaining P0s require actions only the CEO can perform: entering credentials on a real login/signup, and registering the Razorpay webhook in the provider dashboard. Neither is blocked on engineering.
 
 A note on how to read this file: a blocker is only "fixed" when its **Verification** line has actually been executed and the result recorded here with a date. Three separate times this project has marked something resolved on the strength of a code change, a grant, or an env-var edit, without ever running the check. Two of those are re-opened below.
 
@@ -12,8 +14,11 @@ A note on how to read this file: a blocker is only "fixed" when its **Verificati
 
 ## P0 — must be true before any real cohort
 
-### P0-1 — Production is serving an unmerged pull-request branch
-- **Severity:** P0
+### P0-1 — Production is serving an unmerged pull-request branch — ✅ RESOLVED 2026-09-05 12:23 UTC
+- **Status: CLOSED.** PR #1791 merged as `01cbb7f3` and deployed to production **through `deploy-production.yml`**, not a dashboard promote. Verified three ways: `main` HEAD = `01cbb7f39e5b0472d6ca71417c693c223c29bd45`; `https://alfanumrik.com/api/v1/health` reports `git_sha: 01cbb7f`; and the live deployment `dpl_ERjBFPL45hvQywcDTbmNxWz2pq4g` carries `githubCommitRef: "main"`, `githubCommitVerification: "verified"`, and **no `action: "promote"`**. The repository is the source of truth for production again.
+- **What actually blocked it:** the PR was red, so it could not merge — `Unit Tests (shard 1/4)`, `Unit Tests (changed)`, `Lint, Type-check & Test` and `CI Gate` all FAILURE. Root cause was a single stale assertion in `apps/host/src/__tests__/pwa-view-integrity.test.ts:69` (REG-259): it pinned `serviceWorker.register(...)` as one contiguous string, but the preceding commit had wrapped the call across lines. **348 passed, 1 failed.** The service worker was never broken — only the regex. Fixed by making it whitespace-tolerant, matching the assertion directly above it. CI then went 20 SUCCESS / 3 SKIPPED / 0 FAILURE, `mergeState=CLEAN`.
+- **The lasting lesson:** production ran code with a failing test suite for ~2.5 hours, and nothing surfaced it, because a dashboard promote skips the gate entirely. Restricting who can promote (plan step 1.5) is the durable fix; this merge only cleans up the instance.
+- **Severity:** P0 (was)
 - **Root cause:** `alfanumrik.com` is served by `dpl_5AE7VsosRqm45aQzZVBTvtqytDG7`, built from commit `793f9d33` on branch `vercel-agent/enable-pwa-installation` (**PR #1791, unmerged**), placed into production via a Vercel dashboard **"Promote"** (`meta.action: "promote"`) at ~09:58 UTC on 2026-09-05. `git merge-base --is-ancestor 793f9d33 origin/main` confirms it is **not** on `main`. `/api/v1/health` independently self-reports `git_sha: 793f9d3`. The promote path walks around this repo's own `production-release-control` policy (`deploy-production.yml` must have exactly one trigger — push to `main`), the same policy for which PR #1785 was reverted.
 - **Why it is P0 even though the diff is small:** the shipped code is low-risk (a deliberately network-only service worker with no CacheStorage — verified live at `/pwa-sw.js`, 678 bytes). The blocker is that **the repository is no longer the source of truth for what is in production**, PR #1791's CI gates never ran against what users are being served, and the rollback target is ambiguous. You cannot launch a school onto code whose provenance you cannot state.
 - **Fix (decide, then act — do not just redeploy):** either (a) review and merge PR #1791 properly, then let `deploy-production.yml` ship `main`; or (b) promote the last `main` deployment (`dpl_GfEBuLB94MCDJAYp4hhTcvRdeypP`, `fcca6729`) back to production and let #1791 go through review. Then close the hole: restrict who can promote in Vercel, or add a check that alarms when the production alias points at a commit absent from `main`.
