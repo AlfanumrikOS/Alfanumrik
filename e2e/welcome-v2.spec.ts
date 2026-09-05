@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
- * E2E tests for the WelcomeV2 (Indian Editorial Tutor) landing page.
+ * E2E tests for the WelcomeV2 (Indian Editorial Workbook) landing page.
  *
  * ⚠ UPDATED 2026-07-16 (landing-v3 makeover): WelcomeV3 is now the DEFAULT
  * render on /welcome. WelcomeV2 remains fully wired as the ROLLBACK HATCH at

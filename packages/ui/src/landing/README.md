@@ -1,7 +1,7 @@
-# landing-v2 — Indian Editorial Tutor
+# landing-v2 — Indian Editorial Workbook
 
 ## What this is
-Editorial redesign of `/welcome` styled as a bilingual workbook ("Indian Editorial Tutor"). Gated behind the `ff_welcome_v2` feature flag; v1 stays the default until rollout.
+Editorial redesign of `/welcome` styled as a bilingual workbook ("Indian Editorial Workbook"). Gated behind the `ff_welcome_v2` feature flag; v1 stays the default until rollout.
 
 ## Design tokens (`welcome-v2.module.css` `:root`)
 - `--cream`, `--cream-deep`, `--cream-deeper` — paper surfaces (page → cards → progress troughs)
