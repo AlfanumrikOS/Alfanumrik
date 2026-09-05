@@ -191,7 +191,20 @@ public routing and status codes; Googlebot crawlability; the Turnstile pre-check
 
 ## 4. Live usage — why "it works for me" proves nothing here
 
-`auth.users` + role tables, 2026-09-05: **47 auth users** (19 signed in / 7 d, 23 / 30 d, 11 signups / 30 d) — **4 of which are today's dev-impersonation accounts**. 76 students, 10 teachers, 16 schools, 3 school admins, **2 guardian links**. Quiz: **3 sessions in 7 days**. Foxy: 193 messages / 7 d.
+`auth.users` + role tables, 2026-09-05: **47 auth users** (19 signed in / 7 d, 23 / 30 d, 11 signups / 30 d). Quiz: **3 sessions in 7 days**. Foxy: 193 messages / 7 d.
+
+🔴 **Correction (2026-09-05 ~11:20 UTC) — the raw role counts are roughly half seeded demo data.** `scripts/seed/demo-school-data.sql` has evidently been run against production more than once: **7 of the 16 schools carry `is_demo = true`** (created 2026-05-18 → 06-08), and they hold most of the population. Joining role tables to `schools.is_demo`:
+
+| Metric | Raw total | In demo schools | **Real** |
+|---|---|---|---|
+| Students | 76 | **39** | **37** |
+| Teachers | 10 | **6** | **4** |
+| Schools | 16 | **7** | **9** |
+| `concept_mastery` rows | 107 | **54** | **53** |
+
+Plus 5 demo `auth.users` (4 `dev.impersonate.*@alfanumrik.demo` created today, 1 `whatsapp-e2e-test-*` from 2026-07-30). **Every population figure quoted anywhere else in this file or in prior audits is inflated accordingly** — always join to `schools.is_demo` before quoting a learner count. Note this pollution predates this session; it is not from Phase 0.
+
+Against that: 196 pages, 410 API routes, 45 Edge Functions, 685 migrations, 204 feature flags, 422 tables. **The built surface exceeds the genuinely-exercised surface by roughly two orders of magnitude, and by more than the raw counts suggested.**
 
 Against that: 196 pages, 410 API routes, 45 Edge Functions, 685 migrations, 204 feature flags, 422 tables. **The built surface exceeds the exercised surface by roughly two orders of magnitude.** Almost nothing here has been proven by use.
 
