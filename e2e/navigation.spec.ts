@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { mockStudentSession } from './helpers/auth';
+import { assertNotBlank } from './helpers/surface';
 
 /**
  * E2E Navigation Tests -- Verify unauthenticated redirect guards.
@@ -162,26 +163,6 @@ test.describe('Public pages remain accessible', () => {
  * forget to update.
  */
 
-const COMING_SOON_RE = /coming\s+soon|जल्द|launching\s+soon|under\s+construction/i;
-const NEXT_404_RE = /this page could not be found/i;
-// Floor for "the page rendered something": low enough for sparse dashboards,
-// high enough that a blank shell (header/footer only is ~0 chars in <main>)
-// cannot pass.
-const MIN_CONTENT_CHARS = 40;
-
-async function assertNotBlank(page: Page, path: string): Promise<void> {
-  const bodyText = ((await page.locator('body').innerText().catch(() => '')) || '').trim();
-  expect(
-    NEXT_404_RE.test(bodyText),
-    `${path}: default Next.js 404 — a removed route must redirect or 410, never dead-end (Hard Rule: no ghost routes)`,
-  ).toBe(false);
-  const isComingSoon = COMING_SOON_RE.test(bodyText);
-  const mainText = ((await page.locator('main').innerText().catch(() => '')) || bodyText).trim();
-  expect(
-    isComingSoon || mainText.length >= MIN_CONTENT_CHARS,
-    `${path}: rendered ${mainText.length} chars with no explicit "coming soon" state — blank/dead-end page`,
-  ).toBe(true);
-}
 
 test.describe('Nav crawl: no blank pages, no dead ends', () => {
   test('public pages render content, never blank', async ({ page }) => {
