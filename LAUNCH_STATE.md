@@ -275,6 +275,38 @@ Local dev was made runnable and all four impersonation roles were exercised with
 
 ---
 
+## 6c. Surface-walk ledger — 93 routes, real sessions (2026-09-05 ~12:40 UTC)
+
+`npx playwright test e2e/surface-walk.spec.ts --project=chromium`, against a local dev server, with real Supabase sessions from `/dev/impersonate`.
+
+| Role | PASS | FAIL | Routes |
+|---|---|---|---|
+| Public / auth funnel | **18** | 0 | 18 |
+| School admin | **27** | 2 | 29 |
+| Teacher (non-Edge-Function subset) | **6** | 0 | 6 |
+| Parent (non-Edge-Function subset) | **6** | 2 | 8 |
+| Student | **18** | 14 | 32 |
+| **Total** | **75** | **18** | **93** |
+
+### 🔴 Read the calibration before believing any FAIL
+
+**An `ERROR` verdict here is not evidence of a product defect.** Every route that timed out was re-probed against production and returned **200 in under a second**: `/settings` 0.78s, `/stem-centre` 0.84s, `/progress` 0.69s, `/foxy` 0.61s, `/pyq` 0.37s, `/revision` 0.37s. The webpack dev server serves far slower under Playwright's parallel asset loads than under `curl`, and it **died outright** partway through a later run. Impersonation forces the dev server (it 404s on any `NODE_ENV=production` build), so this instrument is unavoidable and imprecise. **Trust `PASS` and `BLANK`; re-probe every `ERROR`.**
+
+Of the 18 failures: **15 are instrument artifacts**, and 3 are worth a look.
+
+- **12 student + 2 school-admin + 1 parent `ERROR`** — dev-server latency, or `net::ERR_ABORTED` from a legitimate client-side redirect during load (e.g. `/tests` does `router.replace('/today')`). Not defects.
+- **3 `BLANK` — genuine signal, not yet diagnosed:** `/pyq` rendered 17 chars, `/revision` 33 chars, `/parent/calendar` 37 chars, none carrying a "coming soon" string. These are most likely legitimate empty states for a dev account with no data, but an empty state that renders under 40 characters and says nothing is indistinguishable from a broken page to a real user. Worth confirming with a populated account. A fourth, `/diagnostic` (15 chars), appeared in a later partial run.
+
+### What this genuinely establishes
+
+- **The public funnel is solid: 18/18.** Every marketing and auth page renders real content.
+- **The school-admin portal is in good shape: 27/29**, including all six legacy-bookmark redirect stubs (`overview`, `people`, `academics`, `insights`, `governance`, `settings`) — which **confirms the correction** that they are deliberate redirects, not an abandoned IA.
+- **Teacher and parent pass everything testable locally**, but that is only 6 of 12 and 8 of 11 routes; the rest are Edge-Function-backed and CORS-blocked from localhost (§6b), so they remain **unverified**, not passing.
+
+*Last verified: 2026-09-05 ~12:40 UTC. Re-run needs a sturdier rig than a webpack dev server.*
+
+---
+
 ## 7. Corrections to earlier audits
 
 Recorded so no future session re-opens a closed issue — **or trusts a claim that was never true.**
