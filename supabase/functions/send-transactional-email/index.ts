@@ -86,7 +86,7 @@ function jsonResponse(body: unknown, status = 200, origin?: string | null): Resp
 // provider (Mailgun disabled the company account). Email is attempted when the
 // shared relay (_shared/relay-mailer.ts) resolves ANY transport — Gmail
 // (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
-// legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback; Resend is
+// no fallback (the Mailgun path was removed 2026-09-05); Resend is
 // never auto-selected. So transactional email flows through Gmail once the
 // Google secrets are set.
 const HAS_EMAIL_TRANSPORT = hasEmailTransportConfig()

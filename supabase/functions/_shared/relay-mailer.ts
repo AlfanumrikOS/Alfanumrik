@@ -7,18 +7,17 @@
  *
  *   1. GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER present
  *                                               → Gmail API (the email provider)
- *   2. else MAILGUN_API_KEY + MAILGUN_DOMAIN    → Mailgun (legacy fallback)
- *   3. else                                     → no transport (config-absent)
+ *   2. else                                     → no transport (config-absent)
  *
  * ── Product decision 2026-07-16: Google Workspace is the email provider. ─────
  * Mailgun disabled the company account, so all production email moved onto the
  * company's existing Google Workspace via the Gmail API (CEO-approved; no new
- * third-party email platform). Gmail is the PREFERRED default transport; the
- * Mailgun transport is retained as a legacy fallback (selected only when the
- * Gmail secrets are absent — harmless, the account is dead). The Resend
+ * third-party email platform). Gmail is the ONLY default transport. The dead
+ * Mailgun fallback was removed on 2026-09-05 (seven weeks after the account
+ * was disabled, it could only ever produce a failed send). The Resend
  * transport (`createResendTransport`) remains injectable-only (tests / explicit
- * override) and is NEVER selected by the default path — do not switch back to
- * Mailgun-primary or to Resend without an explicit product decision.
+ * override) and is NEVER selected by the default path — do not switch to
+ * Resend-primary without an explicit product decision.
  *
  * Gmail wire (verified 2026-07-16 against
  * https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send
@@ -39,13 +38,6 @@
  *      body: { "raw": "<RFC 2822 message, base64url encoded>" }
  *      success: Message resource — { "id": "<gmail-message-id>", ... }
  *
- * Mailgun wire (https://documentation.mailgun.com/docs/mailgun/api-reference/):
- *   POST https://api.mailgun.net/v3/<MAILGUN_DOMAIN>/messages
- *   Authorization: Basic base64("api:" + MAILGUN_API_KEY)
- *   Idempotency-Key: <key>            // set for retry-safety
- *   body (multipart/form-data): from,to,subject,html,text,h:Reply-To,h:<hdr>,o:tag
- *   success: { "id": "<message-id>" }
- *
  * Resend wire (retained for the injectable transport, NOT the default path;
  * https://resend.com/docs/api-reference/emails/send-email):
  *   POST https://api.resend.com/emails
@@ -56,7 +48,7 @@
  *   success: { "id": "<uuid>" }
  *
  * Reliability posture is inherited from `fetchWithTimeout` (_shared/reliability.ts):
- * a 10s timeout and up to 3 attempts. For Mailgun/Resend the POST retry is fully
+ * a 10s timeout and up to 3 attempts. For Resend the POST retry is fully
  * safe because the provider dedupes on `Idempotency-Key`. Gmail has NO
  * provider-side dedup (the idempotency key rides only as an X-Idempotency-Key
  * MIME header for correlation), so a retry after a lost/timed-out response can —
@@ -67,7 +59,7 @@
  * through `redactPII`; free-form provider error bodies go through
  * `redactPIIInText`. Failure/exception return codes are PII-free machine strings
  * (`gmail_http_<status>` / `gmail_auth_failed` / `gmail_exception` /
- * `mailgun_http_<status>` / `mailgun_exception`) — the raw provider detail lives
+ * `resend_http_<status>` / `resend_exception`) — the raw provider detail lives
  * ONLY in a redacted log line, never in the returned code. The Google private
  * key, signed JWTs, and access tokens are NEVER logged.
  *
@@ -112,17 +104,18 @@ export interface EmailSendResult {
   id?: string
   /** PII-free failure code (e.g. 'gmail_http_400', 'gmail_auth_failed',
    *  'gmail_exception', 'resend_http_400', 'resend_exception',
-   *  'mailgun_http_401', 'mailgun_exception', 'no_transport_configured'). */
+   *  'no_transport_configured'). */
   code?: string
-  /** Which concrete transport handled the send ('gmail' | 'mailgun' | 'resend').
-   *  Optional; surfaced for observability. Gmail is the default; Mailgun is the
-   *  legacy fallback; Resend is injectable-only. */
+  /** Which concrete transport handled the send ('gmail' | 'resend').
+   *  Optional; surfaced for observability. Gmail is the default; Resend is
+   *  injectable-only. */
   provider?: string
 }
 
-/** A pluggable email transport. Concrete impls: Gmail (default), Mailgun
- *  (legacy fallback), Resend (retained, injectable-only — never the default),
- *  test stubs. */
+/** A pluggable email transport. Concrete impls: Gmail (the provider), Resend
+ *  (retained, injectable-only — never the default), test stubs. The Mailgun
+ *  transport was removed 2026-09-05: the account had been disabled since
+ *  2026-07-16, so the path had been dead fallback code for seven weeks. */
 export interface EmailTransport {
   readonly name: string
   send(message: EmailMessage): Promise<EmailSendResult>
@@ -226,110 +219,6 @@ export function createResendTransport(opts: { apiKey?: string; fetcher?: typeof 
           detail: redactPIIInText(err instanceof Error ? err.message : String(err)).text,
         })))
         return { success: false, provider: name, code: 'resend_exception' }
-      }
-    },
-  }
-}
-
-// ─── Mailgun transport (legacy fallback — account disabled) ──────────────────
-//
-// Product decision 2026-07-16: Google Workspace (Gmail API) is the email
-// provider — Mailgun disabled the company account. This transport is retained
-// as the LEGACY FALLBACK: resolveDefaultTransport selects it only when the
-// Gmail secrets are absent and MAILGUN_API_KEY + MAILGUN_DOMAIN are configured
-// (harmless — the account is dead, and removing the path is a separate cleanup).
-// It carries the SAME reliability/timeout (10s, 3 attempts), the SAME
-// Idempotency-Key posture, and the SAME P13 redaction contract as the other
-// transports: the recipient and any free-form provider error body are redacted
-// before they reach a log line, and the returned failure `code` is a PII-free
-// machine string that carries no provider detail.
-
-const MAILGUN_API_BASE = 'https://api.mailgun.net/v3'
-
-/**
- * Build a Mailgun-backed transport. `apiKey`/`domain` default to the
- * MAILGUN_API_KEY / MAILGUN_DOMAIN Edge Function secrets; `fetcher` defaults to
- * global `fetch` (via fetchWithTimeout). Reading the secrets here (not at module
- * load) keeps the transport re-creatable per call without caching a stale value.
- */
-export function createMailgunTransport(opts: { apiKey?: string; domain?: string; fetcher?: typeof fetch } = {}): EmailTransport {
-  const apiKey = opts.apiKey ?? Deno.env.get('MAILGUN_API_KEY') ?? ''
-  const domain = opts.domain ?? Deno.env.get('MAILGUN_DOMAIN') ?? ''
-  const name = 'mailgun'
-
-  return {
-    name,
-    async send(message: EmailMessage): Promise<EmailSendResult> {
-      const idempotencyKey = message.idempotencyKey ?? createEmailIdempotencyKey({
-        template: 'relay_email',
-        recipient: message.to,
-        subject: message.subject,
-      })
-
-      // Mailgun wire body — multipart/form-data. Custom headers ride as h:<name>,
-      // provider tags as repeated o:tag. Restored from the pre-Phase-2 sender.
-      const form = new FormData()
-      form.append('from', message.from)
-      form.append('to', message.to)
-      form.append('subject', message.subject)
-      form.append('html', message.html)
-      form.append('text', message.text)
-      if (message.replyTo) form.append('h:Reply-To', message.replyTo)
-      if (message.headers) {
-        for (const [k, v] of Object.entries(message.headers)) form.append(`h:${k}`, v)
-      }
-      if (message.tags) {
-        for (const t of message.tags) form.append('o:tag', `${t.name}:${t.value}`)
-      }
-
-      try {
-        const res = await fetchWithTimeout(`${MAILGUN_API_BASE}/${domain}/messages`, {
-          provider: 'mailgun',
-          operation: message.operation ?? 'send_email',
-          timeoutMs: EMAIL_TIMEOUT_MS,
-          retry: { maxAttempts: EMAIL_MAX_ATTEMPTS },
-          idempotencyKey,
-          method: 'POST',
-          headers: {
-            'Authorization': `Basic ${btoa(`api:${apiKey}`)}`,
-          },
-          body: form,
-          fetcher: opts.fetcher,
-        })
-
-        if (!res.ok) {
-          // Provider error body is free-form → redactPIIInText. The returned
-          // code carries NO provider detail, only the status class.
-          const raw = await res.text().catch(() => '')
-          console.error(JSON.stringify(redactPII({
-            event: 'relay_email_failed',
-            provider: name,
-            status: res.status,
-            detail: redactPIIInText(raw).text,
-          })))
-          return { success: false, provider: name, code: `mailgun_http_${res.status}` }
-        }
-
-        const parsed = await res.json().catch(() => ({} as { id?: string }))
-        // Keyed payload → redactPII. `email` is a SENSITIVE_KEY, so the recipient
-        // is scrubbed to [REDACTED] before the line is ever written.
-        console.log(JSON.stringify(redactPII({
-          event: 'relay_email_sent',
-          provider: name,
-          operation: message.operation ?? 'send_email',
-          email: message.to,
-          id: (parsed as { id?: string }).id,
-        })))
-        return { success: true, provider: name, id: (parsed as { id?: string }).id }
-      } catch (err) {
-        // Never surface err.message in the return value (may embed PII). Redacted
-        // detail goes to the log; the caller sees only a stable machine code.
-        console.error(JSON.stringify(redactPII({
-          event: 'relay_email_exception',
-          provider: name,
-          detail: redactPIIInText(err instanceof Error ? err.message : String(err)).text,
-        })))
-        return { success: false, provider: name, code: 'mailgun_exception' }
       }
     },
   }
@@ -695,12 +584,12 @@ export function createGmailTransport(opts: { clientEmail?: string; privateKey?: 
   }
 }
 
-// ─── Transport resolution (env-driven: Gmail → Mailgun → none) ───────────────
+// ─── Transport resolution (env-driven: Gmail → none) ─────────────────────────
 
 /**
  * True iff SOME default transport is configured: Gmail (GOOGLE_SA_CLIENT_EMAIL
  * + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER — the email provider, product decision
- * 2026-07-16) or legacy-fallback Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN).
+ * 2026-07-16).
  * The six email Edge Functions gate their "attempt to send" branch on this same
  * predicate — when it is false they emit the config-absent warning / fail-closed
  * and degrade gracefully. Resend is NEVER auto-selected, so RESEND_API_KEY does
@@ -710,19 +599,18 @@ export function hasEmailTransportConfig(): boolean {
   const gmailClientEmail = Deno.env.get('GOOGLE_SA_CLIENT_EMAIL') ?? ''
   const gmailPrivateKey = Deno.env.get('GOOGLE_SA_PRIVATE_KEY') ?? ''
   const gmailSender = Deno.env.get('GMAIL_SENDER') ?? ''
-  if (gmailClientEmail && gmailPrivateKey && gmailSender) return true
-  const mailgunKey = Deno.env.get('MAILGUN_API_KEY') ?? ''
-  const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-  return Boolean(mailgunKey && mailgunDomain)
+  return Boolean(gmailClientEmail && gmailPrivateKey && gmailSender)
 }
 
 /**
  * Pick the default transport at SEND time (never cached):
  *   1. Gmail when GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER
  *      are ALL present (the email provider — product decision 2026-07-16),
- *   2. else Mailgun when MAILGUN_API_KEY + MAILGUN_DOMAIN are present (legacy
- *      fallback — the account is disabled, but the path is harmless),
- *   3. else null (config-absent).
+ *   2. else null (config-absent).
+ * The Mailgun fallback that used to sit between those two was removed on
+ * 2026-09-05: Mailgun disabled the account on 2026-07-16, so for seven weeks
+ * it was a code path that could only ever produce a failed send. Its two
+ * Edge Function secrets go with it.
  * Resend is NEVER auto-selected. The Resend transport remains reachable only
  * via an explicit `opts.transport` override on `sendEmail` or
  * `setDefaultEmailTransport` (tests); it is never returned from here.
@@ -734,9 +622,6 @@ export function resolveDefaultTransport(opts: { fetcher?: typeof fetch } = {}): 
   if (gmailClientEmail && gmailPrivateKey && gmailSender) {
     return createGmailTransport({ clientEmail: gmailClientEmail, privateKey: gmailPrivateKey, sender: gmailSender, fetcher: opts.fetcher })
   }
-  const mailgunKey = Deno.env.get('MAILGUN_API_KEY') ?? ''
-  const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-  if (mailgunKey && mailgunDomain) return createMailgunTransport({ apiKey: mailgunKey, domain: mailgunDomain, fetcher: opts.fetcher })
   return null
 }
 
@@ -759,9 +644,7 @@ export function setDefaultEmailTransport(transport: EmailTransport | null): void
  *   2. the module-global default set via `setDefaultEmailTransport` (tests),
  *   3. the env-resolved default (`resolveDefaultTransport`): Gmail if
  *      GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER are set,
- *      else Mailgun if MAILGUN_API_KEY + MAILGUN_DOMAIN are set (legacy
- *      fallback), else none. Resend is never auto-selected (product decision
- *      2026-07-16).
+ *      else none. Resend is never auto-selected (product decision 2026-07-16).
  *
  * Production callers use `sendEmail(message)` — no options — so nothing is
  * request-derived and the transport reads its secret(s) from env. When no

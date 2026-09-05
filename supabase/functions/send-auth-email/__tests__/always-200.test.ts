@@ -53,10 +53,10 @@ const SECRET = 'whsec_' + btoa('alfanumrik-send-auth-email-test-secret');
 // Product decision 2026-07-16: Google Workspace (Gmail API) is the email
 // provider (Mailgun disabled the company account). index.ts resolves its config
 // guard from the shared relay's hasEmailTransportConfig(): Gmail
-// (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
-// legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback. Every scenario
+// (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) — the only
+// transport; the Mailgun fallback was removed 2026-09-05. Every scenario
 // key below is cleared before the scenario env is applied so an ambient
-// GOOGLE_* / MAILGUN_* (e.g. on a dev/prod-shaped machine) can never leak into
+// GOOGLE_* (e.g. on a dev/prod-shaped machine) can never leak into
 // the "no relay config" path and flip it green→red. RESEND_API_KEY is kept in
 // the clear-list purely as belt-and-braces (the relay never auto-selects
 // Resend) so a stray ambient value can never influence a scenario.
@@ -66,8 +66,6 @@ const ENV_KEYS = [
   'GOOGLE_SA_CLIENT_EMAIL',
   'GOOGLE_SA_PRIVATE_KEY',
   'GMAIL_SENDER',
-  'MAILGUN_API_KEY',
-  'MAILGUN_DOMAIN',
   'SITE_URL',
 ];
 
@@ -259,7 +257,7 @@ Deno.test('send-auth-email: relay send success returns 200 with success:true', a
 Deno.test('send-auth-email: missing relay config returns 200 (no_relay_config)', async () => {
   const handler = await loadHandler({
     SEND_EMAIL_HOOK_SECRET: SECRET,
-    // No GOOGLE_*/GMAIL_SENDER (the email provider) and no legacy MAILGUN_* →
+    // No GOOGLE_*/GMAIL_SENDER (the email provider) →
     // no transport is configured.
   });
   const res = await handler(signedRequest(validPayloadBody()));
@@ -279,7 +277,7 @@ Deno.test('send-auth-email: missing relay config returns 200 (no_relay_config)',
 Deno.test('send-auth-email: Gmail config attempts send (no no_relay_config)', async () => {
   const handler = await loadHandler({
     SEND_EMAIL_HOOK_SECRET: SECRET,
-    // Gmail is the configured (and only) transport — no MAILGUN_* needed.
+    // Gmail is the configured (and only) transport.
     ...GOOGLE_ENV,
   });
   setDefaultEmailTransport({
@@ -298,35 +296,10 @@ Deno.test('send-auth-email: Gmail config attempts send (no no_relay_config)', as
   }
 });
 
-// ─── Path 8b-legacy: Mailgun-only config still attempts send (fallback) ──────
-// The Mailgun transport is retained as the legacy fallback (the account is
-// disabled, but the config path must stay harmless): MAILGUN_API_KEY +
-// MAILGUN_DOMAIN alone must still fall through the guard to the send path.
-Deno.test('send-auth-email: Mailgun-only config (legacy fallback) attempts send (no no_relay_config)', async () => {
-  const handler = await loadHandler({
-    SEND_EMAIL_HOOK_SECRET: SECRET,
-    MAILGUN_API_KEY: 'key-mg-test-0001',
-    MAILGUN_DOMAIN: 'mg.alfanumrik.test',
-  });
-  setDefaultEmailTransport({
-    name: 'stub-mailgun',
-    send: () => Promise.resolve({ success: true, provider: 'mailgun', id: 'mg-msg-uuid-0001' }),
-  });
-  try {
-    const res = await handler(signedRequest(validPayloadBody()));
-    assertEquals(res.status, 200);
-    const body = await res.json();
-    assertEquals(body.success, true, 'Mailgun fallback config must attempt the send, not warn no_relay_config');
-    assertEquals(body.warning, undefined, 'no_relay_config must NOT fire when legacy Mailgun is configured');
-  } finally {
-    setDefaultEmailTransport(null);
-  }
-});
-
 // ─── Path 8c: PARTIAL Gmail config → treated as unconfigured (no_relay_config)
 // The Gmail transport needs ALL THREE of GOOGLE_SA_CLIENT_EMAIL,
 // GOOGLE_SA_PRIVATE_KEY, and GMAIL_SENDER. Two out of three (no impersonation
-// mailbox) is not a usable transport, so — with no Mailgun fallback either —
+// mailbox) is not a usable transport, so
 // the guard must still degrade to no_relay_config (→ 200, Supabase built-in
 // email can take over).
 Deno.test('send-auth-email: partial Gmail config (no GMAIL_SENDER) still returns 200 (no_relay_config)', async () => {
@@ -335,23 +308,6 @@ Deno.test('send-auth-email: partial Gmail config (no GMAIL_SENDER) still returns
     GOOGLE_SA_CLIENT_EMAIL: GOOGLE_ENV.GOOGLE_SA_CLIENT_EMAIL,
     GOOGLE_SA_PRIVATE_KEY: GOOGLE_ENV.GOOGLE_SA_PRIVATE_KEY,
     // No GMAIL_SENDER.
-  });
-  const res = await handler(signedRequest(validPayloadBody()));
-  assertEquals(res.status, 200);
-  const body = await res.json();
-  assertEquals(body.success, true);
-  assertEquals(body.warning, 'no_relay_config');
-});
-
-// ─── Path 8d: Mailgun key WITHOUT domain → treated as unconfigured (no_relay_config)
-// The legacy Mailgun fallback needs BOTH MAILGUN_API_KEY and MAILGUN_DOMAIN. A
-// key without a domain is not a usable transport, so the guard must still
-// degrade to no_relay_config (→ 200, Supabase built-in email can take over).
-Deno.test('send-auth-email: Mailgun key without domain still returns 200 (no_relay_config)', async () => {
-  const handler = await loadHandler({
-    SEND_EMAIL_HOOK_SECRET: SECRET,
-    MAILGUN_API_KEY: 'key-mg-test-0001',
-    // No MAILGUN_DOMAIN.
   });
   const res = await handler(signedRequest(validPayloadBody()));
   assertEquals(res.status, 200);
@@ -394,8 +350,8 @@ Deno.test('send-auth-email: source contains no non-200 Response status (P15 cana
 // ─── Token-varying idempotency key (REQUIRED P15 fix) ────────────────────────
 // The relay carries an idempotency key on every send (Google Workspace / Gmail
 // API is the email provider — product decision 2026-07-16; for Gmail the key
-// rides as an X-Idempotency-Key MIME header for correlation, and for the legacy
-// Mailgun fallback as a deduping Idempotency-Key HTTP header). index.ts folds
+// rides as an X-Idempotency-Key MIME header for correlation, and for the
+// injectable Resend transport as a deduping Idempotency-Key HTTP header). index.ts folds
 // the per-auth token into the key via
 // createEmailIdempotencyKey({ correlationId: authEmailTokenDimension(...) }).
 // Both helpers are pure + exported, so we assert the contract directly (no

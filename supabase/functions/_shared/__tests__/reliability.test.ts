@@ -9,8 +9,8 @@ describe('fetchWithTimeout', () => {
       init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
     })) as unknown as typeof fetch
 
-    await expect(fetchWithTimeout('https://api.mailgun.net/v3/example/messages', {
-      provider: 'mailgun',
+    await expect(fetchWithTimeout('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      provider: 'gmail',
       timeoutMs: 1,
       fetcher,
       sleep: noSleep,
@@ -20,9 +20,9 @@ describe('fetchWithTimeout', () => {
   it('exhausts retries for idempotent retryable responses', async () => {
     const fetcher = vi.fn(async () => new Response('busy', { status: 503 })) as unknown as typeof fetch
 
-    const response = await fetchWithTimeout('https://api.mailgun.net/v3/example/messages', {
+    const response = await fetchWithTimeout('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
       method: 'POST',
-      provider: 'mailgun',
+      provider: 'gmail',
       retry: { maxAttempts: 3, baseDelayMs: 1 },
       idempotencyKey: 'email:test',
       fetcher,

@@ -43,7 +43,7 @@ const hookSecret = rawHookSecret.startsWith('v1,') ? rawHookSecret.slice(3) : ra
 // provider (Mailgun disabled the company account). Email is attempted when the
 // shared relay (_shared/relay-mailer.ts) has ANY transport configured — Gmail
 // (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
-// legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback; Resend is
+// no fallback (the Mailgun path was removed 2026-09-05); Resend is
 // never auto-selected. This transport-agnostic guard keeps auth email flowing
 // (P15). When nothing is configured we fall through to the no_relay_config 200
 // below (Supabase built-in email can take over) — signup/login is never blocked.
