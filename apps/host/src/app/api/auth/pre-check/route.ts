@@ -46,6 +46,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkApiRateLimit } from '@alfanumrik/lib/api-rate-limit';
 import { logger } from '@alfanumrik/lib/logger';
+import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 
 type Action = 'login' | 'signup' | 'forgot';
 
@@ -82,6 +83,15 @@ interface TurnstileSiteverifyResult {
  * P15 non-negotiable path ("MUST never break"), and this is a retrofit onto
  * an already-live flow, not a fresh form nobody depends on yet — a
  * config-ordering slip must never be able to lock out every real user.
+ *
+ * 2026-09-05: that same rule now also covers (a) a secret that is PRESENT
+ * but WRONG (Cloudflare `invalid-input-secret` / `missing-input-secret`) and
+ * (b) siteverify being unreachable. Both are server-side failures, not user
+ * or bot signals, and both previously produced a 503 that locked out every
+ * login for most of a day. Each now fails OPEN and writes a `critical`
+ * ops_events row (category `auth`) that an alert rule pages on. Token-level
+ * rejections (`invalid-input-response`, wrong action/hostname, replay) are
+ * unchanged and still fail CLOSED.
  */
 async function verifyTurnstile(
   token: unknown,
@@ -128,18 +138,49 @@ async function verifyTurnstile(
         httpStatus: r.status,
         responseBody: errorBody.slice(0, 500),
       });
+      // 2026-09-05 incident: a wrong TURNSTILE_SECRET in Vercel turned this
+      // branch into a 503 for EVERY login and signup for most of a day. That
+      // is the exact outcome the header comment says must never happen —
+      // a server-side config slip locking out every real user. `invalid-
+      // input-secret` / `missing-input-secret` are Cloudflare's codes for
+      // "your SECRET is wrong", which is never the user's fault and never
+      // evidence of a bot. Treat it exactly like the not-yet-configured
+      // case above: fail OPEN, but page ops (critical ops_events row →
+      // alert rule) so it is fixed in minutes instead of discovered by a
+      // locked-out student. Everything else (bad request shape, 5xx) still
+      // falls through to the outage handling below.
+      if (/(invalid|missing)-input-secret/.test(errorBody)) {
+        void logOpsEvent({
+          category: 'auth',
+          source: 'api/auth/pre-check',
+          severity: 'critical',
+          message: 'turnstile_secret_rejected_failing_open',
+          context: { action, httpStatus: r.status, errorBody: errorBody.slice(0, 200) },
+        });
+        return { ok: true };
+      }
       throw new Error(`siteverify ${r.status}`);
     }
     result = await r.json();
   } catch (err) {
-    // Genuine network/timeout failure reaching Cloudflare (the !r.ok branch
-    // above already logged and re-threw its own case) — fail closed either
-    // way. This is a real (if configured) check failing to run, not "not
-    // configured".
+    // Genuine network/timeout failure reaching Cloudflare, or a non-2xx that
+    // was not a secret problem. Before 2026-09-05 this failed CLOSED (503),
+    // so a Cloudflare outage or a Vercel→Cloudflare network blip locked out
+    // every login and signup — again the outcome the header forbids for a
+    // P15 path. A bot check that cannot run is not evidence of a bot. Fail
+    // OPEN, and page ops so an outage is visible rather than silent. The
+    // rate limiters above still apply, so this is degraded, not undefended.
     if (!(err instanceof Error) || !err.message.startsWith('siteverify ')) {
       logger.error('Turnstile siteverify request failed', { action, error: err });
     }
-    return { ok: false, status: 503, error: 'Verification is temporarily unavailable. Please try again shortly.' };
+    void logOpsEvent({
+      category: 'auth',
+      source: 'api/auth/pre-check',
+      severity: 'critical',
+      message: 'turnstile_siteverify_unreachable_failing_open',
+      context: { action, reason: err instanceof Error ? err.message.slice(0, 200) : 'unknown' },
+    });
+    return { ok: true };
   }
 
   if (
