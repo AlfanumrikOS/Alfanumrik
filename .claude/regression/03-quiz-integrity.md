@@ -1572,6 +1572,17 @@ Deployment caution (carried from the quiz-generator-v2 lesson): the tombstone
 is on-disk state — verify the DEPLOYED cme-engine version with
 `supabase functions list` post-merge before trusting the 410 in production.
 
+**Ratcheted 2026-09-05 (P1-7 orphaned-Edge-Function cleanup, PR #1779):**
+the deployed tombstone was verified (live source fetched, byte-identical to
+the on-disk stub; 30-day invocation watch completed 2026-09-04 with zero
+non-probe hits), then `cme-engine` was permanently deleted from disk and
+production. Section (3) now pins the forward state instead of the tombstone
+text: `supabase/functions/cme-engine/` must NOT exist on disk (with a
+live-sibling existence check so a wrong repo root cannot pass vacuously); the
+`20260808000100` COMMENT-tombstone assertion is unchanged. Pin count 10 → 8.
+Deletion record: `docs/runbooks/edge-function-drift-report.md` (2026-09-05
+execution log).
+
 Pre-REG-351: 350 entries (through REG-350 — see `02-foxy-ai.md`). Adds
 REG-351 (canonical-facade lockstep), REG-352 (event-capture contract),
 REG-353 (consolidation ratchet).
