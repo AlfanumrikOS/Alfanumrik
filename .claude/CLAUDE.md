@@ -187,6 +187,14 @@ Summary of mandatory chains:
 | Feature flag API | ops or backend | ops, testing |
 | Super-admin pages | frontend | ops, testing |
 
+### P16: No Duplication (search-first, consolidate-in-place)
+CEO directive 2026-09-05, and the single most expensive recurring failure in this codebase's history (two admin UIs, `quiz-generator-v2` + `enhanced-quiz-generator`, 37 direct Anthropic call sites + 3 rival adapters, forked mastery tables). **Before creating any route, page, component, table, column, Edge Function, RPC, hook, script, command, or config, you MUST first search the existing system for it** — by concept AND by naming variant (`v2`, `enhanced`, `new`, `legacy`, `old`, `-2`, and the synonym another dev would pick) — and state the command you ran and what it returned. Then:
+- **Found something that fits → extend it.** Never add a parallel version. If unsure which of two candidates is canonical, stop and ask, naming both by path — never build a third.
+- **Found a genuine duplicate → remove it permanently in the same change** (pick canonical by live traffic / row counts / import counts, migrate callers, then delete/redirect/freeze the loser so it is unreachable). **Never leave two live at once**, and never defer the removal behind a flag or a "later".
+- **The one safety check** (prevents deleting something that only *looks* duplicate): confirm by evidence it is truly redundant before removing. Deliberate look-alikes that MUST stay: the monorepo's 2-line re-export stubs (`apps/host/src/lib/*`, `apps/host/src/components/*`), intentional legacy-bookmark `redirect()` stubs (e.g. the six `/school-admin/*`), and versioned APIs inside a live migration window.
+
+The full curative + preventive procedure is the **`alfanumrik-surface-consolidator`** skill — invoke it; do not restate it here (restating it would itself be a duplication). This invariant is *why* you invoke it on every build.
+
 ## Enforcement Mechanisms
 
 ### Mechanically Enforced (hooks — cannot be bypassed by agents)
