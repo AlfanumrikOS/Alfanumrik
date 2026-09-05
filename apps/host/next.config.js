@@ -206,11 +206,27 @@ const nextConfig = {
       // pattern as the D4 parent stubs above) -- replaced with a real 301 so
       // old bookmarks/deep links resolve server-side. Its sibling
       // /practice/exam/mock already has an identical precedent two entries
-      // up. Does not touch /simulations or /teacher/{assign,grade,insights,
-      // resources,settings} -- those stubs sit behind broader auth-gating
-      // logic in proxy.ts and converting them needs an architect check on
-      // redirect-vs-middleware execution order first, not a same-pass cleanup.
+      // up.
       { source: '/practice/exam', destination: '/exam-prep', permanent: true },
+
+      // Gate-2 G2 (cleanup, 2026-09-05). Same stub pattern as G1 above, for
+      // the remaining thin client-side redirect pages. Traced proxy.ts's
+      // Layer 0.65 role-gate (the only real route-protection layer these
+      // paths interact with, not the disconnected illustrative list in
+      // middleware.test.ts's "Protected route patterns" describe block,
+      // which asserts against a locally-defined helper, not proxy.ts) before
+      // converting: it runs on the request's ORIGINAL path (Next.js executes
+      // Middleware before evaluating next.config.js redirects), so a static
+      // redirect here does not skip or reorder the role check -- /teacher/*
+      // still gets gated exactly as before, then redirects afterward exactly
+      // as the client stub did. /simulations has no entry in
+      // findRouteRule() at all, so no role gate applies to it either way.
+      { source: '/simulations',        destination: '/stem-centre',          permanent: true },
+      { source: '/teacher/assign',     destination: '/teacher/assignments',  permanent: true },
+      { source: '/teacher/grade',      destination: '/teacher/grade-book',   permanent: true },
+      { source: '/teacher/insights',   destination: '/teacher/reports',      permanent: true },
+      { source: '/teacher/resources',  destination: '/teacher/worksheets',   permanent: true },
+      { source: '/teacher/settings',   destination: '/teacher/profile',      permanent: true },
     ];
   },
   // PostHog reverse-proxy → EU project 159341 (eu.i.posthog.com). /ingest/static/*
