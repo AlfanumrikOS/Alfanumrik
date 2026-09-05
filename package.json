@@ -48,7 +48,7 @@
     "@types/node": "^22.20.1",
     "dependency-cruiser": "^18.1.1",
     "supabase": "^2.113.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2"
