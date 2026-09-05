@@ -322,11 +322,15 @@ export default function ServiceWorkerCleanup() {
         // Register only after the retired root worker has been removed. The
         // new worker is network-only, so it cannot replay the stale-cache
         // incident caused by the retired `/sw.js` worker.
-        if (!INSTALLABLE_PWA_ENABLED) return unregisterInstallablePwaWorker();
-        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-          return navigator.serviceWorker.register(INSTALLABLE_WORKER_PATH, { scope: '/' });
+        if (!INSTALLABLE_PWA_ENABLED) {
+          void unregisterInstallablePwaWorker();
+          return;
         }
-        return undefined;
+        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+          void navigator.serviceWorker
+            .register(INSTALLABLE_WORKER_PATH, { scope: '/' })
+            .catch(() => undefined);
+        }
       })
       .catch(() => {
         // Service-worker setup is progressive enhancement: it must not affect

@@ -65,7 +65,7 @@ describe('PWA view integrity (REG-259)', () => {
       expect(layoutSource).toMatch(/capable:\s*true/);
       expect(layoutSource).toMatch(/ServiceWorkerCleanup/);
       expect(registrationSource).toMatch(/NEXT_PUBLIC_PWA_ENABLED !== 'false'/);
-      expect(registrationSource).toMatch(/!INSTALLABLE_PWA_ENABLED\) return unregisterInstallablePwaWorker/);
+      expect(registrationSource).toMatch(/!INSTALLABLE_PWA_ENABLED\) \{\s*void unregisterInstallablePwaWorker\(\);/);
       expect(registrationSource).toMatch(/serviceWorker\.register\(INSTALLABLE_WORKER_PATH, \{ scope: '\/' \}\)/);
     });
 
