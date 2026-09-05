@@ -3169,10 +3169,23 @@ jobs:
     # branches that haven't proposed a merge yet. Skip on forked PRs (no
     # secrets) — when staging fixtures are wired in, this `if` should also
     # require the same-repo guard used by the integration-tests job.
-    # 2026-08-19: relocated off `pull_request` to the merge-queue tier. The
-    # base-branch clause is unnecessary here -- a merge_group event only ever
-    # exists for a branch that has a merge queue configured (main).
-    if: github.event_name == 'merge_group'
+    # 2026-08-19: relocated off `pull_request` to the merge-queue tier.
+    # 2026-09-05: RESTORED to pull_request as well. The 2026-08-19 relocation
+    # rested on the same never-fulfilled prerequisite documented on unit-tests
+    # above: `merge_queue` is not available on this repo (owner is a GitHub
+    # User, not an Organization) and merge_group has fired 0 times across the
+    # repo's history. So this "blocking" gate has never once executed, and
+    # ci-gate counted it as an expected skip — meaning ZERO E2E coverage gated
+    # any PR. unit-tests, Production Build and Edge Function Deno Tests were
+    # restored on 2026-08-30 after incident PR #1650/#1653; this job was
+    # missed in that sweep.
+    # Same-repo clause is required here (unlike merge_group, which forks never
+    # reach): fork PRs get no secrets, so the job would fail at boot.
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'merge_group' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-node-workspace
@@ -3363,9 +3376,13 @@ jobs:
             expectedSkips.push('integration-tests');
           }
 
-          // e2e-critical-paths runs ONLY in the merge queue: it is the slowest
-          // blocking job and its value is "this exact commit is safe to land".
-          if (eventName === 'merge_group') {
+          // e2e-critical-paths: REQUIRED on same-repo PRs and in the merge
+          // queue. It ran only in the merge queue from 2026-08-19, but
+          // merge_group has never fired on this repo, so it was silently an
+          // expected skip on every event — the check existed and gated
+          // nothing. Fork and Dependabot PRs have no secrets, so they remain
+          // expected skips rather than being dropped from the matrix.
+          if (!isDependabot && (eventName === 'merge_group' || (isPullRequest && sameRepoPr))) {
             required.push('e2e-critical-paths');
           } else {
             expectedSkips.push('e2e-critical-paths');
