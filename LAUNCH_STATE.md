@@ -206,7 +206,6 @@ Plus 5 demo `auth.users` (4 `dev.impersonate.*@alfanumrik.demo` created today, 1
 
 Against that: 196 pages, 410 API routes, 45 Edge Functions, 685 migrations, 204 feature flags, 422 tables. **The built surface exceeds the genuinely-exercised surface by roughly two orders of magnitude, and by more than the raw counts suggested.**
 
-Against that: 196 pages, 410 API routes, 45 Edge Functions, 685 migrations, 204 feature flags, 422 tables. **The built surface exceeds the exercised surface by roughly two orders of magnitude.** Almost nothing here has been proven by use.
 
 ---
 
