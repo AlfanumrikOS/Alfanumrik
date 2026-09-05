@@ -1921,7 +1921,8 @@
       "owner": "assessment",
       "prs": [],
       "tests": [
-        "apps/host/src/__tests__/board-score-edge-function-structural.test.ts"
+        "apps/host/src/__tests__/board-score-edge-function-structural.test.ts",
+        "apps/host/src/__tests__/adaptive-layer-health.test.ts"
       ],
       "regressionIds": [],
       "flags": [],
@@ -1948,13 +1949,13 @@
         "packages/lib/src/learner-model/explain-mastery.ts — facade explainMastery (P-params + reason codes)",
         "supabase/functions/board-score/index.ts — re-pointed cme_concept_state→concept_mastery (Phase 0 F6)",
         "supabase/migrations/20260808000100_topic_mastery_rollup_view.sql — COMMENT ON TABLE cme_concept_state RETIRED",
-        "supabase/functions/cme-engine/index.ts — 410 tombstone (structured gone response)",
-        "docs/runbooks/edge-function-drift-report.md — Execution log 2026-08-05 entry"
+        "docs/runbooks/edge-function-drift-report.md — Execution log 2026-08-05 entry (cme-engine 410 tombstone) and 2026-09-05 entry (permanent deletion, disk + production)",
+        "apps/host/src/__tests__/adaptive-layer-health.test.ts — 'CME engine stays deleted' pin (no supabase/functions/cme-engine/ on disk, live-sibling path check)"
       ],
       "notes": [
         "F6: board-score EF re-pointed cme_concept_state→concept_mastery; retired-table refs 20→18 (analyzer ratchet after merge)",
-        "cme-engine tombstone in flight (wave 2b); post-merge ops steps (deploy → supabase functions list verify → 30-day invocation watch → delete) + analyzer retired-table ratchet: docs/runbooks/learner-model-shadow-verification.md Appendices A/B",
-        "Code complete; cme-engine tombstone DEPLOY + 30-day watch + delete are post-merge ops actions (runbook Appendix A)."
+        "cme-engine retirement COMPLETE: 410 tombstone deployed 2026-08-05 (live v49, verified byte-identical to the on-disk stub via get_edge_function); 30-day invocation watch completed 2026-09-04 with zero non-probe hits; permanently deleted from disk and production 2026-09-05 (P1-7 cleanup, PR #1779 — undeployed by deploy-production.yml's prune-removed-functions step). Ratchet notes: docs/runbooks/learner-model-shadow-verification.md Appendices A/B",
+        "The former 'supabase/functions/cme-engine/index.ts — 410 tombstone' evidence entry was retired with the file; the drift-report execution log and the adaptive-layer-health stays-deleted pin are the durable record."
       ]
     },
     {
