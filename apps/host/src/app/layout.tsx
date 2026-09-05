@@ -32,15 +32,11 @@ export const metadata: Metadata = {
     icon: '/favicon.svg',
     apple: '/apple-touch-icon.svg',
   },
-  // `capable: false` is deliberate (2026-08-09). iOS has no service-worker
-  // requirement for "Add to Home Screen", so `capable: true` was the one place
-  // the app really did hand users a chrome-less standalone shell — with no
-  // service worker, no offline cache, and therefore no reload or back button
-  // the first time the connection dropped. Opening the shortcut in Safari
-  // instead keeps those affordances. Alfanumrik is intentionally not a PWA
-  // today; see the header of apps/host/public/sw.js before changing this.
+  // iOS needs this explicit opt-in for the standalone installed experience.
+  // The companion worker at /pwa-sw.js is network-only and does not cache
+  // authenticated content or writes.
   appleWebApp: {
-    capable: false,
+    capable: true,
     title: 'Alfanumrik',
   },
   keywords: 'CBSE adaptive learning app, AI learning platform India, personalized learning Hindi, board exam preparation, Foxy, spaced repetition CBSE, personalized learning India, class 9 science, class 10 math, online learning platform India, Hindi medium learning app, Alfanumrik, Cusiosense Learning',

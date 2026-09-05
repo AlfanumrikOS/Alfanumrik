@@ -144,38 +144,27 @@ Also escalate immediately (any single occurrence) if a report shows the **browse
 - `ServiceWorkerCleanup` must remain mounted in the shared layout so every role and tenant retries best-effort cleanup after hydration.
 - Any future service-worker/offline strategy must go through architect review and must not reuse the `/sw.js` path or the `alfanumrik-` cache prefix (both are reserved by the retirement machinery).
 
-## 8. Current PWA / Offline Posture (as of 2026-08-09) — read before "fixing" the PWA
+## 8. Current PWA / Offline Posture
 
-**Alfanumrik is intentionally NOT an installable PWA.** This is a deliberate product state, recorded here because it has now been rediscovered as a surprise twice.
+Alfanumrik is installable as a PWA. The installation worker is `/pwa-sw.js`;
+`/sw.js` remains a retirement tombstone solely for clients carrying the legacy
+worker.
 
-### What is actually true
+### Safety boundaries
 
-| Claim | Reality |
-|---|---|
-| A service worker is registered | **No.** Nothing in `apps/host` or `packages/*` calls `serviceWorker.register()`. The only SW code is `packages/lib/src/RegisterSW.tsx` (`ServiceWorkerCleanup`), which *unregisters*. |
-| The app is installable | **No.** `/sw.js` is a tombstone with no fetch handler that unregisters itself, so the Chrome/Android install path never triggers. |
-| There is HTTP-cache offline support | **No.** No fetch handler means no cached responses. |
-| There is *any* offline support | **Partly — and not via a service worker.** `packages/lib/src/offline/store.ts` (IndexedDB: downloaded chapters, saved explanations, a pending-write queue with replay) plus `packages/ui/src/offline/v2/` (`OfflineBoundary`, mounted in `GlobalAppLayout`, and `OfflineState`) are real and live in the tree, gated by **`ff_offline_v2` (default OFF)**. This is the app's actual offline direction. It needs no service worker. |
-| The manifest advertises an app-like install | **No longer.** Corrected 2026-08-09 — see below. |
+- `/pwa-sw.js` is **network-only**. Its fetch handler forwards every request to
+the network and does not use CacheStorage, cache app shells, cache authenticated
+API responses, or intercept writes.
+- The manifest is installable in both sources: `display: 'standalone'`,
+`orientation: 'portrait'`, and `start_url: '/dashboard'`. Production still
+serves the dynamic tenant-aware manifest route via the `/manifest.json` rewrite.
+- `ServiceWorkerCleanup` remains mounted globally. It removes only the legacy
+`/sw.js` registration and `alfanumrik-*` caches, then registers `/pwa-sw.js`.
+- `NEXT_PUBLIC_PWA_ENABLED=false` is the rollback switch. On the next deployed
+page load it unregisters only `/pwa-sw.js`; it never removes unrelated workers.
+- The existing IndexedDB offline layer stays independently gated by
+`ff_offline_v2`; PWA installation does not enable offline content or writes.
 
-### What changed on 2026-08-09 (PWA integrity fix)
-
-The artifacts were advertising a PWA the app could not deliver. They were made to tell the truth:
-
-- **Manifest is now metadata-only** in *both* sources — `apps/host/public/manifest.json` and `apps/host/src/app/api/school-config/manifest/route.ts`. `display: 'browser'`; `orientation` and `screenshots` removed (the screenshots were SVG, which Chrome ignores for rich install UI anyway); `id: '/'` added so the `start_url` change cannot re-identify the app for existing home-screen shortcuts; `start_url` moved from `/` (marketing) to `/dashboard`.
-  **Reminder:** the middleware rewrites `/manifest.json` → `/api/school-config/manifest`, so the static file is a dev fallback only. Change both.
-- **`appleWebApp.capable` → `false`** in `apps/host/src/app/layout.tsx`. iOS needs no service worker for "Add to Home Screen", so this was the one path that genuinely produced a chrome-less standalone shell with no offline cache, no reload, and no back button.
-- **`PWAInstallPrompt.tsx` deleted** — zero importers, and it promised "offline mode" that does not exist.
-- **REG-259 pins inverted** (`src/__tests__/pwa-view-integrity.test.ts`, `src/__tests__/api/school-config/manifest-route.test.ts`). They previously enforced `display: standalone` + `orientation: portrait` + `start_url: '/'` on a premise that was false once the worker was retired. They now enforce the metadata-only shape instead. The viewport pins in REG-259c are untouched — those are what actually guard the "desktop-looking page on mobile" symptom.
-
-### What reintroducing a service worker would take
-
-Not a drive-by. Architect review required, and at minimum:
-
-1. **A new worker path.** `/sw.js` and the `alfanumrik-` cache prefix are reserved by the retirement machinery (Section 7) and must not be reused.
-2. **A versioned, expiring cache strategy** that can never serve a stale app shell, and never caches authenticated API responses or in-flight writes (the original v3 failure).
-3. **A kill switch** (feature flag) plus a tested unregister path, so the next retirement is a flag flip rather than an incident.
-4. **Reconciliation with `ff_offline_v2`** — decide whether the SW complements the IndexedDB store or duplicates it. Duplicated offline state is worse than none.
-5. **Restoring the manifest install fields in both sources** and inverting the REG-259 pins back, plus `appleWebApp.capable`.
-
-Until all five are done, the honest posture is the current one: a website with an opt-in IndexedDB offline layer, not an installable app.
+Any future HTTP caching or offline fallback requires architect review, a
+versioned expiry/invalidation policy, and a tested rollback path. Do not add
+CacheStorage to `/pwa-sw.js` as a standalone change.

@@ -7,6 +7,8 @@ import { posthogCapture } from './posthog-client';
 const ALFANUMRIK_CACHE_PREFIX = 'alfanumrik-';
 const CLEANUP_TELEMETRY_EVENT = 'sw_legacy_cleanup';
 const RETIRED_WORKER_PATH = '/sw.js';
+const INSTALLABLE_WORKER_PATH = '/pwa-sw.js';
+const INSTALLABLE_PWA_ENABLED = process.env.NEXT_PUBLIC_PWA_ENABLED !== 'false';
 const RETIREMENT_RELOAD_GUARD = 'alfanumrik-sw-retirement-reloaded-v1';
 const RELOAD_STATE_FALLBACK = 'fallback';
 const RELOAD_STATE_REMOVED = 'removed';
@@ -109,6 +111,38 @@ function isRetiredAlfanumrikRegistration(
   return [registration.active, registration.waiting, registration.installing].some((worker) =>
     isRetiredAlfanumrikWorker(worker, origin),
   );
+}
+
+function isInstallablePwaRegistration(
+  registration: LegacyWorkerRegistration,
+  origin: string,
+): boolean {
+  return [registration.active, registration.waiting, registration.installing].some((worker) => {
+    if (!worker) return false;
+    try {
+      const scriptUrl = new URL(worker.scriptURL, origin);
+      return scriptUrl.origin === new URL(origin).origin && scriptUrl.pathname === INSTALLABLE_WORKER_PATH;
+    } catch {
+      return false;
+    }
+  });
+}
+
+async function unregisterInstallablePwaWorker(): Promise<void> {
+  const serviceWorkerContainer = defaultServiceWorkerContainer();
+  const origin = currentOrigin();
+  if (!serviceWorkerContainer || !origin) return;
+
+  try {
+    const registrations = await serviceWorkerContainer.getRegistrations();
+    await Promise.all(
+      registrations
+        .filter((registration) => isInstallablePwaRegistration(registration, origin))
+        .map((registration) => registration.unregister().catch(() => false)),
+    );
+  } catch {
+    // The kill switch must never affect normal browser use.
+  }
 }
 
 /**
@@ -285,14 +319,22 @@ export default function ServiceWorkerCleanup() {
     void cleanupLegacyServiceWorker()
       .then((result) => {
         reportLegacyServiceWorkerCleanup(result);
-        if (result.failures > 0) {
-          console.warn('[sw] Legacy service-worker cleanup was incomplete and will be retried.');
+        // Register only after the retired root worker has been removed. The
+        // new worker is network-only, so it cannot replay the stale-cache
+        // incident caused by the retired `/sw.js` worker.
+        if (!INSTALLABLE_PWA_ENABLED) {
+          void unregisterInstallablePwaWorker();
+          return;
+        }
+        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+          void navigator.serviceWorker
+            .register(INSTALLABLE_WORKER_PATH, { scope: '/' })
+            .catch(() => undefined);
         }
       })
       .catch(() => {
-        // cleanupLegacyServiceWorker is defensive and should never reject,
-        // but the shared layout (auth/onboarding included) must never be
-        // broken by an unhandled rejection here (P15).
+        // Service-worker setup is progressive enhancement: it must not affect
+        // auth, onboarding, or normal browser use when registration fails.
       });
   }, []);
 
