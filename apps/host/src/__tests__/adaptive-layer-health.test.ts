@@ -640,25 +640,17 @@ describe('Section 3: Adaptive Pipeline Integration', () => {
     });
   });
 
-  describe('CME engine (supabase/functions/cme-engine/index.ts) is a structured 410 tombstone', () => {
-    // Retired 2026-08-05 (tracker E1/E3) following the quiz-generator-v2
-    // tombstone precedent (docs/runbooks/edge-function-drift-report.md).
-    // The old 5-action pins were deleted with the implementation.
-    let cmeSource: string;
-
-    beforeAll(() => {
-      cmeSource = readSource('supabase/functions/cme-engine/index.ts');
-    });
-
-    it('serves the structured 410 tombstone payload', () => {
-      expect(cmeSource).toContain("code: 'cme_engine_retired'");
-      expect(cmeSource).toContain('410');
-      expect(cmeSource).toContain("replacement: '/api + learner-model facade'");
-    });
-
-    it('no longer contains any action handler or mastery write', () => {
-      expect(cmeSource).not.toContain("action === '");
-      expect(cmeSource).not.toMatch(/\.from\(\s*['"]cme_concept_state['"]\s*\)/);
+  describe('CME engine (supabase/functions/cme-engine/) stays deleted', () => {
+    // Retired 2026-08-05 as a structured 410 tombstone (tracker E1/E3), then
+    // permanently deleted — disk and production — on 2026-09-05 in the P1-7
+    // orphaned-Edge-Function cleanup (docs/runbooks/edge-function-drift-report.md).
+    // Canonical learner state is concept_mastery, written only by the
+    // update_learner_state_post_quiz RPC; reads go through the
+    // @alfanumrik/lib/learner-model facade. This pin keeps the retired
+    // function from being silently resurrected on disk.
+    it('has no source directory on disk (path base proven by a live sibling)', () => {
+      expect(fs.existsSync(path.resolve('supabase/functions/grounded-answer'))).toBe(true);
+      expect(fs.existsSync(path.resolve('supabase/functions/cme-engine'))).toBe(false);
     });
   });
 

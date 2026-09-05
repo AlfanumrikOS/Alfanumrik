@@ -419,12 +419,9 @@ describe('AI prompt PII (source scan): Deno Edge Functions and inline route buil
     scanFileForPiiIdentifiers('supabase/functions/quiz-generator/index.ts');
   });
 
-  it('supabase/functions/cme-engine/index.ts — Edge Function (no Anthropic calls) references no PII identifiers', () => {
-    // cme-engine does not call Anthropic today (algorithmic only). This
-    // test is a tripwire: if a future change adds a Claude call here,
-    // the prompt-construction code must not reference PII identifiers.
-    scanFileForPiiIdentifiers('supabase/functions/cme-engine/index.ts');
-  });
+  // supabase/functions/cme-engine/index.ts was retired as a 410 tombstone on
+  // 2026-08-05 and permanently deleted (disk + production) on 2026-09-05 in
+  // the P1-7 orphaned-Edge-Function cleanup — nothing left to scan.
 
   it('supabase/functions/grounded-answer/pipeline.ts — RAG pipeline references no PII identifiers in prompt code', () => {
     // Allowed exceptions: pipeline.ts may reference student_id (UUID, not

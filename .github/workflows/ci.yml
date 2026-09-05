@@ -2261,7 +2261,6 @@ jobs:
         supabase/functions/alert-deliverer/index_test.ts
         supabase/functions/bulk-question-gen/__tests__/actions.contract.test.ts
         supabase/functions/quiz-generator/__tests__/actions.contract.test.ts
-        supabase/functions/foxy-tutor/__tests__/
         supabase/functions/grounded-answer/__tests__/cache-redis.test.ts
         supabase/functions/grounded-answer/__tests__/cache-telemetry.test.ts
         supabase/functions/grounded-answer/__tests__/cache.test.ts

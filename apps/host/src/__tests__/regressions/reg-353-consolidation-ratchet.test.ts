@@ -15,9 +15,12 @@
  *       (20) reference baselines, post-consolidation re-measure. The analyzer
  *       FAILs if refs grow; this test pins the frozen literals so a baseline
  *       bump is a visible, reviewable diff in two places.
- *   (3) cme-engine TOMBSTONE — the Edge Function is a structured 410
- *       (`cme_engine_retired`) that keeps its jwt-user 401 posture for
- *       unauthenticated probes and points to the learner-model facade.
+ *   (3) cme-engine RETIREMENT — first a structured 410 tombstone
+ *       (`cme_engine_retired`, 2026-08-05, jwt-user 401 posture preserved),
+ *       then permanently deleted from disk and production (2026-09-05, P1-7
+ *       orphaned-Edge-Function cleanup) after a clean 30-day invocation
+ *       watch. The function must not reappear on disk; the retired write
+ *       target stays COMMENT-tombstoned in the rollup migration.
  *
  * Companion: REG-351 (facade lockstep), REG-352 (event-capture contract).
  */
@@ -116,23 +119,20 @@ describe('REG-353 (2) — retired-table reference baselines (may only DECREASE)'
   });
 });
 
-describe('REG-353 (3) — cme-engine tombstone contract', () => {
-  const tombstone = read('supabase/functions/cme-engine/index.ts');
-
-  it('returns a structured 410 with the stable retirement code', () => {
-    expect(tombstone).toContain("code: 'cme_engine_retired'");
-    expect(tombstone).toContain('status: 410');
-    expect(tombstone).toContain("error: 'gone'");
-  });
-
-  it('preserves the jwt-user auth posture: unauthenticated probes still get 401', () => {
-    expect(tombstone).toContain("if (!req.headers.get('Authorization'))");
-    expect(tombstone).toContain('status: 401');
-  });
-
-  it('points callers at the learner-model facade replacement', () => {
-    expect(tombstone).toContain('learner-model facade');
-    expect(tombstone).toContain('update_learner_state_post_quiz');
+describe('REG-353 (3) — cme-engine retirement contract (tombstone → permanently deleted)', () => {
+  // Ratchet history: 2026-08-05 the Edge Function became a structured 410
+  // tombstone (`cme_engine_retired`, jwt-user 401 posture preserved for
+  // unauthenticated probes, pointing at the learner-model facade). On
+  // 2026-09-05, after its 30-day invocation watch completed with zero
+  // non-probe hits, it was permanently deleted from disk and production
+  // (P1-7 orphaned-Edge-Function cleanup, PR #1779 — execution log in
+  // docs/runbooks/edge-function-drift-report.md). Forward-only: the function
+  // must never reappear on disk. The live-sibling check proves the path base
+  // is the real repo root, so a wrong root cannot make this pass vacuously.
+  it('has no source directory on disk (path base proven by a live sibling)', () => {
+    const root = findRepoRoot();
+    expect(fs.existsSync(path.join(root, 'supabase', 'functions', 'grounded-answer'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'supabase', 'functions', 'cme-engine'))).toBe(false);
   });
 
   it('the retired write target is COMMENT-tombstoned in the rollup migration', () => {
