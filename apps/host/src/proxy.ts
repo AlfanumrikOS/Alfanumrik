@@ -747,13 +747,21 @@ export async function proxy(request: NextRequest) {
   // modern Next.js, so enforce a real 404 before rendering as defense in depth.
   // Access is preserved in dev/preview (NODE_ENV !== 'production' and
   // VERCEL_ENV of 'development'/'preview').
+  // /dev/impersonate + /api/dev/impersonate: dev-only session bypass so a
+  // frontend session can click through the real dashboards instead of
+  // reading source blind. Same production lockout as the other /dev/*
+  // surfaces above — the API route also self-checks as defense in depth.
   if (
     (process.env.NODE_ENV === 'production' ||
       process.env.VERCEL_ENV === 'production') &&
     (pathname === '/dev/ui' ||
       pathname.startsWith('/dev/ui/') ||
       pathname === '/dev/cosmic-preview' ||
-      pathname.startsWith('/dev/cosmic-preview/'))
+      pathname.startsWith('/dev/cosmic-preview/') ||
+      pathname === '/dev/impersonate' ||
+      pathname.startsWith('/dev/impersonate/') ||
+      pathname === '/api/dev/impersonate' ||
+      pathname.startsWith('/api/dev/impersonate/'))
   ) {
     return new NextResponse(null, { status: 404 });
   }
