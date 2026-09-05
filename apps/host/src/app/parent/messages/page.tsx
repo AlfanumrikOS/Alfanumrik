@@ -312,7 +312,10 @@ function ParentMessagesContent() {
                         {t.student_name ? `${tt(isHi, 'For', 'के लिए')} ${t.student_name}` : ''}
                       </span>
                       {t.unread_count > 0 && (
-                        <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-orange-500 px-1.5 text-[10px] font-semibold text-white">
+                        <span
+                          className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold"
+                          style={{ background: 'var(--accent-warm)', color: 'var(--on-surface-accent, #FFFFFF)' }}
+                        >
                           {t.unread_count > 99 ? '99+' : t.unread_count}
                         </span>
                       )}
@@ -384,9 +387,10 @@ function ParentMessagesContent() {
                       <div
                         className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
                           mine
-                            ? 'rounded-br-md bg-orange-500 text-white'
+                            ? 'rounded-br-md'
                             : 'rounded-bl-md bg-white text-slate-900 shadow-sm ring-1 ring-orange-100'
                         }`}
+                        style={mine ? { background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' } : undefined}
                       >
                         <p className="whitespace-pre-wrap break-words">{m.body}</p>
                         <div className={`mt-1 text-[10px] ${mine ? 'text-orange-100' : 'text-slate-500'}`}>
@@ -422,7 +426,8 @@ function ParentMessagesContent() {
                 <button
                   type="submit"
                   disabled={sending || draftBody.trim().length === 0}
-                  className="min-h-[44px] rounded-md bg-orange-500 px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-[44px] rounded-md px-3 py-2 text-sm font-medium transition-all hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
                 >
                   {sending ? tt(isHi, 'Sending…', 'भेज रहे…') : tt(isHi, 'Send', 'भेजें')}
                 </button>

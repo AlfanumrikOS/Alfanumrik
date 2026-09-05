@@ -172,7 +172,8 @@ export default function ParentProfilePage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="min-h-[44px] rounded-[10px] border-none bg-orange-500 px-6 py-2.5 text-[13px] font-semibold text-white disabled:opacity-60"
+                className="min-h-[44px] rounded-[10px] border-none px-6 py-2.5 text-[13px] font-semibold disabled:opacity-60"
+                style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
               >
                 {saving ? tp('Saving...', 'सहेज रहे हैं...') : tp('Save', 'सहेजें')}
               </button>

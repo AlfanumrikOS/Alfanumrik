@@ -327,7 +327,7 @@ function NotificationRow({
           aria-hidden="true"
           className={[
             'mt-1.5 inline-block h-2 w-2 flex-shrink-0 rounded-full',
-            item.is_read ? 'bg-transparent' : 'bg-orange-500',
+            item.is_read ? 'bg-transparent' : 'bg-[var(--accent-warm)]',
           ].join(' ')}
         />
         <div className="flex-1 min-w-0">

@@ -458,7 +458,8 @@ export default function ParentAttendancePage() {
           <p className="text-gray-500 text-[13px] mb-4">{error}</p>
           <button
             onClick={fetchAttendance}
-            className="px-5 py-2.5 bg-orange-500 text-white rounded-[10px] text-[14px] font-semibold border-0 cursor-pointer min-h-[44px]"
+            className="px-5 py-2.5 rounded-[10px] text-[14px] font-semibold border-0 cursor-pointer min-h-[44px]"
+            style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
           >
             {tt(isHi, 'Try Again', 'पुनः प्रयास करें')}
           </button>
