@@ -135,6 +135,9 @@ test.describe('Surface walk — authenticated, per role', () => {
 
       let context = await browser.newContext();
       let page = await context.newPage();
+      // Playwright's actionTimeout defaults to 0 (infinite). Without this a
+      // single busy page stalls the entire walk instead of failing one route.
+      page.setDefaultTimeout(30_000);
 
       const ok = await loginViaDevImpersonate(page, role);
       test.skip(
@@ -154,6 +157,7 @@ test.describe('Surface walk — authenticated, per role', () => {
       expect(targets.length, `no routes to walk for ${role}`).toBeGreaterThan(0);
 
       const rows: WalkResult[] = [];
+      console.log(`[${role}] walking ${targets.length} routes`);
       for (const path of targets) {
         let row = await walkRoute(page, path, role);
 
@@ -163,10 +167,12 @@ test.describe('Surface walk — authenticated, per role', () => {
           await context.close().catch(() => {});
           context = await browser.newContext();
           page = await context.newPage();
+          page.setDefaultTimeout(30_000);
           if (await loginViaDevImpersonate(page, role)) {
             row = await walkRoute(page, path, role);
           }
         }
+        console.log(`[${role}] ${row.verdict.padEnd(9)} ${row.route}${row.detail ? '  :: ' + row.detail.slice(0, 90) : ''}`);
         rows.push(row);
       }
       await context.close().catch(() => {});
