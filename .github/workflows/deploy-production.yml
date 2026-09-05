@@ -3,6 +3,21 @@ name: Deploy Production — Alfanumrik
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      extra_prune_functions:
+        description: >-
+          Manual recovery input (2026-09-05 incident): comma/space/newline
+          -separated Edge Function slugs to delete via `supabase functions
+          delete`, in ADDITION to whatever this run's own git diff detects
+          as removed. Exists because a function directory deleted in a push
+          can silently fail to prune if the SAME push's "Detect changed
+          Edge Functions" step also (wrongly, pre-fix) tried to deploy that
+          now-missing directory and failed the job before the prune step
+          ever ran -- git/tests/manifests then show the function gone while
+          it stays ACTIVE in Supabase. Leave blank for a normal deploy.
+        required: false
+        default: ''
 
 concurrency:
   group: deploy-production
@@ -1279,7 +1294,21 @@ jobs:
       - name: Detect changed Edge Functions
         id: changed
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'supabase/functions/' \
+          # --diff-filter=d EXCLUDES deleted files (lowercase = exclude; see
+          # `git diff --help`). Without it, a function directory removed
+          # entirely in this push still shows up here via its deleted
+          # file paths, gets added to CHANGED, and "supabase functions
+          # deploy <fn>" fails with "entrypoint path does not exist" since
+          # the source is gone — which then fails this whole job and skips
+          # the LATER "Detect removed Edge Functions" / "Prune removed
+          # functions" steps below that were supposed to handle exactly
+          # this case. First hit: the 2026-09-05 13-function tombstone
+          # reap (PR #1779) failed this way, leaving 12 of the 13 (all but
+          # foxy-tutor, already pruned earlier) still deployed and ACTIVE
+          # in production despite git/tests/manifests all showing them
+          # gone. A pure removal must be silent here and picked up only by
+          # the dedicated removal step below.
+          CHANGED=$(git diff --name-only --diff-filter=d HEAD~1 HEAD -- 'supabase/functions/' \
             | grep -vE '(_archive|_shared|__tests__)' \
             | awk -F/ 'NF>=3 {print $3}' | sort -u | grep -v '^$' || true)
           # If _shared/ changed, redeploy ALL active functions (consumers depend on it)
@@ -1318,6 +1347,8 @@ jobs:
 
       - name: Detect removed Edge Functions
         id: removed
+        env:
+          EXTRA_PRUNE: ${{ inputs.extra_prune_functions }}
         run: |
           # Directories deleted in this push whose source no longer exists locally.
           # Deliberately independent of the "changed" detection above — a function
@@ -1328,6 +1359,15 @@ jobs:
           REMOVED=$(git diff --name-only --diff-filter=D HEAD~1 HEAD -- 'supabase/functions/' \
             | grep -vE '(_archive|_shared|__tests__)' \
             | awk -F/ 'NF>=3 {print $3}' | sort -u | grep -v '^$' || true)
+          # Manual recovery input (workflow_dispatch only) — see the trigger
+          # comment at the top of this file. Folded in alongside the git-diff
+          # detection, then subjected to the SAME "directory genuinely absent"
+          # safety check below, so a manually-typed slug that still has real
+          # source on disk is never pruned by mistake.
+          if [ -n "$EXTRA_PRUNE" ]; then
+            echo "Manual extra_prune_functions input: $EXTRA_PRUNE"
+            REMOVED=$(printf '%s\n%s' "$REMOVED" "$EXTRA_PRUNE" | tr ',' '\n' | tr -s ' \t' '\n')
+          fi
           # A directory only counts as removed if NONE of its files survive at HEAD
           # (a partial file deletion inside a still-present function is a normal
           # edit, not a removal).
