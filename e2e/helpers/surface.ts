@@ -22,14 +22,29 @@ const NEXT_404_RE = /this page could not be found/i;
 // cannot pass.
 const MIN_CONTENT_CHARS = 40;
 
+// innerText() inherits Playwright's actionTimeout, which defaults to 0 (infinite).
+// `.catch()` handles a rejection but NOT a hang, so an unbounded read here stalls
+// the whole walk on a single busy page. Always pass an explicit timeout.
+const READ_TIMEOUT_MS = 10_000;
+
 export async function assertNotBlank(page: Page, path: string): Promise<void> {
-  const bodyText = ((await page.locator('body').innerText().catch(() => '')) || '').trim();
+  const bodyText = (
+    (await page
+      .locator('body')
+      .innerText({ timeout: READ_TIMEOUT_MS })
+      .catch(() => '')) || ''
+  ).trim();
   expect(
     NEXT_404_RE.test(bodyText),
     `${path}: default Next.js 404 — a removed route must redirect or 410, never dead-end (Hard Rule: no ghost routes)`,
   ).toBe(false);
   const isComingSoon = COMING_SOON_RE.test(bodyText);
-  const mainText = ((await page.locator('main').innerText().catch(() => '')) || bodyText).trim();
+  const mainText = (
+    (await page
+      .locator('main')
+      .innerText({ timeout: READ_TIMEOUT_MS })
+      .catch(() => '')) || bodyText
+  ).trim();
   expect(
     isComingSoon || mainText.length >= MIN_CONTENT_CHARS,
     `${path}: rendered ${mainText.length} chars with no explicit "coming soon" state — blank/dead-end page`,
@@ -108,7 +123,7 @@ export async function walkRoute(page: Page, path: string, role: string): Promise
   page.on('console', onConsole as never);
 
   try {
-    await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     // NOT networkidle: the dev server holds an HMR websocket open, so the page
     // never reaches idle and every route would burn the full timeout. Instead
     // wait for <main> to carry content, which is the thing we actually assert.
@@ -120,7 +135,7 @@ export async function walkRoute(page: Page, path: string, role: string): Promise
           return t.length >= 40 || /coming\s+soon|जल्द/i.test(t);
         },
         undefined,
-        { timeout: 20_000 },
+        { timeout: 8_000 },
       )
       .catch(() => {});
     await assertNotBlank(page, path);
