@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 409,
+  "routeCount": 410,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -289,6 +289,14 @@
       "access": "auth",
       "owner": "core-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work."
+    },
+    {
+      "path": "/api/dev/impersonate",
+      "file": "apps/host/src/app/api/dev/impersonate/route.ts",
+      "access": "system",
+      "owner": "core-backend",
+      "rationale": "Dev-only session bypass for local frontend verification. Hard-blocked at the network boundary in proxy.ts (404 when NODE_ENV/VERCEL_ENV is 'production') and again inside the route itself — unreachable in any deployed environment, same posture as /api/v1/health's 'system' categorization.",
+      "serviceRoleUse": "Provisions a fixed set of 4 clearly-labeled dev.impersonate.<role>@alfanumrik.demo accounts (is_demo_account: true) via the admin/service-role client, using the same bootstrap_user_profile RPC /api/auth/bootstrap uses. No arbitrary user lookup or mutation — only ever creates/reads those 4 fixed accounts."
     },
     {
       "path": "/api/diagnostic/complete",

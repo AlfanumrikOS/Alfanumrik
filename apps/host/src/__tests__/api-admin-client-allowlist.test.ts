@@ -420,7 +420,14 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // is own-row/own-school scoped. Super-admin-by-design, same justification
 // as ai-quality/foxy-report/synthesis-health. See
 // scripts/admin-client-allowlist.json for the full note.
-const EXPECTED_COUNT = 272;
+// 272 -> 273 (2026-09-05): NEW route src/app/api/dev/impersonate/route.ts —
+// a dev-only session-bypass tool, hard-blocked outside local dev (proxy.ts
+// 404s it when NODE_ENV/VERCEL_ENV is 'production'). Service-role is
+// REQUIRED, not convenience: the whole point of the route is to mint a
+// session for one of 4 fixed, hardcoded synthetic accounts, so there is no
+// end-user session yet to scope an RLS-scoped client to. See
+// scripts/admin-client-allowlist.json for the full note.
+const EXPECTED_COUNT = 273;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
