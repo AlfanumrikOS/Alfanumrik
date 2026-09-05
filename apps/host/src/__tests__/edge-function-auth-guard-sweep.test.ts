@@ -203,14 +203,6 @@ const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   'embed-rag-remaining': ['tombstone'],
   'extract-diagrams': ['ai-admission', 'admin-key'],
   'extract-ncert-questions': ['ai-admission', 'admin-key'],
-  // Retired 2026-07-01, re-added 2026-08-04 as a P2-4a 410 tombstone (see
-  // docs/runbooks/edge-function-drift-report.md). No auth by design: the
-  // whole function returns a structured 410 GONE pointing at the canonical
-  // `/api/foxy` route, for every method, unauthenticated — old APKs still
-  // pinned to the retired edge endpoint must reach the 410 without a token.
-  // Zero attack surface (no createClient, no Deno.env.get, no data access);
-  // see isProvableTombstone() above, which this pin depends on staying true.
-  'foxy-tutor': ['tombstone'],
   'generate-answers': ['ai-admission', 'admin-key'],
   'generate-concepts': ['ai-admission', 'admin-key'],
   'generate-embeddings': ['admin-key'],
