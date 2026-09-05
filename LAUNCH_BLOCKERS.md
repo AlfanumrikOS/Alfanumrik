@@ -62,7 +62,12 @@ A note on how to read this file: a blocker is only "fixed" when its **Verificati
 
 ## P1 — embarrassing in a school demo
 
-### P0-4 — Production deploys cannot apply migrations: the ledger has drifted
+### P0-4 — Production deploys cannot apply migrations — ✅ RESOLVED 2026-09-05 15:20 UTC
+- **Status: CLOSED.** The 6 orphan ledger versions were reverted (`delete from supabase_migrations.schema_migrations` for `20260905061644/062110/064639/064828/065033/132711` — the sanctioned `migration repair --status reverted`, ledger rows only, no DB objects dropped). Deploy Production was re-run: **`Apply Database Migrations` = success** (red on every deploy since 12:19 UTC). The two pending files on main then applied forward: `20260905180000` (learning-loop fix, re-applied as a CREATE OR REPLACE no-op — already live) and `20260905190000` (Turnstile alert rule, **now seeded**, verified `count = 1`). Migrations flow again.
+- **The lasting rule (do not repeat the cause):** never apply a migration through the Supabase MCP `apply_migration` on this project — it stamps its own version and forks the ledger from the repo, which then blocks *every* subsequent deploy's `db push`, including other people's. Merge migrations and let `deploy-production.yml` apply them. See LAUNCH_STATE §6d.
+- **Severity:** P0 (was)
+
+### P0-4-old — Production deploys cannot apply migrations: the ledger has drifted
 - **Severity:** P0 — every deploy since 12:19 UTC 2026-09-05 has failed at "Apply Database Migrations", so **no migration can reach production until this is repaired**.
 - **Root cause:** six versions are in the remote ledger with no matching file in `supabase/migrations/`, so `supabase db push --linked --include-all` (`deploy-production.yml:674`) aborts before applying anything. Five (`20260905061644`, `062110`, `064639`, `064828`, `065033`) are the Foxy semantic-cache migrations a prior session applied via the Supabase MCP at ~06:16–06:50 UTC; their files are not on `main` (they sit on `wip/foxy-preserve-2026-09-05` as `20260905120000`–`160000`). The sixth (`20260905132711`) is the `learning-loop-health` fix, applied the same way at 13:27 UTC; its file **is** on main as `20260905180000_fix_learning_loop_health_cron.sql`.
 - **Why it surfaced when it did:** deploys through 05:53 UTC succeeded. The first failure was the 12:19 UTC deploy — six hours after the first out-of-band apply. The breakage was latent and surfaced on an unrelated merge.
