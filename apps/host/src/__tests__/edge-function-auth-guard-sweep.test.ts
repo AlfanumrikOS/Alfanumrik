@@ -171,46 +171,21 @@ const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   // (comments included, not stripped). This is a detector false-positive on
   // prose, not a second real guard mechanism — but the ledger must reflect
   // what the sweep ACTUALLY detects, so 'shared-secret' stays pinned here.
-  // 2026-08-31 (H3 orphan sweep) — hand-deployed via CLI/dashboard, never in
-  // git, zero application callers (repo-wide grep). Tombstoned as a pure 410
-  // GONE stub; see docs/runbooks/edge-function-drift-report.md. Same
-  // isProvableTombstone() exemption as foxy-tutor/cme-engine above.
-  'agent-orchestrator': ['tombstone'],
-  'agent-worker': ['tombstone'],
   'alert-deliverer': ['jwt-user', 'internal-cron', 'shared-secret'],
   'alfabot-answer': ['ai-admission'],
   'alfabot-send-inquiry': ['jwt-user'],
-  // 2026-08-31 (H3 orphan sweep) — hand-deployed, never in git, zero callers.
-  // Tombstoned; see edge-function-drift-report.md.
-  'auth-write-skeleton': ['tombstone'],
   'board-score': ['jwt-user'],
   'bulk-jee-neet-curated-import': ['jwt-user'],
   'bulk-jee-neet-import': ['ai-admission', 'admin-key'],
   'bulk-non-mcq-gen': ['ai-admission'],
   'bulk-question-gen': ['ai-admission'],
-  'cme-engine': ['jwt-user'],
   'coverage-audit': ['jwt-user', 'shared-secret'],
   'daily-cron': ['internal-cron', 'jwt-user', 'shared-secret'],
   'embed-diagrams': ['ai-admission', 'admin-key'],
-  // 2026-08-31 (H3 orphan sweep) — hand-deployed, never in git, zero callers.
-  // Tombstoned; see edge-function-drift-report.md. Distinct from the live,
-  // git-tracked embed-ncert-qa below (canonical NCERT embedding path).
-  'embed-ncert-books': ['tombstone'],
   'embed-ncert-qa': ['ai-admission', 'admin-key'],
   'embed-questions': ['ai-admission', 'admin-key'],
-  // 2026-08-31 (H3 orphan sweep) — hand-deployed, never in git, zero callers.
-  // Tombstoned; see edge-function-drift-report.md.
-  'embed-rag-remaining': ['tombstone'],
   'extract-diagrams': ['ai-admission', 'admin-key'],
   'extract-ncert-questions': ['ai-admission', 'admin-key'],
-  // Retired 2026-07-01, re-added 2026-08-04 as a P2-4a 410 tombstone (see
-  // docs/runbooks/edge-function-drift-report.md). No auth by design: the
-  // whole function returns a structured 410 GONE pointing at the canonical
-  // `/api/foxy` route, for every method, unauthenticated — old APKs still
-  // pinned to the retired edge endpoint must reach the 410 without a token.
-  // Zero attack surface (no createClient, no Deno.env.get, no data access);
-  // see isProvableTombstone() above, which this pin depends on staying true.
-  'foxy-tutor': ['tombstone'],
   'generate-answers': ['ai-admission', 'admin-key'],
   'generate-concepts': ['ai-admission', 'admin-key'],
   'generate-embeddings': ['admin-key'],
@@ -235,16 +210,6 @@ const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   'projector-runner': ['internal-cron'],
   'queue-consumer': ['internal-cron'],
   'quiz-generator': ['jwt-user'],
-  // 2026-08-31 (H3 orphan sweep) — all 6 hand-deployed, never in git, zero
-  // application callers (repo-wide grep). Tombstoned as pure 410 GONE stubs;
-  // see edge-function-drift-report.md. Production answer-grounding runs
-  // through grounded-answer (unaffected).
-  'rag-answer-v3': ['tombstone'],
-  'rag-answer-v4': ['tombstone'],
-  'rag-answer-v5': ['tombstone'],
-  'rag-ingest-batch': ['tombstone'],
-  'rag-ingest-status': ['tombstone'],
-  'rag-query-v3': ['tombstone'],
   'scan-ocr': ['ai-admission', 'jwt-user'],
   // 2026-07-15 correction: the Mailgun→Resend migration moved the outbound
   // `Authorization: Basic ...` Mailgun header into _shared/relay-mailer.ts, so

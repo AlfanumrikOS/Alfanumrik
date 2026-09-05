@@ -363,3 +363,41 @@ production directly, without an additional tombstone step — the archive
 commit already served as its observation record.
 
 Full writeup: `docs/audit/launch-readiness/29-edge-function-cleanup-and-m5-status.md`.
+
+## Execution log — 2026-09-05 (P1-7 closeout: 13 tombstones permanently deleted)
+
+CEO direction: "delete P1-7's orphaned Edge Functions now". Live state was
+re-verified first rather than taken from the 2026-09-02 audit's list:
+
+- `list_edge_functions` returned 57 ACTIVE functions, every one with source
+  on disk. The audit's "deployed, no source" orphans (`account-purge`,
+  `data-erasure-purger`, `edge-health-audit`) and `session-guard` (P2-9) were
+  ALREADY absent from production — nothing left to undeploy in that category.
+  `edge_health_probe_requests` (edge-health-audit's write target) last row
+  2026-06-19, 0 rows in the prior 7 days — consistent with it being long gone.
+- 13 structured-410 tombstone stubs remained on disk; 12 were still deployed
+  (`foxy-tutor` was already absent). A 24h `function_edge_logs` query showed
+  each live tombstone received exactly ONE hit, all inside a 30-second
+  alphabetical sweep at 00:12–00:13 UTC — the nightly auth-sweep self-probe,
+  not a caller. Zero `cron.job` entries and zero repo-wide call sites reference
+  any of them (the only textual match is mobile's documented-dead legacy
+  `foxy-tutor` path, which already resolves to a gateway 404).
+- `cme-engine`'s live source was fetched and is byte-identical to the on-disk
+  tombstone (the 401 it returns to unauthenticated probes is by design — see
+  its header); its 30-day window from 2026-08-05 completed 2026-09-04.
+- The 11 tombstones from the 2026-08-31 sweep were deleted ~4 days short of
+  their nominal 30-day window, at explicit CEO direction, on the strength of
+  the evidence above.
+
+Deleted — disk, `scripts/edge-function-manifest.json`, `AUTH_GUARD_LEDGER`,
+and production via `deploy-production.yml`'s existing "Detect removed Edge
+Functions" → "Prune removed functions" step on merge (best-effort: an
+already-absent slug logs a warning, never fails the release):
+`agent-orchestrator`, `agent-worker`, `auth-write-skeleton`, `cme-engine`,
+`embed-ncert-books`, `embed-rag-remaining`, `foxy-tutor` (residue only —
+already undeployed), `rag-answer-v3`, `rag-answer-v4`, `rag-answer-v5`,
+`rag-ingest-batch`, `rag-ingest-status`, `rag-query-v3`.
+`cme-engine` was also removed from `deploy_functions.sh`'s `ALL_FUNCTIONS`.
+
+Post-merge verification: `list_edge_functions` re-checked after the deploy
+run, recorded in the description of the PR that landed this entry.

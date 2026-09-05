@@ -60,7 +60,6 @@ ALL_FUNCTIONS=(
   bulk-jee-neet-import
   bulk-non-mcq-gen
   bulk-question-gen
-  cme-engine
   coverage-audit
   daily-cron
   embed-diagrams
