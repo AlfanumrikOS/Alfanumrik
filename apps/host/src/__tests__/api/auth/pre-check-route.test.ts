@@ -6,12 +6,18 @@
  * limits pinned below.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const { mockRateLimit } = vi.hoisted(() => ({ mockRateLimit: vi.fn() }));
+const { mockRateLimit, mockLogOpsEvent } = vi.hoisted(() => ({
+  mockRateLimit: vi.fn(),
+  mockLogOpsEvent: vi.fn(async () => undefined),
+}));
 vi.mock('@alfanumrik/lib/api-rate-limit', () => ({
   checkApiRateLimit: (...a: unknown[]) => mockRateLimit(...a),
+}));
+vi.mock('@alfanumrik/lib/ops-events', () => ({
+  logOpsEvent: (...a: unknown[]) => mockLogOpsEvent(...a),
 }));
 
 import { POST } from '@/app/api/auth/pre-check/route';
@@ -30,7 +36,13 @@ function allow() {
 
 beforeEach(() => {
   mockRateLimit.mockReset();
+  mockLogOpsEvent.mockClear();
   allow();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe('POST /api/auth/pre-check — validation', () => {
@@ -118,5 +130,103 @@ describe('POST /api/auth/pre-check — fail open', () => {
   it('allows the request when the body is malformed JSON', async () => {
     const res = await POST(makeRequest('not-json{{'));
     expect(res.status).toBe(400); // no email parsed -> validation error, not a crash
+  });
+});
+
+// ── Turnstile fail posture (2026-09-05 incident) ──────────────────────────
+//
+// A wrong TURNSTILE_SECRET in Vercel turned every login and signup into a 503
+// for most of a day. The route's header says a server-side config slip must
+// never lock out every real user; these pin that the code now agrees, while a
+// genuinely bad TOKEN still fails closed.
+
+function configureTurnstile() {
+  vi.stubEnv('TURNSTILE_SECRET', 'sekrit-for-tests-only');
+  vi.stubEnv('TURNSTILE_HOSTNAMES', 'alfanumrik.com,www.alfanumrik.com');
+}
+
+function stubSiteverify(response: { status: number; body: unknown } | Error) {
+  const fetcher = vi.fn(async () => {
+    if (response instanceof Error) throw response;
+    return new Response(JSON.stringify(response.body), {
+      status: response.status,
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  return fetcher;
+}
+
+const loginBody = { action: 'login', email: 'student@example.com', turnstileToken: 'a-real-looking-token' };
+
+describe('POST /api/auth/pre-check — Turnstile fail posture', () => {
+  it('fails OPEN and pages ops when Cloudflare says the SECRET is invalid (server misconfig, not a bot)', async () => {
+    configureTurnstile();
+    stubSiteverify({ status: 400, body: { success: false, 'error-codes': ['invalid-input-secret'] } });
+
+    const res = await POST(makeRequest(loginBody));
+
+    expect(res.status).toBe(200);
+    expect(mockLogOpsEvent).toHaveBeenCalledTimes(1);
+    expect(mockLogOpsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'auth',
+        severity: 'critical',
+        message: 'turnstile_secret_rejected_failing_open',
+      }),
+    );
+  });
+
+  it('fails OPEN and pages ops when Cloudflare says the secret is MISSING from the request', async () => {
+    configureTurnstile();
+    stubSiteverify({ status: 400, body: { success: false, 'error-codes': ['missing-input-secret'] } });
+
+    const res = await POST(makeRequest(loginBody));
+
+    expect(res.status).toBe(200);
+    expect(mockLogOpsEvent).toHaveBeenCalledWith(expect.objectContaining({ message: 'turnstile_secret_rejected_failing_open' }));
+  });
+
+  it('fails OPEN and pages ops when siteverify is unreachable (Cloudflare outage / network)', async () => {
+    configureTurnstile();
+    stubSiteverify(new Error('fetch failed: ECONNRESET'));
+
+    const res = await POST(makeRequest(loginBody));
+
+    expect(res.status).toBe(200);
+    expect(mockLogOpsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'critical', message: 'turnstile_siteverify_unreachable_failing_open' }),
+    );
+  });
+
+  it('still fails CLOSED (403) when the TOKEN is rejected — that is a real bot/user signal', async () => {
+    configureTurnstile();
+    stubSiteverify({ status: 200, body: { success: false, 'error-codes': ['invalid-input-response'] } });
+
+    const res = await POST(makeRequest(loginBody));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'TURNSTILE_FAILED' });
+    expect(mockLogOpsEvent).not.toHaveBeenCalled();
+  });
+
+  it('still fails CLOSED (403) when the token was solved for a hostname outside the allowlist', async () => {
+    configureTurnstile();
+    stubSiteverify({ status: 200, body: { success: true, action: 'login', hostname: 'evil.example' } });
+
+    const res = await POST(makeRequest(loginBody));
+
+    expect(res.status).toBe(403);
+    expect(mockLogOpsEvent).not.toHaveBeenCalled();
+  });
+
+  it('passes a valid token straight through', async () => {
+    configureTurnstile();
+    stubSiteverify({ status: 200, body: { success: true, action: 'login', hostname: 'www.alfanumrik.com' } });
+
+    const res = await POST(makeRequest(loginBody));
+
+    expect(res.status).toBe(200);
+    expect(mockLogOpsEvent).not.toHaveBeenCalled();
   });
 });
