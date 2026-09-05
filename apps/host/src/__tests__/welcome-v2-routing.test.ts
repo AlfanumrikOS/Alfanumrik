@@ -3,27 +3,21 @@ import { describe, it, expect, vi } from 'vitest';
 /**
  * Welcome page routing tests.
  *
- * UPDATED 2026-07-16 (landing v3 makeover): the welcome page now renders
- * WelcomeV3 by DEFAULT, with `?v=2` preserved as the rollback escape hatch
- * that renders the previous WelcomeV2. The old assertions ("always renders
- * WelcomeV2 / synchronous page") were deliberately replaced — not deleted —
- * to pin the new contract:
- *   1. default (no query / unknown v) → WelcomeV3
- *   2. ?v=2 → WelcomeV2 (rollback path; V2 removal is a later cleanup PR)
- *   3. the page is an async server component (Next.js 16 delivers
- *      searchParams as a Promise, so the page must await it — the previous
- *      "not async" pin no longer applies).
+ * UPDATED 2026-09-05 (CEO-approved WelcomeV2 retirement): the `?v=2`
+ * rollback escape hatch to WelcomeV2 was removed now that V3 is confirmed
+ * stable. `?v=2` now falls through to the default exactly like every other
+ * unrecognized value (matching how `?v=1` already behaved after legacy
+ * WelcomeV1 was deleted). The page renders WelcomeV3 unconditionally:
+ *   1. every searchParams value (none, empty, `?v=1`, `?v=2`, `?v=junk`) → WelcomeV3
+ *   2. the page is still an async server component (Next.js 16 delivers
+ *      searchParams as a Promise, so the page must await it).
  *
  * Owning agent: testing. Owner of source: frontend (page.tsx).
  */
 
-function FakeV2() { return null; }
-FakeV2.displayName = 'FakeV2';
-
 function FakeV3() { return null; }
 FakeV3.displayName = 'FakeV3';
 
-vi.mock('@alfanumrik/ui/landing/WelcomeV2', () => ({ default: FakeV2 }));
 vi.mock('@alfanumrik/ui/landing/v3/WelcomeV3', () => ({ default: FakeV3 }));
 
 const importPage = async () => {
@@ -39,7 +33,7 @@ function elementType(el: unknown): RenderedType | undefined {
   return undefined;
 }
 
-describe('welcome page — V3 default with ?v=2 rollback escape hatch', () => {
+describe('welcome page — V3 unconditional (no more v2 rollback hatch)', () => {
   it('renders WelcomeV3 by default (no search params)', async () => {
     const Page = await importPage();
     const result = await Page({});
@@ -52,13 +46,13 @@ describe('welcome page — V3 default with ?v=2 rollback escape hatch', () => {
     expect(elementType(result)).toBe(FakeV3);
   });
 
-  it('renders WelcomeV2 for ?v=2 (rollback escape hatch)', async () => {
+  it('renders WelcomeV3 for the retired ?v=2 rollback hatch', async () => {
     const Page = await importPage();
     const result = await Page({ searchParams: Promise.resolve({ v: '2' }) });
-    expect(elementType(result)).toBe(FakeV2);
+    expect(elementType(result)).toBe(FakeV3);
   });
 
-  it('falls through to WelcomeV3 for unknown versions (?v=1, ?v=junk)', async () => {
+  it('renders WelcomeV3 for any other version value (?v=1, ?v=junk)', async () => {
     const Page = await importPage();
     const v1 = await Page({ searchParams: Promise.resolve({ v: '1' }) });
     expect(elementType(v1)).toBe(FakeV3);
@@ -66,10 +60,10 @@ describe('welcome page — V3 default with ?v=2 rollback escape hatch', () => {
     expect(elementType(junk)).toBe(FakeV3);
   });
 
-  it('handles array-valued v (first value wins)', async () => {
+  it('renders WelcomeV3 for array-valued v', async () => {
     const Page = await importPage();
     const result = await Page({ searchParams: Promise.resolve({ v: ['2', '3'] }) });
-    expect(elementType(result)).toBe(FakeV2);
+    expect(elementType(result)).toBe(FakeV3);
   });
 
   it('is an async server component (returns a Promise)', async () => {

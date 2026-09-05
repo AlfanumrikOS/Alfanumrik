@@ -181,7 +181,15 @@ function StudentContent({ studentId }: { studentId: string }) {
         </a>
       </div>
 
-      <h1 style={S.h1}>{profile?.name || `Student ${studentId.slice(0, 8)}…`}</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+        <h1 style={S.h1}>{profile?.name || `Student ${studentId.slice(0, 8)}…`}</h1>
+        <a
+          href={`/super-admin/foxy-report/${encodeURIComponent(studentId)}`}
+          style={{ fontSize: 12, color: colors.accent, textDecoration: 'none' }}
+        >
+          View Foxy report →
+        </a>
+      </div>
       <div style={S.subtitle}>
         <code style={{ fontSize: 11 }}>{studentId}</code>
       </div>
