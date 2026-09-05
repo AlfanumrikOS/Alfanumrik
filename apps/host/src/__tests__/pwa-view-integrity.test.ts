@@ -66,7 +66,13 @@ describe('PWA view integrity (REG-259)', () => {
       expect(layoutSource).toMatch(/ServiceWorkerCleanup/);
       expect(registrationSource).toMatch(/NEXT_PUBLIC_PWA_ENABLED !== 'false'/);
       expect(registrationSource).toMatch(/!INSTALLABLE_PWA_ENABLED\) \{\s*void unregisterInstallablePwaWorker\(\);/);
-      expect(registrationSource).toMatch(/serviceWorker\.register\(INSTALLABLE_WORKER_PATH, \{ scope: '\/' \}\)/);
+      // Whitespace-tolerant between `serviceWorker` and `.register(`: the call is
+      // formatted across lines (`void navigator.serviceWorker\n  .register(...)`),
+      // and a contiguous pin breaks on a pure line-wrap while the registration is
+      // still correct. Same `\s*` treatment the assertion above already uses.
+      expect(registrationSource).toMatch(
+        /serviceWorker\s*\.register\(INSTALLABLE_WORKER_PATH, \{ scope: '\/' \}\)/,
+      );
     });
 
     it('uses a network-only install worker with no CacheStorage access', () => {
