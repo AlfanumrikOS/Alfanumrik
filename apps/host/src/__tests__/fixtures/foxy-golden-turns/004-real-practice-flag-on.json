@@ -48,7 +48,7 @@
       }
     },
     "retrieval": {
-      "match_count": 5
+      "match_count": 3
     },
     "timeout_ms": 44000
   },

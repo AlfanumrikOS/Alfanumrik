@@ -71,6 +71,7 @@ vi.mock('@alfanumrik/lib/ai', () => ({
 }));
 vi.mock('@alfanumrik/lib/ai/workflows/foxy-router', () => ({
   QUIZ_PATTERNS: [],
+  ESSAY_LENGTH_PATTERNS: /\bin detail\b/i,
 }));
 vi.mock('@alfanumrik/lib/tenant-config', () => ({
   getAllTenantConfig: vi.fn(),

@@ -192,6 +192,13 @@ export async function shadowLogClaudeCall(args: {
   latencyMs: number;
   claudeResponse: ClaudeResponse;
   /**
+   * Cost optimization (2026-09-05): why this call was routed to a
+   * higher-tier model instead of the default tier (e.g.
+   * 'essay_length_request'). Undefined/null when no escalation occurred.
+   * Maps to mol_request_logs.escalation_reason via LogPayload.
+   */
+  escalationReason?: string | null;
+  /**
    * 2026-09-02 (§5 data-integrity fix): the REAL grounded_ai_traces.id for
    * this call, when the caller has one available. Deliberately a separate
    * field from `traceId` above — `traceId` is MOL's own synthetic
@@ -364,6 +371,7 @@ export async function shadowLogClaudeCall(args: {
       grade: args.studentContext?.grade ?? null,
       language: args.studentContext?.language ?? null,
       exam_goal: args.studentContext?.exam_goal ?? null,
+      escalation_reason: args.escalationReason ?? null,
       // ── C4.2b-i baseline tagging fix (2026-05-19) ──
       // Every row this adapter writes is, by definition, a BASELINE row:
       // the C3 telemetry adapter only fires for the user-facing Claude
@@ -440,6 +448,8 @@ export function shadowLogClaudeCallIfEnabled(args: {
   claudeResponse: ClaudeResponse;
   /** See shadowLogClaudeCall's doc comment on the same field. */
   groundedTraceId?: string | null;
+  /** See shadowLogClaudeCall's doc comment on the same field. */
+  escalationReason?: string | null;
 }): void {
   // The flag check itself is async (a fetch + Array.find against the
   // in-process 5-minute cache). To guarantee zero impact on request
@@ -476,6 +486,7 @@ export function shadowLogClaudeCallIfEnabled(args: {
         latencyMs: args.latencyMs,
         claudeResponse: args.claudeResponse,
         groundedTraceId: args.groundedTraceId,
+        escalationReason: args.escalationReason,
       });
     } catch (err) {
       // Defensive: shadowLogClaudeCall already swallows; this catches the

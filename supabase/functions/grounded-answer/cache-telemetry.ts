@@ -16,7 +16,9 @@ export type CacheMetric =
   | 'cache_l2_hit'
   | 'cache_l2_miss'
   | 'cache_l2_shadow_hit'
-  | 'cache_l3_hit';
+  | 'cache_l3_hit'
+  | 'cache_semantic_hit'
+  | 'cache_semantic_miss';
 
 export interface CacheMetricDims {
   caller: string;

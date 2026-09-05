@@ -57,6 +57,7 @@ vi.mock('@alfanumrik/lib/foxy/recent-lab-context', () => ({ fetchRecentLabContex
 // ─── math collaborators — never fire ─────────────────────────────────────────
 vi.mock('@alfanumrik/lib/ai/workflows/foxy-router', () => ({
   QUIZ_PATTERNS: /\bquiz\b/i,
+  ESSAY_LENGTH_PATTERNS: /\bin detail\b/i,
   classifyMathSolve: vi.fn().mockResolvedValue({ isMathSolve: false }),
 }));
 vi.mock('@alfanumrik/lib/ai/math/solve-math', () => ({ solveMath: vi.fn() }));

@@ -136,6 +136,17 @@ export interface LogPayload {
    * that spawned this LLM call.
    */
   trace_id?: string | null
+
+  /**
+   * Cost optimization (2026-09-05): why this call was routed to a
+   * higher-tier model instead of the default tier for its caller/mode
+   * (e.g. 'essay_length_request' when a Foxy learn/explain turn explicitly
+   * requested model_preference: 'sonnet'). NULL/undefined when no
+   * escalation occurred -- the overwhelming majority of rows. Maps directly
+   * to mol_request_logs.escalation_reason (migration
+   * 20260905120000_foxy_cost_optimization_logging_columns.sql).
+   */
+  escalation_reason?: string | null
 }
 
 // deno-lint-ignore no-explicit-any
@@ -184,6 +195,7 @@ export function recordMolRequest(p: LogPayload): void {
       shadow_of_request_id: p.shadow_of_request_id ?? null,
       shadow_role: p.shadow_role ?? null,
       trace_id: p.trace_id ?? null,
+      escalation_reason: p.escalation_reason ?? null,
     }).then(
       () => {},
       (err: unknown) => {

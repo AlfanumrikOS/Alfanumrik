@@ -44,6 +44,16 @@ export const QUIZ_PATTERNS = /\b(?:quiz|mcqs?|mock\s+test|test\s+me\b|(?:give|pr
 
 const REVISION_PATTERNS = /\b(revis(e|ion)|summary|summarize|summarise|recap|key\s+points|quick\s+review|notes)\b/i;
 
+// Cost optimization (2026-09-05, Phase 2A): an explicit request for a
+// long/detailed explanation. Exported so /api/foxy/route.ts can escalate
+// model_preference from the default 'auto' (haiku-first) to an explicit
+// 'sonnet' request for these turns only. Deliberately narrow (explicit
+// length/depth cues, not every "explain" question -- DOUBT_PATTERNS already
+// catches plain "what is X" / "explain why" questions, which stay on the
+// default tier) so this only fires when the student is actually asking for
+// more than the default Socratic-length answer.
+export const ESSAY_LENGTH_PATTERNS = /\b(explain\s+(?:this|that|it)?\s*in\s+(?:detail|depth)|(?:detailed|in-?depth|comprehensive|thorough)\s+(?:explanation|answer)|long\s+answer|write\s+(?:me\s+)?an?\s+essay|explain\s+(?:this|that|it)?\s*thoroughly|elaborate\s+(?:on\s+(?:this|that)|more|further)\b)/i;
+
 const DOUBT_PATTERNS = /\b(doubt|confused|don'?t\s+understand|explain\s+why|what\s+does|how\s+does|why\s+does|difference\s+between|what\s+is|what\s+are|clear\s+my\s+doubt)\b/i;
 
 // ─── Mode-to-Intent Defaults ──────────────────────────────────────────────

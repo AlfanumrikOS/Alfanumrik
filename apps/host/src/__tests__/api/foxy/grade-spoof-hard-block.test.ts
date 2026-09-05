@@ -90,6 +90,7 @@ const _classifyMathSolve = vi.fn();
 const _runMathSolvePipeline = vi.fn();
 vi.mock('@alfanumrik/lib/ai/workflows/foxy-router', () => ({
   QUIZ_PATTERNS: /\bquiz\b/i,
+  ESSAY_LENGTH_PATTERNS: /\bin detail\b/i,
   classifyMathSolve: (...args: unknown[]) => _classifyMathSolve(...args),
 }));
 vi.mock('@alfanumrik/lib/ai/math/solve-math', () => ({ solveMath: vi.fn() }));

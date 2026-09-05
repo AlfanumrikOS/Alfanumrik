@@ -104,7 +104,7 @@ import {
 } from '@alfanumrik/lib/learn/foxy-long-memory';
 import { callGroundedAnswer, type GroundedRequest, type Citation, type SuggestedAlternative } from '@alfanumrik/lib/ai/grounded-client';
 import { PER_PLAN_TIMEOUT_MS, SOFT_CONFIDENCE_BANNER_THRESHOLD } from '@alfanumrik/lib/grounding-config';
-import { QUIZ_PATTERNS, classifyMathSolve } from '@alfanumrik/lib/ai/workflows/foxy-router';
+import { QUIZ_PATTERNS, ESSAY_LENGTH_PATTERNS, classifyMathSolve } from '@alfanumrik/lib/ai/workflows/foxy-router';
 import {
   runMathSolvePipeline,
 } from '@alfanumrik/lib/ai/math/solve-pipeline';
@@ -331,7 +331,13 @@ import {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const MAX_MESSAGE_LENGTH = 1000;
-const RAG_MATCH_COUNT = 5;
+// Cost optimization (2026-09-05): reduced from 5. Foxy-scoped only -- this is
+// a local constant, independent of supabase/functions/grounded-answer/
+// config.ts's own RAG_MATCH_COUNT (=5, parity-tested against
+// packages/lib/src/grounding-config.ts for the diagram/lesson generators,
+// which are untouched by this change) and of generate-diagram.ts /
+// generate-lesson.ts, which keep their own top-5 retrieval.
+const RAG_MATCH_COUNT = 3;
 
 /**
  * Platform ceiling for THIS route, mirrored from the `src/app/api/foxy/route.ts`
@@ -418,6 +424,11 @@ import {
   buildMathFormatDirective,
   resolveGradeBand,
   composeModeDirective,
+  // Cost optimization (ff_foxy_concise_output_budget_v1, default OFF) —
+  // learn/explain/revise/explorer only, see prompt-sections.ts for why
+  // doubt/homework/practice are excluded.
+  CONCISE_MODE_MAX_TOKENS,
+  buildConciseOutputDirective,
   buildQuizMeLlmGrader,
   buildQuizMeFallbackResponse,
   isBareOpen,
@@ -662,6 +673,16 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     isQuizMe || (isQuizIntent && requestedMode !== 'practice')
       ? 'practice'
       : requestedMode;
+  // Cost optimization (2026-09-05, Phase 2A): explicit Sonnet-escalation
+  // trigger #1 -- a student explicitly asking for a long/detailed
+  // explanation. Never fires for practice/quiz_me turns (those already get
+  // a fixed 5-mcq shape, unrelated to this). Sets model_preference below;
+  // logged as mol_request_logs.escalation_reason='essay_length_request' by
+  // grounded-answer/pipeline.ts. Multi-step numerical solving is
+  // deliberately NOT a second trigger here -- classifyMathSolve already
+  // routes that case to the separate, more precise deterministic math-solve
+  // pipeline (runMathSolvePipeline) rather than a bigger chat model.
+  const isEssayLengthRequest = mode !== 'practice' && !isQuizMe && ESSAY_LENGTH_PATTERNS.test(message);
   // Phase 2.2: optional coaching mode. If the client passes one, we honor
   // it. Otherwise we pick a default later, after mastery is known
   // (mastery < 0.6 → 'socratic', else → 'answer').
@@ -2042,6 +2063,36 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     });
   }
 
+  // ── Cost optimization: concise output budget (ff_foxy_concise_output_budget_v1) ──
+  // Scoped to mode in CONCISE_MODE_MAX_TOKENS (learn/explain/revise/explorer
+  // only — see prompt-sections.ts for why doubt/homework/practice are
+  // excluded). Flag read is skipped entirely outside that mode set (no extra
+  // DB roundtrip) and fails closed to OFF on any error, so an infra hiccup
+  // degrades to today's existing 3000-token behavior, never to an
+  // unexpectedly-truncated one.
+  const conciseOutputBudgetEnabled =
+    mode in CONCISE_MODE_MAX_TOKENS
+      ? await (async () => {
+          try {
+            return await isFeatureEnabled('ff_foxy_concise_output_budget_v1', {
+              role: 'student',
+              userId: auth.userId!,
+            });
+          } catch {
+            return false;
+          }
+        })()
+      : false;
+  const conciseOutputDirective = conciseOutputBudgetEnabled ? buildConciseOutputDirective() : '';
+  if (conciseOutputBudgetEnabled) {
+    logger.info('foxy.concise_output_budget.applied', {
+      // P13: mode + scope only — never studentId/message.
+      mode,
+      subject,
+      grade,
+    });
+  }
+
   // history_messages is kept as a deprecated alias for one release so the
   // grounded-answer service can switch over without forcing a synchronized
   // deploy. The service now prefers conversation_turns when present.
@@ -2335,8 +2386,14 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     },
     mode: 'soft',
     generation: {
-      model_preference: 'auto',
-      max_tokens: MODE_MAX_TOKENS[mode] ?? 1024,
+      // Cost optimization (Phase 2A): 'auto' resolves haiku-first (falling
+      // to sonnet only on a Haiku failure) for every Foxy turn EXCEPT an
+      // explicit essay-length-request trigger, which asks for the sonnet
+      // tier directly. See isEssayLengthRequest above.
+      model_preference: isEssayLengthRequest ? 'sonnet' : 'auto',
+      max_tokens: (conciseOutputBudgetEnabled ? CONCISE_MODE_MAX_TOKENS[mode] : undefined)
+        ?? MODE_MAX_TOKENS[mode]
+        ?? 1024,
       temperature: 0.3,
       // RCA-FIX RC-1 (2026-06-26): route to mode-specific prompt so Claude
       // receives exactly ONE output-format section per request.
@@ -2396,10 +2453,13 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
             ? PRACTICE_MCQ_DIRECTIVE
             : composeModeDirective(
                 composeModeDirective(
-                  composeModeDirective(MODE_DIRECTIVES[mode] ?? '', teachThenStopDirective),
-                  diagramDirective,
+                  composeModeDirective(
+                    composeModeDirective(MODE_DIRECTIVES[mode] ?? '', teachThenStopDirective),
+                    diagramDirective,
+                  ),
+                  mathFormatDirective,
                 ),
-                mathFormatDirective,
+                conciseOutputDirective,
               ),
         // Phase 2.2: coaching mode and its instruction line, consumed by
         // the rewritten foxy_tutor_v1 template.

@@ -207,6 +207,30 @@ export function tuplesMatch(a: CacheTuple, b: CacheTuple): boolean {
 }
 
 /**
+ * Same defense-in-depth check as tuplesMatch, EXCEPT query_normalized —
+ * for the semantic cache tier (cache-semantic.ts) only, where a hit is BY
+ * DESIGN a differently-worded query than the one the entry was written
+ * under. buildGenCtx (gen-ctx.ts) never folds the raw query text into
+ * gen_ctx_hash — it only captures generation configuration (prompt
+ * template/rev, model routing rev + order, generation params, retrieval
+ * params, template_variables, conversation_turns) — so two paraphrases of
+ * the same question asked under an identical mode/grade/subject/chapter/
+ * flag/content-version state hash identically here. The actual
+ * "is this really the same question" judgment is cosine similarity against
+ * question_embedding, computed by the caller, not this function.
+ */
+export function tuplesMatchIgnoringQuery(a: CacheTuple, b: CacheTuple): boolean {
+  return (
+    a.caller === b.caller &&
+    a.mode === b.mode &&
+    a.grade === b.grade &&
+    a.subject_code === b.subject_code &&
+    a.chapter_number === b.chapter_number &&
+    a.gen_ctx_hash === b.gen_ctx_hash
+  );
+}
+
+/**
  * Look up a key in the L2 cache. Returns null on: missing Upstash secrets,
  * any Redis error, no entry, a defense-in-depth tuple mismatch, a
  * defense-in-depth model_order mismatch, or a non-grounded stored payload.

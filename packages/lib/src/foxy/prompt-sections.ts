@@ -734,6 +734,49 @@ const MODE_MAX_TOKENS: Record<string, number> = {
   homework: 2500,
 };
 
+// Cost optimization (2026-09-05, ff_foxy_concise_output_budget_v1, default
+// OFF). Deliberately scoped to the open-ended teaching modes only — NOT
+// practice (fixed 5-mcq shape, cost driver is elsewhere), and NOT doubt/
+// homework: those two were RAISED to 2500 above specifically to fix a real
+// production incident (2026-08-05, FOXY-RAWJSON) where a 1024-token budget
+// truncated a worked-math structured-JSON response mid-object and leaked the
+// raw JSON envelope to a Grade-6 student. Cutting doubt/homework toward a
+// Socratic-length budget would risk reopening that exact incident class for
+// worked-solution content, which is a different shape than a Socratic
+// teaching turn.
+//
+// 900 (not the originally-floated 250) is a deliberately conservative
+// starting point: effective budget after the grounded-answer pipeline's
+// 1.6x Foxy structured-output boost is ~1440 tokens -- comfortably above the
+// 1024-effective-~1638 range where the FOXY-RAWJSON incident occurred, while
+// still cutting the current 3000 (~4800 effective) budget by 70%. Tune down
+// further only after confirming no structured-output truncation in the
+// golden-turn fixtures and a real quality spot-check (see foxy-golden-turns
+// fixtures under apps/host/src/__tests__/fixtures/).
+export const CONCISE_MODE_MAX_TOKENS: Partial<Record<string, number>> = {
+  learn: 900,
+  explain: 900,
+  revise: 900,
+  explorer: 900,
+};
+
+// Paired with CONCISE_MODE_MAX_TOKENS: lowering the token budget alone risks
+// a mid-sentence cutoff, since the model isn't otherwise told the turn should
+// be short. Composed onto the per-mode directive via composeModeDirective
+// (returns the base verbatim when this isn't injected) -- same additive
+// pattern as teachThenStopDirective / diagramDirective / mathFormatDirective
+// at the route.ts call site. Does not touch FOXY_SAFETY_RAILS, scope, or
+// persona -- length/shape only.
+export function buildConciseOutputDirective(): string {
+  return [
+    '## Mode Directive (CONCISE BUDGET — overrides default verbosity above)',
+    'Keep this answer SHORT: 2-4 sentences of explanation, then end with exactly',
+    'ONE check-in question. Do NOT produce a multi-block "teach deeply" exposition',
+    'or a long worked derivation in this turn -- if the student needs more after',
+    'this, they will ask a follow-up.',
+  ].join('\n');
+}
+
 // ─── Post-answer re-teach + Quiz-me directives (Phase 1 learning actions) ────
 //
 // The client passes `coachDirective` on a follow-up turn for the SAME question

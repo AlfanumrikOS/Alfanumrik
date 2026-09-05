@@ -162,6 +162,16 @@ import { getRagContentVersion } from './_content-version.ts';
 import { shouldUseClaudePrimary } from './_model-rollout-flag.ts';
 // Durable L3 solution store (ncert-solver only, ff_ncert_solver_solution_store_v1).
 import { getDurableSolution, putDurableSolution } from './cache-durable.ts';
+// Semantic (embedding-cosine) cache tier -- Foxy only, ff_foxy_semantic_cache_v1.
+// Cost optimization (Phase 2E, 2026-09-05). See cache-semantic.ts header for
+// the full design (why tuplesMatchIgnoringQuery, not tuplesMatch; why this
+// sits after Step 5's embedding instead of before Step 3 like L1/L2/L3).
+import {
+  getSemanticCacheHit,
+  recordSemanticCacheHit,
+  putSemanticCacheEntry,
+} from './cache-semantic.ts';
+import { isFoxySemanticCacheEnabled } from './_semantic-cache-flag.ts';
 import { logCacheMetric } from './cache-telemetry.ts';
 import {
   STRICT_MIN_SIMILARITY,
@@ -1207,6 +1217,52 @@ export async function runPipeline(
     else recordSuccess(cKey);
   }
 
+  // Step 5b. Semantic (embedding-cosine) cache tier -- Foxy only (design
+  // item, Phase 2E). Reuses the embedding just computed above (no extra
+  // Voyage call). Sits strictly BEFORE retrieveChunks below (REG-50
+  // position): a hit performs zero retrieval calls and writes zero new
+  // trace rows, same contract as L1/L2/L3. Requires cacheEligible (i.e.
+  // cache_scope === 'shared' -- no history, no personalization, the same
+  // gate the exact-match tiers already enforce) AND a usable embedding.
+  if (
+    request.caller === 'foxy' &&
+    cacheEligible &&
+    embedding &&
+    cacheKey &&
+    cacheTuple &&
+    genCtxHash &&
+    modelOrder &&
+    (await isFoxySemanticCacheEnabled(sb))
+  ) {
+    const semanticHit = await getSemanticCacheHit(
+      sb,
+      embedding,
+      {
+        grade: request.scope.grade,
+        subject_code: request.scope.subject_code,
+        chapter_number: request.scope.chapter_number,
+      },
+      cacheTuple,
+      modelOrder,
+    );
+    if (semanticHit) {
+      logCacheMetric('cache_semantic_hit', {
+        caller: request.caller,
+        grade: request.scope.grade,
+        subject: request.scope.subject_code,
+        tokens_avoided: semanticHit.response.meta.tokens_used,
+      });
+      putInCache(cacheKey, semanticHit.response); // backfill L1
+      void recordSemanticCacheHit(sb, semanticHit.rowId); // fire-and-forget bookkeeping
+      return semanticHit.response;
+    }
+    logCacheMetric('cache_semantic_miss', {
+      caller: request.caller,
+      grade: request.scope.grade,
+      subject: request.scope.subject_code,
+    });
+  }
+
   // Step 6. Retrieve chunks.
   //
   // Phase 1.1: over-fetch (top-30 by default) and let the Voyage rerank-2
@@ -1636,6 +1692,17 @@ export async function runPipeline(
     isGroundingCheck: false,
     latencyMs: claudeLatencyMs,
     claudeResponse: claude,
+    // Cost optimization (2026-09-05): today the ONLY Foxy code path that
+    // ever requests model_preference:'sonnet' explicitly (rather than the
+    // usual 'auto', which tries haiku first) is the essay-length-request
+    // trigger in apps/host's /api/foxy route -- so this inference is exact
+    // for now, not a guess. If a second explicit-sonnet trigger is ever
+    // added, thread a real reason string through GroundedRequest.generation
+    // instead of inferring it here.
+    escalationReason:
+      request.caller === 'foxy' && request.generation.model_preference === 'sonnet'
+        ? 'essay_length_request'
+        : null,
   });
   // auth_error is a config problem, not an upstream outage — don't trip
   // the breaker on it (rotating keys would need admin intervention anyway).
@@ -2092,6 +2159,32 @@ export async function runPipeline(
         response,
         cacheTuple,
         contentVersion,
+      );
+    }
+
+    // Semantic cache write-back -- Foxy only (Phase 2E). Same embedding
+    // reused from Step 5/5b; a null embedding (Voyage failure) or a request
+    // that never reached Step 5b's flag check (embedding computed but the
+    // flag read below is re-checked here, since write and read are gated by
+    // the SAME flag with no separate store/serve split for this tier) skips
+    // the write silently.
+    if (
+      request.caller === 'foxy' &&
+      embedding &&
+      (await isFoxySemanticCacheEnabled(sb))
+    ) {
+      await putSemanticCacheEntry(
+        sb,
+        embedding,
+        {
+          grade: request.scope.grade,
+          subject_code: request.scope.subject_code,
+          chapter_number: request.scope.chapter_number,
+        },
+        request.caller,
+        request.scope.chapter_title ?? null,
+        response,
+        cacheTuple,
       );
     }
   }
