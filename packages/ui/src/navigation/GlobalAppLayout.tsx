@@ -90,9 +90,15 @@ function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
                      pathname?.startsWith('/product') ||
                      pathname?.startsWith('/schools') ||
                      pathname?.startsWith('/security') ||
-                     pathname?.startsWith('/support') ||
-                     pathname?.startsWith('/demo') ||
-                     pathname?.startsWith('/settings');
+                     pathname?.startsWith('/demo');
+  // NOT excluded (2026-09-05): '/support' and '/settings'. Both are reachable
+  // by a signed-in student -- '/support' is "My Tickets" in the student nav
+  // itself (nav-config.ts CORE/MORE + SIDEBAR), and '/settings' is where
+  // /help pushes a logged-in user. Excluding them stripped the sidebar AND
+  // the mobile bottom bar, so tapping "My Tickets" left a student on a page
+  // with no way back. `navEligible` below already requires
+  // isLoggedIn && activeRole === 'student', so a signed-out visitor on the
+  // public view of these routes still gets no student chrome.
 
   /** Student on a route the navigation belongs on at all. */
   const navEligible = isLoggedIn && activeRole === 'student' && !isExcluded;
