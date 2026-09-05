@@ -39,7 +39,10 @@ export default function TrustV2() {
     liveFetcher,
     { refreshInterval: 300_000, revalidateOnFocus: false, shouldRetryOnError: false },
   );
-  const liveCount = liveData?.count ?? 142;
+  // No hardcoded fallback: a "currently active" pulse counter that keeps
+  // showing a fixed number after the live API fails is presenting stale
+  // data as real-time. Render nothing here instead of inventing a count.
+  const liveCount = typeof liveData?.count === 'number' ? liveData.count : null;
 
   return (
     <section className={s.trust} id="trust" aria-labelledby="trust-title">
@@ -143,30 +146,32 @@ export default function TrustV2() {
           </div>
         </div>
 
-        <div
-          className={s.liveCounter}
-          aria-live="polite"
-          aria-label={t(
-            'Currently active learners',
-            'अभी सक्रिय विद्यार्थी',
-          )}
-        >
-          <span className="pulse" aria-hidden="true"></span>
-          <div className="liveText">
-            <span className="num tabular">{liveCount}</span>{' '}
-            {t('students learning right now', 'विद्यार्थी अभी सीख रहे हैं')}{' '}
-            <span className="devaNum" lang="hi">{toDevanagariNum(liveCount)}</span>
-          </div>
+        {liveCount !== null && (
           <div
-            className="liveMeta"
-            title={t(
-              'Updated every 5 minutes from active sessions.',
-              'हर 5 मिनट में सक्रिय सत्रों से अपडेट।',
+            className={s.liveCounter}
+            aria-live="polite"
+            aria-label={t(
+              'Currently active learners',
+              'अभी सक्रिय विद्यार्थी',
             )}
           >
-            {t('Refreshed every 5 min', 'हर 5 मिनट में ताज़ा')}
+            <span className="pulse" aria-hidden="true"></span>
+            <div className="liveText">
+              <span className="num tabular">{liveCount}</span>{' '}
+              {t('students learning right now', 'विद्यार्थी अभी सीख रहे हैं')}{' '}
+              <span className="devaNum" lang="hi">{toDevanagariNum(liveCount)}</span>
+            </div>
+            <div
+              className="liveMeta"
+              title={t(
+                'Updated every 5 minutes from active sessions.',
+                'हर 5 मिनट में सक्रिय सत्रों से अपडेट।',
+              )}
+            >
+              {t('Refreshed every 5 min', 'हर 5 मिनट में ताज़ा')}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Phase 3 — editorial Recognition strip. Compliance band below stays
             unchanged as the quick-glance footer; this expands the same proof
