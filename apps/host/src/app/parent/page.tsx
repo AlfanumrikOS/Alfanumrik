@@ -229,7 +229,8 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
           <button
             onClick={submit}
             disabled={loading}
-            className={`w-full px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3 ${loading ? 'opacity-50' : 'opacity-100'}`}
+            className={`w-full px-5 py-3 border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3 ${loading ? 'opacity-50' : 'opacity-100'}`}
+            style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
           >
             {loading ? t(isHi, 'Checking...', 'जाँच हो रही है...') : t(isHi, 'Check again', 'फिर से जाँचें')}
           </button>
@@ -271,7 +272,8 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
           </p>
           <button
             onClick={() => { window.location.href = '/login?role=parent&redirectTo=/parent'; }}
-            className="w-full px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3"
+            className="w-full px-5 py-3 border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3"
+            style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
           >
             {t(isHi, 'Create / sign in to account', 'अकाउंट बनाएँ / साइन इन करें')}
           </button>
@@ -301,7 +303,12 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
         )}
         <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-xl outline-none mb-2.5 box-border tracking-[4px] text-center uppercase" placeholder={t(isHi, 'LINK CODE', 'लिंक कोड')} value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label={t(isHi, 'Child link code', 'बच्चे का लिंक कोड')} />
         {error && <p className="text-red-500 text-[13px] my-2">{error}</p>}
-        <button onClick={submit} disabled={loading} className={`w-full mt-2 px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer ${loading ? 'opacity-50' : 'opacity-100'}`}>
+        <button
+          onClick={submit}
+          disabled={loading}
+          className={`w-full mt-2 px-5 py-3 border-none rounded-[10px] text-[15px] font-semibold cursor-pointer ${loading ? 'opacity-50' : 'opacity-100'}`}
+          style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
+        >
           {loading ? t(isHi, 'Connecting...', 'कनेक्ट हो रहा है...') : t(isHi, 'View Dashboard', 'डैशबोर्ड देखें')}
         </button>
         <p className="text-xs text-gray-500 mt-4">
@@ -363,7 +370,8 @@ function LinkCodeSignInGate({ isHi, childName }: { isHi: boolean; childName: str
         </p>
         <button
           onClick={goSignIn}
-          className="w-full px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3"
+          className="w-full px-5 py-3 border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3"
+          style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
         >
           {t(isHi, 'Create / sign in to account', 'अकाउंट बनाएँ / साइन इन करें')}
         </button>
@@ -727,7 +735,8 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
         <button
           type="button"
           onClick={() => void load()}
-          className="mt-4 min-h-[44px] rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white"
+          className="mt-4 min-h-[44px] rounded-lg px-5 py-2 text-sm font-semibold"
+          style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
         >
           {t(isHi, 'Try again', 'फिर से कोशिश करें')}
         </button>
@@ -931,7 +940,8 @@ function ParentPageContent() {
         <button
           type="button"
           onClick={() => setScopeAttempt((attempt) => attempt + 1)}
-          className="mt-4 min-h-[44px] rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white"
+          className="mt-4 min-h-[44px] rounded-lg px-5 py-2 text-sm font-semibold"
+          style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
         >
           {t(isHi, 'Try again', 'फिर से कोशिश करें')}
         </button>
