@@ -9,23 +9,9 @@ import { describe, expect, it } from 'vitest';
  * worker): installed PWAs rendered stale/broken "desktop-looking" views.
  * Runbook: docs/runbooks/pwa-stale-service-worker-recovery.md.
  *
- * These structural pins guard the two static inputs that decide how the app
- * renders on a phone:
- *  1. public/manifest.json — kept metadata-only (see below).
- *  2. The root layout's `viewport` export — `width: 'device-width'` +
- *     `initialScale: 1` (losing it reproduces the exact "desktop-looking
- *     page on mobile" symptom from the incident WITHOUT any service worker
- *     involved). This is the pin that actually addresses the incident symptom.
- *
- * INVERTED 2026-08-09 (PWA integrity fix). The manifest block previously
- * pinned `display: standalone` + `orientation: portrait` + `start_url: '/'`
- * because "losing either degrades every future install to a browser-tab view".
- * That premise was false: nothing in the app registers a service worker
- * (apps/host/public/sw.js is a retirement tombstone with no fetch handler that
- * unregisters itself), so there are no future installs, and an app-window
- * display mode with no offline capability is a chrome-less dead end the first
- * time a student's connection drops. The manifest is now metadata-only and
- * these pins hold it that way until a real offline strategy ships.
+ * These structural pins guard the installable manifest, the network-only
+ * worker, and the mobile viewport. `/sw.js` remains a retirement tombstone;
+ * the install worker is `/pwa-sw.js` and must not cache content.
  *
  * Also note this static file is NOT what production serves: the middleware
  * rewrites /manifest.json to /api/school-config/manifest. The served route is
@@ -42,18 +28,15 @@ import { describe, expect, it } from 'vitest';
 
 const manifestPath = path.resolve(process.cwd(), 'public/manifest.json');
 const layoutPath = path.resolve(process.cwd(), 'src/app/layout.tsx');
+const registrationPath = path.resolve(process.cwd(), '../../packages/lib/src/RegisterSW.tsx');
 
 describe('PWA view integrity (REG-259)', () => {
   describe('public/manifest.json', () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
 
-    it('declares display: browser — the app must not advertise an app-window mode it cannot back with a service worker', () => {
-      expect(manifest.display).toBe('browser');
-    });
-
-    it('carries no install-only fields (orientation, screenshots) for an install that cannot happen', () => {
-      expect(manifest.orientation).toBeUndefined();
-      expect(manifest.screenshots).toBeUndefined();
+    it('declares standalone display and portrait orientation for installed app windows', () => {
+      expect(manifest.display).toBe('standalone');
+      expect(manifest.orientation).toBe('portrait');
     });
 
     it('opens a returning user on /dashboard rather than the marketing home, and keeps scope at /', () => {
@@ -66,8 +49,10 @@ describe('PWA view integrity (REG-259)', () => {
     });
   });
 
-  describe('root layout viewport export (static-source pin)', () => {
+  describe('PWA worker and root layout (static-source pins)', () => {
     const layoutSource = readFileSync(layoutPath, 'utf8');
+    const workerSource = readFileSync(path.resolve(process.cwd(), 'public/pwa-sw.js'), 'utf8');
+    const registrationSource = readFileSync(registrationPath, 'utf8');
 
     it('exports a viewport with device-width and initialScale 1', () => {
       expect(layoutSource).toMatch(/export const viewport:\s*Viewport\s*=\s*\{/);
@@ -75,8 +60,19 @@ describe('PWA view integrity (REG-259)', () => {
       expect(layoutSource).toMatch(/initialScale:\s*1\b/);
     });
 
-    it('links /manifest.json from metadata so installs pick up the pinned manifest', () => {
+    it('links /manifest.json, opts into iOS installation, and registers the dedicated worker', () => {
       expect(layoutSource).toMatch(/manifest:\s*'\/manifest\.json'/);
+      expect(layoutSource).toMatch(/capable:\s*true/);
+      expect(layoutSource).toMatch(/ServiceWorkerCleanup/);
+      expect(registrationSource).toMatch(/NEXT_PUBLIC_PWA_ENABLED !== 'false'/);
+      expect(registrationSource).toMatch(/!INSTALLABLE_PWA_ENABLED\) return unregisterInstallablePwaWorker/);
+      expect(registrationSource).toMatch(/serviceWorker\.register\(INSTALLABLE_WORKER_PATH, \{ scope: '\/' \}\)/);
+    });
+
+    it('uses a network-only install worker with no CacheStorage access', () => {
+      expect(workerSource).toMatch(/addEventListener\('fetch'/);
+      expect(workerSource).toMatch(/respondWith\(fetch\(event\.request\)\)/);
+      expect(workerSource).not.toMatch(/caches\./);
     });
   });
 });
