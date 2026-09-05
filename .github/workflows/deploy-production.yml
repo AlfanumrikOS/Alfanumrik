@@ -1279,7 +1279,12 @@ jobs:
       - name: Detect changed Edge Functions
         id: changed
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'supabase/functions/' \
+          # --diff-filter=d: a DELETED directory is not a changed function. Without it,
+          # a removal in this push landed in CHANGED, `functions deploy <gone>` died on the
+          # missing entrypoint, and the job failed BEFORE the prune step below could run
+          # (2026-09-05, PR #1779 / P1-7 — 13 deletions, prune never reached). Deletions
+          # are handled ONLY by "Detect removed Edge Functions" (--diff-filter=D).
+          CHANGED=$(git diff --name-only --diff-filter=d HEAD~1 HEAD -- 'supabase/functions/' \
             | grep -vE '(_archive|_shared|__tests__)' \
             | awk -F/ 'NF>=3 {print $3}' | sort -u | grep -v '^$' || true)
           # If _shared/ changed, redeploy ALL active functions (consumers depend on it)

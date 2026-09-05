@@ -399,5 +399,26 @@ already undeployed), `rag-answer-v3`, `rag-answer-v4`, `rag-answer-v5`,
 `rag-ingest-batch`, `rag-ingest-status`, `rag-query-v3`.
 `cme-engine` was also removed from `deploy_functions.sh`'s `ALL_FUNCTIONS`.
 
-Post-merge verification: `list_edge_functions` re-checked after the deploy
-run, recorded in the description of the PR that landed this entry.
+**Post-merge outcome (same day) — the prune did NOT run.** The Deploy
+Production run for the #1779 merge (`e09d0c7e`) failed at "Deploy each
+changed function": `deploy-production.yml`'s "Detect changed Edge Functions"
+step used `git diff --name-only HEAD~1 HEAD` with no `--diff-filter`, so the
+13 DELETED directories were treated as changed, `supabase functions deploy
+agent-orchestrator` died on the missing entrypoint, and the job ended before
+its own "Prune removed functions" step (a later step in the same job) could
+run. `list_edge_functions` afterwards still showed all 12 live tombstones.
+A latent bug: the prune step was added as a separate path, but the changed
+detection was never taught to exclude deletions.
+
+Fix (follow-up PR): `--diff-filter=d` on the changed-detection diff in both
+`deploy-production.yml` and `deploy-staging.yml` (same pattern), so deletions
+reach only the `--diff-filter=D` prune step. Because the #1779 deletions are
+now in history and no future push's `HEAD~1..HEAD` diff will contain them, a
+break-glass `workflow_dispatch` reaper was added
+(`.github/workflows/edge-function-reaper.yml`): allowlisted to exactly the 12
+still-deployed slugs, main-only, confirmation phrase, refuses any slug whose
+`supabase/functions/<slug>/` directory still exists at the checkout, and
+fails the run if any requested slug is still deployed afterwards. It runs
+under the same `environment: production` scoping as the automatic prune
+step — no new privilege, no new secrets. The actual reap and its
+`list_edge_functions` verification are recorded in that PR.
