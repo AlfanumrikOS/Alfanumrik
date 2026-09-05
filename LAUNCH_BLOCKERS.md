@@ -33,7 +33,12 @@ A note on how to read this file: a blocker is only "fixed" when its **Verificati
 - **Verification:** place **one** real transaction end to end. A row must land in `payment_webhook_events` **with a verified signature**, a matching row in `payment_history` with non-null `razorpay_signature`, the student's entitlement must update atomically, and the amount charged must equal the amount shown on `/pricing`. Then kill the browser mid-callback on a second transaction and confirm the webhook alone still grants entitlement.
 - **Size:** M
 
-### P0-3 — Login is BROKEN in production: the Turnstile secret is invalid
+### P0-3 — Login OUTAGE CLOSED 2026-09-05 14:53 UTC; the Turnstile secret itself is still invalid
+- **Outage class: CLOSED.** PR #1799 merged as `e999627` and deployed through the pipeline. Verified against production **with the bad secret still in Vercel**: the same fake-token probe that returned **503** at 14:35 returned **200, 200** at 14:53. Two `critical` `ops_events` rows (`turnstile_secret_rejected_failing_open`, `http 400`, `invalid-input-secret`) were written at 14:53:19 and 14:53:20 — the loud half works. A wrong secret can no longer lock anyone out. Login and signup work now.
+- **Secret: STILL INVALID — CEO action.** Cloudflare still answers `invalid-input-secret`; bot protection is therefore currently OFF on login/signup (degraded, not undefended — the per-IP/per-email rate limiters still apply). Self-test before pasting into Vercel, 5 seconds, no deploy:
+  `curl -s -X POST https://challenges.cloudflare.com/turnstile/v0/siteverify -d "secret=<PASTE>&response=x"` → a valid secret answers `invalid-input-response`; a wrong one answers `invalid-input-secret`.
+- **Silent until P0-4 is repaired:** the `alert_rules` row for category `auth` shipped in #1799 as a migration and is **unapplied** (ledger drift). Until then the fail-open writes ops_events rows but pages nobody.
+- Original entry follows for the record.
 - **Severity:** P0 — **confirmed by a real user login attempt, not inferred.**
 - **Root cause, from production logs at 2026-09-05 13:08:37 and 13:08:51 UTC** (two consecutive attempts by the CEO):
   `httpStatus: 400`, `{"error-codes":["invalid-input-secret"],"success":false}`.
@@ -75,6 +80,9 @@ A note on how to read this file: a blocker is only "fixed" when its **Verificati
 - **Verification:** the next push to `main` shows "Apply Database Migrations" green, and `mcp list_migrations` has no version absent from `supabase/migrations/`.
 - **Size:** S
 - **Root of the class:** `apply_migration` stamps its own version, silently forking the ledger from the repo. One convenient out-of-band apply blocks every subsequent deploy's migrations, including other people's. See LAUNCH_STATE §6d.
+
+### P2-27 — Two pre-existing `TS2322` type errors in the email Edge Functions
+- `deno check supabase/functions/send-auth-email/index.ts` and `send-welcome-email/index.ts` each fail on `main`: `SupabaseClient` is not assignable to the narrowed `{ from: (table) => { insert: (row) => Promise<…> } }` shape the `EdgeLog` helper expects — a `PostgrestFilterBuilder` is a thenable, not a `Promise`. Found 2026-09-05 while removing Mailgun; the two `_shared` files check clean. CI's Deno job runs `--no-check`, which is why this has never blocked anything. **Size:** S.
 
 ### P1-12 — 3,168 active diagrams point at PDF textbooks, so no diagram renders
 - **Found 2026-09-05 only because the health cron was repaired** — it had been dead and silent for 18 days.

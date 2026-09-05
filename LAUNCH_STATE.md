@@ -335,6 +335,18 @@ select pg_get_functiondef(oid) like '%<expected token>%' from pg_proc where pron
 
 *Last verified: 2026-09-05 13:35 UTC.*
 
+---
+
+## 6e. Login outage closed; Mailgun removed (2026-09-05 14:50–15:05 UTC)
+
+- **#1799 merged and deployed (`e999627`).** `verifyTurnstile()` now fails **open** when Cloudflare rejects the secret (`invalid-input-secret` / `missing-input-secret`) or siteverify is unreachable, writing a `critical` `ops_events` row each time; token-level rejections still fail closed. Probe evidence: **503 → 200** with the same bad secret still in Vercel; two ops rows at 14:53:19/20. Six new tests, 18/18.
+- **Root cause of the day's outage, precisely:** the secret in Vercel was **valid at 10:03** (fake-token probe → `invalid-input-response`) and **invalid from 13:08 onward** (→ `invalid-input-secret`), so it was overwritten with a bad value in between. The 09:38/09:46 "working" logins ran on a build from 05:51 that predated the secret entirely and therefore skipped verification. Correction to an earlier claim in this file: a fake-token probe **does** discriminate a valid secret from an invalid one.
+- **#1800 open — Mailgun removed.** Gmail has been the sole live provider since 2026-07-16 (all three `GOOGLE_SA_*`/`GMAIL_SENDER` secrets set 2026-07-19); the Mailgun transport was a fallback that could only fail. −219/+58 across 13 files; Deno 78/0 (was 80 — exactly the two deleted Mailgun-only tests). After merge: `supabase secrets unset MAILGUN_API_KEY MAILGUN_DOMAIN`.
+- **`apps/host/.env.local`:** 70 real keys from Vercel production plus the three Turnstile slots restored as marked placeholders with `TURNSTILE_HOSTNAMES=localhost,alfanumrik.com,www.alfanumrik.com`. The three original Turnstile *values* were deleted in Phase 0 step 0.4 without a backup — recoverable only from the Cloudflare widget. The repo-root `.env.local` (mtime 15:08 IST, pre-session) was never touched and held only `.env.example` placeholders.
+- **Deploy Production remains red on every deploy** (`Apply Database Migrations` → `Production Release Completion Gate`), including `e999627`. The app still ships — Vercel deploys independently of that gate — but **no migration applies** until P0-4's ledger repair runs.
+
+*Last verified: 2026-09-05 15:05 UTC.*
+
 ## 7. Corrections to earlier audits
 
 Recorded so no future session re-opens a closed issue — **or trusts a claim that was never true.**
