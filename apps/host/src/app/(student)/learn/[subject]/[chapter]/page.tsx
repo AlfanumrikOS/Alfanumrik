@@ -1340,7 +1340,8 @@ function ChapterConceptPageContent() {
               const p = new URLSearchParams({ subject, mode: 'practice' });
               router.push(`/quiz?${p.toString()}`);
             }}
-            className="mt-3 px-6 py-2.5 rounded-xl text-sm font-semibold bg-orange-500 text-white hover:bg-orange-600 active:scale-[0.98] transition-all"
+            className="mt-3 px-6 py-2.5 rounded-xl text-sm font-semibold hover:brightness-95 active:scale-[0.98] transition-all"
+            style={{ background: 'var(--surface-accent)', color: 'var(--on-surface-accent, #FFFFFF)' }}
           >
             {isHi ? '⚡ क्विज़ लो' : '⚡ Take a Quiz'}
           </button>
@@ -1590,13 +1591,16 @@ function ChapterConceptPageContent() {
                       : 'border-transparent hover:bg-gray-50 text-gray-700'
                   }`}
                 >
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
-                    isCompleted
-                      ? 'bg-green-100 text-green-700 font-bold'
-                      : isSelected
-                        ? 'bg-orange-500 text-white shadow-sm'
-                        : 'bg-gray-100 text-gray-400'
-                  }`}>
+                  <span
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
+                      isCompleted
+                        ? 'bg-green-100 text-green-700 font-bold'
+                        : isSelected
+                          ? 'text-white shadow-sm'
+                          : 'bg-gray-100 text-gray-400'
+                    }`}
+                    style={isSelected && !isCompleted ? { background: 'var(--accent-warm)' } : undefined}
+                  >
                     {isCompleted ? '✓' : isSelected ? '▶' : idx + 1}
                   </span>
                   <span className="leading-snug font-medium line-clamp-2">
@@ -1643,13 +1647,16 @@ function ChapterConceptPageContent() {
                           : 'border-transparent hover:bg-gray-50 text-gray-700'
                       }`}
                     >
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
-                        isCompleted
-                          ? 'bg-green-100 text-green-700 font-bold'
-                          : isSelected
-                            ? 'bg-orange-500 text-white shadow-sm'
-                            : 'bg-gray-100 text-gray-400'
-                      }`}>
+                      <span
+                        className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
+                          isCompleted
+                            ? 'bg-green-100 text-green-700 font-bold'
+                            : isSelected
+                              ? 'text-white shadow-sm'
+                              : 'bg-gray-100 text-gray-400'
+                        }`}
+                        style={isSelected && !isCompleted ? { background: 'var(--accent-warm)' } : undefined}
+                      >
                         {isCompleted ? '✓' : isSelected ? '▶' : idx + 1}
                       </span>
                       <span className="leading-snug font-medium line-clamp-2">
@@ -1718,8 +1725,8 @@ function ChapterConceptPageContent() {
               <div className="space-y-1">
                 <div className="w-full bg-gray-200 rounded-full h-1.5">
                   <div
-                    className="bg-orange-500 h-1.5 rounded-full transition-all duration-500"
-                    style={{ width: `${((currentIdx + 1) / topics.length) * 100}%` }}
+                    className="h-1.5 rounded-full transition-all duration-500"
+                    style={{ width: `${((currentIdx + 1) / topics.length) * 100}%`, background: 'var(--accent-warm)' }}
                   />
                 </div>
                 {(() => {
