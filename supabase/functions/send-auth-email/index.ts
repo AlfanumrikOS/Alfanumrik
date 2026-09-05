@@ -257,7 +257,7 @@ Deno.serve(async (req: Request) => {
     // missing email secret. The `no_relay_config` warning string is stable
     // (pinned by the always-200 Deno test).
     if (!hasEmailTransport) {
-      console.warn('[Auth Email] No email relay configured (GOOGLE_SA_CLIENT_EMAIL / GOOGLE_SA_PRIVATE_KEY / GMAIL_SENDER, or legacy MAILGUN_*). Returning 200 so Supabase built-in email can work.')
+      console.warn('[Auth Email] No email relay configured (GOOGLE_SA_CLIENT_EMAIL / GOOGLE_SA_PRIVATE_KEY / GMAIL_SENDER). Returning 200 so Supabase built-in email can work.')
       return new Response(JSON.stringify({ success: true, warning: 'no_relay_config' }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })
