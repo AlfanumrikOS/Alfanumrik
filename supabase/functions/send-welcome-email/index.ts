@@ -27,7 +27,7 @@ import { parentEmail, studentEmail, teacherEmail, welcomeEmailHeaders } from './
 // provider (Mailgun disabled the company account). The relay is configured iff
 // the shared seam (_shared/relay-mailer.ts) resolves ANY transport — Gmail
 // (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
-// legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback; Resend is
+// no fallback (the Mailgun path was removed 2026-09-05); Resend is
 // never auto-selected. When nothing is configured we degrade to the
 // notifications-table fallback (below).
 const HAS_EMAIL_TRANSPORT = hasEmailTransportConfig()
@@ -92,7 +92,7 @@ Deno.serve(async (req: Request) => {
       default: return errorResponse('Invalid role', 400, origin)
     }
 
-    // Send via the shared relay if configured (Gmail primary, legacy Mailgun
+    // Send via the shared relay if configured (Gmail only — the Mailgun
     // fallback — product decision 2026-07-16). sendEmail resolves the transport
     // internally, retries with an idempotency key, and returns a PII-free
     // failure `code` (+ which provider handled it) on error.

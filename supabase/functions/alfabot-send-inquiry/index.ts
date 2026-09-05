@@ -293,7 +293,7 @@ Deno.serve(async (req: Request) => {
   // provider (Mailgun disabled the company account). Attempt a send when the
   // shared relay (_shared/relay-mailer.ts) resolves ANY transport — Gmail
   // (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
-  // legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback; Resend is
+  // no fallback (the Mailgun path was removed 2026-09-05); Resend is
   // never auto-selected. When nothing is configured → 503.
   const hasEmailTransport = hasEmailTransportConfig()
   if (!hasEmailTransport) {

@@ -3,7 +3,7 @@
  *
  * Invokes the `send-transactional-email` Edge Function for school-onboarding
  * flows (trial provisioned, invite-code issued). The Edge Function wraps the
- * Mailgun provider used by the rest of the platform (`send-auth-email`,
+ * Gmail (Google Workspace) provider used by the rest of the platform (`send-auth-email`,
  * `send-welcome-email`, `alert-deliverer`) — no new email-provider library is
  * introduced.
  *
@@ -13,7 +13,7 @@
  *     `deliverEmail(...).catch(noop)`.
  *   - Idempotency: each call records an `ops_events` row keyed by the
  *     invite-code (subject_id). On a Vercel function retry the second invocation
- *     short-circuits before contacting Mailgun.
+ *     short-circuits before contacting the mail relay.
  *   - Never log full invite codes at INFO. Truncate to first 4 chars + `****`.
  */
 

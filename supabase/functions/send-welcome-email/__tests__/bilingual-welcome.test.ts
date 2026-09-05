@@ -148,8 +148,9 @@ async function loadWelcomeHandler(): Promise<Handler> {
   Deno.env.set('SUPABASE_URL', 'http://supabase.test');
   Deno.env.set('SUPABASE_ANON_KEY', 'anon-test-key');
   Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', 'service-test-key');
-  Deno.env.set('MAILGUN_API_KEY', 'key-mg-test-0001');
-  Deno.env.set('MAILGUN_DOMAIN', 'mg.alfanumrik.test');
+  Deno.env.set('GOOGLE_SA_CLIENT_EMAIL', 'relay@alfanumrik-test.iam.gserviceaccount.com');
+  Deno.env.set('GOOGLE_SA_PRIVATE_KEY', '-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----');
+  Deno.env.set('GMAIL_SENDER', 'noreply@alfanumrik.test');
   Deno.env.set('SITE_URL', SITE);
 
   let captured: Handler | null = null;
@@ -215,7 +216,7 @@ Deno.test({
     name: 'stub-capture',
     send: (m: EmailMessage) => {
       sent = m;
-      return Promise.resolve({ success: true, provider: 'mailgun', id: 'mg-welcome-0001' });
+      return Promise.resolve({ success: true, provider: 'gmail', id: 'gm-welcome-0001' });
     },
   });
   try {

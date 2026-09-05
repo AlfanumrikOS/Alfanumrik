@@ -65,8 +65,8 @@ import { corsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 // Product decision 2026-07-16: Google Workspace (Gmail API) is the email
 // provider (Mailgun disabled the company account). The regulated notice is
 // delivered via the shared relay, which prefers Gmail (GOOGLE_SA_CLIENT_EMAIL +
-// GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER), falls back to legacy Mailgun
-// (MAILGUN_API_KEY + MAILGUN_DOMAIN), and never auto-selects Resend. The notice
+// GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER), has no fallback (the Mailgun path was removed
+// 2026-09-05), and never auto-selects Resend. The notice
 // is deliverable when ANY of those transports is configured. When none is
 // configured the notice is treated as undeliverable and FAILS CLOSED (audit
 // 'pre_debit_notice_failed' → 500 → cron retries/skips the auto-charge). P11
